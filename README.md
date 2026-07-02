@@ -1,125 +1,109 @@
-# VOXEL PACS
+# API VOXEL PACS — Sistema de Gestão PACS
 
-**Plataforma Cloud PACS para Teleradiologia**
+Sistema PHP 8.1 Multi-Tenant para gestão de exames DICOM, integrado ao Orthanc e ao OHIF Viewer.
 
-Sistema multi-tenant de gerenciamento de imagens médicas DICOM, integrado ao servidor Orthanc, com worklist de estudos, viewer DICOM e painel administrativo da plataforma.
+> Este diretório é um **submódulo Git** do repositório [andreprogramadorbh-ai/voxelpacs](https://github.com/andreprogramadorbh-ai/voxelpacs).
+> Para atualizar o código da API: `git submodule update --remote api`
 
----
+## Arquitetura do Sistema
 
-## Funcionalidades
+O sistema é uma aplicação PHP MVC com as seguintes camadas:
 
-- **Worklist de Estudos** — Interface similar ao RAIOSS com dark theme, filtros avançados e paginação
-- **Viewer DICOM** — Integração com OHIF Viewer / Weasis via iframe
-- **Sidebar expansível** — Menu lateral com submenus colapsáveis
-- **Multi-tenant** — Múltiplas clínicas/unidades em uma única instalação
-- **Painel da Plataforma** — Gerenciamento de negócios, planos e servidor PACS (superadmin)
-- **Servidor PACS** — Configuração e monitoramento do Orthanc, sincronização e roteamento por InstitutionName
+| Camada | Localização | Responsabilidade |
+|---|---|---|
+| **Controllers** | `app/Controllers/` | Recebe requisições HTTP, chama Services |
+| **Models** | `app/Models/` | Acesso ao banco de dados (MySQL) |
+| **Services** | `app/Services/` | Lógica de negócio (Orthanc, ERP, KPI) |
+| **Views** | `app/Views/` | Templates PHP (layouts por contexto) |
+| **Core** | `app/Core/` | Router, Database, Auth, Middleware, RBAC |
+| **Middlewares** | `app/Middlewares/` | Auth, CSRF, Permissão, Tenant, Sessão |
+| **Routes** | `routes/` | Definição de rotas (web.php, platform.php) |
+| **Migrations** | `database/migrations/` | Scripts SQL de criação/alteração de tabelas |
 
-## Telas
+## Módulos Principais
 
-| Tela | URL | Descrição |
-|------|-----|-----------|
-| Login | `/login` | Autenticação com logo VOXEL PACS |
-| Worklist | `/estudos` | Lista de estudos DICOM com filtros |
-| Viewer | `/estudos/{id}/abrir` | Abertura de imagem no viewer DICOM |
-| Agendamentos | `/agendamentos` | Lista de agendamentos |
-| Médicos | `/medicos` | Cadastro de médicos/laudadores |
-| Unidades | `/unidades` | Cadastro de unidades/clínicas |
-| Modalidades | `/modalidades` | Cadastro de modalidades DICOM |
-| Usuários | `/usuarios` | Gerenciamento de usuários |
-| Configurações | `/configuracoes` | Configurações do sistema |
-| **Plataforma** | `/platform/dashboard` | Dashboard do superadmin |
-| Negócios | `/platform/negocios` | Gerenciamento de tenants |
-| Planos | `/platform/plans` | Planos de assinatura |
-| Servidor PACS | `/platform/servidor-pacs` | Configuração do Orthanc |
+| Módulo | Descrição |
+|---|---|
+| **Multi-Tenant** | Isolamento por tenant (clínica/hospital) |
+| **Auth/RBAC** | Autenticação + controle de permissões por papel |
+| **Estudos DICOM** | Listagem, busca e abertura de estudos via OHIF |
+| **OrthancService** | Integração com o servidor Orthanc via REST API |
+| **PacsConnectorService** | Conexão e monitoramento do servidor PACS |
+| **KpiService** | Indicadores de desempenho (SLA, produtividade) |
+| **BenchmarkService** | Comparativos entre unidades/modalidades |
+| **PreditivoService** | Análise preditiva de demanda |
+| **VoxelErpService** | Integração com o ERP inlaudo |
+| **ImportacaoService** | Importação de planilhas de exames |
+| **ExportService** | Exportação de relatórios |
 
-## Colunas da Worklist
+## Banco de Dados
 
-| Coluna | Descrição |
-|--------|-----------|
-| Dt Estudo | Data e hora do estudo DICOM |
-| Paciente | Nome, sexo, idade e número de acesso |
-| Unidade | InstitutionName (DICOM) |
-| M | Modalidade (CR, CT, MR, US, etc.) |
-| Especialidade | Especialidade / Médico solicitante |
-| Estudo | Descrição do estudo e número de imagens |
-| Situação | Status (Novo, Aberto, Rascunho, Assinado, etc.) |
-| Ações | Botão **Abrir** — abre o viewer DICOM |
+O sistema utiliza **MySQL 8.0** (container Docker). As migrations são executadas automaticamente na primeira inicialização do container.
 
-## Instalação
+| Arquivo de Migration | Descrição |
+|---|---|
+| `2026-01-01_bi_multitenant_schema.sql` | Schema principal multi-tenant |
+| `2026-05-11_negocios_module.sql` | Módulo de negócios |
+| `2026-05-12_orthanc_colunas.sql` | Colunas de integração Orthanc |
+| `2026-05-26_pacs_estudos_dicom_tags.sql` | Tags DICOM dos estudos |
+| `2026-05-26_servidor_pacs.sql` | Configuração do servidor PACS |
 
-### Requisitos
+## Variáveis de Ambiente
 
-- PHP 8.1+
-- MySQL 8.0+ / MariaDB 10.6+
-- Servidor Orthanc (opcional para produção)
-- Apache / Nginx / LiteSpeed
+As variáveis são injetadas pelo `docker-compose.yml` a partir do `.env` do projeto de deploy:
 
-### Configuração
+| Variável | Descrição |
+|---|---|
+| `APP_URL` | URL pública da aplicação |
+| `APP_SECRET` | Chave secreta para sessões e tokens |
+| `DB_HOST` | Host do MySQL (interno Docker: `mysql`) |
+| `DB_DATABASE` | Nome do banco de dados |
+| `DB_USERNAME` | Usuário do banco |
+| `DB_PASSWORD` | Senha do banco |
+| `ORTHANC_URL` | URL do Orthanc (interno Docker: `http://orthanc:8042`) |
+| `ORTHANC_USER` | Usuário admin do Orthanc |
+| `ORTHANC_PASS` | Senha admin do Orthanc |
+| `DICOM_VIEWER_URL` | URL pública do OHIF (via Nginx) |
+
+## Fluxo de Abertura de Exame por Token
+
+```
+ERP inlaudo
+    │
+    ▼
+POST /api/token/gerar
+    │ (retorna token único)
+    ▼
+Usuário acessa: https://view.voxelpacs.com.br/open/{token}
+    │
+    ▼
+API valida token → busca StudyInstanceUID no banco
+    │
+    ▼
+Redireciona para OHIF: /viewer?StudyInstanceUIDs={uid}
+    │
+    ▼
+OHIF carrega imagens via DICOMweb (/dicom-web → Orthanc)
+```
+
+## Build Docker
 
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/ASOARESBH/voxelpacs.git
-cd voxelpacs
+# Build manual (feito automaticamente pelo install.sh)
+cd docker
+docker compose build voxelpacs-api
 
-# 2. Configure o ambiente
-cp .env.example .env
-# Edite o .env com suas credenciais
-
-# 3. Execute as migrations
-mysql -u root -p voxel_pacs < database/migrations/2026-01-01_bi_multitenant_schema.sql
-mysql -u root -p voxel_pacs < database/migrations/2026-05-26_servidor_pacs.sql
-mysql -u root -p voxel_pacs < database/migrations/2026-05-26_pacs_estudos_dicom_tags.sql
-
-# 4. Execute o seed do superadmin
-mysql -u root -p voxel_pacs < database/seeds/001_superadmin_pacs.sql
+# Rebuild após atualizar o código
+git submodule update --remote api
+cd docker
+docker compose up -d --build voxelpacs-api
 ```
 
-### Credenciais Padrão
+## Credenciais Padrão (alterar após primeiro acesso)
 
 | Campo | Valor |
-|-------|-------|
-| E-mail | `admin@voxelpacs.com.br` |
-| Senha | `Admin259087@` |
+|---|---|
+| **E-mail** | `admin@voxelpacs.com.br` |
+| **Senha** | `Admin259087@` |
 
-> **Atenção:** Altere a senha após o primeiro acesso em produção.
-
-## Estrutura
-
-```
-voxelpacs/
-├── app/
-│   ├── Controllers/          # Controllers PHP
-│   │   └── Platform/         # Controllers do painel da plataforma
-│   ├── Core/                 # Núcleo: Router, Auth, Database, View
-│   ├── Models/               # Models do banco de dados
-│   ├── Middlewares/          # Middlewares (TenantMiddleware)
-│   └── Views/                # Views PHP
-│       ├── auth/             # Login e seleção de empresa
-│       ├── estudos/          # Worklist e viewer
-│       ├── layout/           # Layouts (pacs, platform, auth)
-│       └── platform/         # Views do painel da plataforma
-├── database/
-│   ├── migrations/           # Scripts SQL de migração
-│   └── seeds/                # Seeds de dados iniciais
-├── public/
-│   ├── assets/
-│   │   ├── css/              # CSS (pacs.css, auth.css)
-│   │   └── img/              # Imagens e logos
-│   └── index.php             # Entry point
-└── routes/
-    ├── web.php               # Rotas públicas e do PACS
-    └── platform.php          # Rotas do painel da plataforma
-```
-
-## Tecnologias
-
-- **Backend:** PHP 8.1+ (MVC sem framework)
-- **Frontend:** HTML5 + CSS3 (dark theme) + Bootstrap 5.3 + Font Awesome 6
-- **Banco:** MySQL / MariaDB
-- **PACS:** Orthanc (REST API + DICOM)
-- **Viewer:** OHIF Viewer / Weasis (configurável)
-
----
-
-© 2026 VOXEL PACS — Smart Imaging. Secure Data. Better Care.
+> **IMPORTANTE:** Altere a senha imediatamente após o primeiro acesso em produção.
