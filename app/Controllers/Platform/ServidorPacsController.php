@@ -84,7 +84,16 @@ class ServidorPacsController extends Controller
         $negocios = $pdo->query("SELECT id, nome, slug FROM bi_tenants WHERE status != 'cancelado' ORDER BY nome")
                         ->fetchAll(\PDO::FETCH_ASSOC);
 
-        $this->view('platform/servidor_pacs/configurar', compact('servidor', 'negocios'), 'platform');
+        $execucoes = [];
+        try {
+            $execucoes = $pdo->query("
+                SELECT * FROM bi_pacs_sync_execucoes WHERE servidor_id = 1 ORDER BY id DESC LIMIT 20
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao carregar histórico de execuções: " . $e->getMessage());
+        }
+
+        $this->view('platform/servidor_pacs/configurar', compact('servidor', 'negocios', 'execucoes'), 'platform');
     }
 
     public function salvarConfig(): void
@@ -96,6 +105,9 @@ class ServidorPacsController extends Controller
         $user    = trim($_POST['usuario'] ?? '') ?: null;
         $senha   = trim($_POST['senha'] ?? '') ?: null;
         $timeout = max(5, min(120, (int)($_POST['timeout'] ?? 30)));
+
+        $syncAtivo     = isset($_POST['sync_auto_ativo']) ? 1 : 0;
+        $syncIntervalo = max(1, min(1440, (int)($_POST['sync_intervalo_minutos'] ?? 60)));
 
         if (empty($url)) {
             $_SESSION['error'] = 'A URL do servidor é obrigatória.';
@@ -109,24 +121,27 @@ class ServidorPacsController extends Controller
                 if ($senha !== null) {
                     $pdo->prepare("
                         UPDATE bi_pacs_servidor
-                        SET nome=?, url=?, usuario=?, senha=?, timeout=?, ativo=1, updated_at=NOW()
+                        SET nome=?, url=?, usuario=?, senha=?, timeout=?, ativo=1,
+                            sync_auto_ativo=?, sync_intervalo_minutos=?, updated_at=NOW()
                         WHERE id = 1
-                    ")->execute([$nome, $url, $user, $senha, $timeout]);
+                    ")->execute([$nome, $url, $user, $senha, $timeout, $syncAtivo, $syncIntervalo]);
                 } else {
                     $pdo->prepare("
                         UPDATE bi_pacs_servidor
-                        SET nome=?, url=?, usuario=?, timeout=?, ativo=1, updated_at=NOW()
+                        SET nome=?, url=?, usuario=?, timeout=?, ativo=1,
+                            sync_auto_ativo=?, sync_intervalo_minutos=?, updated_at=NOW()
                         WHERE id = 1
-                    ")->execute([$nome, $url, $user, $timeout]);
+                    ")->execute([$nome, $url, $user, $timeout, $syncAtivo, $syncIntervalo]);
                 }
             } else {
                 $pdo->prepare("
-                    INSERT INTO bi_pacs_servidor (id, nome, url, usuario, senha, timeout, ativo)
-                    VALUES (1, ?, ?, ?, ?, ?, 1)
-                ")->execute([$nome, $url, $user, $senha, $timeout]);
+                    INSERT INTO bi_pacs_servidor
+                        (id, nome, url, usuario, senha, timeout, ativo, sync_auto_ativo, sync_intervalo_minutos)
+                    VALUES (1, ?, ?, ?, ?, ?, 1, ?, ?)
+                ")->execute([$nome, $url, $user, $senha, $timeout, $syncAtivo, $syncIntervalo]);
             }
 
-            error_log("[PACS] Config salva: url=$url, usuario=$user, timeout=$timeout");
+            error_log("[PACS] Config salva: url=$url, usuario=$user, timeout=$timeout, sync_ativo=$syncAtivo, sync_intervalo=$syncIntervalo");
             $_SESSION['success'] = 'Configurações do servidor PACS salvas com sucesso.';
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao salvar config: " . $e->getMessage());
@@ -208,6 +223,45 @@ class ServidorPacsController extends Controller
             } catch (\Exception $e) {}
 
             echo json_encode(['success' => false, 'message' => 'Falha na conexão: ' . $ping['error']]);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // SINCRONIZAÇÃO AUTOMÁTICA (PING AGENDADO VIA CRON EXTERNO)
+    // ----------------------------------------------------------------
+
+    public function gerarTokenCron(): void
+    {
+        @ini_set('display_errors', '0');
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo = Database::getInstance();
+
+        $token = bin2hex(random_bytes(24));
+
+        try {
+            $pdo->prepare("UPDATE bi_pacs_servidor SET sync_cron_token = ? WHERE id = 1")->execute([$token]);
+            error_log("[PACS] Novo token de cron gerado.");
+            echo json_encode(['success' => true, 'token' => $token]);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao gerar token de cron: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function execucoesCron(): void
+    {
+        @ini_set('display_errors', '0');
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo = Database::getInstance();
+
+        try {
+            $execucoes = $pdo->query("
+                SELECT * FROM bi_pacs_sync_execucoes WHERE servidor_id = 1 ORDER BY id DESC LIMIT 20
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+            echo json_encode(['success' => true, 'execucoes' => $execucoes]);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao listar execuções de cron: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
     }
 

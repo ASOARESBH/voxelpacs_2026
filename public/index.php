@@ -12,7 +12,7 @@ use App\Core\Auth;
 use App\Middlewares\TenantMiddleware;
 
 // Rotas que NÃO precisam de autenticação nem de tenant
-$rotasPublicas = ['/login', '/logout', '/selecionar-empresa', '/test.php', '/api/orthanc/ping', '/open/'];
+$rotasPublicas = ['/login', '/logout', '/selecionar-empresa', '/test.php', '/api/orthanc/ping', '/api/servidor-pacs/cron-ping', '/open/'];
 $uriAtual = strtok($_SERVER['REQUEST_URI'], '?');
 
 // Carrega rotas
