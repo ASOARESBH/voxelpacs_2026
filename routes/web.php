@@ -77,3 +77,11 @@ Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 // API — Orthanc ping (público, para status na tela de login)
 // ============================================================
 Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
+
+// ============================================================
+// VIEWER — Abertura segura de exames via token temporário
+// Rota PÚBLICA: não exige autenticação
+// Fluxo: /estudos/{id}/abrir → gera token → redireciona aqui
+//        → ViewerTokenController resolve token → OHIF Viewer
+// ============================================================
+Router::get('/open/{token}', 'ViewerTokenController@abrir');

@@ -125,7 +125,8 @@ class EstudosController extends Controller {
                     e.num_instances,
                     e.situacao,
                     e.especialidade,
-                    e.orthanc_url
+                    e.orthanc_url,
+                    e.study_instance_uid
                 FROM pacs_estudos e
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}
@@ -160,7 +161,15 @@ class EstudosController extends Controller {
     }
 
     /**
-     * Abre o viewer DICOM para um estudo
+     * Abre o viewer DICOM para um estudo via token seguro.
+     *
+     * Fluxo:
+     *   1. Busca o estudo no banco
+     *   2. Gera um token UUID único com validade de 1 hora
+     *   3. Salva o token em pacs_viewer_tokens
+     *   4. Redireciona para https://view.voxelpacs.com.br/open/{token}
+     *
+     * O ViewerTokenController resolve o token e redireciona para o OHIF.
      */
     public function abrir(int $id): void {
         $pdo = Database::getInstance();
@@ -179,18 +188,75 @@ class EstudosController extends Controller {
             return;
         }
 
-        // URL do viewer (Ohif, Weasis, ou Orthanc Explorer)
-        $orthancUrl  = $estudo['orthanc_url'] ?? getenv('ORTHANC_URL') ?: 'http://localhost:8042';
-        $orthancId   = $estudo['orthanc_id']  ?? '';
-        $viewerUrl   = $orthancId
-            ? rtrim($orthancUrl, '/') . '/ohif/viewer?StudyInstanceUIDs=' . urlencode($estudo['study_instance_uid'] ?? $orthancId)
-            : $orthancUrl . '/app/explorer.html';
+        $studyUid  = $estudo['study_instance_uid'] ?? '';
+        $orthancId = $estudo['orthanc_id']         ?? '';
 
-        $this->view('estudos/viewer', [
-            'title'      => 'Viewer — ' . htmlspecialchars($estudo['patient_name'] ?? 'Estudo'),
-            'estudo'     => $estudo,
-            'viewerUrl'  => $viewerUrl,
-        ], 'pacs');
+        // Se não há study_instance_uid nem orthanc_id, não é possível abrir no OHIF
+        if (empty($studyUid) && empty($orthancId)) {
+            $this->view('estudos/viewer', [
+                'title'      => 'Viewer — ' . htmlspecialchars($estudo['patient_name'] ?? 'Estudo'),
+                'estudo'     => $estudo,
+                'viewerUrl'  => '',
+            ], 'pacs');
+            return;
+        }
+
+        // ── Gerar token seguro ──────────────────────────────────
+        $token     = $this->gerarToken();
+        $expiresAt = date('Y-m-d H:i:s', strtotime('+1 hour'));
+        $tenantId  = Auth::tenantId();
+        $usuarioId = Auth::userId();
+        $ipOrigem  = $_SERVER['REMOTE_ADDR'] ?? null;
+
+        try {
+            $ins = $pdo->prepare("
+                INSERT INTO pacs_viewer_tokens
+                    (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
+                VALUES
+                    (:token, :estudo_id, :study_uid, :orthanc_id, :tenant_id, :usuario_id, :ip, :expires_at)
+            ");
+            $ins->execute([
+                ':token'      => $token,
+                ':estudo_id'  => $id,
+                ':study_uid'  => $studyUid ?: $orthancId,
+                ':orthanc_id' => $orthancId ?: null,
+                ':tenant_id'  => $tenantId  ?: null,
+                ':usuario_id' => $usuarioId ?: null,
+                ':ip'         => $ipOrigem,
+                ':expires_at' => $expiresAt,
+            ]);
+        } catch (\Throwable $e) {
+            // Log de erro — não bloquear abertura, usar fallback direto
+            error_log('[EstudosController] Erro ao gerar token viewer: ' . $e->getMessage());
+            $token = null;
+        }
+
+        // ── Montar URL de destino ───────────────────────────────
+        $viewerBase = rtrim(getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
+
+        if ($token) {
+            // URL segura via token (fluxo principal)
+            $viewerUrl = $viewerBase . '/open/' . $token;
+        } else {
+            // Fallback: URL direta com StudyInstanceUID (sem token)
+            $viewerUrl = $viewerBase . '/viewer?StudyInstanceUIDs=' . urlencode($studyUid ?: $orthancId);
+        }
+
+        // Redirecionar para o viewer
+        header('Location: ' . $viewerUrl, true, 302);
+        exit;
+    }
+
+    /**
+     * Gera um token UUID v4 único para abertura do viewer.
+     */
+    private function gerarToken(): string
+    {
+        // UUID v4 usando random_bytes (PHP 7+)
+        $data    = random_bytes(16);
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // versão 4
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // variante RFC 4122
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 
     /**
