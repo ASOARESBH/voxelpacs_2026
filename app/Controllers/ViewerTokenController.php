@@ -12,11 +12,16 @@ use App\Core\Database;
  *
  * Fluxo:
  *   1. EstudosController::abrir() gera um token UUID e salva em pacs_viewer_tokens
- *   2. Redireciona o usuário para https://view.voxelpacs.com.br/open/{token}
+ *   2. Redireciona o usuário para {VIEWER_ERP_URL}/open/{token}  (PHP resolve)
  *   3. Este controller recebe o token (rota pública, sem autenticação)
  *   4. Valida o token (existe, não expirou)
- *   5. Redireciona para https://view.voxelpacs.com.br/viewer?StudyInstanceUIDs={uid}
+ *   5. Redireciona para {VIEWER_URL}/viewer?StudyInstanceUIDs={uid}  (OHIF abre)
+ *
+ * Variáveis de ambiente (.env):
+ *   VIEWER_URL      = https://view.voxelpacs.com.br   (URL do OHIF)
+ *   VIEWER_ERP_URL  = https://server.voxelpacs.com.br (URL do PHP)
  */
+
 class ViewerTokenController extends Controller
 {
     /** URL base do OHIF Viewer (configurável via .env) */
@@ -24,8 +29,9 @@ class ViewerTokenController extends Controller
 
     public function __construct()
     {
+        // Ordem de prioridade: VIEWER_URL > OHIF_VIEWER_URL > hardcoded
         $this->viewerBase = rtrim(
-            getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br',
+            getenv('VIEWER_URL') ?: (getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br'),
             '/'
         );
     }

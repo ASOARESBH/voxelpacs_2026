@@ -218,20 +218,28 @@ class EstudosController extends Controller
             $token = null;
         }
 
-        // URL base do OHIF Viewer (para abertura final)
-        $ohifBase = rtrim(getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
+        // URL base do OHIF Viewer
+        // Ordem de prioridade: VIEWER_URL > OHIF_VIEWER_URL > hardcoded
+        $ohifBase = rtrim(
+            getenv('VIEWER_URL') ?: (getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br'),
+            '/'
+        );
 
-        // URL base do próprio sistema PHP (para resolução do token)
-        // O ViewerTokenController está em /open/{token} no PHP, NÃO no OHIF
-        $appBase = rtrim(
-            getenv('APP_URL') ?: ('https://' . ($_SERVER['HTTP_HOST'] ?? 'server.voxelpacs.com.br')),
+        // URL base do próprio sistema PHP para resolver o token
+        // Ordem de prioridade: VIEWER_ERP_URL > host real da requisição > hardcoded
+        // NÃO usa APP_URL pois pode estar desatualizado no .env de produção
+        $erpBase = rtrim(
+            getenv('VIEWER_ERP_URL') ?: (
+                ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                . '://' . ($_SERVER['HTTP_HOST'] ?? 'server.voxelpacs.com.br')
+            ),
             '/'
         );
 
         if ($token) {
             // Fluxo seguro: PHP resolve o token → redireciona para OHIF
-            // Rota: server.voxelpacs.com.br/open/{token} → ViewerTokenController
-            $viewerUrl = $appBase . '/open/' . $token;
+            // A rota /open/{token} é pública no Router.php (não exige autenticação)
+            $viewerUrl = $erpBase . '/open/' . $token;
         } else {
             // Fallback direto: abre o OHIF com StudyInstanceUID
             $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
