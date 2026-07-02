@@ -174,6 +174,8 @@ function formatarIdade(array $e): string {
 
     <span style="font-size:.72rem;color:var(--pacs-text-muted);margin-left:auto;">
         <?= number_format($total) ?> estudo<?= $total !== 1 ? 's' : '' ?> encontrado<?= $total !== 1 ? 's' : '' ?>
+        &nbsp;<span style="color:var(--pacs-border);">|</span>&nbsp;
+        <i class="fa fa-server" style="font-size:.65rem;"></i> Orthanc PACS
     </span>
 
 </div>
@@ -241,8 +243,13 @@ function formatarIdade(array $e): string {
         <?php if (empty($estudos)): ?>
             <tr>
                 <td colspan="9" style="text-align:center;padding:3rem;color:var(--pacs-text-muted);">
-                    <i class="fa fa-magnifying-glass fa-2x mb-2 d-block"></i>
-                    Nenhum estudo encontrado com os filtros aplicados.
+                    <i class="fa fa-x-ray fa-2x mb-2 d-block"></i>
+                    Nenhum estudo encontrado com os filtros aplicados.<br>
+                    <small style="font-size:.75rem;color:var(--pacs-text-muted);display:block;margin-top:.5rem;">
+                        Os estudos são importados do servidor Orthanc PACS.<br>
+                        Acesse <a href="/platform/servidor-pacs" style="color:var(--pacs-primary);">Plataforma &rsaquo; Servidor PACS</a>
+                        e clique em <strong>Sincronizar</strong> para importar os exames.
+                    </small>
                 </td>
             </tr>
         <?php else: ?>
@@ -349,8 +356,9 @@ function formatarIdade(array $e): string {
                     <div class="pacs-actions">
                         <a href="/estudos/<?= $e['id'] ?>/abrir"
                            class="pacs-btn btn-open"
-                           title="Abrir imagem no viewer DICOM"
-                           target="_blank">
+                           title="Abrir no OHIF Viewer (nova aba)"
+                           target="_blank"
+                           <?= empty($e['study_instance_uid']) && empty($e['orthanc_id']) ? 'style="opacity:.45;pointer-events:none;" title="Sem StudyInstanceUID"' : '' ?>>
                             <i class="fa fa-eye"></i> Abrir
                         </a>
                     </div>

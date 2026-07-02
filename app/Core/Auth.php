@@ -63,6 +63,10 @@ class Auth {
         return $_SESSION['user'] ?? null;
     }
 
+    public static function userId(): ?int {
+        return isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+    }
+
     public static function tenantId(): ?int {
         return isset($_SESSION['tenant_id']) ? (int) $_SESSION['tenant_id'] : null;
     }
