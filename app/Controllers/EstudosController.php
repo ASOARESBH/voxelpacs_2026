@@ -192,58 +192,32 @@ class EstudosController extends Controller
         }
 
         $uidParaViewer = $studyUid ?: $orthancId;
-        $token         = $this->gerarToken();
-        $expiresAt     = date('Y-m-d H:i:s', strtotime('+1 hour'));
-        $tenantId      = Auth::tenantId();
-        $usuarioId     = Auth::userId();
-        $ipOrigem      = $_SERVER['REMOTE_ADDR'] ?? null;
 
+        // Registrar abertura em log (sem bloquear o redirecionamento)
         try {
             $pdo->prepare("
                 INSERT INTO pacs_viewer_tokens
                     (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
                 VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,:expires_at)
             ")->execute([
-                ':token'      => $token,
+                ':token'      => $this->gerarToken(),
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => $tenantId  ?: null,
-                ':usuario_id' => $usuarioId ?: null,
-                ':ip'         => $ipOrigem,
-                ':expires_at' => $expiresAt,
+                ':tenant_id'  => Auth::tenantId() ?: null,
+                ':usuario_id' => Auth::userId()   ?: null,
+                ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
+                ':expires_at' => date('Y-m-d H:i:s', strtotime('+1 hour')),
             ]);
         } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrir] Token: ' . $ex->getMessage());
-            $token = null;
+            error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
         }
 
-        // URL base do OHIF Viewer
-        // Ordem de prioridade: VIEWER_URL > OHIF_VIEWER_URL > hardcoded
-        $ohifBase = rtrim(
-            getenv('VIEWER_URL') ?: (getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br'),
-            '/'
-        );
-
-        // URL base do próprio sistema PHP para resolver o token
-        // Ordem de prioridade: VIEWER_ERP_URL > host real da requisição > hardcoded
-        // NÃO usa APP_URL pois pode estar desatualizado no .env de produção
-        $erpBase = rtrim(
-            getenv('VIEWER_ERP_URL') ?: (
-                ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
-                . '://' . ($_SERVER['HTTP_HOST'] ?? 'server.voxelpacs.com.br')
-            ),
-            '/'
-        );
-
-        if ($token) {
-            // Fluxo seguro: PHP resolve o token → redireciona para OHIF
-            // A rota /open/{token} é pública no Router.php (não exige autenticação)
-            $viewerUrl = $erpBase . '/open/' . $token;
-        } else {
-            // Fallback direto: abre o OHIF com StudyInstanceUID
-            $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
-        }
+        // ── Abrir OHIF diretamente com StudyInstanceUID ────────────────────────────────────
+        // URL hardcoded do OHIF — não depende de nenhuma variável de ambiente
+        // Prioridade: VIEWER_URL > hardcoded (view.voxelpacs.com.br)
+        $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
+        $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
 
         header('Location: ' . $viewerUrl, true, 302);
         exit;
