@@ -218,10 +218,24 @@ class EstudosController extends Controller
             $token = null;
         }
 
-        $viewerBase = rtrim(getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
-        $viewerUrl  = $token
-            ? $viewerBase . '/open/' . $token
-            : $viewerBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
+        // URL base do OHIF Viewer (para abertura final)
+        $ohifBase = rtrim(getenv('OHIF_VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
+
+        // URL base do próprio sistema PHP (para resolução do token)
+        // O ViewerTokenController está em /open/{token} no PHP, NÃO no OHIF
+        $appBase = rtrim(
+            getenv('APP_URL') ?: ('https://' . ($_SERVER['HTTP_HOST'] ?? 'server.voxelpacs.com.br')),
+            '/'
+        );
+
+        if ($token) {
+            // Fluxo seguro: PHP resolve o token → redireciona para OHIF
+            // Rota: server.voxelpacs.com.br/open/{token} → ViewerTokenController
+            $viewerUrl = $appBase . '/open/' . $token;
+        } else {
+            // Fallback direto: abre o OHIF com StudyInstanceUID
+            $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
+        }
 
         header('Location: ' . $viewerUrl, true, 302);
         exit;
