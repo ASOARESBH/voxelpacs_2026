@@ -42,6 +42,11 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 // Carrega o autoloader customizado (não depende do composer no servidor)
 require_once APP_PATH . '/autoload.php';
 
+// Autoloader do Composer, para as dependências de vendor/ (dompdf, chillerlan/php-qrcode, etc.)
+if (file_exists(BASE_PATH . '/vendor/autoload.php')) {
+    require_once BASE_PATH . '/vendor/autoload.php';
+}
+
 // Função simples para ler .env sem dependência externa
 if (!function_exists('loadEnv')) {
     function loadEnv(string $path): void {

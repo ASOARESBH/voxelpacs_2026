@@ -20,4 +20,14 @@ abstract class Controller {
         }
         return $_SESSION['csrf_token'];
     }
+
+    /**
+     * Valida o header X-CSRF-Token contra o token da sessão.
+     * Não há middleware de CSRF plugado no Router ainda — cada action de escrita chama isto manualmente.
+     */
+    protected function verifyCsrf(): bool {
+        $sent = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        $session = $_SESSION['csrf_token'] ?? '';
+        return $sent !== '' && $session !== '' && hash_equals($session, $sent);
+    }
 }

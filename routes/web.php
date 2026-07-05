@@ -23,7 +23,23 @@ Router::get('/dashboard', 'DashboardController@index');
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
+Router::post('/estudos/{id}/assumir',  'EstudosController@assumir');
 Router::get('/api/estudos/contadores', 'EstudosController@contadores');
+
+// ============================================================
+// REPORTS — Editor de Laudo
+// ============================================================
+// Rotas literais primeiro: o Router faz matching linear por regex,
+// e '/reports/{studyUid}' (catch-all) casaria com qualquer path literal abaixo dele.
+Router::get('/reports/templates',        'ReportsController@templates');
+Router::get('/reports/autotext',         'ReportsController@autotext');
+Router::get('/reports/history',          'ReportsController@history');
+Router::post('/reports/history/restore', 'ReportsController@restoreVersion');
+Router::post('/reports/ai-generate',     'ReportsController@aiGenerate');
+Router::post('/reports/save',            'ReportsController@save');
+Router::post('/reports/sign',            'ReportsController@sign');
+Router::get('/reports/{studyUid}/pdf',   'ReportsController@pdf');
+Router::get('/reports/{studyUid}',       'ReportsController@show');
 
 // ============================================================
 // AGENDAMENTOS

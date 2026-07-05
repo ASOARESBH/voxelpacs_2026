@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Auth;
+use App\Services\ReportService;
 
 /**
  * VOXEL PACS — EstudosController
@@ -118,6 +119,7 @@ class EstudosController extends Controller
                     e.accession_number, e.referring_physician_name,
                     e.performing_physician_name, e.num_series, e.num_instances,
                     e.is_stable, e.study_instance_uid, e.tenant_id,
+                    e.usuario_responsavel_id, e.hora_inicio_laudo,
                     COALESCE(e.situacao, 'novo')    AS situacao,
                     COALESCE(e.especialidade, '')   AS especialidade,
                     COALESCE(e.orthanc_url, '')     AS orthanc_url,
@@ -143,8 +145,8 @@ class EstudosController extends Controller
             )->fetchAll(\PDO::FETCH_COLUMN);
         } catch (\Throwable $ex) { $unidades = []; }
 
-        $situacoes  = ['novo','aberto','urgente','rascunho','assinado'];
-        $contadores = ['novo'=>0,'aberto'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0];
+        $situacoes  = ['novo','aberto','urgente','em_laudo','rascunho','revisao','assinado','liberado'];
+        $contadores = ['novo'=>0,'aberto'=>0,'urgente'=>0,'em_laudo'=>0,'rascunho'=>0,'revisao'=>0,'assinado'=>0,'liberado'=>0];
         try {
             $cWhere  = ['servidor_id = 1'];
             $cParams = [];
@@ -156,10 +158,34 @@ class EstudosController extends Controller
             }
         } catch (\Throwable $ex) {}
 
+        $csrfToken = $this->csrfToken();
+
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
-            'unidades','situacoes','contadores','isAdmin'
+            'unidades','situacoes','contadores','isAdmin','csrfToken'
         ), 'pacs');
+    }
+
+    /**
+     * Botão "Assumir" da Worklist: marca o estudo como em_laudo para o usuário
+     * atual e devolve a URL de /reports/{studyUid} para abrir em nova aba.
+     */
+    public function assumir(int $id): void
+    {
+        if (!$this->verifyCsrf()) {
+            $this->json(['ok' => false, 'error' => 'csrf_invalido'], 403);
+            return;
+        }
+
+        $resultado = (new ReportService())->assumir($id);
+
+        if (!$resultado['ok']) {
+            $status = $resultado['error'] === 'estudo_nao_encontrado' ? 404 : 409;
+            $this->json($resultado, $status);
+            return;
+        }
+
+        $this->json($resultado);
     }
 
     public function abrir(int $id): void

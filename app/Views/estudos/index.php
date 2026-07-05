@@ -15,8 +15,11 @@ function situacaoBadge(string $sit): string {
     $map = [
         'novo'          => ['sit-novo',     'NOVO'],
         'aberto'        => ['sit-aberto',   'ABERTO'],
+        'em_laudo'      => ['sit-em_laudo', 'EM LAUDO'],
         'rascunho'      => ['sit-rascunho', 'RASCUNHO'],
+        'revisao'       => ['sit-revisao',  'REVISÃO'],
         'assinado'      => ['sit-assinado', 'ASSINADO'],
+        'liberado'      => ['sit-liberado', 'LIBERADO'],
         'sem_imagens'   => ['sit-sem-imagens', 'SEM IMAGENS'],
         'sem_pendencia' => ['sit-sem-pend', 'SEM PENDÊNCIA'],
         'urgente'       => ['sit-urgente',  'URGENTE'],
@@ -353,6 +356,11 @@ function formatarIdade(array $e): string {
 
                 <!-- Ações -->
                 <td>
+                    <?php
+                    $donoId       = $e['usuario_responsavel_id'] ?? null;
+                    $souDono      = $donoId && (int)$donoId === (int)(\App\Core\Auth::userId() ?? 0);
+                    $reportsUrl   = '/reports/' . rawurlencode($e['study_instance_uid'] ?? '');
+                    ?>
                     <div class="pacs-actions">
                         <a href="/estudos/<?= $e['id'] ?>/abrir"
                            class="pacs-btn btn-open"
@@ -361,6 +369,24 @@ function formatarIdade(array $e): string {
                            <?= empty($e['study_instance_uid']) && empty($e['orthanc_id']) ? 'style="opacity:.45;pointer-events:none;" title="Sem StudyInstanceUID"' : '' ?>>
                             <i class="fa fa-eye"></i> Abrir
                         </a>
+
+                        <?php if (in_array($sit, ['novo','aberto','urgente'], true)): ?>
+                            <button type="button" class="pacs-btn btn-assumir" title="Assumir laudo"
+                                    onclick="assumirEstudo(<?= (int)$e['id'] ?>, this)"
+                                    <?= empty($e['study_instance_uid']) ? 'style="opacity:.45;pointer-events:none;" title="Sem StudyInstanceUID"' : '' ?>>
+                                <i class="fa fa-hand"></i> Assumir
+                            </button>
+                        <?php elseif (in_array($sit, ['em_laudo','rascunho','revisao'], true)): ?>
+                            <a href="#" class="pacs-btn btn-laudar" title="<?= $souDono ? 'Continuar laudo' : 'Ver laudo em edição' ?>"
+                               onclick="window.open('<?= htmlspecialchars($reportsUrl) ?>','_blank');return false;">
+                                <i class="fa fa-file-pen"></i> Laudar
+                            </a>
+                        <?php else: ?>
+                            <a href="#" class="pacs-btn" title="Abrir laudo"
+                               onclick="window.open('<?= htmlspecialchars($reportsUrl) ?>','_blank');return false;">
+                                <i class="fa fa-file-medical"></i> Laudo
+                            </a>
+                        <?php endif; ?>
                     </div>
                 </td>
             </tr>
@@ -403,6 +429,41 @@ function formatarIdade(array $e): string {
 <?php endif; ?>
 
 <script>
+const CSRF_TOKEN = <?= json_encode($csrfToken ?? '') ?>;
+
+// ── Assumir laudo (abre /reports em nova aba, sem navegar a worklist) ─
+function assumirEstudo(id, btnEl) {
+    btnEl.disabled = true;
+    fetch('/estudos/' + id + '/assumir', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': CSRF_TOKEN }
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) {
+                alert(data.error === 'em_laudo_outro_usuario'
+                    ? 'Este exame já está em edição por ' + (data.usuario_responsavel_nome || 'outro médico') + ' desde ' + (data.hora_inicio_laudo || '—')
+                    : 'Não foi possível assumir este exame.');
+                btnEl.disabled = false;
+                return;
+            }
+
+            const novoBtn = document.createElement('a');
+            novoBtn.href = '#';
+            novoBtn.className = 'pacs-btn btn-laudar';
+            novoBtn.title = 'Continuar laudo';
+            novoBtn.innerHTML = '<i class="fa fa-file-pen"></i> Laudar';
+            novoBtn.onclick = function () { window.open(data.reports_url, '_blank'); return false; };
+            btnEl.replaceWith(novoBtn);
+
+            const row = document.querySelector('tr[data-id="' + id + '"] .situacao-badge');
+            if (row) row.outerHTML = '<span class="situacao-badge sit-em_laudo">EM LAUDO</span>';
+
+            window.open(data.reports_url, '_blank');
+        })
+        .catch(() => { btnEl.disabled = false; alert('Falha ao assumir o exame. Tente novamente.'); });
+}
+
 // ── Seleção de modalidade ────────────────────────────────────
 function setModalidade(mod) {
     const input = document.getElementById('inputModalidade');
