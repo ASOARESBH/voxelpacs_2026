@@ -1,7 +1,23 @@
 <?php
 /**
- * VOXEL PACS — Worklist de Estudos (v3)
+ * VOXEL PACS — Worklist de Estudos (v4)
  * Painel de resumo, filtros avançados, período inteligente, tabela otimizada.
+ * Revisão completa: todos os filtros, prioridade, especialidade, paginação corrigida.
+ *
+ * Variáveis disponíveis:
+ *   $estudos        array  — lista de exames da página atual
+ *   $filtros        array  — filtros ativos
+ *   $total          int    — total de registros filtrados
+ *   $totalPages     int    — total de páginas
+ *   $currentPage    int    — página atual
+ *   $unidades       array  — lista de institution_name para select
+ *   $medicos        array  — lista de assumido_por para select
+ *   $especialidades array  — lista de especialidades para select
+ *   $contadores     array  — contadores por situação
+ *   $resumo         array  — painel de resumo (hoje/semana/mês/total)
+ *   $ultimaSinc     string — timestamp da última sincronização
+ *   $tempoConsulta  float  — tempo da query em ms
+ *   $isAdmin        bool   — usuário é platform admin
  */
 
 function estudoUrl(array $filtros, int $pagina = 1): string {
@@ -61,6 +77,9 @@ function sortLink(array $filtros, string $col, string $label): string {
 $temFiltroAtivo = array_filter(array_diff_key($filtros, [
     'ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1
 ]), fn($v) => $v !== '');
+
+// Garantir que $especialidades está disponível (compatibilidade)
+if (!isset($especialidades)) $especialidades = [];
 
 $periodoLabel = [
     'hoje'=>'Hoje','ontem'=>'Ontem','7dias'=>'7 dias','30dias'=>'30 dias',
@@ -167,12 +186,32 @@ $periodoLabel = [
     </select>
 
     <button type="submit" class="btn-pacs-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
-    <?php if ($temFiltroAtivo): ?>
-    <a href="/estudos" class="btn-pacs-outline" title="Limpar filtros"><i class="fa fa-xmark"></i> Limpar</a>
+    <a href="/estudos?periodo=hoje" class="btn-pacs-outline" title="Limpar filtros e voltar para Hoje"><i class="fa fa-broom"></i> Limpar</a>
+</div>
+
+<!-- Linha 1b: Prioridade -->
+<div class="pacs-filters" style="margin-top:.25rem;">
+    <select name="prioridade" class="form-select" style="width:160px;" onchange="document.getElementById('formFiltros').submit()">
+        <option value=""       <?= ($filtros['prioridade']??'')===''			?'selected':'' ?>>Todas as prioridades</option>
+        <option value="normal" <?= ($filtros['prioridade']??'')==='normal'	?'selected':'' ?>>Normal</option>
+        <option value="rotina" <?= ($filtros['prioridade']??'')==='rotina'	?'selected':'' ?>>Rotina</option>
+        <option value="urgente"<?= ($filtros['prioridade']??'')==='urgente'	?'selected':'' ?>>Urgente</option>
+        <option value="critico"<?= ($filtros['prioridade']??'')==='critico'	?'selected':'' ?>>Crítico</option>
+    </select>
+    <?php if (!empty($especialidades)): ?>
+    <select name="especialidade" class="form-select" style="width:175px;" onchange="document.getElementById('formFiltros').submit()">
+        <option value="">Todas as especialidades</option>
+        <?php foreach ($especialidades as $esp): ?>
+        <option value="<?= htmlspecialchars($esp) ?>" <?= ($filtros['especialidade']??'')===$esp?'selected':'' ?>><?= htmlspecialchars($esp) ?></option>
+        <?php endforeach; ?>
+    </select>
+    <?php else: ?>
+    <input type="text" name="especialidade" class="form-control" style="width:155px;"
+           placeholder="Especialidade" value="<?= htmlspecialchars($filtros['especialidade']??'') ?>">
     <?php endif; ?>
 </div>
 
-<!-- Linha 2: modalidades + especialidade + médico + por página -->
+<!-- Linha 2: modalidades + médico + por página -->
 <div class="pacs-filters-row2">
     <select name="situacao_rapida" class="form-select" style="width:150px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
             onchange="document.getElementById('selectSituacao').value=this.value; document.getElementById('formFiltros').submit();">
@@ -195,8 +234,7 @@ $periodoLabel = [
 
     <span style="color:var(--pacs-border);margin:0 .25rem;">|</span>
 
-    <input type="text" name="especialidade" class="form-control" style="width:155px;"
-           placeholder="Especialidade" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
+    <!-- especialidade movida para linha 1b -->
 
     <?php if (!empty($medicos)): ?>
     <select name="medico" class="form-select" style="width:155px;font-size:.72rem;height:28px;padding:.1rem .5rem;">
@@ -209,8 +247,8 @@ $periodoLabel = [
 
     <select name="por_pagina" class="form-select" style="width:80px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
             onchange="document.getElementById('formFiltros').submit()">
-        <?php foreach ([25,50,100,250] as $pp): ?>
-            <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp ?>/pág</option>
+        <?php foreach ([25,50,100,250,0] as $pp): ?>
+            <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp > 0 ? $pp.'/pág' : 'Todos' ?></option>
         <?php endforeach; ?>
     </select>
 
@@ -422,6 +460,11 @@ $periodoLabel = [
 .row-critico td:first-child{border-left:3px solid #ef4444;}
 .sit-em-laudo{background:rgba(168,85,247,.18);color:#c084fc;}
 .sit-liberado{background:rgba(16,185,129,.18);color:#34d399;}
+.sit-novo{background:rgba(100,116,139,.2);color:#94a3b8;}
+.sit-aberto{background:rgba(59,130,246,.2);color:#60a5fa;}
+.sit-rascunho{background:rgba(234,179,8,.2);color:#facc15;}
+.sit-assinado{background:rgba(16,185,129,.2);color:#34d399;}
+.sit-urgente{background:rgba(249,115,22,.2);color:#f97316;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -448,6 +491,15 @@ function setFiltroRapido(campo, valor) {
     const el = document.querySelector('[name="' + campo + '"]');
     if (el) { el.value = valor; document.getElementById('formFiltros').submit(); }
 }
+
+// Atalho de teclado: / para focar na busca
+document.addEventListener('keydown', function(e) {
+    if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        const q = document.querySelector('[name="q"]');
+        if (q) q.focus();
+    }
+});
 function toggleAll(master) {
     document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
 }
