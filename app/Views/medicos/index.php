@@ -35,7 +35,8 @@
                 $mCrm   = is_array($m) ? ($m['crm'] ?? '') : ($m->crm ?? '');
                 $mEsp   = is_array($m) ? ($m['especialidade'] ?? '') : ($m->especialidade ?? '');
                 $mEmail = is_array($m) ? ($m['email'] ?? '') : ($m->email ?? '');
-                $mSt    = is_array($m) ? ($m['status'] ?? 'ativo') : ($m->status ?? 'ativo');
+                $mAtivo = is_array($m) ? ($m['ativo'] ?? 1) : ($m->ativo ?? 1);
+                $mSt    = $mAtivo ? 'ativo' : 'inativo';
                 ?>
                 <tr>
                     <td style="color:var(--pacs-text-muted);"><?= $mId ?></td>
