@@ -79,6 +79,36 @@ Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
 
 // ============================================================
+// REPORTS — Módulo de Laudos Médicos
+// ============================================================
+// Editor de laudo (GET /reports/{study_uid})
+Router::get('/reports/{study_uid}',        'ReportsController@show');
+
+// Salvar rascunho (autosave ou manual)
+Router::post('/reports/save',              'ReportsController@save');
+
+// Assinar laudo com senha
+Router::post('/reports/sign',              'ReportsController@sign');
+
+// Histórico de versões (AJAX)
+Router::get('/reports/history',            'ReportsController@history');
+
+// Visualizar / baixar PDF
+Router::get('/reports/pdf',                'ReportsController@pdf');
+
+// Carregar template (AJAX)
+Router::get('/reports/template',           'ReportsController@template');
+
+// Assumir estudo (botão worklist, AJAX POST)
+Router::post('/reports/assumir',           'ReportsController@assumir');
+
+// Buscar autotextos (AJAX)
+Router::get('/api/reports/autotext',       'ReportsController@autotextSearch');
+
+// Buscar report_id por estudo_id (usado pelo botão PDF na worklist)
+Router::get('/api/reports/by-estudo',      'ReportsController@byEstudo');
+
+// ============================================================
 // VIEWER — Abertura segura de exames via token temporário
 // Rota PÚBLICA: não exige autenticação
 // Fluxo: /estudos/{id}/abrir → gera token → redireciona aqui

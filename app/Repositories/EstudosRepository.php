@@ -267,4 +267,107 @@ class EstudosRepository
             return null;
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Métodos adicionados pelo módulo Reports (2026-07-05)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Busca um estudo pelo StudyInstanceUID
+     */
+    public function findByStudyUid(string $studyUid, ?int $tenantId, bool $isAdmin): ?array
+    {
+        try {
+            $where  = 'e.study_instance_uid = :uid AND e.servidor_id = 1';
+            $params = [':uid' => $studyUid];
+            if (!$isAdmin && $tenantId) {
+                $where           .= ' AND e.tenant_id = :tid';
+                $params[':tid']   = $tenantId;
+            }
+            $stmt = $this->pdo->prepare(
+                "SELECT e.id, e.orthanc_id, e.study_instance_uid, e.tenant_id,
+                        e.patient_name, e.patient_name_display, e.patient_id,
+                        e.patient_birth_date, e.patient_sex, e.patient_age,
+                        e.patient_weight, e.patient_size,
+                        e.study_date, e.study_time, e.study_description,
+                        e.accession_number, e.modalities, e.institution_name,
+                        e.referring_physician_name, e.num_instances, e.num_series,
+                        e.manufacturer, e.station_name,
+                        COALESCE(e.situacao,'novo') AS situacao,
+                        COALESCE(e.prioridade,'normal') AS prioridade,
+                        COALESCE(e.especialidade,'') AS especialidade,
+                        COALESCE(e.assumido_por,'') AS assumido_por,
+                        e.assumido_em
+                 FROM bi_pacs_estudos e
+                 WHERE {$where}
+                 LIMIT 1"
+            );
+            $stmt->execute($params);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            return $row ?: null;
+        } catch (\Throwable $ex) {
+            \App\Core\Logger::error('Erro ao buscar estudo por StudyUID', [
+                'study_uid' => $studyUid,
+                'error'     => $ex->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Atualiza o status/situação de um estudo na worklist
+     */
+    public function atualizarStatus(int $estudoId, string $situacao, ?int $usuarioId = null): bool
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "UPDATE bi_pacs_estudos SET
+                    situacao     = :situacao,
+                    assumido_por = CASE WHEN :situacao2 = 'em_laudo' THEN :usuario_id ELSE assumido_por END,
+                    assumido_em  = CASE WHEN :situacao3 = 'em_laudo' THEN NOW() ELSE assumido_em END
+                 WHERE id = :id"
+            );
+            return $stmt->execute([
+                ':situacao'   => $situacao,
+                ':situacao2'  => $situacao,
+                ':situacao3'  => $situacao,
+                ':usuario_id' => $usuarioId,
+                ':id'         => $estudoId
+            ]);
+        } catch (\Throwable $ex) {
+            \App\Core\Logger::error('Erro ao atualizar status do estudo', [
+                'estudo_id' => $estudoId,
+                'situacao'  => $situacao,
+                'error'     => $ex->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Registra o médico que assumiu o estudo (botão Assumir na worklist)
+     */
+    public function assumirEstudo(int $estudoId, int $usuarioId): bool
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "UPDATE bi_pacs_estudos SET
+                    situacao     = 'em_laudo',
+                    assumido_por = :usuario_id,
+                    assumido_em  = NOW()
+                 WHERE id = :id AND COALESCE(situacao,'novo') IN ('novo','aberto')"
+            );
+            return $stmt->execute([
+                ':usuario_id' => $usuarioId,
+                ':id'         => $estudoId
+            ]);
+        } catch (\Throwable $ex) {
+            \App\Core\Logger::error('Erro ao assumir estudo', [
+                'estudo_id'  => $estudoId,
+                'usuario_id' => $usuarioId,
+                'error'      => $ex->getMessage()
+            ]);
+            return false;
+        }
+    }
 }
