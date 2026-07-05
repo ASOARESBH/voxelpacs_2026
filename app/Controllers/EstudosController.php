@@ -8,38 +8,106 @@ use App\Core\Auth;
 /**
  * VOXEL PACS — EstudosController
  *
- * Worklist principal: lista, busca e abertura de estudos DICOM.
+ * Worklist principal: lista, busca, filtros avançados e abertura de estudos DICOM.
  * Fonte: bi_pacs_estudos (cache do Orthanc sincronizado via /platform/servidor-pacs).
- * Abertura: gera token temporário e redireciona para OHIF Viewer.
+ * Abertura: redireciona diretamente para OHIF Viewer com StudyInstanceUID.
+ *
+ * Filtros:
+ *   q             → pesquisa global (patient_name, patient_id, study_instance_uid,
+ *                                    accession_number, study_description, institution_name)
+ *   paciente      → patient_name LIKE
+ *   periodo       → hoje|ontem|7dias|30dias|90dias|ano|todos|personalizado
+ *   dt_inicio/dt_fim → usado com periodo=personalizado
+ *   unidade       → institution_name LIKE
+ *   modalidade    → modalities LIKE
+ *   especialidade → especialidade LIKE
+ *   situacao      → novo|aberto|em_laudo|rascunho|assinado|liberado
+ *   prioridade    → normal|urgente|critico
+ *   medico        → assumido_por LIKE
+ *   ordenar       → whitelist de colunas
+ *   direcao       → ASC|DESC
+ *   pagina        → int
+ *   por_pagina    → 25|50|100|250|0 (0=todos)
  */
 class EstudosController extends Controller
 {
+    private const COLUNAS_ORDEM = [
+        'study_date','study_time','patient_name','institution_name',
+        'modalities','especialidade','prioridade','situacao',
+    ];
+
     public function index(): void
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
 
+        // ── Filtros ───────────────────────────────────────────────────────────────────────
+        $periodo = trim($_GET['periodo'] ?? 'hoje');
+        if (!in_array($periodo, ['hoje','ontem','7dias','30dias','90dias','ano','todos','personalizado'])) {
+            $periodo = 'hoje';
+        }
+
         $filtros = [
-            'q'              => trim($_GET['q']              ?? ''),
-            'paciente'       => trim($_GET['paciente']       ?? ''),
-            'unidade'        => trim($_GET['unidade']        ?? ''),
-            'modalidade'     => trim($_GET['modalidade']     ?? ''),
-            'especialidade'  => trim($_GET['especialidade']  ?? ''),
-            'situacao'       => trim($_GET['situacao']       ?? ''),
-            'situacao_rapida'=> trim($_GET['situacao_rapida']?? ''),
-            'dt_inicio'      => trim($_GET['dt_inicio']      ?? ''),
-            'dt_fim'         => trim($_GET['dt_fim']         ?? ''),
-            'ordenar'        => trim($_GET['ordenar']        ?? 'study_date'),
-            'direcao'        => in_array($_GET['direcao'] ?? '', ['ASC','DESC']) ? $_GET['direcao'] : 'DESC',
+            'q'              => trim($_GET['q']             ?? ''),
+            'paciente'       => trim($_GET['paciente']      ?? ''),
+            'periodo'        => $periodo,
+            'dt_inicio'      => trim($_GET['dt_inicio']     ?? ''),
+            'dt_fim'         => trim($_GET['dt_fim']        ?? ''),
+            'unidade'        => trim($_GET['unidade']       ?? ''),
+            'modalidade'     => strtoupper(trim($_GET['modalidade']    ?? '')),
+            'especialidade'  => trim($_GET['especialidade'] ?? ''),
+            'situacao'       => trim($_GET['situacao']      ?? ''),
+            'situacao_rapida'=> trim($_GET['situacao_rapida'] ?? ''),
+            'prioridade'     => trim($_GET['prioridade']    ?? ''),
+            'medico'         => trim($_GET['medico']        ?? ''),
+            'ordenar'        => in_array($_GET['ordenar'] ?? '', self::COLUNAS_ORDEM)
+                                ? $_GET['ordenar'] : 'study_date',
+            'direcao'        => in_array(strtoupper($_GET['direcao'] ?? ''), ['ASC','DESC'])
+                                ? strtoupper($_GET['direcao']) : 'DESC',
             'pagina'         => max(1, (int)($_GET['pagina'] ?? 1)),
-            'por_pagina'     => 25,
+            'por_pagina'     => $this->sanitizarPorPagina((int)($_GET['por_pagina'] ?? 25)),
         ];
 
         if ($filtros['situacao_rapida'] !== '') {
             $filtros['situacao'] = $filtros['situacao_rapida'];
         }
 
+        // ── Calcular datas do período ──────────────────────────────────────────────────────
+        $today = date('Y-m-d');
+        switch ($filtros['periodo']) {
+            case 'hoje':
+                $filtros['dt_inicio'] = $today;
+                $filtros['dt_fim']    = $today;
+                break;
+            case 'ontem':
+                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-1 day'));
+                $filtros['dt_fim']    = date('Y-m-d', strtotime('-1 day'));
+                break;
+            case '7dias':
+                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-6 days'));
+                $filtros['dt_fim']    = $today;
+                break;
+            case '30dias':
+                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-29 days'));
+                $filtros['dt_fim']    = $today;
+                break;
+            case '90dias':
+                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-89 days'));
+                $filtros['dt_fim']    = $today;
+                break;
+            case 'ano':
+                $filtros['dt_inicio'] = date('Y-01-01');
+                $filtros['dt_fim']    = $today;
+                break;
+            case 'todos':
+                $filtros['dt_inicio'] = '';
+                $filtros['dt_fim']    = '';
+                break;
+            // 'personalizado': usa dt_inicio e dt_fim do GET
+        }
+
+        // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
         $where  = ['e.servidor_id = 1'];
         $params = [];
 
@@ -50,10 +118,28 @@ class EstudosController extends Controller
             $where[] = '1=0';
         }
 
+        // Pesquisa global
+        if ($filtros['q'] !== '') {
+            $like = '%' . $filtros['q'] . '%';
+            $where[] = '(e.patient_name LIKE :q1 OR e.patient_id LIKE :q2
+                      OR e.study_instance_uid LIKE :q3 OR e.accession_number LIKE :q4
+                      OR e.study_description LIKE :q5 OR e.institution_name LIKE :q6)';
+            $params[':q1'] = $like; $params[':q2'] = $like;
+            $params[':q3'] = $like; $params[':q4'] = $like;
+            $params[':q5'] = $like; $params[':q6'] = $like;
+        }
+
         if ($filtros['paciente'] !== '') {
-            $where[]            = '(e.patient_name LIKE :pac OR e.patient_name_display LIKE :pac2)';
-            $params[':pac']     = '%' . $filtros['paciente'] . '%';
-            $params[':pac2']    = '%' . $filtros['paciente'] . '%';
+            $where[]        = 'e.patient_name LIKE :pac';
+            $params[':pac'] = '%' . $filtros['paciente'] . '%';
+        }
+        if ($filtros['dt_inicio'] !== '') {
+            $where[]              = 'e.study_date >= :dt_inicio';
+            $params[':dt_inicio'] = $filtros['dt_inicio'];
+        }
+        if ($filtros['dt_fim'] !== '') {
+            $where[]            = 'e.study_date <= :dt_fim';
+            $params[':dt_fim']  = $filtros['dt_fim'];
         }
         if ($filtros['unidade'] !== '') {
             $where[]            = 'e.institution_name LIKE :unidade';
@@ -64,37 +150,29 @@ class EstudosController extends Controller
             $params[':modalidade'] = '%' . $filtros['modalidade'] . '%';
         }
         if ($filtros['especialidade'] !== '') {
-            $where[]                  = '(e.especialidade LIKE :esp OR e.study_description LIKE :esp2)';
-            $params[':esp']           = '%' . $filtros['especialidade'] . '%';
-            $params[':esp2']          = '%' . $filtros['especialidade'] . '%';
+            $where[]        = 'e.especialidade LIKE :esp';
+            $params[':esp'] = '%' . $filtros['especialidade'] . '%';
         }
         if ($filtros['situacao'] !== '') {
-            $where[]             = 'COALESCE(e.situacao,\'novo\') = :situacao';
+            $where[]             = "COALESCE(e.situacao,'novo') = :situacao";
             $params[':situacao'] = $filtros['situacao'];
         }
-        if ($filtros['dt_inicio'] !== '') {
-            $where[]              = 'e.study_date >= :dt_inicio';
-            $params[':dt_inicio'] = $filtros['dt_inicio'];
+        if ($filtros['prioridade'] !== '') {
+            $where[]               = 'e.prioridade = :prioridade';
+            $params[':prioridade'] = $filtros['prioridade'];
         }
-        if ($filtros['dt_fim'] !== '') {
-            $where[]            = 'e.study_date <= :dt_fim';
-            $params[':dt_fim']  = $filtros['dt_fim'];
-        }
-        if ($filtros['q'] !== '') {
-            $where[]       = '(e.patient_name LIKE :q OR e.patient_name_display LIKE :q2 OR e.study_description LIKE :q3 OR e.accession_number LIKE :q4)';
-            $params[':q']  = '%' . $filtros['q'] . '%';
-            $params[':q2'] = '%' . $filtros['q'] . '%';
-            $params[':q3'] = '%' . $filtros['q'] . '%';
-            $params[':q4'] = '%' . $filtros['q'] . '%';
+        if ($filtros['medico'] !== '') {
+            $where[]           = 'e.assumido_por LIKE :medico';
+            $params[':medico'] = '%' . $filtros['medico'] . '%';
         }
 
         $whereStr = implode(' AND ', $where);
-
-        $colsPermitidas = ['study_date','patient_name','institution_name','modalities','study_description','situacao'];
-        $orderCol = in_array($filtros['ordenar'], $colsPermitidas) ? 'e.' . $filtros['ordenar'] : 'e.study_date';
+        $orderCol = 'e.' . $filtros['ordenar'];
         $orderDir = $filtros['direcao'];
 
-        $total = 0;
+        // ── COUNT ─────────────────────────────────────────────────────────────────────────
+        $total       = 0;
+        $tempoInicio = microtime(true);
         try {
             $sc = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$whereStr}");
             $sc->execute($params);
@@ -103,29 +181,51 @@ class EstudosController extends Controller
             error_log('[EstudosController::index] COUNT: ' . $ex->getMessage());
         }
 
-        $totalPages  = max(1, (int)ceil($total / $filtros['por_pagina']));
+        // ── Paginação ─────────────────────────────────────────────────────────────────────
+        $porPagina   = $filtros['por_pagina'];
+        $totalPages  = $porPagina > 0 ? max(1, (int)ceil($total / $porPagina)) : 1;
         $currentPage = min($filtros['pagina'], $totalPages);
-        $offset      = ($currentPage - 1) * $filtros['por_pagina'];
+        $offset      = $porPagina > 0 ? ($currentPage - 1) * $porPagina : 0;
+        $limitClause = $porPagina > 0 ? "LIMIT {$porPagina} OFFSET {$offset}" : '';
 
+        // ── SELECT ────────────────────────────────────────────────────────────────────────
         $estudos = [];
         try {
             $sql = "
                 SELECT
-                    e.id, e.orthanc_id, e.study_date, e.study_time,
-                    e.patient_id, e.patient_name, e.patient_name_display,
-                    e.patient_sex, e.patient_age, e.patient_birth_date,
-                    e.institution_name, e.modalities, e.study_description,
-                    e.accession_number, e.referring_physician_name,
-                    e.performing_physician_name, e.num_series, e.num_instances,
-                    e.is_stable, e.study_instance_uid, e.tenant_id,
-                    COALESCE(e.situacao, 'novo')    AS situacao,
-                    COALESCE(e.especialidade, '')   AS especialidade,
-                    COALESCE(e.orthanc_url, '')     AS orthanc_url,
-                    e.importado_em, e.atualizado_em
+                    e.id,
+                    e.orthanc_id,
+                    e.study_date,
+                    e.study_time,
+                    e.patient_id,
+                    e.patient_name,
+                    e.patient_sex,
+                    e.patient_age,
+                    e.patient_birth_date,
+                    e.institution_name,
+                    e.modalities,
+                    e.study_description,
+                    e.accession_number,
+                    e.referring_physician_name,
+                    e.performing_physician_name,
+                    e.num_series,
+                    e.num_instances,
+                    e.study_instance_uid,
+                    e.tenant_id,
+                    e.manufacturer,
+                    COALESCE(e.situacao,     'novo')   AS situacao,
+                    COALESCE(e.especialidade,'')       AS especialidade,
+                    COALESCE(e.prioridade,   'normal') AS prioridade,
+                    COALESCE(e.assumido_por, '')       AS assumido_por,
+                    e.assumido_em,
+                    e.laudo_assinado_em,
+                    e.urgente_em,
+                    e.importado_em,
+                    e.atualizado_em
                 FROM bi_pacs_estudos e
                 WHERE {$whereStr}
-                ORDER BY {$orderCol} {$orderDir}
-                LIMIT {$filtros['por_pagina']} OFFSET {$offset}
+                ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
+                {$limitClause}
             ";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
@@ -134,45 +234,104 @@ class EstudosController extends Controller
             error_log('[EstudosController::index] SELECT: ' . $ex->getMessage());
         }
 
+        $tempoConsulta = round((microtime(true) - $tempoInicio) * 1000, 1);
+
+        // ── Dados para selects ────────────────────────────────────────────────────────────
         $unidades = [];
         try {
-            $uWhere = ["servidor_id = 1", "institution_name IS NOT NULL", "institution_name != ''"];
-            if (!$isAdmin && $tenantId) $uWhere[] = 'tenant_id = ' . (int)$tenantId;
+            $uW = ['servidor_id = 1', "institution_name IS NOT NULL", "institution_name != ''"];
+            if (!$isAdmin && $tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
             $unidades = $pdo->query(
-                "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uWhere) . " ORDER BY institution_name"
+                "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
             )->fetchAll(\PDO::FETCH_COLUMN);
         } catch (\Throwable $ex) { $unidades = []; }
 
-        $situacoes  = ['novo','aberto','urgente','rascunho','assinado'];
-        $contadores = ['novo'=>0,'aberto'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0];
+        $medicos = [];
         try {
-            $cWhere  = ['servidor_id = 1'];
-            $cParams = [];
-            if (!$isAdmin && $tenantId) { $cWhere[] = 'tenant_id = :tid'; $cParams[':tid'] = $tenantId; }
-            $cStmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE " . implode(' AND ', $cWhere) . " GROUP BY situacao");
-            $cStmt->execute($cParams);
+            $mW = ['servidor_id = 1', "assumido_por IS NOT NULL", "assumido_por != ''"];
+            if (!$isAdmin && $tenantId) $mW[] = 'tenant_id = ' . (int)$tenantId;
+            $medicos = $pdo->query(
+                "SELECT DISTINCT assumido_por FROM bi_pacs_estudos WHERE " . implode(' AND ', $mW) . " ORDER BY assumido_por"
+            )->fetchAll(\PDO::FETCH_COLUMN);
+        } catch (\Throwable $ex) { $medicos = []; }
+
+        // ── Contadores topbar ─────────────────────────────────────────────────────────────
+        $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
+        try {
+            $cW = ['servidor_id = 1'];
+            $cP = [];
+            if (!$isAdmin && $tenantId) { $cW[] = 'tenant_id = :tid'; $cP[':tid'] = $tenantId; }
+            $cBase = implode(' AND ', $cW);
+            $cStmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE {$cBase} GROUP BY situacao");
+            $cStmt->execute($cP);
             foreach ($cStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
                 if (isset($contadores[$r['situacao']])) $contadores[$r['situacao']] = (int)$r['total'];
             }
+            $uStmt = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$cBase} AND prioridade IN ('urgente','critico')");
+            $uStmt->execute($cP);
+            $contadores['urgente'] = (int)$uStmt->fetchColumn();
+        } catch (\Throwable $ex) {}
+
+        // ── Painel de resumo ──────────────────────────────────────────────────────────────
+        $resumo = ['hoje'=>0,'semana'=>0,'mes'=>0,'urgentes'=>$contadores['urgente'],'total'=>0];
+        try {
+            $rW = ['servidor_id = 1'];
+            $rP = [];
+            if (!$isAdmin && $tenantId) { $rW[] = 'tenant_id = :tid3'; $rP[':tid3'] = $tenantId; }
+            $rBase = implode(' AND ', $rW);
+
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date = :d");
+            $s->execute(array_merge($rP, [':d' => $today]));
+            $resumo['hoje'] = (int)$s->fetchColumn();
+
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= :d");
+            $s->execute(array_merge($rP, [':d' => date('Y-m-d', strtotime('-6 days'))]));
+            $resumo['semana'] = (int)$s->fetchColumn();
+
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= :d");
+            $s->execute(array_merge($rP, [':d' => date('Y-m-d', strtotime('-29 days'))]));
+            $resumo['mes'] = (int)$s->fetchColumn();
+
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase}");
+            $s->execute($rP);
+            $resumo['total'] = (int)$s->fetchColumn();
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::index] resumo: ' . $ex->getMessage());
+        }
+
+        // ── Última sincronização ───────────────────────────────────────────────────────────
+        $ultimaSinc = '';
+        try {
+            $s = $pdo->query("SELECT MAX(importado_em) FROM bi_pacs_estudos WHERE servidor_id = 1");
+            $ultimaSinc = $s->fetchColumn() ?: '';
         } catch (\Throwable $ex) {}
 
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
-            'unidades','situacoes','contadores','isAdmin'
+            'unidades','medicos','contadores','resumo',
+            'tempoConsulta','ultimaSinc','isAdmin'
         ), 'pacs');
     }
 
     public function abrir(int $id): void
     {
-        $pdo    = Database::getInstance();
-        $estudo = null;
+        $pdo      = Database::getInstance();
+        $tenantId = Auth::tenantId();
+        $isAdmin  = Auth::isPlatformAdmin();
+        $estudo   = null;
 
         try {
+            $where  = 'id = :id AND servidor_id = 1';
+            $params = [':id' => $id];
+            if (!$isAdmin && $tenantId) {
+                $where           .= ' AND tenant_id = :tid';
+                $params[':tid']   = $tenantId;
+            }
             $stmt = $pdo->prepare(
                 "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id
-                 FROM bi_pacs_estudos WHERE id = :id LIMIT 1"
+                 FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
-            $stmt->execute([':id' => $id]);
+            $stmt->execute($params);
             $estudo = $stmt->fetch(\PDO::FETCH_ASSOC);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::abrir] ' . $ex->getMessage());
@@ -187,13 +346,12 @@ class EstudosController extends Controller
         $orthancId = $estudo['orthanc_id']         ?? '';
 
         if (empty($studyUid) && empty($orthancId)) {
-            $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID. Não é possível abrir no viewer DICOM.');
+            $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
             return;
         }
 
         $uidParaViewer = $studyUid ?: $orthancId;
 
-        // Registrar abertura em log (sem bloquear o redirecionamento)
         try {
             $pdo->prepare("
                 INSERT INTO pacs_viewer_tokens
@@ -213,12 +371,8 @@ class EstudosController extends Controller
             error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
         }
 
-        // ── Abrir OHIF diretamente com StudyInstanceUID ────────────────────────────────────
-        // URL hardcoded do OHIF — não depende de nenhuma variável de ambiente
-        // Prioridade: VIEWER_URL > hardcoded (view.voxelpacs.com.br)
         $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
         $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
-
         header('Location: ' . $viewerUrl, true, 302);
         exit;
     }
@@ -228,23 +382,39 @@ class EstudosController extends Controller
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
+        $where    = ['servidor_id = 1'];
+        $params   = [];
 
-        $where  = ['servidor_id = 1'];
-        $params = [];
-        if (!$isAdmin && $tenantId) { $where[] = 'tenant_id = :tid'; $params[':tid'] = $tenantId; }
-        elseif (!$isAdmin) { $this->json(['novo'=>0,'aberto'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0]); return; }
+        if (!$isAdmin && $tenantId) {
+            $where[]       = 'tenant_id = :tid';
+            $params[':tid'] = $tenantId;
+        } elseif (!$isAdmin) {
+            $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
+            return;
+        }
 
         try {
-            $stmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE " . implode(' AND ', $where) . " GROUP BY situacao");
+            $stmt = $pdo->prepare(
+                "SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total
+                 FROM bi_pacs_estudos WHERE " . implode(' AND ', $where) . " GROUP BY situacao"
+            );
             $stmt->execute($params);
-            $data = ['novo'=>0,'aberto'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0];
+            $data = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0];
             foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
                 if (isset($data[$r['situacao']])) $data[$r['situacao']] = (int)$r['total'];
             }
+            $u = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE " . implode(' AND ', $where) . " AND prioridade IN ('urgente','critico')");
+            $u->execute($params);
+            $data['urgente'] = (int)$u->fetchColumn();
             $this->json($data);
         } catch (\Throwable $ex) {
-            $this->json(['novo'=>0,'aberto'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0]);
+            $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
         }
+    }
+
+    private function sanitizarPorPagina(int $v): int
+    {
+        return in_array($v, [25, 50, 100, 250, 0]) ? $v : 25;
     }
 
     private function gerarToken(): string
