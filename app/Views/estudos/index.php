@@ -283,7 +283,7 @@ $periodoLabel = [
                 <th style="width:130px;"><?= sortLink($filtros,'especialidade','Especialidade') ?></th>
                 <th>Estudo</th>
                 <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
-                <th style="width:80px;text-align:center;">Ações</th>
+                <th style="width:170px;text-align:center;">Ações</th>
             </tr>
         </thead>
         <tbody>
@@ -532,26 +532,31 @@ $periodoLabel = [
 
 /* ── Grupo de ações (Abrir + botão contextual) ── */
 .acoes-grupo{display:inline-flex;gap:.3rem;align-items:center;justify-content:center;flex-wrap:nowrap;}
-.pacs-btn{display:inline-flex;align-items:center;gap:.25rem;padding:.22rem .55rem;border-radius:5px;font-size:.72rem;font-weight:500;border:1px solid transparent;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .1s;white-space:nowrap;line-height:1.4;}
-.pacs-btn:active{transform:scale(.96);}
+/* pacs.css define .pacs-btn como quadrado fixo de 26x26px (botões só-ícone da sidebar/topbar).
+   Aqui os botões têm ícone+texto, então precisamos anular width/height explicitamente —
+   sem isso, o 26x26px do pacs.css prevalece (CSS só sobrescreve por propriedade, não por regra). */
+.acoes-grupo .pacs-btn{display:inline-flex;align-items:center;gap:.25rem;width:auto;height:auto;min-width:0;flex-shrink:0;padding:.22rem .55rem;border-radius:5px;font-size:.72rem;font-weight:500;border:1px solid transparent;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .1s;white-space:nowrap;line-height:1.4;}
+.acoes-grupo .pacs-btn:active{transform:scale(.96);}
 /* Abrir — cinza neutro */
-.btn-open{background:rgba(100,116,139,.18);color:#94a3b8;border-color:rgba(100,116,139,.4);}
-.btn-open:hover{background:rgba(100,116,139,.32);color:#cbd5e1;}
+.acoes-grupo .btn-open{background:rgba(100,116,139,.18);color:#94a3b8;border-color:rgba(100,116,139,.4);}
+.acoes-grupo .btn-open:hover{background:rgba(100,116,139,.32);color:#cbd5e1;}
 /* Assumir — azul ciano */
-.btn-assumir{background:rgba(79,195,247,.15);color:#4fc3f7;border-color:rgba(79,195,247,.5);}
-.btn-assumir:hover{background:rgba(79,195,247,.28);}
+.acoes-grupo .btn-assumir{background:rgba(79,195,247,.15);color:#4fc3f7;border-color:rgba(79,195,247,.5);}
+.acoes-grupo .btn-assumir:hover{background:rgba(79,195,247,.28);}
 /* A Laudar — roxo/violeta */
-.btn-alaudar{background:rgba(168,85,247,.18);color:#c084fc;border-color:rgba(168,85,247,.5);}
-.btn-alaudar:hover{background:rgba(168,85,247,.32);}
+.acoes-grupo .btn-alaudar{background:rgba(168,85,247,.18);color:#c084fc;border-color:rgba(168,85,247,.5);}
+.acoes-grupo .btn-alaudar:hover{background:rgba(168,85,247,.32);}
 /* Laudar genérico */
-.btn-laudar{background:rgba(168,85,247,.15);color:#c084fc;border-color:rgba(168,85,247,.4);}
-.btn-laudar:hover{background:rgba(168,85,247,.3);}
+.acoes-grupo .btn-laudar{background:rgba(168,85,247,.15);color:#c084fc;border-color:rgba(168,85,247,.4);}
+.acoes-grupo .btn-laudar:hover{background:rgba(168,85,247,.3);}
 /* Laudo assinado */
-.btn-view-report{background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.4);}
-.btn-view-report:hover{background:rgba(16,185,129,.3);}
+.acoes-grupo .btn-view-report{background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.4);}
+.acoes-grupo .btn-view-report:hover{background:rgba(16,185,129,.3);}
 /* PDF */
-.btn-pdf{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.4);}
-.btn-pdf:hover{background:rgba(239,68,68,.25);}
+.acoes-grupo .btn-pdf{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.4);}
+.acoes-grupo .btn-pdf:hover{background:rgba(239,68,68,.25);}
+/* Estado "carregando" do botão Assumir (spinner, sem texto) — evita colapsar para 0 largura */
+.acoes-grupo .pacs-btn:disabled{opacity:.7;cursor:wait;min-width:1.6rem;justify-content:center;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
