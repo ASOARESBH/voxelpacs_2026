@@ -79,6 +79,12 @@ Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
 
 // ============================================================
+// API — Ping agendado do servidor PACS (público, chamado pelo cron-job.org)
+// Autenticado via token (?token=...), não por sessão
+// ============================================================
+Router::get('/api/servidor-pacs/cron-ping', 'PacsController@cronPing');
+
+// ============================================================
 // VIEWER — Abertura segura de exames via token temporário
 // Rota PÚBLICA: não exige autenticação
 // Fluxo: /estudos/{id}/abrir → gera token → redireciona aqui

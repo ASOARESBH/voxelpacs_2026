@@ -9,6 +9,8 @@ class Router {
         '/logout',
         '/selecionar-empresa',
         '/open/',
+        '/api/orthanc/ping',
+        '/api/servidor-pacs/cron-ping',
     ];
 
     public static function get(string $path, $handler): void {
