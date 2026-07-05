@@ -379,57 +379,81 @@ $periodoLabel = [
                 <td><?= situacaoBadge($sit) ?></td>
 
                 <td style="text-align:center;">
-                    <div class="d-flex gap-1 justify-content-center flex-wrap">
                     <?php
                     $uid    = $e['study_instance_uid'] ?? '';
                     $eid    = (int)$e['id'];
                     $hasUid = !empty($uid);
                     ?>
+                    <div class="acoes-grupo">
 
-                    <!-- Viewer OHIF sempre disponível se tiver UID -->
+                    <!-- Botão ABRIR (OHIF Viewer) — sempre à esquerda -->
                     <?php if ($hasUid): ?>
-                    <a href="/estudos/<?= $eid ?>/abrir" class="pacs-btn btn-open" title="Abrir no OHIF Viewer" target="_blank">
-                        <i class="fa fa-eye"></i>
+                    <a href="/estudos/<?= $eid ?>/abrir"
+                       class="pacs-btn btn-open"
+                       title="Abrir no OHIF Viewer"
+                       target="_blank">
+                        <i class="fa fa-eye"></i> Abrir
                     </a>
+                    <?php else: ?>
+                    <span class="pacs-btn btn-open" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
+                        <i class="fa fa-eye-slash"></i> Abrir
+                    </span>
                     <?php endif; ?>
 
+                    <!-- Botão CONTEXTUAL — muda conforme situação -->
                     <?php if ($sit === 'novo' || $sit === 'aberto'): ?>
-                        <button class="pacs-btn btn-assumir" title="Assumir e iniciar laudo"
-                                onclick="assumirEstudo(<?= $eid ?>, this)">
+                        <!-- ASSUMIR: POST AJAX → muda status para em_laudo e transforma o botão em "A Laudar" -->
+                        <button class="pacs-btn btn-assumir"
+                                title="Assumir este estudo e iniciar laudo"
+                                data-estudo-id="<?= $eid ?>"
+                                data-study-uid="<?= htmlspecialchars($uid) ?>"
+                                onclick="assumirEstudo(this)">
                             <i class="fa fa-user-doctor"></i> Assumir
                         </button>
 
                     <?php elseif ($sit === 'em_laudo' || $sit === 'rascunho'): ?>
+                        <!-- A LAUDAR: abre o módulo de laudo diretamente -->
                         <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>" class="pacs-btn btn-laudar" title="Continuar laudo">
-                            <i class="fa fa-pen-to-square"></i> Continuar
+                        <a href="/reports/<?= urlencode($uid) ?>"
+                           class="pacs-btn btn-alaudar"
+                           title="Abrir editor de laudo">
+                            <i class="fa fa-pen-to-square"></i> A Laudar
                         </a>
+                        <?php else: ?>
+                        <button class="pacs-btn btn-alaudar"
+                                title="Abrir editor de laudo"
+                                onclick="abrirLaudoPorId(<?= $eid ?>)">
+                            <i class="fa fa-pen-to-square"></i> A Laudar
+                        </button>
                         <?php endif; ?>
 
                     <?php elseif ($sit === 'assinado' || $sit === 'liberado'): ?>
+                        <!-- LAUDO PRONTO: visualizar + PDF -->
                         <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>" class="pacs-btn btn-view-report" title="Visualizar laudo" target="_blank">
+                        <a href="/reports/<?= urlencode($uid) ?>"
+                           class="pacs-btn btn-view-report"
+                           title="Visualizar laudo"
+                           target="_blank">
                             <i class="fa fa-file-medical"></i> Laudo
                         </a>
-                        <?php endif; ?>
+                        <?php else: ?>
                         <button class="pacs-btn btn-pdf" title="Baixar PDF"
                                 onclick="abrirPdfLaudo(<?= $eid ?>)">
-                            <i class="fa fa-file-pdf"></i>
+                            <i class="fa fa-file-pdf"></i> PDF
                         </button>
+                        <?php endif; ?>
 
                     <?php else: ?>
+                        <!-- ESTADO GENÉRICO: laudar -->
                         <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>" class="pacs-btn btn-laudar" title="Abrir editor de laudo">
+                        <a href="/reports/<?= urlencode($uid) ?>"
+                           class="pacs-btn btn-laudar"
+                           title="Abrir editor de laudo">
                             <i class="fa fa-pen"></i> Laudar
                         </a>
                         <?php endif; ?>
                     <?php endif; ?>
 
-                    <?php if (!$hasUid): ?>
-                    <span class="pacs-btn" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
-                        <i class="fa fa-eye-slash"></i>
-                    </span>
-                    <?php endif; ?>
                     </div>
                 </td>
             </tr>
@@ -506,18 +530,28 @@ $periodoLabel = [
 .sit-assinado{background:rgba(16,185,129,.2);color:#34d399;}
 .sit-urgente{background:rgba(249,115,22,.2);color:#f97316;}
 
-/* ── Botões de ação dinâmicos ── */
-.btn-assumir{background:rgba(79,195,247,.15);color:#4fc3f7;border-color:#4fc3f7;}
-.btn-assumir:hover{background:rgba(79,195,247,.3);}
-.btn-laudar{background:rgba(168,85,247,.15);color:#c084fc;border-color:#c084fc;}
+/* ── Grupo de ações (Abrir + botão contextual) ── */
+.acoes-grupo{display:inline-flex;gap:.3rem;align-items:center;justify-content:center;flex-wrap:nowrap;}
+.pacs-btn{display:inline-flex;align-items:center;gap:.25rem;padding:.22rem .55rem;border-radius:5px;font-size:.72rem;font-weight:500;border:1px solid transparent;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .1s;white-space:nowrap;line-height:1.4;}
+.pacs-btn:active{transform:scale(.96);}
+/* Abrir — cinza neutro */
+.btn-open{background:rgba(100,116,139,.18);color:#94a3b8;border-color:rgba(100,116,139,.4);}
+.btn-open:hover{background:rgba(100,116,139,.32);color:#cbd5e1;}
+/* Assumir — azul ciano */
+.btn-assumir{background:rgba(79,195,247,.15);color:#4fc3f7;border-color:rgba(79,195,247,.5);}
+.btn-assumir:hover{background:rgba(79,195,247,.28);}
+/* A Laudar — roxo/violeta */
+.btn-alaudar{background:rgba(168,85,247,.18);color:#c084fc;border-color:rgba(168,85,247,.5);}
+.btn-alaudar:hover{background:rgba(168,85,247,.32);}
+/* Laudar genérico */
+.btn-laudar{background:rgba(168,85,247,.15);color:#c084fc;border-color:rgba(168,85,247,.4);}
 .btn-laudar:hover{background:rgba(168,85,247,.3);}
-.btn-view-report{background:rgba(16,185,129,.15);color:#34d399;border-color:#34d399;}
+/* Laudo assinado */
+.btn-view-report{background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.4);}
 .btn-view-report:hover{background:rgba(16,185,129,.3);}
-.btn-pdf{background:rgba(239,68,68,.12);color:#f87171;border-color:#f87171;}
+/* PDF */
+.btn-pdf{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.4);}
 .btn-pdf:hover{background:rgba(239,68,68,.25);}
-.btn-open{background:rgba(100,116,139,.15);color:#94a3b8;border-color:#94a3b8;}
-.btn-open:hover{background:rgba(100,116,139,.3);}
-.pacs-btn{display:inline-flex;align-items:center;gap:.25rem;padding:.2rem .5rem;border-radius:4px;font-size:.72rem;border:1px solid transparent;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s;white-space:nowrap;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -564,20 +598,48 @@ document.querySelectorAll('.pacs-table tbody tr[data-id]').forEach(row => {
 });
 
 // ── Assumir Estudo ──
-function assumirEstudo(estudoId, btn) {
+// Recebe o elemento <button> diretamente (onclick="assumirEstudo(this)")
+function assumirEstudo(btn) {
+    const estudoId = btn.dataset.estudoId;
+    const studyUid = btn.dataset.studyUid;
     if (!estudoId) return;
+
+    // Feedback visual imediato
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
 
     fetch('/reports/assumir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estudo_id: estudoId })
+        body: JSON.stringify({ estudo_id: parseInt(estudoId) })
     })
-    .then(r => r.json())
+    .then(function(r) { return r.json(); })
     .then(function(data) {
-        if (data.ok && data.url) {
-            window.location.href = data.url;
+        if (data.ok) {
+            // ✔ Transforma o botão em "A Laudar" SEM recarregar a página
+            btn.disabled  = false;
+            btn.className = 'pacs-btn btn-alaudar';
+            btn.title     = 'Abrir editor de laudo';
+            btn.innerHTML = '<i class="fa fa-pen-to-square"></i> A Laudar';
+
+            // Ao clicar em "A Laudar", abre o módulo de laudo
+            btn.onclick = function() {
+                if (studyUid) {
+                    window.location.href = '/reports/' + encodeURIComponent(studyUid);
+                } else {
+                    abrirLaudoPorId(parseInt(estudoId));
+                }
+            };
+
+            // Atualiza o badge de situação na mesma linha
+            var row = btn.closest('tr');
+            if (row) {
+                var badge = row.querySelector('.situacao-badge');
+                if (badge) {
+                    badge.className = 'situacao-badge sit-em-laudo';
+                    badge.textContent = 'EM LAUDO';
+                }
+            }
         } else {
             alert(data.msg || 'Erro ao assumir o estudo.');
             btn.disabled = false;
@@ -589,6 +651,21 @@ function assumirEstudo(estudoId, btn) {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-user-doctor"></i> Assumir';
     });
+}
+
+// ── Abrir laudo por estudo_id (fallback sem study_uid) ──
+function abrirLaudoPorId(estudoId) {
+    fetch('/api/reports/by-estudo?estudo_id=' + estudoId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.report_id) {
+            window.location.href = '/reports/' + data.report_id;
+        } else {
+            // Cria novo laudo
+            window.location.href = '/reports/novo?estudo_id=' + estudoId;
+        }
+    })
+    .catch(function() { alert('Erro ao abrir laudo.'); });
 }
 
 // ── Abrir PDF do Laudo ──
