@@ -89,19 +89,4 @@ class Auth {
     public static function setTenant(int $tenantId): void {
         $_SESSION['tenant_id'] = $tenantId;
     }
-
-    /**
-     * Reverifica a senha do usuário autenticado (sessão não guarda a senha).
-     * Usado no fluxo de assinatura de laudos.
-     */
-    public static function verifyPassword(string $password): bool {
-        $userId = self::userId();
-        if (!$userId) return false;
-
-        $stmt = Database::getInstance()->prepare("SELECT password FROM bi_users WHERE id = :id LIMIT 1");
-        $stmt->execute(['id' => $userId]);
-        $hash = $stmt->fetchColumn();
-
-        return $hash && password_verify($password, $hash);
-    }
 }

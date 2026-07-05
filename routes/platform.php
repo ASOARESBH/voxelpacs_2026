@@ -45,8 +45,6 @@ Router::get('/platform/reports/exportar',               'Platform\PlatformReport
 Router::get('/platform/servidor-pacs',                              'Platform\ServidorPacsController@index');
 Router::get('/platform/servidor-pacs/configurar',                   'Platform\ServidorPacsController@configurar');
 Router::post('/platform/servidor-pacs/salvar-config',               'Platform\ServidorPacsController@salvarConfig');
-Router::post('/platform/servidor-pacs/cron/gerar-token',            'Platform\ServidorPacsController@gerarTokenCron');
-Router::get('/platform/servidor-pacs/cron/execucoes',               'Platform\ServidorPacsController@execucoesCron');
 Router::post('/platform/servidor-pacs/testar',                      'Platform\ServidorPacsController@testar');
 Router::post('/platform/servidor-pacs/sincronizar',                 'Platform\ServidorPacsController@sincronizar');
 Router::get('/platform/servidor-pacs/roteamento',                   'Platform\ServidorPacsController@roteamento');

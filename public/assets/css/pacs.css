@@ -565,9 +565,6 @@ body {
 .sit-sem-pend    { background: #1a237e; color: #9fa8da; }
 .sit-previa      { background: #e65100; color: #ffcc80; }
 .sit-urgente     { background: #b71c1c; color: #ef9a9a; }
-.sit-em_laudo    { background: #ff6f00; color: #ffe0b2; }
-.sit-revisao     { background: #6a1b9a; color: #e1bee7; }
-.sit-liberado    { background: #1b5e20; color: #a5d6a7; }
 
 /* ── BADGE MODALIDADE ── */
 .mod-badge {
@@ -651,30 +648,6 @@ body {
     background: #1976d2;
     color: #fff;
 }
-
-.pacs-btn.btn-assumir {
-    background: #ff6f00;
-    border-color: #ff8f00;
-    color: #fff;
-    font-size: .7rem;
-    width: auto;
-    padding: 0 .6rem;
-    gap: .25rem;
-    font-weight: 600;
-}
-.pacs-btn.btn-assumir:hover { background: #ff8f00; color: #fff; }
-
-.pacs-btn.btn-laudar {
-    background: #6a1b9a;
-    border-color: #8e24aa;
-    color: #fff;
-    font-size: .7rem;
-    width: auto;
-    padding: 0 .6rem;
-    gap: .25rem;
-    font-weight: 600;
-}
-.pacs-btn.btn-laudar:hover { background: #8e24aa; color: #fff; }
 
 /* ── PAGINAÇÃO ── */
 .pacs-pagination {
@@ -1098,9 +1071,6 @@ body {
 .sit-sem-pend    { background: #1a3a1a; color: #69f0ae; }
 .sit-urgente     { background: #b71c1c; color: #fff; animation: pulse-danger 1.5s infinite; }
 .sit-previa      { background: #f57f17; color: #fff; }
-.sit-em_laudo    { background: #ff6f00; color: #fff; }
-.sit-revisao     { background: #6a1b9a; color: #f3e5f5; }
-.sit-liberado    { background: #1b5e20; color: #90ee90; }
 
 @keyframes pulse-danger {
     0%, 100% { opacity: 1; }
@@ -1171,10 +1141,6 @@ body {
 .pacs-btn:hover { border-color: var(--pacs-primary); color: var(--pacs-primary); }
 .pacs-btn.btn-open { background: #1565c0; border-color: #1976d2; color: #fff; font-weight: 600; }
 .pacs-btn.btn-open:hover { background: #1976d2; color: #fff; }
-.pacs-btn.btn-assumir { background: #ff6f00; border-color: #ff8f00; color: #fff; font-weight: 600; }
-.pacs-btn.btn-assumir:hover { background: #ff8f00; color: #fff; }
-.pacs-btn.btn-laudar { background: #6a1b9a; border-color: #8e24aa; color: #fff; font-weight: 600; }
-.pacs-btn.btn-laudar:hover { background: #8e24aa; color: #fff; }
 
 /* ── Paginação ──────────────────────────────────────────────────── */
 .pacs-pagination {

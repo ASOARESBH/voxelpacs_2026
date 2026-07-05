@@ -1,8 +1,5 @@
 <?php
 // View: Servidor PACS — Configuração da conexão Orthanc
-$cronBaseUrl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
-$cronToken   = $servidor['sync_cron_token'] ?? '';
-$cronUrl     = $cronBaseUrl . '/api/servidor-pacs/cron-ping' . ($cronToken ? ('?token=' . $cronToken) : '');
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -86,87 +83,6 @@ $cronUrl     = $cronBaseUrl . '/api/servidor-pacs/cron-ping' . ($cronToken ? ('?
                 <div id="testeResult" class="mt-3 d-none"></div>
             </div>
         </div>
-
-        <div class="card border-0 shadow-sm mt-3">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold"><i class="fa fa-clock me-2"></i>Sincronização Automática (Ping Agendado)</h6>
-                <span class="badge bg-<?= !empty($servidor['sync_auto_ativo']) ? 'success' : 'secondary' ?>">
-                    <?= !empty($servidor['sync_auto_ativo']) ? 'Ativo' : 'Inativo' ?>
-                </span>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-info small">
-                    <i class="fa fa-info-circle me-2"></i>
-                    Defina de quanto em quanto tempo o VOXEL PACS deve verificar (ping) se o servidor Orthanc está
-                    disponível. Um serviço externo gratuito, o <a href="https://cron-job.org" target="_blank" rel="noopener">cron-job.org</a>,
-                    é responsável por chamar a URL abaixo no intervalo configurado.
-                </div>
-
-                <div class="row mb-3">
-                    <div class="col-md-5">
-                        <label class="form-label fw-semibold">Intervalo de ping</label>
-                        <div class="input-group">
-                            <input type="number" name="sync_intervalo_minutos" form="formConfig" id="syncIntervalo"
-                                   class="form-control" min="1" max="1440"
-                                   value="<?= (int)($servidor['sync_intervalo_minutos'] ?? 60) ?>">
-                            <span class="input-group-text">minutos</span>
-                        </div>
-                        <small class="text-muted">De 1 minuto até 1440 minutos (24 horas)</small>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Atalhos</label>
-                        <select class="form-select" onchange="if(this.value) document.getElementById('syncIntervalo').value = this.value;">
-                            <option value="">Selecione…</option>
-                            <option value="1">1 minuto</option>
-                            <option value="5">5 minutos</option>
-                            <option value="15">15 minutos</option>
-                            <option value="30">30 minutos</option>
-                            <option value="60">1 hora</option>
-                            <option value="360">6 horas</option>
-                            <option value="720">12 horas</option>
-                            <option value="1440">24 horas</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end">
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" role="switch"
-                                   name="sync_auto_ativo" form="formConfig" id="syncAtivo" value="1"
-                                   <?= !empty($servidor['sync_auto_ativo']) ? 'checked' : '' ?>>
-                            <label class="form-check-label small" for="syncAtivo">Ativar</label>
-                        </div>
-                    </div>
-                </div>
-                <small class="text-muted d-block mb-3">
-                    <i class="fa fa-arrow-up me-1"></i>O intervalo e a ativação são salvos junto com o botão
-                    <strong>Salvar Configurações</strong> do formulário acima.
-                </small>
-
-                <label class="form-label fw-semibold">URL para o cron-job.org</label>
-                <div class="input-group mb-2">
-                    <input type="text" id="cronUrlInput" class="form-control form-control-sm" readonly
-                           value="<?= htmlspecialchars($cronUrl) ?>"
-                           placeholder="Gere um token para obter a URL">
-                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copiarCronUrl()">
-                        <i class="fa fa-copy"></i>
-                    </button>
-                    <button class="btn btn-outline-primary btn-sm" type="button" onclick="gerarTokenCron()">
-                        <i class="fa fa-key me-1"></i> Gerar Token
-                    </button>
-                </div>
-                <div id="cronTokenResult" class="small mb-2"></div>
-
-                <details class="small">
-                    <summary class="text-primary" style="cursor:pointer;">Como configurar no cron-job.org?</summary>
-                    <ol class="mt-2 mb-0 ps-3">
-                        <li>Clique em <strong>Gerar Token</strong> e depois em <strong>Salvar Configurações</strong>.</li>
-                        <li>Crie uma conta gratuita em <a href="https://cron-job.org" target="_blank" rel="noopener">cron-job.org</a>.</li>
-                        <li>Clique em <strong>Create cronjob</strong>, cole a URL gerada acima em "URL" e defina o método <strong>GET</strong>.</li>
-                        <li>Em "Execution schedule", configure o mesmo intervalo definido acima (ex: a cada 5 minutos).</li>
-                        <li>Salve. O cron-job.org passará a chamar o VOXEL PACS automaticamente e cada execução aparecerá no histórico ao lado.</li>
-                    </ol>
-                </details>
-            </div>
-        </div>
     </div>
 
     <div class="col-md-5">
@@ -227,45 +143,6 @@ $cronUrl     = $cronBaseUrl . '/api/servidor-pacs/cron-ping' . ($cronToken ? ('?
             </div>
         </div>
         <?php endif; ?>
-
-        <div class="card border-0 shadow-sm mt-3">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold"><i class="fa fa-list-check me-2"></i>Histórico de Execuções</h6>
-                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="atualizarHistoricoCron()">
-                    <i class="fa fa-rotate"></i>
-                </button>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive" style="max-height:320px;">
-                    <table class="table table-sm table-hover mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Data/Hora</th>
-                                <th>Origem</th>
-                                <th>Resultado</th>
-                                <th>Tempo</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cronExecucoesBody">
-                            <?php if (empty($execucoes)): ?>
-                                <tr><td colspan="4" class="text-center text-muted py-3">Nenhuma execução registrada ainda.</td></tr>
-                            <?php else: foreach ($execucoes as $exec): ?>
-                                <tr>
-                                    <td class="small"><?= htmlspecialchars($exec['executado_em']) ?></td>
-                                    <td class="small"><?= htmlspecialchars($exec['origem']) ?></td>
-                                    <td>
-                                        <span class="badge bg-<?= $exec['sucesso'] ? 'success' : 'danger' ?>">
-                                            <?= $exec['sucesso'] ? 'Sucesso' : 'Falha' ?>
-                                        </span>
-                                    </td>
-                                    <td class="small"><?= (int)$exec['tempo_resposta_ms'] ?> ms</td>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -303,59 +180,5 @@ function testarConexaoForm() {
             result.className = 'mt-3 alert alert-danger';
             result.innerHTML = '<i class="fa fa-times-circle me-2"></i>Erro de comunicação.';
         });
-}
-
-function gerarTokenCron() {
-    const result = document.getElementById('cronTokenResult');
-    result.className = 'small mb-2 text-muted';
-    result.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i>Gerando token...';
-
-    fetch('/platform/servidor-pacs/cron/gerar-token', {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}})
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                const base = window.location.origin + '/api/servidor-pacs/cron-ping?token=' + data.token;
-                document.getElementById('cronUrlInput').value = base;
-                result.className = 'small mb-2 text-success';
-                result.innerHTML = '<i class="fa fa-check-circle me-1"></i>Novo token gerado! Atualize a URL cadastrada no cron-job.org.';
-            } else {
-                result.className = 'small mb-2 text-danger';
-                result.innerHTML = '<i class="fa fa-times-circle me-1"></i>' + (data.message || 'Erro ao gerar token.');
-            }
-        })
-        .catch(() => {
-            result.className = 'small mb-2 text-danger';
-            result.innerHTML = '<i class="fa fa-times-circle me-1"></i>Erro de comunicação.';
-        });
-}
-
-function copiarCronUrl() {
-    const input = document.getElementById('cronUrlInput');
-    if (!input.value) return;
-    input.select();
-    navigator.clipboard?.writeText(input.value).catch(() => document.execCommand('copy'));
-}
-
-function atualizarHistoricoCron() {
-    const tbody = document.getElementById('cronExecucoesBody');
-
-    fetch('/platform/servidor-pacs/cron/execucoes', {headers: {'X-Requested-With': 'XMLHttpRequest'}})
-        .then(r => r.json())
-        .then(data => {
-            if (!data.success) return;
-            if (!data.execucoes.length) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Nenhuma execução registrada ainda.</td></tr>';
-                return;
-            }
-            tbody.innerHTML = data.execucoes.map(exec => `
-                <tr>
-                    <td class="small">${exec.executado_em}</td>
-                    <td class="small">${exec.origem}</td>
-                    <td><span class="badge bg-${exec.sucesso == 1 ? 'success' : 'danger'}">${exec.sucesso == 1 ? 'Sucesso' : 'Falha'}</span></td>
-                    <td class="small">${exec.tempo_resposta_ms ?? 0} ms</td>
-                </tr>
-            `).join('');
-        })
-        .catch(() => {});
 }
 </script>
