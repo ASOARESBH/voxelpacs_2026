@@ -27,7 +27,7 @@
     </div>
     
     <div class="card-body">
-        <form action="<?= isset($negocio) ? '/platform/negocios/'.$negocio['id'].'/update' : '/platform/negocios' ?>" method="POST" id="formNegocio">
+        <form action="<?= isset($negocio) ? '/platform/negocios/'.$negocio->id.'/update' : '/platform/negocios' ?>" method="POST" id="formNegocio">
             <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
             
             <div class="tab-content" id="negocioTabsContent">
@@ -38,7 +38,7 @@
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">CNPJ</label>
                             <div class="input-group">
-                                <input type="text" name="cnpj" id="cnpj" class="form-control" value="<?= htmlspecialchars($negocio['cnpj'] ?? '') ?>" placeholder="00.000.000/0000-00">
+                                <input type="text" name="cnpj" id="cnpj" class="form-control" value="<?= htmlspecialchars($negocio->cnpj ?? '') ?>" placeholder="00.000.000/0000-00">
                                 <button class="btn btn-outline-primary" type="button" id="btnBuscarCnpj" onclick="buscarCnpj()">
                                     <i class="fa fa-search"></i> Buscar
                                 </button>
@@ -47,48 +47,48 @@
                         </div>
                         <div class="col-md-8">
                             <label class="form-label fw-semibold">Razão Social</label>
-                            <input type="text" name="razao_social" id="razao_social" class="form-control" value="<?= htmlspecialchars($negocio['razao_social'] ?? '') ?>" required>
+                            <input type="text" name="razao_social" id="razao_social" class="form-control" value="<?= htmlspecialchars($negocio->razao_social ?? '') ?>" required>
                         </div>
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Nome Fantasia (Nome de Exibição)</label>
-                            <input type="text" name="nome" id="nome_fantasia" class="form-control" value="<?= htmlspecialchars($negocio['nome'] ?? '') ?>" required>
+                            <input type="text" name="nome" id="nome_fantasia" class="form-control" value="<?= htmlspecialchars($negocio->nome ?? '') ?>" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Slug (URL / Identificador)</label>
-                            <input type="text" name="slug" id="slug" class="form-control" value="<?= htmlspecialchars($negocio['slug'] ?? '') ?>" required <?= isset($negocio) ? 'readonly' : '' ?>>
+                            <input type="text" name="slug" id="slug" class="form-control" value="<?= htmlspecialchars($negocio->slug ?? '') ?>" required <?= isset($negocio) ? 'readonly' : '' ?>>
                         </div>
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">CEP</label>
-                            <input type="text" name="cep" id="cep" class="form-control" value="<?= htmlspecialchars($negocio['cep'] ?? '') ?>">
+                            <input type="text" name="cep" id="cep" class="form-control" value="<?= htmlspecialchars($negocio->cep ?? '') ?>">
                         </div>
                         <div class="col-md-7">
                             <label class="form-label fw-semibold">Logradouro</label>
-                            <input type="text" name="logradouro" id="logradouro" class="form-control" value="<?= htmlspecialchars($negocio['logradouro'] ?? '') ?>">
+                            <input type="text" name="logradouro" id="logradouro" class="form-control" value="<?= htmlspecialchars($negocio->logradouro ?? '') ?>">
                         </div>
                         <div class="col-md-2">
                             <label class="form-label fw-semibold">Número</label>
-                            <input type="text" name="numero" id="numero" class="form-control" value="<?= htmlspecialchars($negocio['numero'] ?? '') ?>">
+                            <input type="text" name="numero" id="numero" class="form-control" value="<?= htmlspecialchars($negocio->numero ?? '') ?>">
                         </div>
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">Bairro</label>
-                            <input type="text" name="bairro" id="bairro" class="form-control" value="<?= htmlspecialchars($negocio['bairro'] ?? '') ?>">
+                            <input type="text" name="bairro" id="bairro" class="form-control" value="<?= htmlspecialchars($negocio->bairro ?? '') ?>">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Cidade</label>
-                            <input type="text" name="cidade" id="cidade" class="form-control" value="<?= htmlspecialchars($negocio['cidade'] ?? '') ?>">
+                            <input type="text" name="cidade" id="cidade" class="form-control" value="<?= htmlspecialchars($negocio->cidade ?? '') ?>">
                         </div>
                         <div class="col-md-2">
                             <label class="form-label fw-semibold">Estado</label>
-                            <input type="text" name="estado" id="estado" class="form-control" value="<?= htmlspecialchars($negocio['estado'] ?? '') ?>">
+                            <input type="text" name="estado" id="estado" class="form-control" value="<?= htmlspecialchars($negocio->estado ?? '') ?>">
                         </div>
                     </div>
                 </div>
@@ -103,19 +103,19 @@
                                 <div class="row mb-3 contato-row border-bottom pb-3">
                                     <div class="col-md-3">
                                         <label class="form-label small">Nome</label>
-                                        <input type="text" name="contatos[<?= $i ?>][nome]" class="form-control form-control-sm" value="<?= htmlspecialchars($c['nome'] ?? '') ?>">
+                                        <input type="text" name="contatos[<?= $i ?>][nome]" class="form-control form-control-sm" value="<?= htmlspecialchars($c->nome ?? '') ?>">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small">E-mail</label>
-                                        <input type="email" name="contatos[<?= $i ?>][email]" class="form-control form-control-sm" value="<?= htmlspecialchars($c['email'] ?? '') ?>">
+                                        <input type="email" name="contatos[<?= $i ?>][email]" class="form-control form-control-sm" value="<?= htmlspecialchars($c->email ?? '') ?>">
                                     </div>
                                     <div class="col-md-2">
                                         <label class="form-label small">Telefone</label>
-                                        <input type="text" name="contatos[<?= $i ?>][telefone]" class="form-control form-control-sm" value="<?= htmlspecialchars($c['telefone'] ?? '') ?>">
+                                        <input type="text" name="contatos[<?= $i ?>][telefone]" class="form-control form-control-sm" value="<?= htmlspecialchars($c->telefone ?? '') ?>">
                                     </div>
                                     <div class="col-md-2">
                                         <label class="form-label small">WhatsApp</label>
-                                        <input type="text" name="contatos[<?= $i ?>][whatsapp]" class="form-control form-control-sm" value="<?= htmlspecialchars($c['whatsapp'] ?? '') ?>">
+                                        <input type="text" name="contatos[<?= $i ?>][whatsapp]" class="form-control form-control-sm" value="<?= htmlspecialchars($c->whatsapp ?? '') ?>">
                                     </div>
                                     <div class="col-md-2 d-flex align-items-end">
                                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.contato-row').remove()"><i class="fa fa-trash"></i></button>
@@ -154,15 +154,15 @@
                             <div class="mb-3">
                                 <label class="form-label fw-semibold">Status</label>
                                 <select name="status" class="form-select">
-                                    <option value="ativo" <?= ($negocio['status'] ?? '') === 'ativo' ? 'selected' : '' ?>>Ativo</option>
-                                    <option value="trial" <?= ($negocio['status'] ?? 'trial') === 'trial' ? 'selected' : '' ?>>Trial (Teste)</option>
-                                    <option value="suspenso" <?= ($negocio['status'] ?? '') === 'suspenso' ? 'selected' : '' ?>>Suspenso</option>
-                                    <option value="cancelado" <?= ($negocio['status'] ?? '') === 'cancelado' ? 'selected' : '' ?>>Cancelado</option>
+                                    <option value="ativo" <?= ($negocio->status ?? '') === 'ativo' ? 'selected' : '' ?>>Ativo</option>
+                                    <option value="trial" <?= ($negocio->status ?? 'trial') === 'trial' ? 'selected' : '' ?>>Trial (Teste)</option>
+                                    <option value="suspenso" <?= ($negocio->status ?? '') === 'suspenso' ? 'selected' : '' ?>>Suspenso</option>
+                                    <option value="cancelado" <?= ($negocio->status ?? '') === 'cancelado' ? 'selected' : '' ?>>Cancelado</option>
                                 </select>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label fw-semibold">Cor Primária (White Label)</label>
-                                <input type="color" name="cor_primaria" class="form-control form-control-color w-100" value="<?= htmlspecialchars($negocio['cor_primaria'] ?? '#3b82f6') ?>">
+                                <input type="color" name="cor_primaria" class="form-control form-control-color w-100" value="<?= htmlspecialchars($negocio->cor_primaria ?? '#3b82f6') ?>">
                             </div>
                         </div>
                         
@@ -199,7 +199,7 @@
                             <label class="form-label fw-semibold">Plano Contratado</label>
                             <select name="plan_id" class="form-select form-select-lg mb-3">
                                 <?php foreach ($planos as $p): ?>
-                                    <option value="<?= $p['id'] ?>" <?= ($negocio['plan_id'] ?? 1) == $p['id'] ? 'selected' : '' ?>>
+                                    <option value="<?= $p['id'] ?>" <?= ($negocio->plan_id ?? 1) == $p['id'] ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($p['nome']) ?> — R$ <?= number_format($p['preco_mensal'], 2, ',', '.') ?>/mês
                                     </option>
                                 <?php endforeach; ?>
@@ -223,7 +223,7 @@
                             </div>
                             
                             <label class="form-label fw-semibold">Nomes DICOM (separados por vírgula)</label>
-                            <textarea name="institution_names" class="form-control" rows="4" placeholder="Ex: CLINICA_CENTRO, HOSPITAL_SAO_JOAO, MATRIZ_RM"><?= htmlspecialchars($institution_names_str ?? '') ?></textarea>
+                            <textarea name="institution_names" class="form-control" rows="4" placeholder="Ex: CLINICA_CENTRO, HOSPITAL_SAO_JOAO, MATRIZ_RM"><?= htmlspecialchars($institutionNames ?? '') ?></textarea>
                             <small class="text-muted mt-1 d-block">Estes nomes serão usados na importação automática via PACS ou HL7.</small>
                         </div>
                     </div>
