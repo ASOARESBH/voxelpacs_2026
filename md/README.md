@@ -4,6 +4,17 @@
 
 ---
 
+## Documentação técnica completa
+
+- **[MANUAL_TECNICO.md](MANUAL_TECNICO.md)** — engenharia reversa completa da aplicação: arquitetura, fluxo de requisição, roteamento, autenticação/RBAC, multi-tenancy, comportamento de cada módulo/controller, frontend, integração DICOM/Orthanc, débito técnico e bugs conhecidos (priorizados), relatório de segurança, guia para novas integrações e checklist antes de implementar. **Leia antes de mexer no sistema.**
+- **[BANCO_DE_DADOS.md](BANCO_DE_DADOS.md)** — dicionário de dados completo (todas as migrations, tabelas, colunas, relacionamentos, tabelas críticas, avisos sobre schemas conflitantes).
+- **[MODULO_ESTUDOS.md](MODULO_ESTUDOS.md)** — detalhe do módulo de worklist (referência de padrão arquitetural).
+- **[MODULO_REPORTS.md](MODULO_REPORTS.md)** — detalhe do módulo de laudos (⚠️ ver `MANUAL_TECNICO.md` §14 — está com bug crítico em produção no código atual).
+- **[SYNC_AUTOMATICO_PACS.md](SYNC_AUTOMATICO_PACS.md)** — ⚠️ **desatualizado**: descreve a sincronização automática via cron externo, mas essa funcionalidade foi removida do código em um merge posterior (ver `MANUAL_TECNICO.md` §4.1). Mantido como referência histórica.
+- **[DEPLOY_HOSTGATOR.md](DEPLOY_HOSTGATOR.md)** — passo a passo de deploy em hospedagem compartilhada.
+
+---
+
 ## Visão Geral
 
 O VOXEL B.I é uma plataforma SaaS de inteligência de dados voltada para clínicas e hospitais de radiologia. Permite a análise consolidada de exames provenientes de múltiplos sistemas PACS, com dashboards interativos, análise preditiva de volume e receita, benchmarking anônimo entre clínicas e gestão completa multi-tenant.

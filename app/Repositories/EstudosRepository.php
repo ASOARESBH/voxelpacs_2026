@@ -132,6 +132,8 @@ class EstudosRepository
                 e.laudo_assinado_em,
                 e.urgente_em,
                 e.importado_em,
+                e.recebido_em,
+                e.usuario_responsavel_id,
                 e.atualizado_em
             FROM bi_pacs_estudos e
             WHERE {$whereStr}
@@ -352,14 +354,16 @@ class EstudosRepository
         try {
             $stmt = $this->pdo->prepare(
                 "UPDATE bi_pacs_estudos SET
-                    situacao     = 'em_laudo',
-                    assumido_por = :usuario_id,
-                    assumido_em  = NOW()
+                    situacao               = 'em_laudo',
+                    assumido_por           = :usuario_id,
+                    assumido_em            = NOW(),
+                    usuario_responsavel_id = :usuario_id2
                  WHERE id = :id AND COALESCE(situacao,'novo') IN ('novo','aberto')"
             );
             return $stmt->execute([
-                ':usuario_id' => $usuarioId,
-                ':id'         => $estudoId
+                ':usuario_id'  => $usuarioId,
+                ':usuario_id2' => $usuarioId,
+                ':id'          => $estudoId
             ]);
         } catch (\Throwable $ex) {
             \App\Core\Logger::error('Erro ao assumir estudo', [

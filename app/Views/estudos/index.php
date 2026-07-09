@@ -51,6 +51,30 @@ function modBadge(string $mod): string {
     return "<span class=\"mod-badge {$mod}\">" . strtoupper($mod) . "</span>";
 }
 
+// ── SLA (Fase 1) ──────────────────────────────────────────────────────────
+// Escolhe a origem do SLA Estudo (não calcula nada, só seleciona a fonte):
+// recebido_em (padrão definitivo) → importado_em (fallback) → study_date+study_time.
+function slaOrigemEstudo(array $e): ?string {
+    if (!empty($e['recebido_em']))  return $e['recebido_em'];
+    if (!empty($e['importado_em'])) return $e['importado_em'];
+    if (!empty($e['study_date'])) {
+        $hora = (!empty($e['study_time']) && strlen($e['study_time']) >= 6) ? $e['study_time'] : '000000';
+        return $e['study_date'] . ' ' . substr($hora,0,2).':'.substr($hora,2,2).':'.substr($hora,4,2);
+    }
+    return null;
+}
+
+// Renderiza o badge de SLA: contador vivo (data-sla-origin) ou rótulo estático.
+function slaBadgeMarkup(?string $isoOrigin, string $emptyLabel = ''): string {
+    if ($isoOrigin) {
+        return '<span class="sla-badge" data-sla-origin="' . htmlspecialchars($isoOrigin) . '">--:--</span>';
+    }
+    if ($emptyLabel !== '') {
+        return '<span class="sla-badge sla-pendente">' . htmlspecialchars($emptyLabel) . '</span>';
+    }
+    return '<span class="text-pacs-muted">—</span>';
+}
+
 function formatarIdade(array $e): string {
     $age = $e['patient_age'] ?? '';
     if ($age) {
@@ -282,6 +306,8 @@ $periodoLabel = [
                 <th style="width:50px;">M</th>
                 <th style="width:130px;"><?= sortLink($filtros,'especialidade','Especialidade') ?></th>
                 <th>Estudo</th>
+                <th style="width:80px;">SLA Estudo</th>
+                <th style="width:80px;">SLA Médico</th>
                 <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
                 <th style="width:170px;text-align:center;">Ações</th>
             </tr>
@@ -289,7 +315,7 @@ $periodoLabel = [
         <tbody>
         <?php if (empty($estudos)): ?>
             <tr>
-                <td colspan="9" style="text-align:center;padding:3rem 1rem;">
+                <td colspan="11" style="text-align:center;padding:3rem 1rem;">
                     <div style="font-size:2rem;margin-bottom:.75rem;opacity:.4;"><i class="fa fa-magnifying-glass"></i></div>
                     <div style="font-weight:600;color:var(--pacs-text-secondary);margin-bottom:.4rem;">
                         Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.
@@ -375,6 +401,12 @@ $periodoLabel = [
                         <?php endif; ?>
                     </div>
                 </td>
+
+                <td><?= slaBadgeMarkup(slaOrigemEstudo($e)) ?></td>
+
+                <td class="sla-medico-cell"><?= !empty($e['assumido_em'])
+                    ? slaBadgeMarkup($e['assumido_em'])
+                    : slaBadgeMarkup(null, 'Aguardando Médico') ?></td>
 
                 <td><?= situacaoBadge($sit) ?></td>
 
@@ -557,12 +589,25 @@ $periodoLabel = [
 .acoes-grupo .btn-pdf:hover{background:rgba(239,68,68,.25);}
 /* Estado "carregando" do botão Assumir (spinner, sem texto) — evita colapsar para 0 largura */
 .acoes-grupo .pacs-btn:disabled{opacity:.7;cursor:wait;min-width:1.6rem;justify-content:center;}
+
+/* ── SLA (Fase 1) — mesmo padrão visual do situacao-badge/prio-badge ── */
+.sla-badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.02em;}
+.sla-badge.sla-verde{background:rgba(16,185,129,.18);color:#34d399;}
+.sla-badge.sla-amarelo{background:rgba(234,179,8,.2);color:#facc15;}
+.sla-badge.sla-laranja{background:rgba(249,115,22,.2);color:#f97316;}
+.sla-badge.sla-vermelho{background:rgba(239,68,68,.2);color:#f87171;}
+.sla-badge.sla-pendente{background:rgba(100,116,139,.2);color:#94a3b8;font-weight:600;font-size:.65rem;text-transform:uppercase;letter-spacing:.03em;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
      JAVASCRIPT
 ═══════════════════════════════════════════════════════════ -->
+<?php $slaAssetV = defined('ASSET_VERSION') ? ASSET_VERSION : '1.0'; ?>
+<script src="/assets/js/estudos/sla-counter.js?v=<?= htmlspecialchars($slaAssetV) ?>"></script>
 <script>
+window.SLA_CONFIG = <?= json_encode($slaConfig) ?>;
+SlaCounter.init({ serverNow: <?= (int)$serverNow ?>, thresholds: window.SLA_CONFIG });
+
 function setModalidade(mod) {
     const input = document.getElementById('inputModalidade');
     const btns  = document.querySelectorAll('.mod-btn');
@@ -643,6 +688,14 @@ function assumirEstudo(btn) {
                 if (badge) {
                     badge.className = 'situacao-badge sit-em-laudo';
                     badge.textContent = 'EM LAUDO';
+                }
+
+                // Inicia o contador do SLA Médico (independente do SLA Estudo)
+                var slaMedicoCell = row.querySelector('.sla-medico-cell');
+                if (slaMedicoCell) {
+                    var origem = data.assumido_em || new Date().toISOString();
+                    slaMedicoCell.innerHTML = '<span class="sla-badge" data-sla-origin="' + origem + '">--:--</span>';
+                    if (window.SlaCounter) SlaCounter.rescan();
                 }
             }
         } else {

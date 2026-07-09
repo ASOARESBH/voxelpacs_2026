@@ -5,6 +5,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Auth;
 use App\Services\EstudosService;
+use App\Config\SlaConfig;
 
 class EstudosController extends Controller
 {
@@ -112,7 +113,9 @@ class EstudosController extends Controller
             'resumo'        => $dashboardData['resumo'],
             'ultimaSinc'    => $dashboardData['ultimaSinc'],
             'tempoConsulta' => $tempoConsulta,
-            'isAdmin'       => $isAdmin
+            'isAdmin'       => $isAdmin,
+            'slaConfig'     => SlaConfig::toArray(),
+            'serverNow'     => time(),
         ], 'pacs');
     }
 
