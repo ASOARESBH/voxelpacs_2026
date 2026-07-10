@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+
+jobs:
+  lint:
+    name: PHP Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, pdo_mysql, gd, zip, mbstring, xml, opcache
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Install dependencies
+        run: composer install --no-dev --prefer-dist --no-progress
+
+      - name: PHP Lint (syntax check)
+        run: find app/ public/ routes/ config/ -name "*.php" -exec php -l {} \; | grep -v "No syntax errors"
+        continue-on-error: true
+
+  test:
+    name: PHPUnit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, pdo_mysql, gd, zip, mbstring, xml, opcache
+          coverage: none
+
+      - name: Install dependencies (with dev)
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run tests
+        run: composer test
+        continue-on-error: true

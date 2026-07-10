@@ -1,0 +1,11 @@
+# VOXEL PACS — Code Owners
+# Cada linha define quem é responsável por revisar mudanças em determinados arquivos
+
+# Responsável global pelo projeto
+* @ASOARESBH
+
+# Código crítico — exige revisão do responsável
+/app/Core/          @ASOARESBH
+/app/Middlewares/   @ASOARESBH
+/database/          @ASOARESBH
+/routes/            @ASOARESBH

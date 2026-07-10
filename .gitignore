@@ -1,27 +1,110 @@
-# Dependências
-/vendor/
+# ==============================================================================
+# VOXEL PACS — .gitignore
+# Regras de exclusão para desenvolvimento PHP/Node em múltiplos SOs e IDEs
+# ==============================================================================
 
-# Ambiente
+# ------------------------------------------------------------------------------
+# Dependências
+# ------------------------------------------------------------------------------
+/vendor/
+/node_modules/
+
+# ------------------------------------------------------------------------------
+# Configurações Locais e Ambiente
+# ------------------------------------------------------------------------------
 .env
 .env.local
+.env.testing
+.env.*.local
+phpunit.xml
+phpunit.result.cache
 
-# Logs e uploads
+# ------------------------------------------------------------------------------
+# Armazenamento e Logs
+# ------------------------------------------------------------------------------
 /storage/logs/*
 /storage/uploads/*
 /storage/sessions/*
+/storage/cache/*
+/storage/tmp/*
+/tmp/*
+/cache/*
+
+# Manter a estrutura de diretórios vazios
 !/storage/logs/.gitkeep
 !/storage/uploads/.gitkeep
 !/storage/sessions/.gitkeep
+!/storage/cache/.gitkeep
 
-# IDE
+# ------------------------------------------------------------------------------
+# Build e Compilação
+# ------------------------------------------------------------------------------
+/public/build/
+/public/hot/
+/public/mix-manifest.json
+/build/
+/dist/
+npm-debug.log
+yarn-error.log
+
+# ------------------------------------------------------------------------------
+# IDEs e Editores
+# ------------------------------------------------------------------------------
+# JetBrains (PHPStorm, WebStorm, etc)
 .idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Visual Studio Code
 .vscode/
+*.code-workspace
+.history/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
 *.swp
 *.swo
+*~
 
-# OS
+# ------------------------------------------------------------------------------
+# Sistemas Operacionais
+# ------------------------------------------------------------------------------
+# macOS
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
 
-# Composer lock (opcional em projetos proprietários)
-# composer.lock
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.cab
+*.lnk
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ------------------------------------------------------------------------------
+# Específicos do Projeto
+# ------------------------------------------------------------------------------
+# (Adicione aqui exclusões específicas do projeto)
+*.zip
+*.tar.gz
+/voxelpacs_deploy_*.zip
