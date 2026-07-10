@@ -19,6 +19,19 @@ Router::post('/platform/negocios/{id}/impersonate',     'Platform\TenantsControl
 Router::get('/platform/impersonate/exit',               'Platform\TenantsController@exitImpersonate');
 Router::get('/platform/api/cnpj/{cnpj}',                'Platform\NegociosController@buscarCnpj');
 
+// Unidades DICOM (Grid CRUD)
+Router::get('/platform/negocios/{id}/unidades',                        'Platform\NegociosController@listarUnidades');
+Router::post('/platform/negocios/{id}/unidades',                       'Platform\NegociosController@criarUnidade');
+Router::post('/platform/negocios/{id}/unidades/{uid}/update',          'Platform\NegociosController@atualizarUnidade');
+Router::post('/platform/negocios/{id}/unidades/{uid}/delete',          'Platform\NegociosController@excluirUnidade');
+Router::get('/platform/negocios/{id}/unidades/{uid}',                  'Platform\NegociosController@getUnidade');
+
+// Logo upload isolado por tenant
+Router::post('/platform/negocios/{id}/logo',                           'Platform\NegociosController@uploadLogo');
+
+// Token de acesso para admin (Etapa 4)
+Router::post('/platform/negocios/{id}/enviar-token',                   'Platform\NegociosController@enviarTokenAcesso');
+
 // Redirecionamentos de compatibilidade
 Router::get('/platform/tenants',                        'Platform\TenantsController@redirectToNegocios');
 Router::get('/platform/tenants/create',                 'Platform\TenantsController@redirectToNegocios');

@@ -115,3 +115,9 @@ Router::get('/api/reports/by-estudo',      'ReportsController@byEstudo');
 //        → ViewerTokenController resolve token → OHIF Viewer
 // ============================================================
 Router::get('/open/{token}', 'ViewerTokenController@abrir');
+
+// ============================================================
+// Fluxo de Criação de Senha via Token de Acesso (Etapa 4)
+// ============================================================
+Router::get('/acesso/criar-senha/{token}',  'Auth\AccessTokenController@formCriarSenha');
+Router::post('/acesso/criar-senha/{token}', 'Auth\AccessTokenController@salvarSenha');

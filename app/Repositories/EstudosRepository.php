@@ -154,11 +154,33 @@ class EstudosRepository
     public function getUnidades(?int $tenantId, bool $isAdmin): array
     {
         try {
+            // Unidades cadastradas na tabela de unidades DICOM do tenant
+            $fromCadastro = [];
+            try {
+                $uCad = $this->pdo->prepare("
+                    SELECT DISTINCT institution_name
+                    FROM bi_tenant_unidades_dicom
+                    WHERE status = 'ativo'
+                      AND institution_name IS NOT NULL
+                      AND institution_name != ''
+                      " . (!$isAdmin && $tenantId ? 'AND tenant_id = ' . (int)$tenantId : '') . "
+                    ORDER BY institution_name
+                ");
+                $uCad->execute();
+                $fromCadastro = $uCad->fetchAll(\PDO::FETCH_COLUMN);
+            } catch (\Throwable $ex2) { /* tabela pode nao existir ainda */ }
+
+            // Unidades que já aparecem nos estudos PACS
             $uW = ['servidor_id = 1', "institution_name IS NOT NULL", "institution_name != ''"];
             if (!$isAdmin && $tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
-            return $this->pdo->query(
+            $fromEstudos = $this->pdo->query(
                 "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
             )->fetchAll(\PDO::FETCH_COLUMN);
+
+            // Mescla e ordena, sem duplicatas
+            $merged = array_values(array_unique(array_merge($fromCadastro, $fromEstudos)));
+            sort($merged);
+            return $merged;
         } catch (\Throwable $ex) { return []; }
     }
 

@@ -9,6 +9,7 @@ class Router {
         '/logout',
         '/selecionar-empresa',
         '/open/',
+        '/acesso/criar-senha/',
     ];
 
     public static function get(string $path, $handler): void {
@@ -36,6 +37,13 @@ class Router {
 
         if (!self::isPublicRoute($uri) && !Auth::check()) {
             header('Location: /login');
+            exit;
+        }
+
+        // Guard: rotas /platform só acessíveis por superadmin
+        if (strpos($uri, '/platform') === 0 && !Auth::isPlatformAdmin()) {
+            self::renderErrorPage(403, 'Acesso Negado',
+                'Esta área é restrita a administradores da plataforma.');
             exit;
         }
 
