@@ -1,7 +1,8 @@
 <?php
 $medico = $medico ?? null;
 $isEdit = !empty($medico);
-$action = $isEdit ? '/medicos/' . ($medico['id'] ?? $medico->id ?? 0) . '/update' : '/medicos';
+$medicoId = $isEdit ? (is_array($medico) ? ($medico['id'] ?? 0) : ($medico->id ?? 0)) : 0;
+$action = $isEdit ? '/medicos/' . $medicoId . '/update' : '/medicos';
 ?>
 
 <div style="margin-bottom:1.5rem;">

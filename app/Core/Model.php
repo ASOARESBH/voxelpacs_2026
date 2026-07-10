@@ -20,7 +20,7 @@ abstract class Model {
             return '';
         }
         $col = $alias ? "{$alias}.tenant_id" : 'tenant_id';
-        return " AND {$col} = " . (int) TenantContext::id();
+        return " AND {$col} = :tenant_id";
     }
 
     /**

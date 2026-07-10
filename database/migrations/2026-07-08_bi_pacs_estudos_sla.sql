@@ -61,7 +61,24 @@ SET @sql = IF(
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- -----------------------------------------------------------------------------
--- 3) Índice para consultas/ordenações futuras por recebido_em (SLA Estudo).
+-- 3) usuario_responsavel_id — deveria ter sido criado por
+--    2026-07-04_bi_reports_module.sql, mas o log de produção mostra
+--    "Unknown column 'e.usuario_responsavel_id'", confirmando que essa
+--    migration nunca rodou neste banco. Guarda defensiva para não depender
+--    de outro arquivo ter sido aplicado antes deste.
+-- -----------------------------------------------------------------------------
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME   = 'bi_pacs_estudos'
+       AND COLUMN_NAME  = 'usuario_responsavel_id') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `usuario_responsavel_id` INT UNSIGNED NULL COMMENT 'bi_users.id do medico que assumiu o laudo' AFTER `situacao`",
+    "SELECT 'usuario_responsavel_id ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- -----------------------------------------------------------------------------
+-- 4) Índice para consultas/ordenações futuras por recebido_em (SLA Estudo).
 -- -----------------------------------------------------------------------------
 SET @sql = IF(
     (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
@@ -81,8 +98,8 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- -----------------------------------------------------------------------------
 -- ROLLBACK — execute para desfazer (recebido_em é o único campo novo real;
--- assumido_em e o índice só são removidos se você tiver certeza de que nada
--- mais depende deles)
+-- assumido_em, usuario_responsavel_id e o índice só são removidos se você
+-- tiver certeza de que nada mais depende deles)
 -- -----------------------------------------------------------------------------
 -- ALTER TABLE `bi_pacs_estudos` DROP INDEX `idx_recebido_em`;
 -- ALTER TABLE `bi_pacs_estudos` DROP COLUMN `recebido_em`;
