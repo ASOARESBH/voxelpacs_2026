@@ -5,14 +5,23 @@ $medicoId = $isEdit ? (is_array($medico) ? ($medico['id'] ?? 0) : ($medico->id ?
 $action = $isEdit ? '/medicos/' . $medicoId . '/update' : '/medicos';
 ?>
 
-<div style="margin-bottom:1.5rem;">
-    <h1 style="font-size:1.3rem;font-weight:700;color:var(--pacs-text);margin-bottom:.25rem;">
-        <i class="fa fa-user-doctor me-2 text-pacs-primary"></i>
-        <?= $isEdit ? 'Editar Médico' : 'Novo Médico' ?>
-    </h1>
-    <p style="color:var(--pacs-text-muted);font-size:.82rem;">
-        <?= $isEdit ? 'Atualize os dados do médico' : 'Preencha os dados para cadastrar um novo médico' ?>
-    </p>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
+    <div>
+        <h1 style="font-size:1.3rem;font-weight:700;color:var(--pacs-text);margin-bottom:.25rem;">
+            <i class="fa fa-user-doctor me-2 text-pacs-primary"></i>
+            <?= $isEdit ? 'Editar Médico' : 'Novo Médico' ?>
+        </h1>
+        <p style="color:var(--pacs-text-muted);font-size:.82rem;">
+            <?= $isEdit ? 'Atualize os dados do médico' : 'Preencha os dados para cadastrar um novo médico' ?>
+        </p>
+    </div>
+    <?php if (!$isEdit): ?>
+    <button type="button" class="btn-pacs-outline" disabled
+            style="opacity:.6;cursor:not-allowed;"
+            title="Em breve: importa o cadastro do médico a partir de outro produto usando um token de integração. Funcionalidade ainda não implementada.">
+        <i class="fa fa-key"></i> Token Import
+    </button>
+    <?php endif; ?>
 </div>
 
 <div class="pacs-card" style="max-width:700px;">
