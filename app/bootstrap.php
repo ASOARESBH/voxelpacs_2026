@@ -42,6 +42,39 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 // Carrega o autoloader customizado (não depende do composer no servidor)
 require_once APP_PATH . '/autoload.php';
 
+// ─── HANDLER GLOBAL DE ERROS: nenhum \Throwable não tratado deve virar uma
+// tela 500 crua e muda. Loga via Logger e mostra uma página amigável. ────────
+set_exception_handler(function (\Throwable $e): void {
+    try {
+        \App\Core\Logger::error('Erro não tratado (' . get_class($e) . ')', [
+            'msg'  => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'uri'  => $_SERVER['REQUEST_URI'] ?? null,
+        ]);
+    } catch (\Throwable $loggingError) {
+        // Se nem o log funcionar, segue para exibir a tela de erro mesmo assim.
+    }
+
+    if (!headers_sent()) {
+        http_response_code(500);
+    }
+
+    $debug = ($_ENV['APP_DEBUG'] ?? 'false') === 'true';
+    echo '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'
+        . '<title>Erro — VOXEL PACS</title></head>'
+        . '<body style="font-family:sans-serif;background:#1a1d29;color:#e6e6e6;'
+        . 'display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">'
+        . '<div style="max-width:520px;text-align:center;">'
+        . '<h2 style="color:#e05252;">Ocorreu um erro inesperado</h2>'
+        . '<p>Nossa equipe já foi notificada. Tente novamente em instantes.</p>'
+        . ($debug ? '<pre style="text-align:left;white-space:pre-wrap;color:#f0a0a0;">'
+            . htmlspecialchars($e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine())
+            . '</pre>' : '')
+        . '<p><a href="/estudos" style="color:#6ea8fe;">Voltar para a Worklist</a></p>'
+        . '</div></body></html>';
+});
+
 // Função simples para ler .env sem dependência externa
 if (!function_exists('loadEnv')) {
     function loadEnv(string $path): void {

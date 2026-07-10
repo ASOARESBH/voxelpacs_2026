@@ -33,50 +33,32 @@ class ReportsController extends Controller
             return;
         }
 
-        $tenantId = Auth::tenantId();
-        $isAdmin  = Auth::isPlatformAdmin();
-        $userId   = Auth::userId();
-        $user     = Auth::user();
-
         try {
-            $data = $this->reportService->getOrInitializeReport($studyUid, $tenantId, $isAdmin);
-        } catch (\Exception $e) {
+            $data = $this->reportService->carregarParaEdicao($studyUid);
+        } catch (\Throwable $e) {
             Logger::error('ReportsController::show error', ['msg' => $e->getMessage(), 'uid' => $studyUid]);
-            $this->view('reports/error', ['mensagem' => $e->getMessage()], 'pacs');
+            http_response_code(500);
+            $this->view('reports/error', ['mensagem' => 'Erro ao abrir o laudo. Tente novamente.'], 'pacs');
+            return;
+        }
+
+        if (!$data['ok']) {
+            Logger::warning('ReportsController::show estudo não encontrado', ['uid' => $studyUid, 'error' => $data['error'] ?? null]);
+            http_response_code(404);
+            $this->view('reports/error', [
+                'mensagem' => 'Estudo não encontrado ou você não tem permissão de acesso.',
+            ], 'pacs');
             return;
         }
 
         $estudo   = $data['estudo'];
         $report   = $data['report'];
-        $isNew    = $data['is_new'];
-        $bloqueado = $data['bloqueado'];
-
-        // Dados do painel lateral
-        $sidebarData = $this->reportService->getSidebarData($tenantId, $userId);
-
-        // Histórico de versões
-        $versoes = [];
-        if (!$isNew) {
-            try {
-                $pdo = \App\Core\Database::getInstance();
-                $stmt = $pdo->prepare(
-                    "SELECT rv.*, u.nome as editor_nome
-                     FROM report_versions rv
-                     LEFT JOIN bi_users u ON u.id = rv.usuario_id
-                     WHERE rv.report_id = :rid
-                     ORDER BY rv.versao DESC
-                     LIMIT 20"
-                );
-                $stmt->execute([':rid' => $report->id]);
-                $versoes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-            } catch (\Throwable $ex) {
-                Logger::error('Erro ao buscar versões', ['report_id' => $report->id, 'error' => $ex->getMessage()]);
-            }
-        }
+        $readonly = $data['readonly'];
+        $lockInfo = $data['lockInfo'];
 
         // Exames anteriores do mesmo paciente
         $examesAnteriores = [];
-        if (!empty($estudo['patient_id'])) {
+        if (!empty($estudo->patient_id)) {
             try {
                 $pdo = \App\Core\Database::getInstance();
                 $stmt = $pdo->prepare(
@@ -91,7 +73,7 @@ class ReportsController extends Controller
                      LIMIT 10"
                 );
                 $stmt->execute([
-                    ':pid' => $estudo['patient_id'],
+                    ':pid' => $estudo->patient_id,
                     ':uid' => $studyUid
                 ]);
                 $examesAnteriores = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -100,31 +82,15 @@ class ReportsController extends Controller
             }
         }
 
-        // Bloqueio: buscar nome do médico que está editando
-        $medicoEditando = null;
-        if ($bloqueado && $report->bloqueado_por) {
-            try {
-                $pdo = \App\Core\Database::getInstance();
-                $stmt = $pdo->prepare("SELECT nome FROM bi_users WHERE id = :id LIMIT 1");
-                $stmt->execute([':id' => $report->bloqueado_por]);
-                $medicoEditando = $stmt->fetchColumn();
-            } catch (\Throwable $ex) {}
-        }
-
-        $this->view('reports/index', [
-            'estudo'          => $estudo,
-            'report'          => $report,
-            'is_new'          => $isNew,
-            'bloqueado'       => $bloqueado,
-            'medico_editando' => $medicoEditando,
-            'versoes'         => $versoes,
+        $this->view('reports/show', [
+            'estudo'            => $estudo,
+            'report'            => $report,
+            'readonly'          => $readonly,
+            'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,
-            'autotexts'       => $sidebarData['autotexts'],
-            'templates'       => $sidebarData['templates'],
-            'user'            => $user,
-            'csrf'            => $this->csrfToken(),
-            'page_title'      => 'Laudo — ' . ($estudo['patient_name_display'] ?? $estudo['patient_name'] ?? 'Paciente'),
-        ], 'pacs');
+            'csrfToken'         => $this->csrfToken(),
+            'page_title'        => 'Laudo — ' . ($estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente'),
+        ], 'reports');
     }
 
     // ══════════════════════════════════════════════════════════════════════════
