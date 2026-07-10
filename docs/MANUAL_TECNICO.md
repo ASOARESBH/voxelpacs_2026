@@ -3,7 +3,7 @@
 **Público-alvo:** analistas e engenheiros de software que vão dar manutenção ou evoluir o sistema.
 **Base da análise:** leitura direta do código-fonte (HEAD `ecf2495`, 2026-07-08) + histórico de commits. Não é um documento de intenção — descreve o comportamento **real e atual** do código, incluindo bugs e débitos técnicos confirmados.
 
-> Este documento complementa (não substitui) `md/README.md` (visão geral/instalação), `md/MODULO_ESTUDOS.md`, `md/MODULO_REPORTS.md` e `md/DEPLOY_HOSTGATOR.md`. O dicionário de dados completo está em `md/BANCO_DE_DADOS.md`.
+> Este documento complementa (não substitui) `docs/README.md` (visão geral/instalação), `docs/MODULO_ESTUDOS.md`, `docs/MODULO_REPORTS.md` e `docs/DEPLOY_HOSTGATOR.md`. O dicionário de dados completo está em `docs/BANCO_DE_DADOS.md`.
 
 ---
 
@@ -42,7 +42,7 @@
 | Dev | `phpunit/phpunit ^10.0` (sem testes escritos até o momento desta análise) |
 | Autoload | **Duplo e inconsistente**: autoloader customizado próprio (`app/autoload.php`, resolve `App\` → `app/`) É o único carregado no bootstrap. O autoload PSR-4 do Composer (`vendor/autoload.php`) está declarado em `composer.json` mas **nunca é `require`ado** em runtime — ver §3.1, é um bug crítico. |
 | Frontend | PHP puro nas views (sem template engine), **Bootstrap 5.3** via CDN, Font Awesome 6.x via CDN, **Chart.js 4.4** via CDN, **Quill.js** (editor de laudo), JavaScript vanilla (sem jQuery/Vue/React) |
-| Servidor web | Apache (`.htaccess` na raiz reescrevendo para `public/`) — hospedagem compartilhada (HostGator, ver `md/DEPLOY_HOSTGATOR.md`); há também um `Dockerfile` para deploy alternativo em container |
+| Servidor web | Apache (`.htaccess` na raiz reescrevendo para `public/`) — hospedagem compartilhada (HostGator, ver `docs/DEPLOY_HOSTGATOR.md`); há também um `Dockerfile` para deploy alternativo em container |
 | PACS/DICOM | **Orthanc** (servidor DICOM open-source), acessado via API REST proprietária do Orthanc (não DICOMweb/QIDO-RS/WADO-RS/STOW-RS) |
 | Viewer DICOM | **OHIF Viewer**, aberto via redirect com token opaco (não embutido em iframe) |
 | Multi-tenancy | Sim — isolamento lógico por `tenant_id` em quase todas as tabelas (implementação própria, não uma lib) |
@@ -75,7 +75,7 @@ voxelpacs/
 ├── public/                          # document root real (index.php, assets/)
 ├── routes/                          # web.php (tenant) + platform.php (superadmin)
 ├── storage/                         # logs/, sessions/, uploads/ (fora do document root)
-├── md/                               # esta documentação
+├── docs/                               # esta documentação
 └── vendor/                          # dependências Composer (autoload NÃO carregado — bug)
 ```
 
@@ -154,9 +154,9 @@ Existem **5 pares de layout**: `pacs` (default — worklist, cadastros), `bi` (p
 |---|---|---|
 | A | `public/index.php` (`$rotasPublicas`) | `/login`, `/logout`, `/selecionar-empresa`, `/test.php`, `/api/orthanc/ping`, `/open/` |
 | B | `Router::$publicRoutes` (usada de fato em `dispatch()` para redirecionar ao login) | `/login`, `/logout`, `/selecionar-empresa`, `/open/` — **sem `/api/orthanc/ping`** |
-| C | `md/SYNC_AUTOMATICO_PACS.md` (documentação) | Descreve `/api/servidor-pacs/cron-ping` como pública e funcional |
+| C | `docs/SYNC_AUTOMATICO_PACS.md` (documentação) | Descreve `/api/servidor-pacs/cron-ping` como pública e funcional |
 
-**Consequência:** `/api/orthanc/ping` está na lista A mas não na B → um visitante **deslogado** na tela de login (que é justamente quem usa o widget de status do Orthanc) recebe redirect para `/login` em vez de ver o ping. E `/api/servidor-pacs/cron-ping` **não existe mais no código** (rota, método `cronPing()` e os endpoints de token/histórico do cron foram removidos pelo mesmo commit `b20630f` que causou o bug do §3.1) — a sincronização automática via cron externo documentada em `md/SYNC_AUTOMATICO_PACS.md` **está fora do ar**, apesar do banco já ter as colunas (`sync_auto_ativo`, `sync_cron_token` etc.) criadas pela migration correspondente.
+**Consequência:** `/api/orthanc/ping` está na lista A mas não na B → um visitante **deslogado** na tela de login (que é justamente quem usa o widget de status do Orthanc) recebe redirect para `/login` em vez de ver o ping. E `/api/servidor-pacs/cron-ping` **não existe mais no código** (rota, método `cronPing()` e os endpoints de token/histórico do cron foram removidos pelo mesmo commit `b20630f` que causou o bug do §3.1) — a sincronização automática via cron externo documentada em `docs/SYNC_AUTOMATICO_PACS.md` **está fora do ar**, apesar do banco já ter as colunas (`sync_auto_ativo`, `sync_cron_token` etc.) criadas pela migration correspondente.
 
 **Ao corrigir:** unificar em uma única fonte de verdade (idealmente a rota já carrega um atributo "pública" no próprio registro em `routes/*.php`, eliminando a necessidade de 2+ listas).
 
@@ -242,7 +242,7 @@ Existe uma classe base `app/Core/Middleware.php` com `Middleware::run(array $mid
 - `app/Core/Model.php::tenantWhere()` monta o filtro `AND tenant_id = X` a partir de `TenantContext::id()` — **mas se `TenantContext::isSet()` for falso, retorna string vazia (sem filtro nenhum)**, em vez de bloquear a query. Esse é o mecanismo por trás de dois bugs distintos:
   - `ExamesPacsController::getDistinctValues()`/`getStats()` declaram `int $tenantId` (não-nulo) e recebem `TenantContext::id()` → `TypeError` fatal (500) quando um superadmin acessa `/pacs/exames` (bug documentado desde commit `bb539f7`, **ainda presente**).
   - Em qualquer Model com `hasTenant=true` chamado num contexto sem `TenantContext` setado, a query roda **sem filtro de tenant**, risco de vazamento cross-tenant silencioso (não confirmado como explorado, mas o mecanismo existe).
-- Roteamento de estudos DICOM ao tenant correto é feito por **valor de negócio** (`InstitutionName` da tag DICOM), não por conexão física separada — ver `bi_pacs_roteamento` em `md/BANCO_DE_DADOS.md`.
+- Roteamento de estudos DICOM ao tenant correto é feito por **valor de negócio** (`InstitutionName` da tag DICOM), não por conexão física separada — ver `bi_pacs_roteamento` em `docs/BANCO_DE_DADOS.md`.
 
 ---
 
@@ -268,7 +268,7 @@ Classe base simples — **não é ORM/ActiveRecord**. Só dá acesso a `$this->p
 
 ### 7.3 Repository — padrão parcial
 
-Só os módulos mais recentes (**Estudos** e **Reports**) têm `app/Repositories/*Repository.php` dedicado, separando a SQL do Controller/Service. A maioria dos módulos mais antigos mistura acesso a dados direto no Controller (`Database::getInstance()->prepare(...)`) sem Repository nem Model fino — ex.: `ExamesPacsController` fala direto com PDO. **Para módulos novos, siga o padrão Estudos** (Controller → Service → Repository, ver `md/MODULO_ESTUDOS.md`), não o padrão antigo.
+Só os módulos mais recentes (**Estudos** e **Reports**) têm `app/Repositories/*Repository.php` dedicado, separando a SQL do Controller/Service. A maioria dos módulos mais antigos mistura acesso a dados direto no Controller (`Database::getInstance()->prepare(...)`) sem Repository nem Model fino — ex.: `ExamesPacsController` fala direto com PDO. **Para módulos novos, siga o padrão Estudos** (Controller → Service → Repository, ver `docs/MODULO_ESTUDOS.md`), não o padrão antigo.
 
 ### 7.4 Service Layer
 
@@ -339,10 +339,10 @@ Tabela-resumo. Para o inventário completo (todos os métodos, um a um), veja o 
   3. `OrthancService::normalizeStudy()` extrai ~100 tags DICOM (`MainDicomTags`/`PatientMainDicomTags`) — paciente, estudo, equipamento/instituição, parâmetros técnicos por modalidade (CT/MR/US/NM-PET/dose).
   4. Para cada estudo: checa duplicata por `orthanc_id`, resolve `tenant_id` via mapa `institution_name → tenant_id`, faz **UPSERT dinâmico** (nomes de coluna fixos no código, valores sempre via placeholder — sem risco de SQLi).
   5. **Roteamento retroativo**: ao salvar um roteamento novo, `UPDATE bi_pacs_estudos SET tenant_id=? WHERE institution_name=? AND tenant_id IS NULL` aplica o vínculo a estudos já importados sem tenant.
-- **Nunca se consulta o Orthanc diretamente para montar a worklist** — todo módulo lê de `bi_pacs_estudos` (cache local). Ver `md/MODULO_ESTUDOS.md`.
+- **Nunca se consulta o Orthanc diretamente para montar a worklist** — todo módulo lê de `bi_pacs_estudos` (cache local). Ver `docs/MODULO_ESTUDOS.md`.
 - **Abertura no OHIF Viewer:** token opaco em `pacs_viewer_tokens` (TTL padrão 1h), validado com `expires_at > NOW()` via prepared statement; redirect 302 para `{VIEWER_URL}/viewer?StudyInstanceUIDs={uid}`. Uma vez válido, o token **não invalida após o primeiro uso** (permite múltiplos acessos dentro da validade — comportamento intencional). Existem **dois fluxos de abertura coexistindo** (`EstudosController::abrir()` direto vs. `ViewerTokenController` via `/open/{token}`) — confirmar qual é o vigente antes de alterar.
 - **TLS:** `CURLOPT_SSL_VERIFYPEER/VERIFYHOST = false` sempre ativo nas chamadas ao Orthanc — aceita certificado inválido sem alerta. Relevante se o Orthanc um dia expuser HTTPS com certificado próprio.
-- **Sincronização automática via cron externo:** documentada em `md/SYNC_AUTOMATICO_PACS.md`, mas **removida do código atual** (mesma regressão do §3.1/§4.1) — hoje a sincronização só acontece manualmente (botão "Sincronizar").
+- **Sincronização automática via cron externo:** documentada em `docs/SYNC_AUTOMATICO_PACS.md`, mas **removida do código atual** (mesma regressão do §3.1/§4.1) — hoje a sincronização só acontece manualmente (botão "Sincronizar").
 
 ---
 
@@ -412,7 +412,7 @@ Dois mecanismos paralelos, propósitos diferentes:
 | 7 | `ExamesPacsController::getDistinctValues()/getStats()` com `int $tenantId` não-nulo recebendo `TenantContext::id()` (`?int`) → `TypeError` 500 quando superadmin acessa `/pacs/exames`. |
 | 8 | `ServidorController` chama `Database::fetchAll/fetchOne`, inexistentes em `App\Core\Database` — confirmar se a rota está ativa; se sim, corrigir; se não, remover. |
 | 9 | `SessionTimeoutMiddleware` nunca instanciada — sessões nunca expiram por inatividade apesar de `SESSION_TIMEOUT` existir. |
-| 10 | Duas versões de schema **incompatíveis** para a tabela `reports` no histórico de migrations — confirmar em produção (`SHOW CREATE TABLE reports`) qual está ativa antes de qualquer alteração. Ver `md/BANCO_DE_DADOS.md`. |
+| 10 | Duas versões de schema **incompatíveis** para a tabela `reports` no histórico de migrations — confirmar em produção (`SHOW CREATE TABLE reports`) qual está ativa antes de qualquer alteração. Ver `docs/BANCO_DE_DADOS.md`. |
 | 11 | Hash de senha inconsistente: `Model\User` usa `PASSWORD_ARGON2ID`, `UsuariosController`/`NegociosController` usam `PASSWORD_DEFAULT` (bcrypt); senha padrão fraca `Mudar@123` quando não informada na criação de negócio. |
 | 12 | IP interno do Orthanc de produção hardcoded (`46.225.51.122:8042`) em `PacsController.php`, exposto via rota pública `/api/orthanc/ping`. |
 | 13 | Credencial padrão de superadmin (e-mail + senha em texto claro) documentada em 3+ arquivos versionados (`README.md`, `.env.example`, seed SQL) — sem mecanismo de forçar troca no primeiro login. |
@@ -514,7 +514,7 @@ app/Services/Integrations/
 ## 18. Checklist antes de implementar qualquer funcionalidade nova
 
 1. **Quais módulos serão impactados?** — verificar se o módulo já tem Service/Repository (padrão novo) ou é só Controller (padrão antigo) antes de decidir a abordagem.
-2. **Quais tabelas serão utilizadas?** — conferir `md/BANCO_DE_DADOS.md`; se envolver `reports` ou `bi_pacs_estudos`, checar o schema real de produção antes.
+2. **Quais tabelas serão utilizadas?** — conferir `docs/BANCO_DE_DADOS.md`; se envolver `reports` ou `bi_pacs_estudos`, checar o schema real de produção antes.
 3. **Há APIs envolvidas?** — se sim, seguir §16, não reimplementar cURL solto.
 4. **Há impacto em autenticação/permissões?** — lembrar que RBAC (`Auth::can()`) e `PlatformAdminMiddleware` **não estão aplicados automaticamente**; se a rota exige restrição de papel, chamar a checagem manualmente no início do método do Controller.
 5. **Existe componente reutilizável?** — conferir §9 antes de criar nova paginação/stat-card/badge do zero.

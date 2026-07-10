@@ -2,7 +2,7 @@
 
 **Base:** leitura integral dos 15 arquivos `.sql` em `database/migrations/` e dos 2 arquivos em `database/seeds/`. Banco: MySQL/MariaDB (`config/database.php`), charset `utf8mb4`.
 
-> Complementa `md/MANUAL_TECNICO.md`. Leia o aviso geral abaixo **antes** de tratar este documento como fonte de verdade absoluta.
+> Complementa `docs/MANUAL_TECNICO.md`. Leia o aviso geral abaixo **antes** de tratar este documento como fonte de verdade absoluta.
 
 ---
 
@@ -33,7 +33,7 @@ Trate `database/migrations/` como **histórico de scripts de deploy**, não como
 | 7 | `2026-05-26_pacs_estudos_dicom_tags.sql` | `bi_pacs_estudos` | **DROP + CREATE** com dezenas de tags DICOM completas — roda **depois** de `servidor_pacs.sql` apesar do nome alfabético vir antes |
 | 8 | `2026-05-26_servidor_pacs.sql` | `bi_pacs_servidor`, `bi_pacs_roteamento`, `bi_pacs_estudos` (versão simples), `bi_pacs_sync_log` | Cria o módulo de Servidor PACS/Orthanc global (modelo ativo) |
 | 9 | `2026-07-02_bi_pacs_estudos_worklist.sql` | `bi_pacs_estudos` | Campos de worklist: `situacao`, `especialidade`, `orthanc_url` |
-| 10 | `2026-07-02_pacs_sync_agendado.sql` | `bi_pacs_servidor`, `bi_pacs_sync_execucoes` | Colunas/tabela para sincronização automática via cron externo (**funcionalidade hoje removida do código**, ver `md/MANUAL_TECNICO.md` §4.1) |
+| 10 | `2026-07-02_pacs_sync_agendado.sql` | `bi_pacs_servidor`, `bi_pacs_sync_execucoes` | Colunas/tabela para sincronização automática via cron externo (**funcionalidade hoje removida do código**, ver `docs/MANUAL_TECNICO.md` §4.1) |
 | 11 | `2026-07-02_pacs_viewer_tokens.sql` | `pacs_viewer_tokens` | Tokens temporários (1h) para abertura segura do OHIF |
 | 12 | `2026-07-04_bi_reports_module.sql` | `bi_pacs_estudos`, `bi_users`, `reports`, `report_versions`, `report_templates`, `report_autotext`, `report_signatures` | 1ª versão do módulo de Laudos — `conteudo` em JSON único |
 | 13 | `2026-07-05_bi_pacs_estudos_indices.sql` | `bi_pacs_estudos` | Colunas `prioridade`, `medico_responsavel`, `sincronizado_em` + índices |
@@ -83,7 +83,7 @@ Trate `database/migrations/` como **histórico de scripts de deploy**, não como
 | `id` | INT UNSIGNED PK AI | |
 | `name` | VARCHAR(255) | |
 | `email` | VARCHAR(255) UNIQUE | |
-| `password` | VARCHAR(255) | Hash — **inconsistente entre pontos de criação**, ver `md/MANUAL_TECNICO.md` §15.5 |
+| `password` | VARCHAR(255) | Hash — **inconsistente entre pontos de criação**, ver `docs/MANUAL_TECNICO.md` §15.5 |
 | `role` | ENUM('superadmin','admin','analista','viewer') | Papel global |
 | `crm` | VARCHAR(30) NULL | Usado na assinatura de laudos |
 | `status` | ENUM('ativo','inativo') | |
@@ -138,7 +138,7 @@ Versão final após `2026-05-26_pacs_estudos_dicom_tags.sql` (DROP+CREATE) + mig
 
 **Índices acumulados (~30):** `idx_servidor`, `idx_tenant`, `idx_institution`, `idx_study_date`, `idx_patient_id/name`, `idx_accession`, `idx_study_uid(64)`, `idx_modalidades`, `idx_body_part`, `idx_tenant_date`, `idx_tenant_modality`, `idx_tenant_institution`, `idx_situacao`, `idx_usuario_responsavel`, `idx_bpe_*` (07-05), `idx_worklist_main (tenant_id, study_date, situacao)`, `idx_tenant_prioridade`, `idx_tenant_especialidade`, `idx_servidor_tenant_date` — **válidos**; e `idx_assumido_por`, `idx_laudo_assinado_em`, `idx_urgente_em` — **sobre colunas não encontradas em nenhuma migration do repositório** (confirmar em produção com `SHOW INDEX FROM bi_pacs_estudos;` se existem de fato).
 
-> Conforme `md/MODULO_ESTUDOS.md`: **todos os módulos consultam o PACS exclusivamente através desta tabela**, nunca diretamente no Orthanc.
+> Conforme `docs/MODULO_ESTUDOS.md`: **todos os módulos consultam o PACS exclusivamente através desta tabela**, nunca diretamente no Orthanc.
 
 ### 2.7 `bi_pacs_roteamento` — InstitutionName/AETitle → tenant
 
@@ -181,7 +181,7 @@ Versão final após `2026-05-26_pacs_estudos_dicom_tags.sql` (DROP+CREATE) + mig
 | `details` | JSON NULL | |
 | `ip` | VARCHAR(45) NULL | |
 
-> Uso real hoje: só `TenantsController::suspend()`/`::impersonate()` gravam aqui (ver `md/MANUAL_TECNICO.md` §12).
+> Uso real hoje: só `TenantsController::suspend()`/`::impersonate()` gravam aqui (ver `docs/MANUAL_TECNICO.md` §12).
 
 ### 2.11 `bi_importacoes` e `bi_exames` — pipeline "BI legado" (paralelo a `bi_pacs_estudos`)
 
@@ -196,7 +196,7 @@ Versão final após `2026-05-26_pacs_estudos_dicom_tags.sql` (DROP+CREATE) + mig
 
 **Tabelas satélite (versão B):** `report_versions` (histórico imutável, FK → `reports.id` CASCADE), `report_templates` (por modalidade, `tenant_id NULL` = global), `report_logs` (auditoria do módulo), `report_autotext` (autocomplete por gatilho), `report_favorites`, `report_signatures` (hash SHA-256, FK → `reports.id` CASCADE).
 
-> **Ação obrigatória antes de mexer nesta tabela:** rodar `SHOW CREATE TABLE reports;` em produção para saber qual versão está ativa. Note também que o Controller/Service/Repository de Reports estão hoje com erro fatal de parse (`md/MANUAL_TECNICO.md` §14.1) — a resolução desse bug provavelmente vai exigir decidir qual dessas duas versões de schema prevalece.
+> **Ação obrigatória antes de mexer nesta tabela:** rodar `SHOW CREATE TABLE reports;` em produção para saber qual versão está ativa. Note também que o Controller/Service/Repository de Reports estão hoje com erro fatal de parse (`docs/MANUAL_TECNICO.md` §14.1) — a resolução desse bug provavelmente vai exigir decidir qual dessas duas versões de schema prevalece.
 
 ### 2.13 `bi_orthanc_servidores` / `bi_orthanc_sync_log` — modelo legado "1 Orthanc por tenant"
 
