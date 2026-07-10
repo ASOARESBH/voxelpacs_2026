@@ -1,23 +1,7 @@
 <?php
 /**
- * VOXEL PACS — Worklist de Estudos (v4)
+ * VOXEL PACS — Worklist de Estudos (v3)
  * Painel de resumo, filtros avançados, período inteligente, tabela otimizada.
- * Revisão completa: todos os filtros, prioridade, especialidade, paginação corrigida.
- *
- * Variáveis disponíveis:
- *   $estudos        array  — lista de exames da página atual
- *   $filtros        array  — filtros ativos
- *   $total          int    — total de registros filtrados
- *   $totalPages     int    — total de páginas
- *   $currentPage    int    — página atual
- *   $unidades       array  — lista de institution_name para select
- *   $medicos        array  — lista de assumido_por para select
- *   $especialidades array  — lista de especialidades para select
- *   $contadores     array  — contadores por situação
- *   $resumo         array  — painel de resumo (hoje/semana/mês/total)
- *   $ultimaSinc     string — timestamp da última sincronização
- *   $tempoConsulta  float  — tempo da query em ms
- *   $isAdmin        bool   — usuário é platform admin
  */
 
 function estudoUrl(array $filtros, int $pagina = 1): string {
@@ -51,30 +35,6 @@ function modBadge(string $mod): string {
     return "<span class=\"mod-badge {$mod}\">" . strtoupper($mod) . "</span>";
 }
 
-// ── SLA (Fase 1) ──────────────────────────────────────────────────────────
-// Escolhe a origem do SLA Estudo (não calcula nada, só seleciona a fonte):
-// recebido_em (padrão definitivo) → importado_em (fallback) → study_date+study_time.
-function slaOrigemEstudo(array $e): ?string {
-    if (!empty($e['recebido_em']))  return $e['recebido_em'];
-    if (!empty($e['importado_em'])) return $e['importado_em'];
-    if (!empty($e['study_date'])) {
-        $hora = (!empty($e['study_time']) && strlen($e['study_time']) >= 6) ? $e['study_time'] : '000000';
-        return $e['study_date'] . ' ' . substr($hora,0,2).':'.substr($hora,2,2).':'.substr($hora,4,2);
-    }
-    return null;
-}
-
-// Renderiza o badge de SLA: contador vivo (data-sla-origin) ou rótulo estático.
-function slaBadgeMarkup(?string $isoOrigin, string $emptyLabel = ''): string {
-    if ($isoOrigin) {
-        return '<span class="sla-badge" data-sla-origin="' . htmlspecialchars($isoOrigin) . '">--:--</span>';
-    }
-    if ($emptyLabel !== '') {
-        return '<span class="sla-badge sla-pendente">' . htmlspecialchars($emptyLabel) . '</span>';
-    }
-    return '<span class="text-pacs-muted">—</span>';
-}
-
 function formatarIdade(array $e): string {
     $age = $e['patient_age'] ?? '';
     if ($age) {
@@ -101,9 +61,6 @@ function sortLink(array $filtros, string $col, string $label): string {
 $temFiltroAtivo = array_filter(array_diff_key($filtros, [
     'ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1
 ]), fn($v) => $v !== '');
-
-// Garantir que $especialidades está disponível (compatibilidade)
-if (!isset($especialidades)) $especialidades = [];
 
 $periodoLabel = [
     'hoje'=>'Hoje','ontem'=>'Ontem','7dias'=>'7 dias','30dias'=>'30 dias',
@@ -210,32 +167,12 @@ $periodoLabel = [
     </select>
 
     <button type="submit" class="btn-pacs-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
-    <a href="/estudos?periodo=hoje" class="btn-pacs-outline" title="Limpar filtros e voltar para Hoje"><i class="fa fa-broom"></i> Limpar</a>
-</div>
-
-<!-- Linha 1b: Prioridade -->
-<div class="pacs-filters" style="margin-top:.25rem;">
-    <select name="prioridade" class="form-select" style="width:160px;" onchange="document.getElementById('formFiltros').submit()">
-        <option value=""       <?= ($filtros['prioridade']??'')===''			?'selected':'' ?>>Todas as prioridades</option>
-        <option value="normal" <?= ($filtros['prioridade']??'')==='normal'	?'selected':'' ?>>Normal</option>
-        <option value="rotina" <?= ($filtros['prioridade']??'')==='rotina'	?'selected':'' ?>>Rotina</option>
-        <option value="urgente"<?= ($filtros['prioridade']??'')==='urgente'	?'selected':'' ?>>Urgente</option>
-        <option value="critico"<?= ($filtros['prioridade']??'')==='critico'	?'selected':'' ?>>Crítico</option>
-    </select>
-    <?php if (!empty($especialidades)): ?>
-    <select name="especialidade" class="form-select" style="width:175px;" onchange="document.getElementById('formFiltros').submit()">
-        <option value="">Todas as especialidades</option>
-        <?php foreach ($especialidades as $esp): ?>
-        <option value="<?= htmlspecialchars($esp) ?>" <?= ($filtros['especialidade']??'')===$esp?'selected':'' ?>><?= htmlspecialchars($esp) ?></option>
-        <?php endforeach; ?>
-    </select>
-    <?php else: ?>
-    <input type="text" name="especialidade" class="form-control" style="width:155px;"
-           placeholder="Especialidade" value="<?= htmlspecialchars($filtros['especialidade']??'') ?>">
+    <?php if ($temFiltroAtivo): ?>
+    <a href="/estudos" class="btn-pacs-outline" title="Limpar filtros"><i class="fa fa-xmark"></i> Limpar</a>
     <?php endif; ?>
 </div>
 
-<!-- Linha 2: modalidades + médico + por página -->
+<!-- Linha 2: modalidades + especialidade + médico + por página -->
 <div class="pacs-filters-row2">
     <select name="situacao_rapida" class="form-select" style="width:150px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
             onchange="document.getElementById('selectSituacao').value=this.value; document.getElementById('formFiltros').submit();">
@@ -258,7 +195,8 @@ $periodoLabel = [
 
     <span style="color:var(--pacs-border);margin:0 .25rem;">|</span>
 
-    <!-- especialidade movida para linha 1b -->
+    <input type="text" name="especialidade" class="form-control" style="width:155px;"
+           placeholder="Especialidade" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
 
     <?php if (!empty($medicos)): ?>
     <select name="medico" class="form-select" style="width:155px;font-size:.72rem;height:28px;padding:.1rem .5rem;">
@@ -271,8 +209,8 @@ $periodoLabel = [
 
     <select name="por_pagina" class="form-select" style="width:80px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
             onchange="document.getElementById('formFiltros').submit()">
-        <?php foreach ([25,50,100,250,0] as $pp): ?>
-            <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp > 0 ? $pp.'/pág' : 'Todos' ?></option>
+        <?php foreach ([25,50,100,250] as $pp): ?>
+            <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp ?>/pág</option>
         <?php endforeach; ?>
     </select>
 
@@ -306,16 +244,14 @@ $periodoLabel = [
                 <th style="width:50px;">M</th>
                 <th style="width:130px;"><?= sortLink($filtros,'especialidade','Especialidade') ?></th>
                 <th>Estudo</th>
-                <th style="width:80px;">SLA Estudo</th>
-                <th style="width:80px;">SLA Médico</th>
                 <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
-                <th style="width:170px;text-align:center;">Ações</th>
+                <th style="width:80px;text-align:center;">Ações</th>
             </tr>
         </thead>
         <tbody>
         <?php if (empty($estudos)): ?>
             <tr>
-                <td colspan="11" style="text-align:center;padding:3rem 1rem;">
+                <td colspan="9" style="text-align:center;padding:3rem 1rem;">
                     <div style="font-size:2rem;margin-bottom:.75rem;opacity:.4;"><i class="fa fa-magnifying-glass"></i></div>
                     <div style="font-weight:600;color:var(--pacs-text-secondary);margin-bottom:.4rem;">
                         Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.
@@ -402,91 +338,21 @@ $periodoLabel = [
                     </div>
                 </td>
 
-                <td><?= slaBadgeMarkup(slaOrigemEstudo($e)) ?></td>
-
-                <td class="sla-medico-cell"><?= !empty($e['assumido_em'])
-                    ? slaBadgeMarkup($e['assumido_em'])
-                    : slaBadgeMarkup(null, 'Aguardando Médico') ?></td>
-
                 <td><?= situacaoBadge($sit) ?></td>
 
                 <td style="text-align:center;">
-                    <?php
-                    $uid    = $e['study_instance_uid'] ?? '';
-                    $eid    = (int)$e['id'];
-                    $hasUid = !empty($uid);
-                    ?>
-                    <div class="acoes-grupo">
-
-                    <!-- Botão ABRIR (OHIF Viewer) — sempre à esquerda -->
-                    <?php if ($hasUid): ?>
-                    <a href="/estudos/<?= $eid ?>/abrir"
+                    <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
+                    <a href="/estudos/<?= $e['id'] ?>/abrir"
                        class="pacs-btn btn-open"
                        title="Abrir no OHIF Viewer"
                        target="_blank">
                         <i class="fa fa-eye"></i> Abrir
                     </a>
                     <?php else: ?>
-                    <span class="pacs-btn btn-open" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
-                        <i class="fa fa-eye-slash"></i> Abrir
+                    <span class="pacs-btn" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
+                        <i class="fa fa-eye-slash"></i>
                     </span>
                     <?php endif; ?>
-
-                    <!-- Botão CONTEXTUAL — muda conforme situação -->
-                    <?php if ($sit === 'novo' || $sit === 'aberto'): ?>
-                        <!-- ASSUMIR: POST AJAX → muda status para em_laudo e transforma o botão em "A Laudar" -->
-                        <button class="pacs-btn btn-assumir"
-                                title="Assumir este estudo e iniciar laudo"
-                                data-estudo-id="<?= $eid ?>"
-                                data-study-uid="<?= htmlspecialchars($uid) ?>"
-                                onclick="assumirEstudo(this)">
-                            <i class="fa fa-user-doctor"></i> Assumir
-                        </button>
-
-                    <?php elseif ($sit === 'em_laudo' || $sit === 'rascunho'): ?>
-                        <!-- A LAUDAR: abre o módulo de laudo diretamente -->
-                        <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>"
-                           class="pacs-btn btn-alaudar"
-                           title="Abrir editor de laudo">
-                            <i class="fa fa-pen-to-square"></i> A Laudar
-                        </a>
-                        <?php else: ?>
-                        <button class="pacs-btn btn-alaudar"
-                                title="Abrir editor de laudo"
-                                onclick="abrirLaudoPorId(<?= $eid ?>)">
-                            <i class="fa fa-pen-to-square"></i> A Laudar
-                        </button>
-                        <?php endif; ?>
-
-                    <?php elseif ($sit === 'assinado' || $sit === 'liberado'): ?>
-                        <!-- LAUDO PRONTO: visualizar + PDF -->
-                        <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>"
-                           class="pacs-btn btn-view-report"
-                           title="Visualizar laudo"
-                           target="_blank">
-                            <i class="fa fa-file-medical"></i> Laudo
-                        </a>
-                        <?php else: ?>
-                        <button class="pacs-btn btn-pdf" title="Baixar PDF"
-                                onclick="abrirPdfLaudo(<?= $eid ?>)">
-                            <i class="fa fa-file-pdf"></i> PDF
-                        </button>
-                        <?php endif; ?>
-
-                    <?php else: ?>
-                        <!-- ESTADO GENÉRICO: laudar -->
-                        <?php if ($hasUid): ?>
-                        <a href="/reports/<?= urlencode($uid) ?>"
-                           class="pacs-btn btn-laudar"
-                           title="Abrir editor de laudo">
-                            <i class="fa fa-pen"></i> Laudar
-                        </a>
-                        <?php endif; ?>
-                    <?php endif; ?>
-
-                    </div>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -556,58 +422,12 @@ $periodoLabel = [
 .row-critico td:first-child{border-left:3px solid #ef4444;}
 .sit-em-laudo{background:rgba(168,85,247,.18);color:#c084fc;}
 .sit-liberado{background:rgba(16,185,129,.18);color:#34d399;}
-.sit-novo{background:rgba(100,116,139,.2);color:#94a3b8;}
-.sit-aberto{background:rgba(59,130,246,.2);color:#60a5fa;}
-.sit-rascunho{background:rgba(234,179,8,.2);color:#facc15;}
-.sit-assinado{background:rgba(16,185,129,.2);color:#34d399;}
-.sit-urgente{background:rgba(249,115,22,.2);color:#f97316;}
-
-/* ── Grupo de ações (Abrir + botão contextual) ── */
-.acoes-grupo{display:inline-flex;gap:.3rem;align-items:center;justify-content:center;flex-wrap:nowrap;}
-/* pacs.css define .pacs-btn como quadrado fixo de 26x26px (botões só-ícone da sidebar/topbar).
-   Aqui os botões têm ícone+texto, então precisamos anular width/height explicitamente —
-   sem isso, o 26x26px do pacs.css prevalece (CSS só sobrescreve por propriedade, não por regra). */
-.acoes-grupo .pacs-btn{display:inline-flex;align-items:center;gap:.25rem;width:auto;height:auto;min-width:0;flex-shrink:0;padding:.22rem .55rem;border-radius:5px;font-size:.72rem;font-weight:500;border:1px solid transparent;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .1s;white-space:nowrap;line-height:1.4;}
-.acoes-grupo .pacs-btn:active{transform:scale(.96);}
-/* Abrir — cinza neutro */
-.acoes-grupo .btn-open{background:rgba(100,116,139,.18);color:#94a3b8;border-color:rgba(100,116,139,.4);}
-.acoes-grupo .btn-open:hover{background:rgba(100,116,139,.32);color:#cbd5e1;}
-/* Assumir — azul ciano */
-.acoes-grupo .btn-assumir{background:rgba(79,195,247,.15);color:#4fc3f7;border-color:rgba(79,195,247,.5);}
-.acoes-grupo .btn-assumir:hover{background:rgba(79,195,247,.28);}
-/* A Laudar — roxo/violeta */
-.acoes-grupo .btn-alaudar{background:rgba(168,85,247,.18);color:#c084fc;border-color:rgba(168,85,247,.5);}
-.acoes-grupo .btn-alaudar:hover{background:rgba(168,85,247,.32);}
-/* Laudar genérico */
-.acoes-grupo .btn-laudar{background:rgba(168,85,247,.15);color:#c084fc;border-color:rgba(168,85,247,.4);}
-.acoes-grupo .btn-laudar:hover{background:rgba(168,85,247,.3);}
-/* Laudo assinado */
-.acoes-grupo .btn-view-report{background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(16,185,129,.4);}
-.acoes-grupo .btn-view-report:hover{background:rgba(16,185,129,.3);}
-/* PDF */
-.acoes-grupo .btn-pdf{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.4);}
-.acoes-grupo .btn-pdf:hover{background:rgba(239,68,68,.25);}
-/* Estado "carregando" do botão Assumir (spinner, sem texto) — evita colapsar para 0 largura */
-.acoes-grupo .pacs-btn:disabled{opacity:.7;cursor:wait;min-width:1.6rem;justify-content:center;}
-
-/* ── SLA (Fase 1) — mesmo padrão visual do situacao-badge/prio-badge ── */
-.sla-badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.7rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:.02em;}
-.sla-badge.sla-verde{background:rgba(16,185,129,.18);color:#34d399;}
-.sla-badge.sla-amarelo{background:rgba(234,179,8,.2);color:#facc15;}
-.sla-badge.sla-laranja{background:rgba(249,115,22,.2);color:#f97316;}
-.sla-badge.sla-vermelho{background:rgba(239,68,68,.2);color:#f87171;}
-.sla-badge.sla-pendente{background:rgba(100,116,139,.2);color:#94a3b8;font-weight:600;font-size:.65rem;text-transform:uppercase;letter-spacing:.03em;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
      JAVASCRIPT
 ═══════════════════════════════════════════════════════════ -->
-<?php $slaAssetV = defined('ASSET_VERSION') ? ASSET_VERSION : '1.0'; ?>
-<script src="/assets/js/estudos/sla-counter.js?v=<?= htmlspecialchars($slaAssetV) ?>"></script>
 <script>
-window.SLA_CONFIG = <?= json_encode($slaConfig) ?>;
-SlaCounter.init({ serverNow: <?= (int)$serverNow ?>, thresholds: window.SLA_CONFIG });
-
 function setModalidade(mod) {
     const input = document.getElementById('inputModalidade');
     const btns  = document.querySelectorAll('.mod-btn');
@@ -628,15 +448,6 @@ function setFiltroRapido(campo, valor) {
     const el = document.querySelector('[name="' + campo + '"]');
     if (el) { el.value = valor; document.getElementById('formFiltros').submit(); }
 }
-
-// Atalho de teclado: / para focar na busca
-document.addEventListener('keydown', function(e) {
-    if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
-        e.preventDefault();
-        const q = document.querySelector('[name="q"]');
-        if (q) q.focus();
-    }
-});
 function toggleAll(master) {
     document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
 }
@@ -646,98 +457,4 @@ document.querySelectorAll('.pacs-table tbody tr[data-id]').forEach(row => {
         window.open('/estudos/' + this.dataset.id + '/abrir', '_blank');
     });
 });
-
-// ── Assumir Estudo ──
-// Recebe o elemento <button> diretamente (onclick="assumirEstudo(this)")
-function assumirEstudo(btn) {
-    const estudoId = btn.dataset.estudoId;
-    const studyUid = btn.dataset.studyUid;
-    if (!estudoId) return;
-
-    // Feedback visual imediato
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
-
-    fetch('/reports/assumir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estudo_id: parseInt(estudoId) })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.ok) {
-            // ✔ Transforma o botão em "A Laudar" SEM recarregar a página
-            btn.disabled  = false;
-            btn.className = 'pacs-btn btn-alaudar';
-            btn.title     = 'Abrir editor de laudo';
-            btn.innerHTML = '<i class="fa fa-pen-to-square"></i> A Laudar';
-
-            // Ao clicar em "A Laudar", abre o módulo de laudo
-            btn.onclick = function() {
-                if (studyUid) {
-                    window.location.href = '/reports/' + encodeURIComponent(studyUid);
-                } else {
-                    abrirLaudoPorId(parseInt(estudoId));
-                }
-            };
-
-            // Atualiza o badge de situação na mesma linha
-            var row = btn.closest('tr');
-            if (row) {
-                var badge = row.querySelector('.situacao-badge');
-                if (badge) {
-                    badge.className = 'situacao-badge sit-em-laudo';
-                    badge.textContent = 'EM LAUDO';
-                }
-
-                // Inicia o contador do SLA Médico (independente do SLA Estudo)
-                var slaMedicoCell = row.querySelector('.sla-medico-cell');
-                if (slaMedicoCell) {
-                    var origem = data.assumido_em || new Date().toISOString();
-                    slaMedicoCell.innerHTML = '<span class="sla-badge" data-sla-origin="' + origem + '">--:--</span>';
-                    if (window.SlaCounter) SlaCounter.rescan();
-                }
-            }
-        } else {
-            alert(data.msg || 'Erro ao assumir o estudo.');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa fa-user-doctor"></i> Assumir';
-        }
-    })
-    .catch(function() {
-        alert('Falha na conexão. Tente novamente.');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-user-doctor"></i> Assumir';
-    });
-}
-
-// ── Abrir laudo por estudo_id (fallback sem study_uid) ──
-function abrirLaudoPorId(estudoId) {
-    fetch('/api/reports/by-estudo?estudo_id=' + estudoId)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.report_id) {
-            window.location.href = '/reports/' + data.report_id;
-        } else {
-            // Cria novo laudo
-            window.location.href = '/reports/novo?estudo_id=' + estudoId;
-        }
-    })
-    .catch(function() { alert('Erro ao abrir laudo.'); });
-}
-
-// ── Abrir PDF do Laudo ──
-function abrirPdfLaudo(estudoId) {
-    // Busca o report_id via API e abre o PDF
-    fetch('/api/reports/by-estudo?estudo_id=' + estudoId)
-    .then(r => r.json())
-    .then(function(data) {
-        if (data.report_id) {
-            window.open('/reports/pdf?report_id=' + data.report_id, '_blank');
-        } else {
-            alert('Laudo não encontrado para este estudo.');
-        }
-    })
-    .catch(function() { alert('Erro ao buscar laudo.'); });
-}
 </script>
