@@ -177,27 +177,33 @@ $badgeLabel  = $statusLabel[$pingStatus] ?? 'Desconhecido';
                 <?php if (empty($institutionStats)): ?>
                     <div class="p-4 text-center text-muted">
                         <i class="fa fa-database fa-2x mb-2"></i>
-                        <p class="mb-0">Nenhum estudo importado ainda.<br>Clique em <strong>Sincronizar Estudos</strong>.</p>
+                        <p class="mb-0">Nenhum estudo importado e nenhum InstitutionName cadastrado em Negócios ainda.<br>Clique em <strong>Sincronizar Estudos</strong> ou cadastre em <a href="/platform/negocios">Negócios</a>.</p>
                     </div>
                 <?php else: ?>
                     <table class="table table-sm mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th>InstitutionName</th>
+                                <th>Negócio</th>
                                 <th class="text-center">Estudos</th>
-                                <th class="text-center">Roteado</th>
+                                <th class="text-center">Status</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($institutionStats as $inst): ?>
                                 <tr>
                                     <td class="small"><code><?= htmlspecialchars($inst['institution_name'] ?? '(vazio)') ?></code></td>
+                                    <td class="small"><?= $inst['negocio_nome'] ? htmlspecialchars($inst['negocio_nome']) : '<span class="text-muted">—</span>' ?></td>
                                     <td class="text-center"><span class="badge bg-secondary"><?= $inst['total'] ?></span></td>
                                     <td class="text-center">
-                                        <?php if ($inst['tenant_id']): ?>
-                                            <i class="fa fa-check-circle text-success"></i>
+                                        <?php if (!$inst['tem_estudo']): ?>
+                                            <span class="badge bg-light text-dark border" title="Cadastrado em Negócios, ainda sem estudo sincronizado">
+                                                <i class="fa fa-hourglass-half me-1"></i>Sem estudo ainda
+                                            </span>
+                                        <?php elseif ($inst['tenant_id']): ?>
+                                            <i class="fa fa-check-circle text-success" title="Roteado"></i>
                                         <?php else: ?>
-                                            <i class="fa fa-times-circle text-danger"></i>
+                                            <i class="fa fa-times-circle text-danger" title="Não roteado"></i>
                                         <?php endif; ?>
                                     </td>
                                 </tr>

@@ -54,14 +54,7 @@ class ServidorPacsController extends Controller
                 SELECT * FROM bi_pacs_sync_log WHERE servidor_id = 1 ORDER BY id DESC LIMIT 1
             ")->fetch(\PDO::FETCH_ASSOC);
 
-            $institutionStats = $pdo->query("
-                SELECT institution_name, COUNT(*) as total, tenant_id,
-                       MAX(study_date) as ultimo_exame
-                FROM bi_pacs_estudos
-                WHERE servidor_id = 1
-                GROUP BY institution_name, tenant_id
-                ORDER BY total DESC
-            ")->fetchAll(\PDO::FETCH_ASSOC);
+            $institutionStats = $this->getInstitutionStats($pdo);
 
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao carregar dashboard: " . $e->getMessage());
@@ -701,5 +694,73 @@ class ServidorPacsController extends Controller
             error_log("[PACS] Erro ao buscar servidor: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * União de InstitutionNames: (a) já vistos em estudos sincronizados do Orthanc
+     * e (b) cadastrados no módulo Negócios (bi_negocio_institution_names), mesmo
+     * que ainda não tenham nenhum estudo roteado.
+     *
+     * A chave de deduplicação é strtolower(trim(institution_name)) — mesmo critério
+     * já usado em sincronizar() para casar InstitutionName com bi_pacs_roteamento.
+     * Isso não garante que o nome cadastrado em Negócios bata 100% com a tag DICOM
+     * real (case/acentuação podem divergir) — quando os dois só diferem em caixa,
+     * o valor exibido é o que veio do estudo (fonte de verdade do Orthanc).
+     */
+    private function getInstitutionStats(\PDO $pdo): array
+    {
+        $fromEstudos = $pdo->query("
+            SELECT institution_name, COUNT(*) as total, tenant_id,
+                   MAX(study_date) as ultimo_exame
+            FROM bi_pacs_estudos
+            WHERE servidor_id = 1 AND institution_name IS NOT NULL AND institution_name != ''
+            GROUP BY institution_name, tenant_id
+            ORDER BY total DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $fromNegocios = [];
+        try {
+            $fromNegocios = $pdo->query("
+                SELECT bin.institution_name, bin.tenant_id, t.nome as negocio_nome
+                FROM bi_negocio_institution_names bin
+                JOIN bi_tenants t ON t.id = bin.tenant_id
+                WHERE bin.ativo = 1
+                ORDER BY bin.institution_name
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao carregar institution_names de Negócios: " . $e->getMessage());
+        }
+
+        $merged = [];
+        foreach ($fromEstudos as $row) {
+            $key = strtolower(trim($row['institution_name']));
+            $merged[$key] = [
+                'institution_name' => $row['institution_name'],
+                'total'             => (int)$row['total'],
+                'tenant_id'         => $row['tenant_id'],
+                'negocio_nome'      => null,
+                'ultimo_exame'      => $row['ultimo_exame'],
+                'tem_estudo'        => true,
+            ];
+        }
+        foreach ($fromNegocios as $row) {
+            $key = strtolower(trim($row['institution_name']));
+            if (isset($merged[$key])) {
+                $merged[$key]['negocio_nome'] = $merged[$key]['negocio_nome'] ?? $row['negocio_nome'];
+            } else {
+                $merged[$key] = [
+                    'institution_name' => $row['institution_name'],
+                    'total'             => 0,
+                    'tenant_id'         => $row['tenant_id'],
+                    'negocio_nome'      => $row['negocio_nome'],
+                    'ultimo_exame'      => null,
+                    'tem_estudo'        => false,
+                ];
+            }
+        }
+
+        $result = array_values($merged);
+        usort($result, fn($a, $b) => $b['total'] <=> $a['total']);
+        return $result;
     }
 }

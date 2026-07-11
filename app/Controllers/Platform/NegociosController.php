@@ -375,4 +375,166 @@ class NegociosController extends Controller {
 
         $this->json(['error' => 'CNPJ não encontrado nas APIs'], 404);
     }
+
+    // ----------------------------------------------------------------
+    // UNIDADES DICOM (Grid CRUD) — bi_tenant_unidades_dicom
+    // ----------------------------------------------------------------
+
+    public function listarUnidades(int $id): void {
+        $pdo = Database::getInstance();
+        try {
+            $stmt = $pdo->prepare("
+                SELECT * FROM bi_tenant_unidades_dicom WHERE tenant_id = ? ORDER BY nome ASC
+            ");
+            $stmt->execute([$id]);
+            $this->json(['success' => true, 'unidades' => $stmt->fetchAll(\PDO::FETCH_ASSOC)]);
+        } catch (\Throwable $e) {
+            error_log("[NegociosController::listarUnidades] " . $e->getMessage());
+            $this->json(['success' => false, 'message' => 'Erro ao listar unidades.'], 500);
+        }
+    }
+
+    public function getUnidade(int $id, int $uid): void {
+        $pdo = Database::getInstance();
+        try {
+            $stmt = $pdo->prepare("
+                SELECT * FROM bi_tenant_unidades_dicom WHERE id = ? AND tenant_id = ? LIMIT 1
+            ");
+            $stmt->execute([$uid, $id]);
+            $unidade = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$unidade) {
+                $this->json(['success' => false, 'message' => 'Unidade não encontrada.'], 404);
+                return;
+            }
+            $this->json(['success' => true, 'unidade' => $unidade]);
+        } catch (\Throwable $e) {
+            error_log("[NegociosController::getUnidade] " . $e->getMessage());
+            $this->json(['success' => false, 'message' => 'Erro ao buscar unidade.'], 500);
+        }
+    }
+
+    public function criarUnidade(int $id): void {
+        $pdo = Database::getInstance();
+
+        $institutionName = trim($_POST['institution_name'] ?? '');
+        $nome             = trim($_POST['nome'] ?? '');
+
+        if (empty($nome) || empty($institutionName)) {
+            $this->json(['success' => false, 'message' => 'Nome da unidade e InstitutionName são obrigatórios.'], 400);
+            return;
+        }
+
+        try {
+            $tenant = $pdo->prepare("SELECT id FROM bi_tenants WHERE id = ? LIMIT 1");
+            $tenant->execute([$id]);
+            if (!$tenant->fetchColumn()) {
+                $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
+                return;
+            }
+
+            $stmt = $pdo->prepare("
+                INSERT INTO bi_tenant_unidades_dicom
+                (tenant_id, nome, cnpj, logradouro, numero, complemento, bairro, cidade, uf, cep,
+                 institution_name, ae_title, codigo_interno, status, observacoes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $id,
+                $nome,
+                trim($_POST['cnpj'] ?? '') ?: null,
+                trim($_POST['logradouro'] ?? '') ?: null,
+                trim($_POST['numero'] ?? '') ?: null,
+                trim($_POST['complemento'] ?? '') ?: null,
+                trim($_POST['bairro'] ?? '') ?: null,
+                trim($_POST['cidade'] ?? '') ?: null,
+                trim($_POST['uf'] ?? '') ?: null,
+                trim($_POST['cep'] ?? '') ?: null,
+                $institutionName,
+                trim($_POST['ae_title'] ?? '') ?: null,
+                trim($_POST['codigo_interno'] ?? '') ?: null,
+                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo']) ? $_POST['status'] : 'ativo',
+                trim($_POST['observacoes'] ?? '') ?: null,
+            ]);
+
+            $this->json(['success' => true, 'message' => 'Unidade criada com sucesso.', 'id' => (int)$pdo->lastInsertId()]);
+        } catch (\Throwable $e) {
+            error_log("[NegociosController::criarUnidade] " . $e->getMessage());
+            $msg = str_contains($e->getMessage(), 'uq_tenant_institution')
+                ? 'Este InstitutionName já está cadastrado para este negócio.'
+                : 'Erro ao criar unidade.';
+            $this->json(['success' => false, 'message' => $msg], 500);
+        }
+    }
+
+    public function atualizarUnidade(int $id, int $uid): void {
+        $pdo = Database::getInstance();
+
+        $institutionName = trim($_POST['institution_name'] ?? '');
+        $nome             = trim($_POST['nome'] ?? '');
+
+        if (empty($nome) || empty($institutionName)) {
+            $this->json(['success' => false, 'message' => 'Nome da unidade e InstitutionName são obrigatórios.'], 400);
+            return;
+        }
+
+        try {
+            $existe = $pdo->prepare("SELECT id FROM bi_tenant_unidades_dicom WHERE id = ? AND tenant_id = ?");
+            $existe->execute([$uid, $id]);
+            if (!$existe->fetchColumn()) {
+                $this->json(['success' => false, 'message' => 'Unidade não encontrada.'], 404);
+                return;
+            }
+
+            $stmt = $pdo->prepare("
+                UPDATE bi_tenant_unidades_dicom
+                SET nome=?, cnpj=?, logradouro=?, numero=?, complemento=?, bairro=?, cidade=?, uf=?, cep=?,
+                    institution_name=?, ae_title=?, codigo_interno=?, status=?, observacoes=?, updated_at=NOW()
+                WHERE id = ? AND tenant_id = ?
+            ");
+            $stmt->execute([
+                $nome,
+                trim($_POST['cnpj'] ?? '') ?: null,
+                trim($_POST['logradouro'] ?? '') ?: null,
+                trim($_POST['numero'] ?? '') ?: null,
+                trim($_POST['complemento'] ?? '') ?: null,
+                trim($_POST['bairro'] ?? '') ?: null,
+                trim($_POST['cidade'] ?? '') ?: null,
+                trim($_POST['uf'] ?? '') ?: null,
+                trim($_POST['cep'] ?? '') ?: null,
+                $institutionName,
+                trim($_POST['ae_title'] ?? '') ?: null,
+                trim($_POST['codigo_interno'] ?? '') ?: null,
+                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo']) ? $_POST['status'] : 'ativo',
+                trim($_POST['observacoes'] ?? '') ?: null,
+                $uid,
+                $id,
+            ]);
+
+            $this->json(['success' => true, 'message' => 'Unidade atualizada com sucesso.']);
+        } catch (\Throwable $e) {
+            error_log("[NegociosController::atualizarUnidade] " . $e->getMessage());
+            $msg = str_contains($e->getMessage(), 'uq_tenant_institution')
+                ? 'Este InstitutionName já está cadastrado para este negócio.'
+                : 'Erro ao atualizar unidade.';
+            $this->json(['success' => false, 'message' => $msg], 500);
+        }
+    }
+
+    public function excluirUnidade(int $id, int $uid): void {
+        $pdo = Database::getInstance();
+        try {
+            $stmt = $pdo->prepare("DELETE FROM bi_tenant_unidades_dicom WHERE id = ? AND tenant_id = ?");
+            $stmt->execute([$uid, $id]);
+
+            if ($stmt->rowCount() === 0) {
+                $this->json(['success' => false, 'message' => 'Unidade não encontrada.'], 404);
+                return;
+            }
+            $this->json(['success' => true, 'message' => 'Unidade removida com sucesso.']);
+        } catch (\Throwable $e) {
+            error_log("[NegociosController::excluirUnidade] " . $e->getMessage());
+            $this->json(['success' => false, 'message' => 'Erro ao remover unidade.'], 500);
+        }
+    }
 }

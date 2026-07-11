@@ -1,0 +1,32 @@
+# Índice de Rotas / API
+
+> Preencha uma linha por rota (ou por grupo de rotas do mesmo recurso) assim que ela for tocada/analisada. Não tente preencher tudo de uma vez na primeira sessão — este índice cresce organicamente conforme o projeto é explorado.
+
+| Método | Rota | Controller/Handler | Autenticação | Propósito | Última verificação |
+|---|---|---|---|---|---|
+| GET | `/platform/servidor-pacs` | `Platform\ServidorPacsController@index` | Platform admin | Dashboard: status Orthanc, roteamentos ativos, card "InstitutionNames no PACS" (união estudos ∪ `bi_negocio_institution_names`) | 2026-07-10 |
+| GET | `/platform/servidor-pacs/configurar` | `Platform\ServidorPacsController@configurar` | Platform admin | Form de config do servidor Orthanc | 2026-07-10 |
+| POST | `/platform/servidor-pacs/salvar-config` | `Platform\ServidorPacsController@salvarConfig` | Platform admin | Salva URL/credenciais do Orthanc | 2026-07-10 |
+| POST | `/platform/servidor-pacs/testar` | `Platform\ServidorPacsController@testar` | Platform admin | Ping AJAX no Orthanc, retorna JSON | 2026-07-10 |
+| POST | `/platform/servidor-pacs/sincronizar` | `Platform\ServidorPacsController@sincronizar` | Platform admin | Importa estudos do Orthanc → `bi_pacs_estudos`, roteia via `bi_pacs_roteamento` (não considera `bi_negocio_institution_names`) | 2026-07-10 |
+| GET | `/platform/servidor-pacs/roteamento` | `Platform\ServidorPacsController@roteamento` | Platform admin | Tela de de-para InstitutionName → Negócio (`bi_pacs_roteamento`) | 2026-07-10 |
+| POST | `/platform/servidor-pacs/roteamento/salvar` | `Platform\ServidorPacsController@salvarRoteamento` | Platform admin | Cria/atualiza roteamento; aplica retroativamente aos estudos já importados | 2026-07-10 |
+| POST | `/platform/servidor-pacs/roteamento/{id}/remover` | `Platform\ServidorPacsController@removerRoteamento` | Platform admin | Remove roteamento | 2026-07-10 |
+| GET | `/platform/servidor-pacs/estudos` | `Platform\ServidorPacsController@estudos` | Platform admin | Lista/filtra estudos importados | 2026-07-10 |
+| GET | `/platform/negocios` | `Platform\NegociosController@index` | Platform admin | Lista de Negócios (tenants) | 2026-07-10 |
+| GET/POST | `/platform/negocios/create`, `/platform/negocios` | `Platform\NegociosController@create/store` | Platform admin | Cria Negócio; aba DICOM grava `institution_names` (textarea) em `bi_negocio_institution_names` | 2026-07-10 |
+| GET/POST | `/platform/negocios/{id}/edit`, `/platform/negocios/{id}/update` | `Platform\NegociosController@edit/update` | Platform admin | Edita Negócio; mesma aba DICOM acima | 2026-07-10 |
+| GET | `/platform/negocios/{id}/unidades` | `Platform\NegociosController@listarUnidades` | Platform admin | Lista Unidades DICOM (`bi_tenant_unidades_dicom`) de um Negócio, JSON | 2026-07-10 — **método estava ausente no controller (rota quebrada); implementado nesta sessão** |
+| POST | `/platform/negocios/{id}/unidades` | `Platform\NegociosController@criarUnidade` | Platform admin | Cria Unidade DICOM, JSON | idem acima |
+| GET | `/platform/negocios/{id}/unidades/{uid}` | `Platform\NegociosController@getUnidade` | Platform admin | Detalhe de uma Unidade DICOM, JSON | idem acima |
+| POST | `/platform/negocios/{id}/unidades/{uid}/update` | `Platform\NegociosController@atualizarUnidade` | Platform admin | Atualiza Unidade DICOM, JSON | idem acima |
+| POST | `/platform/negocios/{id}/unidades/{uid}/delete` | `Platform\NegociosController@excluirUnidade` | Platform admin | Remove Unidade DICOM, JSON | idem acima |
+| POST | `/platform/negocios/{id}/logo` | `Platform\NegociosController@uploadLogo` | Platform admin | **Rota quebrada — método não existe no controller.** Encontrado mas não corrigido nesta sessão (fora do escopo autorizado); confirmar com o usuário antes de mexer | 2026-07-10 |
+| POST | `/platform/negocios/{id}/enviar-token` | `Platform\NegociosController@enviarTokenAcesso` | Platform admin | **Rota quebrada — método não existe no controller.** Mesma situação acima | 2026-07-10 |
+
+## Convenções observadas (preencher conforme confirmado no código)
+
+- Prefixo de versionamento de API: nenhum — não há versionamento de rotas (`/platform/...` direto, sem `/v1/`)
+- Padrão de resposta de erro: endpoints AJAX retornam JSON `{"success": bool, "message": string}`; `Controller::json()` é o helper padrão (`http_response_code` + `json_encode` com `JSON_UNESCAPED_UNICODE`). Alguns endpoints mais antigos (`ServidorPacsController`) fazem `header()`/`echo json_encode()` manual em vez de usar `$this->json()` — inconsistência histórica, não um padrão a copiar
+- Middleware de autenticação padrão: não há middleware por rota — `App\Core\Router::dispatch()` checa `Auth::check()` globalmente (exceto rotas em `$publicRoutes`)
+- Middleware de permissão/ACL padrão: idem — `Router::dispatch()` bloqueia qualquer URI com prefixo `/platform` para quem não é `Auth::isPlatformAdmin()`, antes mesmo de rotear
