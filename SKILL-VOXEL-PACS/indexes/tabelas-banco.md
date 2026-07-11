@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | `bi_tenants` | Negócios (clientes/tenants) da plataforma | `App\Models\Tenant` | FK de quase toda tabela `bi_*` via `tenant_id` | 2026-07-10 |
 | `bi_pacs_servidor` | Config do servidor Orthanc global (linha única, `id=1`) | — (PDO direto) | — | 2026-07-10 |
-| `bi_pacs_estudos` | Espelho local dos estudos DICOM importados do Orthanc (todas as tags relevantes como colunas) | — (PDO direto, `EstudosRepository`) | `tenant_id` → `bi_tenants`; `institution_name` casado contra `bi_pacs_roteamento`/`bi_negocio_institution_names` | 2026-07-10 |
+| `bi_pacs_estudos` | Espelho local dos estudos DICOM importados do Orthanc (todas as tags relevantes como colunas) | — (PDO direto em `EstudosController`, a worklist `/estudos`; **correção**: `EstudosRepository`/`EstudosService` existem mas são usados por `ReportsController` — módulo de laudos —, não pelo worklist, ao contrário do que ficou registrado aqui em 2026-07-10) | `tenant_id` → `bi_tenants`; `institution_name` casado contra `bi_pacs_roteamento`/`bi_negocio_institution_names`; `modalities` populado por `OrthancService::fetchModalitiesInStudy()` (corrigido em 2026-07-11, ver `modules/worklist-estudos.md`) | 2026-07-11 |
 | `bi_pacs_roteamento` | De-para manual InstitutionName (DICOM) → `tenant_id`, aplicado durante `sincronizar()` | — (PDO direto) | `institution_name` casado (case-insensitive) contra `bi_pacs_estudos.institution_name` | 2026-07-10 |
 | `bi_pacs_sync_log` | Histórico de execuções de `sincronizar()` | — (PDO direto) | `servidor_id` → `bi_pacs_servidor` | 2026-07-10 |
 | `bi_negocio_institution_names` | InstitutionNames cadastrados manualmente por Negócio (aba "DICOM" do form de Negócio, textarea) — **fonte ativa hoje** para nomes cadastrados fora de estudos sincronizados | — (PDO direto em `NegociosController`) | `tenant_id` → `bi_tenants`; usado por `ServidorPacsController::getInstitutionStats()` na união com `bi_pacs_estudos` | 2026-07-10 |
@@ -18,8 +18,7 @@
 - `bi_pacs_estudos.institution_name` é o valor exato da tag DICOM `InstitutionName (0008,0080)` vindo do Orthanc — é a fonte de verdade. Nomes cadastrados manualmente em `bi_negocio_institution_names`/`bi_tenant_unidades_dicom` podem divergir em caixa/acentuação; todo matching entre as duas fontes deve normalizar com `strtolower(trim(...))`, seguindo o padrão já usado em `ServidorPacsController::sincronizar()`.
 - `bi_pacs_estudos` é espelho de metadados do Orthanc (sincronização via `sincronizar()`, síncrona por HTTP request) — não é fonte de verdade para os binários DICOM, só para metadados/roteamento.
 - `sincronizar()` hoje só roteia automaticamente via `bi_pacs_roteamento`; **não** consulta `bi_negocio_institution_names` nem `bi_tenant_unidades_dicom` para auto-rotear no momento da importação. Ou seja, cadastrar um InstitutionName em Negócios não roteia retroativamente nem automaticamente estudos futuros — só aparece no card como "cadastrado". Ficou fora do escopo desta tarefa (não pedido); registrar como melhoria futura se o usuário quiser.
-
-## Cuidados especiais para tabelas clínicas/DICOM
+- `bi_pacs_estudos.modalities`: **Modality (0008,0060) é atributo de Series, não de Study.** `MainDicomTags` de `GET /studies/{id}` do Orthanc nunca contém essa informação — até 2026-07-11 o código lia `MainDicomTags.ModalitiesInStudy` (sempre `null`), por isso a coluna "M" do worklist sempre mostrou "—". Corrigido agregando `MainDicomTags.Modality` de cada Series via `GET /studies/{id}/series` (ver `modules/worklist-estudos.md` e `memory/regras-de-negocio.md`).
 
 Ao mapear tabelas que armazenam dados DICOM (Study/Series/Instance) ou dados de paciente, documente explicitamente:
 

@@ -46,6 +46,7 @@ Decisão explícita do usuário (2026-07-10): usar `bi_negocio_institution_names
 
 ## Riscos / pontos frágeis conhecidos
 - `sincronizar()` só roteia automaticamente via `bi_pacs_roteamento` — não considera `bi_negocio_institution_names` nem `bi_tenant_unidades_dicom`. Cadastrar um nome em Negócios não roteia estudos automaticamente na próxima sincronização.
+- **2026-07-11**: `sincronizar()` ficou ~2x mais lenta por estudo — `OrthancService::importAllStudies()` agora faz uma requisição extra por estudo (`GET /studies/{id}/series`) para obter a Modality real (corrige a coluna "M" do worklist, sempre vazia até então; ver `modules/worklist-estudos.md`). Ainda dentro do `set_time_limit(300)` já existente, mas é um dado a considerar se o volume de estudos crescer muito.
 - Case/acentuação: nomes cadastrados manualmente em Negócios podem não bater 100% com a tag DICOM real do equipamento. O merge é case-insensitive via `strtolower(trim())`, mas não normaliza acentos — dois nomes que só diferem em acento aparecem como linhas separadas.
 - `bi_institution_name_pendentes` (fila de nomes sem vínculo) existe no schema mas não é usada em nenhum código PHP — feature não implementada.
 

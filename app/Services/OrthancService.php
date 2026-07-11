@@ -133,16 +133,50 @@ class OrthancService {
             $study = $studyRes['data'];
             if (!is_array($study)) continue;
 
-            $normalized[] = $this->normalizeStudy($study);
+            $modalities = $this->fetchModalitiesInStudy($studyId);
+
+            $normalized[] = $this->normalizeStudy($study, $modalities);
         }
 
         return $normalized;
     }
 
     /**
+     * Modality (0008,0060) é atributo de Series, não de Study — o Orthanc nunca
+     * inclui isso em MainDicomTags de GET /studies/{id} (ModalitiesInStudy é um
+     * tag computado, só disponível via ?requestedTags desde o Orthanc 1.11.0,
+     * o que não podemos assumir em toda instalação). Por isso agregamos aqui a
+     * partir de GET /studies/{id}/series, que já retorna cada Series expandida
+     * com seu MainDicomTags.Modality — 1 requisição extra por estudo durante o
+     * sync, não afeta a listagem (que só lê a coluna já persistida).
+     *
+     * Mesmo critério do tag DICOM ModalitiesInStudy: modalidades distintas, na
+     * ordem em que aparecem, separadas por '\' — mesmo separador já usado pela
+     * coluna bi_pacs_estudos.modalities e pela view do worklist.
+     */
+    private function fetchModalitiesInStudy(string $studyId): ?string
+    {
+        $res = $this->request("/studies/$studyId/series");
+        if (!$res['success'] || !is_array($res['data'])) {
+            Logger::error("Orthanc: falha ao buscar series do estudo $studyId: " . ($res['error'] ?? 'resposta inválida'));
+            return null;
+        }
+
+        $modalidades = [];
+        foreach ($res['data'] as $serie) {
+            $modality = trim($serie['MainDicomTags']['Modality'] ?? '');
+            if ($modality !== '' && !in_array($modality, $modalidades, true)) {
+                $modalidades[] = $modality;
+            }
+        }
+
+        return $modalidades ? implode('\\', $modalidades) : null;
+    }
+
+    /**
      * Normaliza um estudo Orthanc para o formato interno do VOXEL B.I
      */
-    private function normalizeStudy(array $study): array
+    private function normalizeStudy(array $study, ?string $modalities = null): array
     {
         $main    = $study['MainDicomTags']        ?? [];
         $patient = $study['PatientMainDicomTags'] ?? [];
@@ -209,7 +243,7 @@ class OrthancService {
             'performing_physician_name'     => $t($main['PerformingPhysicianName']   ?? null),
 
             // --- Series summary ---
-            'modalities'                    => $t($main['ModalitiesInStudy']         ?? null),
+            'modalities'                    => $modalities,
             'num_series'                    => count($series),
             'num_instances'                 => (int)($study['Statistics']['CountInstances'] ?? 0),
 

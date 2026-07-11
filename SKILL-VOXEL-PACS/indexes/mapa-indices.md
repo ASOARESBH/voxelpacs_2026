@@ -9,9 +9,9 @@
 | O que procuro | Onde fica (caminho real) | Observações |
 |---|---|---|
 | Telas / Views | `app/Views/` (ex: `app/Views/platform/servidor_pacs/*.php`, `app/Views/platform/negocios/*.php`) | Templates PHP puro, renderizados por `App\Core\View::render()` a partir de `$this->view()` no Controller |
-| Controllers | `app/Controllers/` e `app/Controllers/Platform/` (área superadmin) | Não há camada Service/Repository obrigatória — controllers de `Platform/` (ex: `ServidorPacsController`, `NegociosController`) fazem PDO direto. `EstudosController` é exceção, usa `App\Services\EstudosService` + `App\Repositories\EstudosRepository` |
-| Services | `app/Services/` (ex: `OrthancService.php`, `EstudosService.php`) | Só existe onde a lógica é complexa o bastante para justificar; nem todo controller tem Service |
-| Repositories | `app/Repositories/` (ex: `EstudosRepository.php`) | Ver `EstudosRepository::getUnidades()` — já implementa o padrão de união Estudos ∪ Negócios usado como referência nesta tarefa |
+| Controllers | `app/Controllers/` e `app/Controllers/Platform/` (área superadmin) | Não há camada Service/Repository obrigatória — a maioria faz PDO direto, incluindo `EstudosController` (worklist `/estudos`, PDO 100% inline, ver `modules/worklist-estudos.md`). **Correção 2026-07-11**: `ReportsController` é quem usa `App\Services\EstudosService` + `App\Repositories\EstudosRepository` — não o `EstudosController`, ao contrário do que este índice dizia antes. Os dois implementam consultas de estudos em paralelo/duplicadas, não a mesma camada |
+| Services | `app/Services/` (ex: `OrthancService.php`, `EstudosService.php`) | Só existe onde a lógica é complexa o bastante para justificar; nem todo controller tem Service. `EstudosService` é usado por `ReportsController`, não pelo worklist principal |
+| Repositories | `app/Repositories/` (ex: `EstudosRepository.php`) | Usado por `ReportsController`. Ver `EstudosRepository::getUnidades()` — já implementa o padrão de união Estudos ∪ Negócios usado como referência na tarefa de `servidor-pacs` |
 | Models / Entities | `app/Models/` (ex: `Tenant.php`, `TenantPlan.php`, `User.php`) | Ativos simples de acesso a `bi_tenants`/afins, não são um ORM completo |
 | Rotas de API | `routes/platform.php` (área `/platform/*`, superadmin) e demais arquivos em `routes/` | Ver `indexes/rotas-api.md` |
 | Migrations | `database/migrations/*.sql` | Nomeadas `YYYY-MM-DD_descricao.sql`; várias usam procedure `vp_add_col` para `ALTER TABLE` idempotente (MySQL 5.7/MariaDB, sem suporte nativo a `ADD COLUMN IF NOT EXISTS`) |
