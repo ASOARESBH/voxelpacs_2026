@@ -172,7 +172,7 @@ $periodoLabel = [
     <?php endif; ?>
 </div>
 
-<!-- Linha 2: modalidades + especialidade + médico + por página -->
+<!-- Linha 2: modalidades + solicitante (rótulo; internamente ainda é o filtro/coluna "especialidade", ver modules/worklist-estudos.md) + médico + por página -->
 <div class="pacs-filters-row2">
     <select name="situacao_rapida" class="form-select" style="width:150px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
             onchange="document.getElementById('selectSituacao').value=this.value; document.getElementById('formFiltros').submit();">
@@ -196,7 +196,7 @@ $periodoLabel = [
     <span style="color:var(--pacs-border);margin:0 .25rem;">|</span>
 
     <input type="text" name="especialidade" class="form-control" style="width:155px;"
-           placeholder="Especialidade" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
+           placeholder="Solicitante" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
 
     <?php if (!empty($medicos)): ?>
     <select name="medico" class="form-select" style="width:155px;font-size:.72rem;height:28px;padding:.1rem .5rem;">
@@ -242,7 +242,7 @@ $periodoLabel = [
                 <th><?= sortLink($filtros,'patient_name','Paciente') ?></th>
                 <th style="width:145px;"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
                 <th style="width:50px;">M</th>
-                <th style="width:130px;"><?= sortLink($filtros,'especialidade','Especialidade') ?></th>
+                <th style="width:130px;"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
                 <th>Estudo</th>
                 <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
                 <th style="width:80px;text-align:center;">Ações</th>

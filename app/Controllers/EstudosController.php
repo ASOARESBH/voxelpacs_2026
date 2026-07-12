@@ -20,7 +20,11 @@ use App\Core\Auth;
  *   dt_inicio/dt_fim → usado com periodo=personalizado
  *   unidade       → institution_name LIKE
  *   modalidade    → modalities LIKE
- *   especialidade → especialidade LIKE
+ *   especialidade → especialidade LIKE (rótulo exibido na tela é "Solicitante" desde
+ *                   2026-07-12 — a coluna bi_pacs_estudos.especialidade nunca é escrita
+ *                   em nenhum fluxo, então este filtro nunca encontra nada; o que a
+ *                   célula da tabela mostra de fato é o fallback referring_physician_name,
+ *                   não filtrado aqui. Ver modules/worklist-estudos.md)
  *   situacao      → novo|aberto|em_laudo|rascunho|assinado|liberado
  *   prioridade    → normal|urgente|critico
  *   medico        → assumido_por LIKE
