@@ -28,6 +28,23 @@ Controller com PDO direto — mesmo padrão de `ServidorPacsController`/`Negocio
 
 Ver critério de agregação multi-modalidade em `memory/regras-de-negocio.md`.
 
+**Atualização 2026-07-12 — coluna "M" ainda "—" após o fix, investigado e sem novo bug de código.** Reportado que a coluna continuava vazia mesmo após o commit acima. Investigação (nesta ordem, sem pular etapas):
+1. `OrthancService::fetchModalitiesInStudy()` está de fato chamada dentro de `importAllStudies()` (linha 136) — não ficou órfã.
+2. `ServidorPacsController::sincronizar()` grava o resultado em `bi_pacs_estudos.modalities` (nome de coluna confere).
+3. `EstudosController::index()` **já** tem `e.modalities` no SELECT (linha 206) — isso nunca esteve faltando, ao contrário do que se suspeitava inicialmente.
+4. A view já lê `$e['modalities']` e renderiza corretamente (linhas 274-275, 312).
+5. Sanity check adicional (dado o histórico deste repo de deploys que colaram classe duplicada no mesmo arquivo): `EstudosController.php` tem 1 `class` e 1 `index()`, `php -l` limpo nos 3 arquivos da cadeia.
+
+**Conclusão**: toda a cadeia de código (sync → grava coluna → SELECT → View) está correta desde `2487377` (2026-07-11). A explicação mais provável — e não descartável sem acesso ao ambiente ao vivo — é a mais simples: os estudos já importados antes do fix continuam com `modalities = NULL` até rodar **"Sincronizar Estudos"** de novo (o commit é de um dia antes desta investigação), e/ou o commit ainda não foi implantado no servidor sendo testado. **Nenhuma alteração de código foi feita para este item** — não havia nada de errado para corrigir. Se depois de confirmar deploy + rodar sync novo a coluna continuar vazia, o próximo passo é inspecionar `bi_pacs_estudos.modalities` direto no banco (`SELECT modalities FROM bi_pacs_estudos LIMIT 20`) para ver se o Orthanc realmente está devolvendo `MainDicomTags.Modality` em `/studies/{id}/series` naquela instalação específica.
+
+## Rótulo "ESPECIALIDADE" → "Solicitante" (2026-07-12)
+
+A coluna sempre exibiu, na prática, o nome do médico solicitante — não uma especialidade médica. Achado ao investigar: `bi_pacs_estudos.especialidade` é uma coluna real (`VARCHAR(100)`, migration `2026-07-02_bi_pacs_estudos_worklist.sql`, comentário "Especialidade médica"), mas **nunca é escrita em nenhum fluxo do sistema** (nem sync do Orthanc, nem nenhum Controller) — só é lida/filtrada. A célula da tabela (`app/Views/estudos/index.php:316-324`) tem fallback: mostra `especialidade` se preenchida, senão `referring_physician_name` (tag DICOM `ReferringPhysicianName`, 0008,0090 — não é literalmente "Requesting Physician" 0032,1032, mas é o conceito equivalente de médico solicitante/referenciador). Como `especialidade` está sempre vazia, a célula sempre cai no fallback.
+
+**Decisão do usuário (2026-07-12)**: renomear **só o rótulo visível** — header da coluna (`sortLink` em `app/Views/estudos/index.php:245`) e placeholder do filtro (`app/Views/estudos/index.php:199`) — para "Solicitante". **Não** renomear a coluna do banco, o parâmetro `$_GET['especialidade']`, nem a query — a coluna continua reservada para uma futura especialidade médica real, e o mesmo nome é usado por `EstudosRepository`/`ReportsController` (módulo de laudos, fora do escopo desta tarefa).
+
+**Débito conhecido, aceito conscientemente**: o filtro de busca "Solicitante" continua fazendo `WHERE e.especialidade LIKE :esp` — busca só na coluna morta, então **nunca encontra nada**, independente do rótulo. Isso já era assim antes da mudança (não é regressão), mas o novo rótulo "Solicitante" é mais enganoso que "Especialidade" era, porque agora sugere ao usuário que buscar por nome de médico deveria funcionar. Corrigir isso exigiria mudar o `WHERE` para `COALESCE(e.especialidade, e.referring_physician_name) LIKE` — avaliado e descartado nesta tarefa a pedido do usuário, que preferiu escopo mínimo. Revisitar se o filtro "Solicitante" virar reclamação de usuário.
+
 ## Riscos / pontos frágeis conhecidos
 - **Custo de sync**: a correção acima dobra o número de requisições HTTP ao Orthanc durante `ServidorPacsController::sincronizar()` (1 requisição extra por estudo, `GET /studies/{id}/series`). Só ocorre na ação manual "Sincronizar Estudos" (admin), não afeta o carregamento de `/estudos` (que continua sendo 1 SELECT). Para volumes muito grandes de estudos, isso pode alongar o tempo de sync — `sincronizar()` já tem `set_time_limit(300)`, mas não há retry/backoff se o Orthanc responder lento nessa chamada extra.
 - Não validado contra um Orthanc real neste ambiente (sem acesso de rede) — implementação seguida estritamente da documentação oficial do Orthanc (REST API book + cheat sheet). Validar com "Sincronizar Estudos" + inspeção visual da coluna "M" após deploy.
@@ -35,4 +52,4 @@ Ver critério de agregação multi-modalidade em `memory/regras-de-negocio.md`.
 - Lista de modalidades dos filtros do topo (`CR, CT, CTG, DO...`) é hardcoded em `app/Views/estudos/index.php:188`, não vem do banco nem de `bi_pacs_estudos.modalities` — pode ficar desatualizada se o Orthanc trouxer uma modalidade fora dessa lista (o filtro simplesmente não teria botão para ela, mas a coluna "M" mostraria normalmente).
 
 ## Última análise
-2026-07-11
+2026-07-12
