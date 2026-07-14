@@ -223,7 +223,7 @@
                             </div>
                             
                             <label class="form-label fw-semibold">Nomes DICOM (separados por vírgula)</label>
-                            <textarea name="institution_names" class="form-control" rows="4" placeholder="Ex: CLINICA_CENTRO, HOSPITAL_SAO_JOAO, MATRIZ_RM"><?= htmlspecialchars($institution_names_str ?? '') ?></textarea>
+                            <textarea name="institution_names" class="form-control" rows="4" placeholder="Ex: CLINICA_CENTRO, HOSPITAL_SAO_JOAO, MATRIZ_RM"><?= htmlspecialchars($institutionNames ?? '') ?></textarea>
                             <small class="text-muted mt-1 d-block">Estes nomes serão usados na importação automática via PACS ou HL7.</small>
                         </div>
                     </div>

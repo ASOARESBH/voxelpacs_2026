@@ -186,7 +186,7 @@ class NegociosController extends Controller {
         try {
             $negocio = $pdo->prepare("SELECT * FROM bi_tenants WHERE id = ? LIMIT 1");
             $negocio->execute([$id]);
-            $negocio = $negocio->fetch();
+            $negocio = $negocio->fetch(\PDO::FETCH_ASSOC);
         } catch (\Throwable $e) {
             error_log("[NegociosController::edit] Negócio: " . $e->getMessage());
         }
@@ -210,8 +210,20 @@ class NegociosController extends Controller {
             $rows->execute([$id]);
             $institutionNames = implode(', ', array_column($rows->fetchAll(\PDO::FETCH_ASSOC), 'institution_name'));
         } catch (\Throwable $e) { $institutionNames = ''; }
-
-        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames'), 'platform');
+        // Busca admin principal do tenant para exibir no Perfil/Acesso
+        $admin = null;
+        try {
+            $stmtAdmin = $pdo->prepare("
+                SELECT u.id, u.name, u.email
+                FROM bi_users u
+                JOIN bi_user_tenants ut ON ut.user_id = u.id
+                WHERE ut.tenant_id = ? AND ut.role = 'admin' AND ut.ativo = 1
+                ORDER BY u.id ASC LIMIT 1
+            ");
+            $stmtAdmin->execute([$id]);
+            $admin = $stmtAdmin->fetch(\PDO::FETCH_ASSOC) ?: null;
+        } catch (\Throwable $e) { $admin = null; }
+        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames', 'admin'), 'platform');
     }
 
     public function update(int $id): void {
