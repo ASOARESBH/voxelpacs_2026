@@ -30,13 +30,13 @@
             <?php else: ?>
                 <?php foreach ($negocios as $n): ?>
                 <?php
-                $nId     = $n->id     ?? $n['id']     ?? 0;
-                $nNome   = $n->nome   ?? $n['nome']   ?? '';
-                $nCnpj   = $n->cnpj   ?? $n['cnpj']   ?? '';
-                $nPlano  = $n->plan_nome ?? $n['plan_nome'] ?? ($n->plano ?? $n['plano'] ?? '—');
-                $nStatus = $n->status ?? $n['status'] ?? 'ativo';
-                $nData   = $n->created_at ?? $n['created_at'] ?? '';
-                $nEmail  = $n->email_contato ?? $n['email_contato'] ?? '';
+                $nId     = $n->id ?? 0;
+                $nNome   = $n->nome ?? '';
+                $nCnpj   = $n->cnpj ?? '';
+                $nPlano  = $n->plano_nome ?? '—';
+                $nStatus = $n->status ?? 'ativo';
+                $nData   = $n->created_at ?? '';
+                $nEmail  = $n->email_contato ?? '';
                 ?>
                 <tr>
                     <td style="color:var(--pacs-text-muted);"><?= $nId ?></td>

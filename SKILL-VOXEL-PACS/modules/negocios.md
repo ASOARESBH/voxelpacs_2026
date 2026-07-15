@@ -56,6 +56,19 @@ Ambas vieram do mesmo commit (`4a9f931 feat(negocios): implementa módulo comple
 - Duas tabelas de InstitutionNames convivendo sem uma ser oficialmente deprecada — ver seção acima. Qualquer nova feature que precise "o InstitutionName cadastrado no Negócio" deve confirmar qual das duas é a fonte esperada antes de assumir.
 - `store()`/`update()` fazem `DELETE FROM bi_negocio_institution_names WHERE tenant_id = ?` seguido de re-insert — se o form for submetido vazio no campo `institution_names`, todos os nomes cadastrados do tenant são apagados silenciosamente.
 - `uploadLogo` e `enviarTokenAcesso` quebrados (ver acima).
+- **`app/Views/platform/negocios/index.php` já foi vítima 3x do mesmo bug de fetch mode** (500 "Cannot use object of type stdClass as array") — ver seção abaixo. Ao tocar neste arquivo, NUNCA usar `$n['campo']` ou `$n->x ?? $n['x']`; usar sempre acesso de objeto puro (`$n->campo ?? default`).
+
+### Hotfix 2026-07-15: regressão do bug stdClass-como-array (3ª ocorrência)
+
+**Causa raiz real**: não foi a Fase 2 (Regra de SLA) nem `App\Core\Model` — `NegociosController::index()` usa PDO puro (`Database::getInstance()->query(...)->fetchAll()`), sem passar por `App\Core\Model`. A hipótese de regressão via `App\Core\Model`/SLA foi verificada e descartada (`git log -- app/Core/Model.php` não mostra nenhum commit tocando fetch mode; a Fase 2/SLA não altera `App\Core\Model`'s comportamento de fetch).
+
+O culpado real: o commit `727fc7f` ("feat: worklist estudos v3, OHIF viewer, ViewerToken, Platform controllers, migrations") **sobrescreveu por completo** `app/Views/platform/negocios/index.php`, revertendo uma correção que já tinha sido aplicada e validada nos commits `4f4b6b4`/`bb539f7` (sessão anterior). O código voltou ao padrão quebrado `$n->x ?? $n['x'] ?? ...`, que é fatal em PHP 8 quando `$n` é `stdClass` (não implementa `ArrayAccess`) — e `app/Core/Database.php:23` configura o PDO **globalmente** com `PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_OBJ`, então `$n` é sempre objeto nesta query (não passa por `FETCH_ASSOC`). O `??` não protege contra esse erro porque ele só suprime "propriedade/chave ausente", não "tipo errado para o operador `[]`". Bônus: o típo `plan_nome` (view) vs `plano_nome` (alias real da query) também tinha voltado.
+
+**Padrão de regressão**: isso já é a 3ª vez que esse exato bug aparece neste arquivo (`4f4b6b4`→corrigido, `727fc7f`→regrediu, `091fa2b`→corrigiu só `form.php`/`edit()` e não olhou `index.php`, agora 2026-07-15→corrigido de novo). Causa provável: commits de feature grandes/gerados que reescrevem o arquivo inteiro em vez de editar incrementalmente, apagando fixes anteriores. Ao mexer neste arquivo no futuro, confirmar que o diff é incremental, não uma reescrita completa do arquivo.
+
+**Correção aplicada**: voltou ao padrão de acesso de objeto puro (igual ao fix validado em `bb539f7`) e corrigiu o typo `plan_nome` → `plano_nome`. Escopo mínimo — não tocou `App\Core\Model`, `form.php` nem nenhuma outra tela.
+
+**Mesmo padrão encontrado em outros módulos, fora do escopo deste hotfix (não corrigido)**: `app/Views/platform/plans/index.php` e `app/Views/platform/plans/form.php` também têm `$n->x ?? $n['x']`. Mesma classe de bug, módulo diferente — avaliar separadamente.
 
 ## Última análise
-2026-07-10
+2026-07-15
