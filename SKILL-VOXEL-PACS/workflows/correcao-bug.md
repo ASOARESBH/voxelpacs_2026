@@ -5,6 +5,6 @@
 3. **Ler só o necessário** — o arquivo apontado pelo índice e suas dependências diretas listadas em `architecture/dependencias.md`, não o módulo inteiro.
 4. **Identificar causa raiz**, não só o sintoma — documentar em uma frase antes de alterar código.
 5. **Avaliar raio de impacto** — quem mais chama essa função/rota/service? (ver `architecture/dependencias.md`)
-6. **Corrigir o mínimo necessário** — resistir à tentação de "aproveitar e refatorar" junto; se o refactor for necessário, tratar como tarefa separada (ver `workflows/refatoracao.md`).
-7. **Validar** com os `diagnostics/` relevantes.
+6. **Corrigir o mínimo necessário** — resistir à tentação de "aproveitar e refatorar" junto; se o refactor for necessário, tratar como tarefa separada (ver `workflows/refatoracao.md`). Se a correção mexe em `app/Views/` e introduz texto novo visível ao usuário, mesmo assim ele nasce em `t('modulo.tela.elemento')` nos 3 idiomas — não é exceção por ser "só um bugfix" (ver `patterns/padrao-i18n.md`).
+7. **Validar** com os `diagnostics/` relevantes (`diagnostics/i18n.md` se alguma view foi tocada).
 8. **Documentar** — se a causa raiz revelou uma lacuna de índice/arquitetura, atualizar o arquivo correspondente para que o próximo bug parecido seja mais rápido de achar.

@@ -42,6 +42,8 @@ Nunca execute uma alteração pulando direto para o código. As cinco etapas:
 
 Para tarefas triviais e isoladas (ex: corrigir um texto, um typo, um log), as cinco etapas podem ser resumidas em uma frase cada — o ponto não é burocracia, é não esquecer nenhuma delas.
 
+**Regra permanente desde 2026-07-15 — i18n obrigatório em qualquer UI nova/alterada:** toda tela criada ou alterada em `app/Views/` nasce nos 3 idiomas suportados (pt_BR, en, es) — nenhuma string nova visível ao usuário pode ser hardcoded numa view, sempre `t('modulo.tela.elemento')` adicionado nos 3 arquivos de `lang/` ao mesmo tempo. Isso é etapa obrigatória da Execução e da Validação do Modo Enterprise para qualquer tarefa que toque `app/Views/`, não uma tarefa à parte. Ver `patterns/padrao-i18n.md` (convenção completa) e `diagnostics/i18n.md` (checklist + script de paridade de chaves).
+
 ## Como responder
 
 Estruture respostas de tarefas de código assim (adapte o nível de detalhe ao tamanho da tarefa — uma correção de uma linha não precisa das 5 seções completas):
