@@ -402,7 +402,7 @@ Dois mecanismos paralelos, propósitos diferentes:
 
 | # | Item | Detalhe |
 |---|---|---|
-| 5 | **Controle de acesso quebrado em `/platform/*`** | Qualquer usuário autenticado (não só superadmin) acessa e opera o painel inteiro de plataforma — outros tenants, credenciais do Orthanc global, roteamento de estudos, impersonação. `PlatformAdminMiddleware` existe mas nunca é instanciada. Ver §15.8. |
+| 5 | ~~**Controle de acesso quebrado em `/platform/*`**~~ **RESOLVIDO** (verificado 2026-07-15) | Este item ficou desatualizado: `App\Core\Router::dispatch()` já tem, desde o commit `4a9f931` (2026-07-10, ~40min após a última edição deste documento), um guard `if (strpos($uri,'/platform')===0 && !Auth::isPlatformAdmin())` que bloqueia com 403 qualquer não-superadmin em toda rota `/platform/*`, incluindo impersonação. `PlatformAdminMiddleware` de fato nunca é instanciada, mas o guard equivalente já existe centralizado no Router — não é uma lacuna aberta. Ver `SKILL-VOXEL-PACS/architecture/auth-e-permissoes.md`. |
 | 6 | **CSRF não aplicado na prática** | `CsrfMiddleware` nunca instanciada; só 4 formulários em todo o sistema enviam `_csrf_token`. Ver §15.1. |
 
 ### 🟠 P1
@@ -446,7 +446,7 @@ Dois mecanismos paralelos, propósitos diferentes:
 
 Resumo priorizado (achados completos nos itens correspondentes acima):
 
-1. **[Crítico] Controle de acesso quebrado em `/platform/*`** (§14.5) — falha mais grave encontrada. `public/index.php` não aplica nenhuma middleware para rotas `/platform/*`; `Router::dispatch()` só verifica `Auth::check()` (logado, qualquer papel), nunca `Auth::isPlatformAdmin()`. Nenhum controller de `app/Controllers/Platform/*` verifica o papel do usuário no construtor ou no início dos métodos.
+1. ~~**[Crítico] Controle de acesso quebrado em `/platform/*`**~~ **RESOLVIDO** (§14.5, verificado 2026-07-15) — achado ficou desatualizado: `Router::dispatch()` já verifica `Auth::isPlatformAdmin()` para toda rota `/platform/*` desde `4a9f931` (2026-07-10), retornando 403 para qualquer não-superadmin. Nenhum controller individual verifica o papel (segue verdadeiro), mas não precisa — o guard centralizado no Router já cobre 100% das rotas do prefixo.
 2. **[Crítico] CSRF praticamente decorativo** (§14.6) — `CsrfMiddleware` nunca instanciada; validação real só existe (quebrada) no módulo de Laudos. A grande maioria dos formulários POST (cadastro de usuários, configuração do servidor PACS, criação de negócios etc.) não tem proteção CSRF nenhuma.
 3. **[Crítico] `ReportsController.php` com parse error fatal** (§14.1) — módulo de assinatura de laudo (ação sensível) inoperante.
 4. **[Alto] `SessionTimeoutMiddleware` nunca instanciada** — sessões não expiram por inatividade.
@@ -516,7 +516,7 @@ app/Services/Integrations/
 1. **Quais módulos serão impactados?** — verificar se o módulo já tem Service/Repository (padrão novo) ou é só Controller (padrão antigo) antes de decidir a abordagem.
 2. **Quais tabelas serão utilizadas?** — conferir `docs/BANCO_DE_DADOS.md`; se envolver `reports` ou `bi_pacs_estudos`, checar o schema real de produção antes.
 3. **Há APIs envolvidas?** — se sim, seguir §16, não reimplementar cURL solto.
-4. **Há impacto em autenticação/permissões?** — lembrar que RBAC (`Auth::can()`) e `PlatformAdminMiddleware` **não estão aplicados automaticamente**; se a rota exige restrição de papel, chamar a checagem manualmente no início do método do Controller.
+4. **Há impacto em autenticação/permissões?** — lembrar que RBAC (`Auth::can()`) **não está aplicado automaticamente** (infraestrutura existe, nenhum Controller chama); se a rota exige restrição por papel específico (além de "é superadmin"), chamar `Auth::can()` manualmente no início do método. `/platform/*` já é bloqueado para não-superadmin centralizadamente em `Router::dispatch()` — não precisa reimplementar isso por Controller.
 5. **Existe componente reutilizável?** — conferir §9 antes de criar nova paginação/stat-card/badge do zero.
 6. **Quais testes devem ser executados?** — não há suíte automatizada hoje; testar manualmente o fluxo ponta a ponta (login → módulo → ação) nos papéis `superadmin`, `admin`, `analista`, `viewer`.
 7. **Há risco de regressão?** — este repositório já teve pelo menos um merge (`b20630f`) que reverteu silenciosamente correções de segurança e funcionalidades inteiras (§3.1, §4.1, §14). Ao resolver conflitos de merge em `app/Core/`, `app/bootstrap.php` ou `app/Controllers/Platform/ServidorPacsController.php`, **conferir com `git log`/`git blame`** se a versão "vencedora" não está descartando trabalho mais recente.

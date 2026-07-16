@@ -115,10 +115,10 @@ class EstudosController extends Controller
         $where  = ['e.servidor_id = 1'];
         $params = [];
 
-        if (!$isAdmin && $tenantId) {
+        if ($tenantId) {
             $where[]              = 'e.tenant_id = :tenant_id';
             $params[':tenant_id'] = $tenantId;
-        } elseif (!$isAdmin && !$tenantId) {
+        } elseif (!$isAdmin) {
             $where[] = '1=0';
         }
 
@@ -244,7 +244,7 @@ class EstudosController extends Controller
         $unidades = [];
         try {
             $uW = ['servidor_id = 1', "institution_name IS NOT NULL", "institution_name != ''"];
-            if (!$isAdmin && $tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
+            if ($tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
             $unidades = $pdo->query(
                 "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
             )->fetchAll(\PDO::FETCH_COLUMN);
@@ -253,7 +253,7 @@ class EstudosController extends Controller
         $medicos = [];
         try {
             $mW = ['servidor_id = 1', "assumido_por IS NOT NULL", "assumido_por != ''"];
-            if (!$isAdmin && $tenantId) $mW[] = 'tenant_id = ' . (int)$tenantId;
+            if ($tenantId) $mW[] = 'tenant_id = ' . (int)$tenantId;
             $medicos = $pdo->query(
                 "SELECT DISTINCT assumido_por FROM bi_pacs_estudos WHERE " . implode(' AND ', $mW) . " ORDER BY assumido_por"
             )->fetchAll(\PDO::FETCH_COLUMN);
@@ -264,7 +264,7 @@ class EstudosController extends Controller
         try {
             $cW = ['servidor_id = 1'];
             $cP = [];
-            if (!$isAdmin && $tenantId) { $cW[] = 'tenant_id = :tid'; $cP[':tid'] = $tenantId; }
+            if ($tenantId) { $cW[] = 'tenant_id = :tid'; $cP[':tid'] = $tenantId; }
             $cBase = implode(' AND ', $cW);
             $cStmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE {$cBase} GROUP BY situacao");
             $cStmt->execute($cP);
@@ -281,7 +281,7 @@ class EstudosController extends Controller
         try {
             $rW = ['servidor_id = 1'];
             $rP = [];
-            if (!$isAdmin && $tenantId) { $rW[] = 'tenant_id = :tid3'; $rP[':tid3'] = $tenantId; }
+            if ($tenantId) { $rW[] = 'tenant_id = :tid3'; $rP[':tid3'] = $tenantId; }
             $rBase = implode(' AND ', $rW);
 
             $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date = :d");
@@ -327,9 +327,11 @@ class EstudosController extends Controller
         try {
             $where  = 'id = :id AND servidor_id = 1';
             $params = [':id' => $id];
-            if (!$isAdmin && $tenantId) {
+            if ($tenantId) {
                 $where           .= ' AND tenant_id = :tid';
                 $params[':tid']   = $tenantId;
+            } elseif (!$isAdmin) {
+                $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
                 "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id
@@ -389,7 +391,7 @@ class EstudosController extends Controller
         $where    = ['servidor_id = 1'];
         $params   = [];
 
-        if (!$isAdmin && $tenantId) {
+        if ($tenantId) {
             $where[]       = 'tenant_id = :tid';
             $params[':tid'] = $tenantId;
         } elseif (!$isAdmin) {

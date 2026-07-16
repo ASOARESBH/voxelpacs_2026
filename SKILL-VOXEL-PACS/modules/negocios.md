@@ -16,6 +16,10 @@ CRUD superadmin (`/platform/negocios`) para os Negócios (tenants/clientes) da p
 - Consumido por: `ServidorPacsController::getInstitutionStats()` (lê `bi_negocio_institution_names`, ver `modules/servidor-pacs.md`); `EstudosRepository::getUnidades()` (lê `bi_tenant_unidades_dicom`)
 - Ver `architecture/dependencias.md` para o grafo completo
 
+## Botão "Acessar como este negócio" (impersonação)
+
+O form de impersonate em `index.php` (`POST /platform/negocios/{id}/impersonate`) não é atendido por `NegociosController` — vai para `Platform\TenantsController::impersonate()`. Fluxo completo (escopo de sessão, banner obrigatório, auditoria, propagação do `TenantContext` para Worklist/Médicos/Unidades/etc.) documentado em `architecture/auth-e-permissoes.md`, não duplicado aqui.
+
 ## Padrões seguidos
 Controller com PDO direto, mesmo padrão de `ServidorPacsController` — ver `modules/servidor-pacs.md`.
 

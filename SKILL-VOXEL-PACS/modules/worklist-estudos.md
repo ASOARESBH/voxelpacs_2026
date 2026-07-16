@@ -45,6 +45,12 @@ A coluna sempre exibiu, na prática, o nome do médico solicitante — não uma 
 
 **Débito conhecido, aceito conscientemente**: o filtro de busca "Solicitante" continua fazendo `WHERE e.especialidade LIKE :esp` — busca só na coluna morta, então **nunca encontra nada**, independente do rótulo. Isso já era assim antes da mudança (não é regressão), mas o novo rótulo "Solicitante" é mais enganoso que "Especialidade" era, porque agora sugere ao usuário que buscar por nome de médico deveria funcionar. Corrigir isso exigiria mudar o `WHERE` para `COALESCE(e.especialidade, e.referring_physician_name) LIKE` — avaliado e descartado nesta tarefa a pedido do usuário, que preferiu escopo mínimo. Revisitar se o filtro "Solicitante" virar reclamação de usuário.
 
+## Filtro de tenant agora respeita impersonação (2026-07-15)
+
+`EstudosController::index()/abrir()/contadores()` filtravam por `e.tenant_id = :tenant_id` só quando `!$isAdmin && $tenantId` — ou seja, **nunca** para um superadmin, mesmo impersonando um Negócio específico (`Auth::tenantId()` já retornava o tenant certo, mas a condição descartava isso por causa de `!$isAdmin`). Trocado para `if ($tenantId) { filtra } elseif (!$isAdmin) { nega tudo }` nos 7 pontos que tinham essa condição — agora superadmin sem impersonar continua vendo tudo (`$tenantId` é `null` fora de impersonação), e impersonando vê só os estudos do Negócio ativo, igual um usuário normal desse tenant. Ver `architecture/auth-e-permissoes.md` para o fluxo completo de impersonação/`TenantContext`.
+
+`abrir()` ganhou também um `elseif (!$isAdmin) { AND 1=0 }` que não existia antes — fechava uma lacuna onde um usuário de tenant sem `tenant_id` na sessão podia abrir qualquer estudo por ID direto na URL, sem filtro nenhum.
+
 ## Riscos / pontos frágeis conhecidos
 - **Custo de sync**: a correção acima dobra o número de requisições HTTP ao Orthanc durante `ServidorPacsController::sincronizar()` (1 requisição extra por estudo, `GET /studies/{id}/series`). Só ocorre na ação manual "Sincronizar Estudos" (admin), não afeta o carregamento de `/estudos` (que continua sendo 1 SELECT). Para volumes muito grandes de estudos, isso pode alongar o tempo de sync — `sincronizar()` já tem `set_time_limit(300)`, mas não há retry/backoff se o Orthanc responder lento nessa chamada extra.
 - Não validado contra um Orthanc real neste ambiente (sem acesso de rede) — implementação seguida estritamente da documentação oficial do Orthanc (REST API book + cheat sheet). Validar com "Sincronizar Estudos" + inspeção visual da coluna "M" após deploy.

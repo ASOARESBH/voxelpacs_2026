@@ -31,7 +31,11 @@ class TenantsController extends Controller {
     }
 
     public function exitImpersonate(): void {
-        unset($_SESSION['impersonating_tenant_id'], $_SESSION['tenant_id']);
+        $tenantId = $_SESSION['impersonating_tenant_id'] ?? null;
+        if ($tenantId) {
+            AuditLogger::log('exit_impersonate', 'tenant', (int)$tenantId, ['by' => Auth::user()?->id]);
+        }
+        unset($_SESSION['impersonating_tenant_id'], $_SESSION['tenant_id'], $_SESSION['original_user']);
         $this->redirect('/platform/negocios');
     }
 }

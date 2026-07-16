@@ -10,6 +10,14 @@
     <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
 </head>
 <body>
+
+<?php if (!empty($_SESSION['impersonating_tenant_id'])): ?>
+<div class="alert alert-warning text-center mb-0 rounded-0 py-2" style="position:sticky;top:0;z-index:9999;">
+    <strong><i class="fa fa-eye me-1"></i>Visualizando como: <?= htmlspecialchars(\App\Core\TenantContext::name()) ?></strong>
+    <a href="/platform/impersonate/exit" class="btn btn-sm btn-dark ms-3">Sair da Impersonação</a>
+</div>
+<?php endif; ?>
+
 <div id="pacs-wrapper">
 
     <!-- ═══════════════════════════════════════════════════════
