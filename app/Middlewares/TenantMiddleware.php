@@ -4,6 +4,7 @@ namespace App\Middlewares;
 use App\Core\Auth;
 use App\Core\Middleware;
 use App\Core\TenantContext;
+use App\Core\Translator;
 use App\Models\Tenant;
 
 class TenantMiddleware extends Middleware {
@@ -40,5 +41,6 @@ class TenantMiddleware extends Middleware {
         }
 
         TenantContext::set($tenant);
+        Translator::setLocale($tenant->idioma_padrao ?? null);
     }
 }

@@ -64,6 +64,8 @@ class NegociosController extends Controller {
                 'plan_id'       => $_POST['plan_id'] ?? null,
                 'status'        => $_POST['status'] ?? 'trial',
                 'cor_primaria'  => $_POST['cor_primaria'] ?? '#3b82f6',
+                'idioma_padrao' => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
+                                    ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
             // Campos opcionais — só inclui se a coluna existir
@@ -240,6 +242,8 @@ class NegociosController extends Controller {
                 'plan_id'       => $_POST['plan_id'] ?? null,
                 'status'        => $_POST['status'] ?? 'ativo',
                 'cor_primaria'  => $_POST['cor_primaria'] ?? '#3b82f6',
+                'idioma_padrao' => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
+                                    ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
             $camposOpcionais = [

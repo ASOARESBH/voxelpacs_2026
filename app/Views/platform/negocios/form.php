@@ -204,10 +204,19 @@
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            
+
                             <div class="alert alert-warning">
                                 <i class="fa fa-exclamation-triangle me-2"></i> Alterar o plano afetará imediatamente os limites de usuários, PACS e exames deste negócio.
                             </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold"><?= htmlspecialchars(t('negocios.form.campo_idioma')) ?></label>
+                            <?php $idiomaAtual = $negocio['idioma_padrao'] ?? 'pt_BR'; ?>
+                            <select name="idioma_padrao" class="form-select form-select-lg mb-3">
+                                <option value="pt_BR" <?= $idiomaAtual === 'pt_BR' ? 'selected' : '' ?>><?= htmlspecialchars(t('comum.idioma.pt_br')) ?></option>
+                                <option value="en" <?= $idiomaAtual === 'en' ? 'selected' : '' ?>><?= htmlspecialchars(t('comum.idioma.en')) ?></option>
+                                <option value="es" <?= $idiomaAtual === 'es' ? 'selected' : '' ?>><?= htmlspecialchars(t('comum.idioma.es')) ?></option>
+                            </select>
                         </div>
                     </div>
                 </div>

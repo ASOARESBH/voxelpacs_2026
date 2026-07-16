@@ -42,6 +42,9 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 // Carrega o autoloader customizado (não depende do composer no servidor)
 require_once APP_PATH . '/autoload.php';
 
+// Funções globais (ex: t() para tradução — ver app/helpers.php)
+require_once APP_PATH . '/helpers.php';
+
 // ─── HANDLER GLOBAL DE ERROS: nenhum \Throwable não tratado deve virar uma
 // tela 500 crua e muda. Loga via Logger e mostra uma página amigável. ────────
 set_exception_handler(function (\Throwable $e): void {

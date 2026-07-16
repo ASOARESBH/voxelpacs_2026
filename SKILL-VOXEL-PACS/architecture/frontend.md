@@ -29,3 +29,7 @@
 ## Onde procurar antes de criar algo novo
 
 Antes de criar um componente novo, confira `patterns/padrao-componentes.md` e esta lista de componentes reutilizáveis — duplicar componente existente é o erro mais comum e mais caro em tokens (gera dois lugares para manter).
+
+## Tradução / i18n (desde 2026-07-15)
+
+Views são PHP server-rendered (sem framework SPA — ver `CLAUDE.md`). Todo texto visível ao usuário deve passar pela função global `t('modulo.tela.elemento')` em vez de string hardcoded — ver `patterns/padrao-i18n.md` para a convenção completa e `modules/i18n.md` para o que já foi migrado (hoje: só `app/Views/platform/negocios/index.php`, como piloto) e o inventário do que falta. Idioma efetivo é resolvido uma vez por request em `TenantMiddleware`, a partir de `bi_tenants.idioma_padrao` do tenant ativo — não há troca de idioma via UI/JS no browser, é sempre configuração do Negócio.
