@@ -76,6 +76,15 @@ class Auth {
         return $user && $user->role === 'superadmin';
     }
 
+    /**
+     * Fonte única de verdade para "superadmin impersonando um Negócio agora".
+     * Usada por TenantMiddleware e por Controllers com tenant-scoping próprio
+     * (ex: EstudosController) para não duplicar a inferência em dois lugares.
+     */
+    public static function isImpersonating(): bool {
+        return self::isPlatformAdmin() && !empty($_SESSION['impersonating_tenant_id']);
+    }
+
     public static function can(string $permission): bool {
         $user = self::user();
         if (!$user) return false;

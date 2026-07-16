@@ -45,6 +45,10 @@ A coluna sempre exibiu, na prática, o nome do médico solicitante — não uma 
 
 **Débito conhecido, aceito conscientemente**: o filtro de busca "Solicitante" continua fazendo `WHERE e.especialidade LIKE :esp` — busca só na coluna morta, então **nunca encontra nada**, independente do rótulo. Isso já era assim antes da mudança (não é regressão), mas o novo rótulo "Solicitante" é mais enganoso que "Especialidade" era, porque agora sugere ao usuário que buscar por nome de médico deveria funcionar. Corrigir isso exigiria mudar o `WHERE` para `COALESCE(e.especialidade, e.referring_physician_name) LIKE` — avaliado e descartado nesta tarefa a pedido do usuário, que preferiu escopo mínimo. Revisitar se o filtro "Solicitante" virar reclamação de usuário.
 
+## Não existe filtro por médico↔unidade dentro do tenant (confirmado 2026-07-15)
+
+O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não existe hoje nenhum mecanismo que restrinja um médico a só algumas Unidades/InstitutionNames dentro do mesmo tenant — busca completa no código não encontrou nada. Ver `modules/tenants.md` antes de presumir que essa camada existe.
+
 ## Filtro de tenant agora respeita impersonação (2026-07-15)
 
 `EstudosController::index()/abrir()/contadores()` filtravam por `e.tenant_id = :tenant_id` só quando `!$isAdmin && $tenantId` — ou seja, **nunca** para um superadmin, mesmo impersonando um Negócio específico (`Auth::tenantId()` já retornava o tenant certo, mas a condição descartava isso por causa de `!$isAdmin`). Trocado para `if ($tenantId) { filtra } elseif (!$isAdmin) { nega tudo }` nos 7 pontos que tinham essa condição — agora superadmin sem impersonar continua vendo tudo (`$tenantId` é `null` fora de impersonação), e impersonando vê só os estudos do Negócio ativo, igual um usuário normal desse tenant. Ver `architecture/auth-e-permissoes.md` para o fluxo completo de impersonação/`TenantContext`.

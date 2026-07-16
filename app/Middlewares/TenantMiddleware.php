@@ -15,9 +15,9 @@ class TenantMiddleware extends Middleware {
 
         $tenantId = Auth::tenantId();
 
-        // Platform admin sem impersonação ativa (tenant_id null na sessão): visão global, sem tenant.
-        // Impersonando (tenant_id setado por TenantsController::impersonate), segue o fluxo normal abaixo.
-        if (Auth::isPlatformAdmin() && !$tenantId) {
+        // Platform admin sem impersonação ativa: visão global, sem tenant.
+        // Impersonando (Auth::isImpersonating()), segue o fluxo normal abaixo, igual um usuário do tenant.
+        if (Auth::isPlatformAdmin() && !Auth::isImpersonating()) {
             return;
         }
 

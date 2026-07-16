@@ -45,6 +45,8 @@ class EstudosController extends Controller
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
+        // Bypass total (vê todos os tenants) só para superadmin fora de impersonação.
+        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
 
         // ── Filtros ───────────────────────────────────────────────────────────────────────
         $periodo = trim($_GET['periodo'] ?? 'hoje');
@@ -118,7 +120,7 @@ class EstudosController extends Controller
         if ($tenantId) {
             $where[]              = 'e.tenant_id = :tenant_id';
             $params[':tenant_id'] = $tenantId;
-        } elseif (!$isAdmin) {
+        } elseif (!$bypassGlobal) {
             $where[] = '1=0';
         }
 
@@ -322,6 +324,7 @@ class EstudosController extends Controller
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
+        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
         $estudo   = null;
 
         try {
@@ -330,7 +333,7 @@ class EstudosController extends Controller
             if ($tenantId) {
                 $where           .= ' AND tenant_id = :tid';
                 $params[':tid']   = $tenantId;
-            } elseif (!$isAdmin) {
+            } elseif (!$bypassGlobal) {
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
@@ -388,13 +391,14 @@ class EstudosController extends Controller
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
+        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
         $where    = ['servidor_id = 1'];
         $params   = [];
 
         if ($tenantId) {
             $where[]       = 'tenant_id = :tid';
             $params[':tid'] = $tenantId;
-        } elseif (!$isAdmin) {
+        } elseif (!$bypassGlobal) {
             $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
             return;
         }

@@ -7,6 +7,7 @@ Cada módulo/feature relevante do VOXEL PACS deve ter um arquivo aqui, no format
 - `servidor-pacs` — dashboard/sync/roteamento do Orthanc global → `modules/servidor-pacs.md`
 - `negocios` — CRUD de tenants/clientes, InstitutionNames, Unidades DICOM → `modules/negocios.md`
 - `worklist-estudos` — tela `/estudos`, worklist principal do usuário final → `modules/worklist-estudos.md`
+- `tenants` — multi-tenancy (TenantContext vs Auth::tenantId()), impersonação, o que NÃO existe ainda (médico↔unidade) → `modules/tenants.md`
 
 ## Template para um módulo novo (`modules/<nome-do-modulo>.md`)
 
