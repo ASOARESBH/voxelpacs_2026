@@ -182,7 +182,7 @@ Existem **5 pares de layout**: `pacs` (default — worklist, cadastros), `bi` (p
 | `/reports/*`, `/api/reports/*` | `ReportsController` | ⚠️ **módulo inteiro quebrado, ver §8 e §14** |
 | GET | `/open/{token}` | `ViewerTokenController@abrir` *(pública, fluxo alternativo de abertura no OHIF)* |
 
-**`routes/platform.php`** (prefixo `/platform`, deveria ser restrito a superadmin — **não é, ver §15.8**):
+**`routes/platform.php`** (prefixo `/platform`, restrito a superadmin via guard inline em `Router::dispatch()` — ver nota na tabela de middlewares acima):
 
 | Método | Path | Controller@Ação |
 |---|---|---|
@@ -228,7 +228,7 @@ Existe uma classe base `app/Core/Middleware.php` com `Middleware::run(array $mid
 | `AuthMiddleware` | Sim (redireciona se não logado) | ❌ Não — a checagem equivalente está hardcoded em `Router::dispatch()` |
 | `CsrfMiddleware` | Sim (`hash_equals` correto) | ❌ Não — nunca instanciada (ver §15.1) |
 | `PermissionMiddleware` | Sim | ❌ Não — nunca instanciada |
-| `PlatformAdminMiddleware` | Sim (`403` se não for superadmin) | ❌ **Não — e essa é a falha de segurança mais grave do sistema, ver §15.8** |
+| `PlatformAdminMiddleware` | Sim (`403` se não for superadmin) | ⚠️ A classe em si nunca é instanciada, mas o `Router::dispatch()` tem um guard inline equivalente (`strpos($uri,'/platform')===0 && !Auth::isPlatformAdmin()` → 403) desde `4a9f931` (2026-07-10) — `/platform/*` **está protegido na prática**, só não por esta classe específica. Verificado 2026-07-15, ver `SKILL-VOXEL-PACS/architecture/auth-e-permissoes.md`. |
 | `SessionTimeoutMiddleware` | Sim (expira sessão após `SESSION_TIMEOUT`) | ❌ Não — sessões **nunca expiram por inatividade** hoje |
 
 **Implicação prática para quem for adicionar uma rota nova:** não existe hoje um mecanismo declarativo de "essa rota exige permissão X" ou "essa rota é só para superadmin" que funcione de fato. Qualquer proteção precisa ser chamada manualmente dentro do método do controller (ex.: `if (!Auth::isPlatformAdmin()) { ...403...; return; }` logo na primeira linha) até que o pipeline de middlewares seja de fato conectado ao Router.
