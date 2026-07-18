@@ -9,6 +9,7 @@ Cada módulo/feature relevante do VOXEL PACS deve ter um arquivo aqui, no format
 - `worklist-estudos` — tela `/estudos`, worklist principal do usuário final → `modules/worklist-estudos.md`
 - `tenants` — multi-tenancy (TenantContext vs Auth::tenantId()), impersonação, o que NÃO existe ainda (médico↔unidade) → `modules/tenants.md`
 - `i18n` — tradução pt_BR/en/es por Negócio, o que já foi migrado (piloto) e a lista do que falta → `modules/i18n.md`
+- `sla-regras` — Cadastros > Regras de SLA + robô de remanejamento automático de médico (Fase 2 do SLA) → `modules/sla-regras.md`
 
 ## Template para um módulo novo (`modules/<nome-do-modulo>.md`)
 

@@ -19,11 +19,11 @@
     <div style="overflow-x:auto;">
         <table class="platform-table">
             <thead>
-                <tr><th>#</th><th>Nome</th><th>CRM</th><th>Especialidade</th><th>E-mail</th><th>Status</th><th>Ações</th></tr>
+                <tr><th>#</th><th>Nome</th><th>CRM</th><th>Especialidade</th><th>E-mail</th><th><?= htmlspecialchars(t('medicos.index.coluna_usuario')) ?></th><th>Status</th><th>Ações</th></tr>
             </thead>
             <tbody>
             <?php if (empty($medicos)): ?>
-                <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--pacs-text-muted);">
+                <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--pacs-text-muted);">
                     <i class="fa fa-user-doctor fa-2x d-block mb-2"></i>
                     Nenhum médico cadastrado.
                 </td></tr>
@@ -36,6 +36,7 @@
                 $mEsp   = is_array($m) ? ($m['especialidade'] ?? '') : ($m->especialidade ?? '');
                 $mEmail = is_array($m) ? ($m['email'] ?? '') : ($m->email ?? '');
                 $mSt    = is_array($m) ? ($m['status'] ?? 'ativo') : ($m->status ?? 'ativo');
+                $mUsuarioNome = is_array($m) ? ($m['usuario_nome'] ?? null) : ($m->usuario_nome ?? null);
                 ?>
                 <tr>
                     <td style="color:var(--pacs-text-muted);"><?= $mId ?></td>
@@ -43,6 +44,13 @@
                     <td style="font-family:monospace;"><?= htmlspecialchars($mCrm ?: '—') ?></td>
                     <td><?= htmlspecialchars($mEsp ?: '—') ?></td>
                     <td style="font-size:.75rem;color:var(--pacs-text-muted);"><?= htmlspecialchars($mEmail ?: '—') ?></td>
+                    <td>
+                        <?php if ($mUsuarioNome): ?>
+                            <span style="font-size:.78rem;"><?= htmlspecialchars($mUsuarioNome) ?></span>
+                        <?php else: ?>
+                            <span class="badge badge-inativo" title="<?= htmlspecialchars(t('medicos.index.aviso_sem_vinculo')) ?>"><?= htmlspecialchars(t('medicos.index.sem_vinculo')) ?></span>
+                        <?php endif; ?>
+                    </td>
                     <td><span class="badge badge-<?= $mSt === 'ativo' ? 'ativo' : 'inativo' ?>"><?= ucfirst($mSt) ?></span></td>
                     <td>
                         <div style="display:flex;gap:.3rem;">

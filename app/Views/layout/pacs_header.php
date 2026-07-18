@@ -75,12 +75,12 @@
             <!-- CADASTROS -->
             <div class="sidebar-section-title">Cadastros</div>
 
-            <a href="#" class="nav-link has-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades')) ? 'open' : '' ?>"
+            <a href="#" class="nav-link has-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades') || str_contains($_SERVER['REQUEST_URI'], '/sla-regras')) ? 'open' : '' ?>"
                onclick="toggleSubmenu(this, 'sub-cad'); return false;">
                 <i class="fa fa-database"></i>
                 <span class="sidebar-label">Cadastros</span>
             </a>
-            <div class="sidebar-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades')) ? 'show' : '' ?>" id="sub-cad">
+            <div class="sidebar-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades') || str_contains($_SERVER['REQUEST_URI'], '/sla-regras')) ? 'show' : '' ?>" id="sub-cad">
                 <a href="/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/medicos') ? 'active' : '' ?>">
                     <i class="fa fa-user-doctor"></i>
                     <span class="sidebar-label">Médicos</span>
@@ -93,6 +93,12 @@
                     <i class="fa fa-satellite-dish"></i>
                     <span class="sidebar-label">Modalidades</span>
                 </a>
+                <?php if (\App\Core\Auth::can('manage_sla_regras')): ?>
+                <a href="/sla-regras" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/sla-regras') ? 'active' : '' ?>">
+                    <i class="fa fa-gauge-high"></i>
+                    <span class="sidebar-label"><?= htmlspecialchars(t('sla_regras.menu.titulo')) ?></span>
+                </a>
+                <?php endif; ?>
             </div>
 
             <!-- SISTEMA -->

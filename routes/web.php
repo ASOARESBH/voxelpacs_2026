@@ -60,6 +60,17 @@ Router::post('/modalidades',           'ModalidadesController@store');
 Router::get('/modalidades/{id}/edit',  'ModalidadesController@edit');
 Router::post('/modalidades/{id}/update','ModalidadesController@update');
 
+Router::get('/sla-regras',                     'SlaRegrasController@index');
+Router::get('/sla-regras/create',              'SlaRegrasController@create');
+Router::post('/sla-regras',                    'SlaRegrasController@store');
+Router::get('/sla-regras/execucoes',           'SlaRegrasController@execucoes');
+Router::get('/sla-regras/robo',                'SlaRegrasController@roboConfig');
+Router::post('/sla-regras/robo/gerar-token',   'SlaRegrasController@roboGerarToken');
+Router::post('/sla-regras/robo/toggle',        'SlaRegrasController@roboToggle');
+Router::get('/sla-regras/{id}/edit',           'SlaRegrasController@edit');
+Router::post('/sla-regras/{id}/update',        'SlaRegrasController@update');
+Router::post('/sla-regras/{id}/toggle',        'SlaRegrasController@toggleStatus');
+
 // ============================================================
 // SISTEMA
 // ============================================================
@@ -77,6 +88,12 @@ Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 // API — Orthanc ping (público, para status na tela de login)
 // ============================================================
 Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
+
+// ============================================================
+// API — Robô de Regras de SLA (público, protegido por token via query
+// string, chamado por cron externo — ver docs/SYNC_AUTOMATICO_PACS.md)
+// ============================================================
+Router::get('/api/sla-regras/executar', 'SlaRoboController@executar');
 
 // ============================================================
 // REPORTS — Módulo de Laudos Médicos

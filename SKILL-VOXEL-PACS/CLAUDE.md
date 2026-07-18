@@ -25,6 +25,7 @@ Sistema PACS multi-tenant (SaaS — "Negócios" = tenants/clientes) com armazena
 | Servidor PACS | Dashboard/config/sync do Orthanc global, roteamento InstitutionName → Negócio | `modules/servidor-pacs.md` |
 | Negócios | CRUD de tenants, InstitutionNames DICOM, Unidades DICOM (schema novo, CRUD de API pronto, UI pendente) | `modules/negocios.md` |
 | Worklist Estudos | Tela `/estudos` — worklist principal do usuário final, filtros, abertura no OHIF | `modules/worklist-estudos.md` |
+| Regras de SLA | Cadastros > Regras de SLA + robô que remaneja automaticamente o médico responsável quando o SLA estoura | `modules/sla-regras.md` |
 
 ## Convenções que todo agente deve saber antes de tocar em código
 

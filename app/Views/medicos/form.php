@@ -3,6 +3,10 @@ $medico = $medico ?? null;
 $isEdit = !empty($medico);
 $medicoId = $isEdit ? (is_array($medico) ? ($medico['id'] ?? 0) : ($medico->id ?? 0)) : 0;
 $action = $isEdit ? '/medicos/' . $medicoId . '/update' : '/medicos';
+$usuarios = $usuarios ?? [];
+$unidades = $unidades ?? [];
+$unidadesMarcadas = $unidadesMarcadas ?? [];
+$usuarioIdAtual = $isEdit ? (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($medico->usuario_id ?? 0)) : 0;
 ?>
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
@@ -63,6 +67,34 @@ $action = $isEdit ? '/medicos/' . $medicoId . '/update' : '/medicos';
                 <input type="text" name="telefone" class="form-control-dark"
                        value="<?= htmlspecialchars(is_array($medico) ? ($medico['telefone'] ?? '') : ($medico?->telefone ?? '')) ?>"
                        placeholder="(11) 99999-9999">
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_usuario')) ?></label>
+                <select name="usuario_id" class="form-control-dark">
+                    <option value=""><?= htmlspecialchars(t('medicos.form.usuario_nao_vinculado')) ?></option>
+                    <?php foreach ($usuarios as $u): ?>
+                        <?php $uId = is_array($u) ? $u['id'] : $u->id; $uNome = is_array($u) ? $u['name'] : $u->name; ?>
+                        <option value="<?= (int) $uId ?>" <?= $uId == $usuarioIdAtual ? 'selected' : '' ?>><?= htmlspecialchars($uNome) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <small style="color:var(--pacs-text-muted);"><?= htmlspecialchars(t('medicos.form.campo_usuario_ajuda')) ?></small>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_unidades')) ?></label>
+                <div style="display:flex;flex-wrap:wrap;gap:.6rem;padding:.6rem;border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;">
+                    <?php if (empty($unidades)): ?>
+                        <span style="color:var(--pacs-text-muted);font-size:.8rem;">—</span>
+                    <?php endif; ?>
+                    <?php foreach ($unidades as $unidade): ?>
+                        <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;font-weight:400;">
+                            <input type="checkbox" name="unidades[]" value="<?= htmlspecialchars($unidade) ?>"
+                                   <?= in_array($unidade, $unidadesMarcadas, true) ? 'checked' : '' ?>>
+                            <?= htmlspecialchars($unidade) ?>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
             </div>
 
             <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;">

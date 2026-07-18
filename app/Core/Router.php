@@ -10,6 +10,7 @@ class Router {
         '/selecionar-empresa',
         '/open/',
         '/acesso/criar-senha/',
+        '/api/sla-regras/executar',
     ];
 
     public static function get(string $path, $handler): void {

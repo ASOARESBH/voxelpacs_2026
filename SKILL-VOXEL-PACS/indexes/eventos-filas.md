@@ -18,7 +18,7 @@
 
 | Job | Dispara quando | O que faz | Pode falhar silenciosamente? | Última verificação |
 |---|---|---|---|---|
-| `[A preencher]` | | | | |
+| Robô de Regras de SLA (`SlaRulesEngineService::executarParaTodosTenants()`) | Chamada `GET /api/sla-regras/executar?token=...` — endpoint público protegido por token (`bi_sla_robo_config.token`), pensado para ser chamado por um cron externo (ex: cron-job.org), já que este hosting compartilhado não tem crontab real | Para cada tenant ativo: avalia `bi_sla_regras` ativas (ORDER BY prioridade), busca estudos candidatos em `bi_pacs_estudos` via `EstudosRepository::buscarCandidatosSla()`, resolve médico alvo (`SlaRegrasRepository::resolverMedico*`) e reatribui via `EstudosRepository::reatribuirPorRobo()`, gravando cada remanejamento em `bi_sla_regras_execucoes` | Não — token inválido/robô desativado retornam JSON explícito (`{success:false, message}`); exceções por tenant são capturadas e logadas (`Logger::error`) sem interromper os demais tenants (ver detalhe em `modules/sla-regras.md`) | 2026-07-18 |
 
 ## Regra prática
 

@@ -396,4 +396,94 @@ class EstudosRepository
             return false;
         }
     }
+
+    /**
+     * Estudos candidatos a uma regra de Regras de SLA: dentro do filtro de
+     * unidade/modalidade da regra, ainda não finalizados, e que já ultrapassam
+     * (ou ficam abaixo, conforme operador) o limiar da métrica configurada.
+     * $regra precisa ter: metrica ('sla_medico'|'sla_estudo'), operador
+     * ('maior'|'menor'), limite_minutos, filtro_institution_name, filtro_modalidade.
+     * $excluirIds evita reprocessar estudo já remanejado no mesmo ciclo do robô.
+     */
+    public function buscarCandidatosSla(int $tenantId, object $regra, array $excluirIds = []): array
+    {
+        // metrica/operador nunca vêm de input livre do usuário final na query —
+        // resolvidos aqui por whitelist fixa, nunca concatenados diretamente.
+        $campoOrigem = $regra->metrica === 'sla_medico' ? 'assumido_em' : 'recebido_em';
+        $operadorSql = $regra->operador === 'menor' ? '<' : '>';
+
+        $where  = [
+            'tenant_id = :tenant_id',
+            "situacao NOT IN ('assinado','liberado')",
+            "`{$campoOrigem}` IS NOT NULL",
+            "TIMESTAMPDIFF(MINUTE, `{$campoOrigem}`, NOW()) {$operadorSql} :limite",
+        ];
+        $params = [
+            'tenant_id' => $tenantId,
+            'limite'    => $regra->limite_minutos,
+        ];
+
+        if (!empty($excluirIds)) {
+            $where[] = 'id NOT IN (' . implode(',', array_map('intval', $excluirIds)) . ')';
+        }
+        if (!empty($regra->filtro_institution_name)) {
+            $where[] = 'institution_name = :inst';
+            $params['inst'] = $regra->filtro_institution_name;
+        }
+        if (!empty($regra->filtro_modalidade)) {
+            $where[] = 'modalities LIKE :modalidade';
+            $params['modalidade'] = '%' . $regra->filtro_modalidade . '%';
+        }
+
+        try {
+            $sql = "SELECT id, assumido_por, situacao, institution_name, modalities,
+                           TIMESTAMPDIFF(MINUTE, `{$campoOrigem}`, NOW()) AS minutos_decorridos
+                    FROM bi_pacs_estudos
+                    WHERE " . implode(' AND ', $where);
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\Throwable $ex) {
+            \App\Core\Logger::error('Erro ao buscar candidatos de Regras de SLA', [
+                'tenant_id' => $tenantId,
+                'error'     => $ex->getMessage(),
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Reatribuição feita pelo robô de Regras de SLA. Mesma semântica de colunas
+     * de assumirEstudo(), mas sem a restrição situacao IN ('novo','aberto') —
+     * o robô também precisa poder trocar um estudo que já está 'em_laudo'
+     * (é justamente o caso de estouro de SLA Médico). Bloqueia apenas estudos
+     * já finalizados.
+     */
+    public function reatribuirPorRobo(int $estudoId, int $novoUsuarioId, int $tenantId): bool
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "UPDATE bi_pacs_estudos SET
+                    situacao               = 'em_laudo',
+                    assumido_por           = :usuario_id,
+                    assumido_em            = NOW(),
+                    usuario_responsavel_id = :usuario_id2
+                 WHERE id = :id AND tenant_id = :tenant_id
+                   AND situacao NOT IN ('assinado','liberado')"
+            );
+            return $stmt->execute([
+                ':usuario_id'  => $novoUsuarioId,
+                ':usuario_id2' => $novoUsuarioId,
+                ':id'          => $estudoId,
+                ':tenant_id'   => $tenantId,
+            ]);
+        } catch (\Throwable $ex) {
+            \App\Core\Logger::error('Erro ao reatribuir estudo pelo robo de Regras de SLA', [
+                'estudo_id'  => $estudoId,
+                'usuario_id' => $novoUsuarioId,
+                'error'      => $ex->getMessage(),
+            ]);
+            return false;
+        }
+    }
 }

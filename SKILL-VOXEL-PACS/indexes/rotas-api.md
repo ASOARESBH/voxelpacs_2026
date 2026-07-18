@@ -23,6 +23,12 @@
 | POST | `/platform/negocios/{id}/unidades/{uid}/delete` | `Platform\NegociosController@excluirUnidade` | Platform admin | Remove Unidade DICOM, JSON | idem acima |
 | POST | `/platform/negocios/{id}/logo` | `Platform\NegociosController@uploadLogo` | Platform admin | **Rota quebrada — método não existe no controller.** Encontrado mas não corrigido nesta sessão (fora do escopo autorizado); confirmar com o usuário antes de mexer | 2026-07-10 |
 | POST | `/platform/negocios/{id}/enviar-token` | `Platform\NegociosController@enviarTokenAcesso` | Platform admin | **Rota quebrada — método não existe no controller.** Mesma situação acima | 2026-07-10 |
+| GET/POST | `/sla-regras[...]` (create/store/edit/update/toggle) | `SlaRegrasController` | Login + `Auth::can('manage_sla_regras')` (checagem manual no construtor do controller — não há guard de role automático fora de `/platform`) | CRUD de Regras de SLA | 2026-07-18 |
+| GET | `/sla-regras/execucoes` | `SlaRegrasController@execucoes` | idem acima | Histórico de remanejamentos feitos pelo robô | 2026-07-18 |
+| GET | `/sla-regras/robo` | `SlaRegrasController@roboConfig` | idem acima | Tela de config do robô: URL pública, token, ativo/inativo, status do lock | 2026-07-18 |
+| POST | `/sla-regras/robo/gerar-token` | `SlaRegrasController@roboGerarToken` | idem acima | Gera novo token (`bin2hex(random_bytes(24))`), invalida o anterior | 2026-07-18 |
+| POST | `/sla-regras/robo/toggle` | `SlaRegrasController@roboToggle` | idem acima | Liga/desliga o robô | 2026-07-18 |
+| GET | `/api/sla-regras/executar` | `SlaRoboController@executar` | **Pública** (token via query string, `hash_equals()`) — precisa estar em `App\Core\Router::$publicRoutes` **e** `public/index.php::$rotasPublicas` (duas listas independentes; achado replicado do caso de `/api/orthanc/ping`) | Dispara `SlaRulesEngineService::executarParaTodosTenants()`; chamada por cron externo (ex: cron-job.org), já que o hosting não tem crontab real | 2026-07-18 |
 
 ## Convenções observadas (preencher conforme confirmado no código)
 
