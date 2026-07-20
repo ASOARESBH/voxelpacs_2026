@@ -7,6 +7,11 @@ $usuarios = $usuarios ?? [];
 $unidades = $unidades ?? [];
 $unidadesMarcadas = $unidadesMarcadas ?? [];
 $usuarioIdAtual = $isEdit ? (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($medico->usuario_id ?? 0)) : 0;
+$estados = \App\Core\Estados::all();
+$val = function (string $campo) use ($medico) {
+    if (!$medico) return '';
+    return is_array($medico) ? ($medico[$campo] ?? '') : ($medico->$campo ?? '');
+};
 ?>
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
@@ -32,18 +37,28 @@ $usuarioIdAtual = $isEdit ? (int) (is_array($medico) ? ($medico['usuario_id'] ??
     <div class="pacs-card-body">
         <form method="POST" action="<?= $action ?>">
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
-                <div>
-                    <label class="form-label-dark">Nome Completo *</label>
-                    <input type="text" name="nome" class="form-control-dark"
-                           value="<?= htmlspecialchars(is_array($medico) ? ($medico['nome'] ?? '') : ($medico?->nome ?? '')) ?>"
-                           required placeholder="Dr. João Silva">
-                </div>
+            <div style="margin-bottom:1rem;">
+                <label class="form-label-dark">Nome Completo *</label>
+                <input type="text" name="nome" class="form-control-dark"
+                       value="<?= htmlspecialchars(is_array($medico) ? ($medico['nome'] ?? '') : ($medico?->nome ?? '')) ?>"
+                       required placeholder="Dr. João Silva">
+            </div>
+
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem;">
                 <div>
                     <label class="form-label-dark">CRM</label>
                     <input type="text" name="crm" class="form-control-dark"
                            value="<?= htmlspecialchars(is_array($medico) ? ($medico['crm'] ?? '') : ($medico?->crm ?? '')) ?>"
-                           placeholder="CRM/SP 123456">
+                           placeholder="123456">
+                </div>
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_crm_uf')) ?></label>
+                    <select name="crm_uf" class="form-control-dark">
+                        <option value="">—</option>
+                        <?php foreach ($estados as $uf => $nomeEstado): ?>
+                            <option value="<?= $uf ?>" <?= strtoupper($val('crm_uf')) === $uf ? 'selected' : '' ?>><?= $uf ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
             </div>
 
@@ -67,6 +82,54 @@ $usuarioIdAtual = $isEdit ? (int) (is_array($medico) ? ($medico['usuario_id'] ??
                 <input type="text" name="telefone" class="form-control-dark"
                        value="<?= htmlspecialchars(is_array($medico) ? ($medico['telefone'] ?? '') : ($medico?->telefone ?? '')) ?>"
                        placeholder="(11) 99999-9999">
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:1rem;margin-bottom:1rem;align-items:end;">
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_cep')) ?></label>
+                    <input type="text" id="medicoCep" name="cep" class="form-control-dark" maxlength="9"
+                           value="<?= htmlspecialchars($val('cep')) ?>"
+                           placeholder="00000-000" onblur="buscarCepMedico()">
+                </div>
+                <div>
+                    <span id="medicoCepStatus" style="font-size:.78rem;color:var(--pacs-text-muted);"></span>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_logradouro')) ?></label>
+                <input type="text" id="medicoLogradouro" name="logradouro" class="form-control-dark" value="<?= htmlspecialchars($val('logradouro')) ?>">
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_numero')) ?></label>
+                    <input type="text" name="numero" class="form-control-dark" value="<?= htmlspecialchars($val('numero')) ?>">
+                </div>
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_complemento')) ?></label>
+                    <input type="text" name="complemento" class="form-control-dark" value="<?= htmlspecialchars($val('complemento')) ?>">
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem;">
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_bairro')) ?></label>
+                    <input type="text" id="medicoBairro" name="bairro" class="form-control-dark" value="<?= htmlspecialchars($val('bairro')) ?>">
+                </div>
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_cidade')) ?></label>
+                    <input type="text" id="medicoCidade" name="cidade" class="form-control-dark" value="<?= htmlspecialchars($val('cidade')) ?>">
+                </div>
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_estado')) ?></label>
+                    <select id="medicoEstado" name="estado" class="form-control-dark">
+                        <option value="">—</option>
+                        <?php foreach ($estados as $uf => $nomeEstado): ?>
+                            <option value="<?= $uf ?>" <?= strtoupper($val('estado')) === $uf ? 'selected' : '' ?>><?= $uf ?> — <?= htmlspecialchars($nomeEstado) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
 
             <div style="margin-bottom:1rem;">
@@ -106,3 +169,35 @@ $usuarioIdAtual = $isEdit ? (int) (is_array($medico) ? ($medico['usuario_id'] ??
         </form>
     </div>
 </div>
+
+<script>
+function buscarCepMedico() {
+    const cepInput = document.getElementById('medicoCep');
+    const status = document.getElementById('medicoCepStatus');
+    const cep = cepInput.value.replace(/\D/g, '');
+
+    if (cep.length !== 8) {
+        if (cep.length > 0) status.innerHTML = '<span style="color:#e05252;"><?= addslashes(t('medicos.form.cep_nao_encontrado')) ?></span>';
+        return;
+    }
+
+    status.innerHTML = '<span><?= addslashes(t('medicos.form.cep_buscando')) ?></span>';
+
+    fetch('/api/medicos/cep/' + cep)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                status.innerHTML = '<span style="color:#e05252;">' + data.error + '</span>';
+                return;
+            }
+            status.innerHTML = '';
+            if (data.logradouro) document.getElementById('medicoLogradouro').value = data.logradouro;
+            if (data.bairro) document.getElementById('medicoBairro').value = data.bairro;
+            if (data.cidade) document.getElementById('medicoCidade').value = data.cidade;
+            if (data.estado) document.getElementById('medicoEstado').value = data.estado;
+        })
+        .catch(() => {
+            status.innerHTML = '<span style="color:#e05252;"><?= addslashes(t('medicos.form.cep_nao_encontrado')) ?></span>';
+        });
+}
+</script>

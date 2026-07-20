@@ -29,6 +29,7 @@
 | POST | `/sla-regras/robo/gerar-token` | `SlaRegrasController@roboGerarToken` | idem acima | Gera novo token (`bin2hex(random_bytes(24))`), invalida o anterior | 2026-07-18 |
 | POST | `/sla-regras/robo/toggle` | `SlaRegrasController@roboToggle` | idem acima | Liga/desliga o robô | 2026-07-18 |
 | GET | `/api/sla-regras/executar` | `SlaRoboController@executar` | **Pública** (token via query string, `hash_equals()`) — precisa estar em `App\Core\Router::$publicRoutes` **e** `public/index.php::$rotasPublicas` (duas listas independentes; achado replicado do caso de `/api/orthanc/ping`) | Dispara `SlaRulesEngineService::executarParaTodosTenants()`; chamada por cron externo (ex: cron-job.org), já que o hosting não tem crontab real | 2026-07-18 |
+| GET | `/api/medicos/cep/{cep}` | `MedicosController@buscarCep` | Login normal (rota autenticada, não pública) | Busca endereço por CEP via ViaCEP (`https://viacep.com.br/ws/{cep}/json/`), usada por `fetch()` no form de Médicos para autopreencher logradouro/bairro/cidade/estado; primeira integração de CEP do projeto (mesmo padrão estrutural de `Platform\NegociosController::buscarCnpj()`, mas sem `CURLOPT_SSL_VERIFYPEER => false`) | 2026-07-19 |
 
 ## Convenções observadas (preencher conforme confirmado no código)
 

@@ -41,6 +41,7 @@ Router::get('/pacs',                   fn() => header('Location: /estudos'));
 // ============================================================
 // CADASTROS
 // ============================================================
+Router::get('/api/medicos/cep/{cep}',  'MedicosController@buscarCep');
 Router::get('/medicos',                'MedicosController@index');
 Router::get('/medicos/create',         'MedicosController@create');
 Router::post('/medicos',               'MedicosController@store');
