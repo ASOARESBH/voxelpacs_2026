@@ -33,18 +33,20 @@ $val = function (string $campo) use ($medico) {
     <?php endif; ?>
 </div>
 
-<div class="pacs-card" style="max-width:700px;">
+<div class="pacs-card" style="max-width:920px;">
     <div class="pacs-card-body">
         <form method="POST" action="<?= $action ?>">
 
-            <div style="margin-bottom:1rem;">
+            <div style="margin-bottom:1.25rem;">
                 <label class="form-label-dark">Nome Completo *</label>
                 <input type="text" name="nome" class="form-control-dark"
                        value="<?= htmlspecialchars(is_array($medico) ? ($medico['nome'] ?? '') : ($medico?->nome ?? '')) ?>"
                        required placeholder="Dr. João Silva">
             </div>
 
-            <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem;">
+            <div class="form-section-title">Dados Profissionais</div>
+
+            <div class="form-grid" style="grid-template-columns:1fr 90px 1.6fr;">
                 <div>
                     <label class="form-label-dark">CRM</label>
                     <input type="text" name="crm" class="form-control-dark"
@@ -60,59 +62,54 @@ $val = function (string $campo) use ($medico) {
                         <?php endforeach; ?>
                     </select>
                 </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
                 <div>
                     <label class="form-label-dark">Especialidade</label>
                     <input type="text" name="especialidade" class="form-control-dark"
                            value="<?= htmlspecialchars(is_array($medico) ? ($medico['especialidade'] ?? '') : ($medico?->especialidade ?? '')) ?>"
                            placeholder="Radiologia e Diagnóstico por Imagem">
                 </div>
+            </div>
+
+            <div class="form-grid" style="grid-template-columns:1fr 1fr;">
                 <div>
                     <label class="form-label-dark">E-mail</label>
                     <input type="email" name="email" class="form-control-dark"
                            value="<?= htmlspecialchars(is_array($medico) ? ($medico['email'] ?? '') : ($medico?->email ?? '')) ?>"
                            placeholder="medico@clinica.com.br">
                 </div>
+                <div>
+                    <label class="form-label-dark">Telefone</label>
+                    <input type="text" name="telefone" class="form-control-dark"
+                           value="<?= htmlspecialchars(is_array($medico) ? ($medico['telefone'] ?? '') : ($medico?->telefone ?? '')) ?>"
+                           placeholder="(11) 99999-9999">
+                </div>
             </div>
 
-            <div style="margin-bottom:1rem;">
-                <label class="form-label-dark">Telefone</label>
-                <input type="text" name="telefone" class="form-control-dark"
-                       value="<?= htmlspecialchars(is_array($medico) ? ($medico['telefone'] ?? '') : ($medico?->telefone ?? '')) ?>"
-                       placeholder="(11) 99999-9999">
-            </div>
+            <div class="form-section-title">Endereço</div>
 
-            <div style="display:grid;grid-template-columns:1fr 2fr;gap:1rem;margin-bottom:1rem;align-items:end;">
+            <div class="form-grid" style="grid-template-columns:140px 2fr 110px;">
                 <div>
                     <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_cep')) ?></label>
                     <input type="text" id="medicoCep" name="cep" class="form-control-dark" maxlength="9"
                            value="<?= htmlspecialchars($val('cep')) ?>"
                            placeholder="00000-000" onblur="buscarCepMedico()">
+                    <small id="medicoCepStatus" style="display:block;min-height:1.1em;font-size:.72rem;color:var(--pacs-text-muted);margin-top:.25rem;"></small>
                 </div>
                 <div>
-                    <span id="medicoCepStatus" style="font-size:.78rem;color:var(--pacs-text-muted);"></span>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_logradouro')) ?></label>
+                    <input type="text" id="medicoLogradouro" name="logradouro" class="form-control-dark" value="<?= htmlspecialchars($val('logradouro')) ?>">
                 </div>
-            </div>
-
-            <div style="margin-bottom:1rem;">
-                <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_logradouro')) ?></label>
-                <input type="text" id="medicoLogradouro" name="logradouro" class="form-control-dark" value="<?= htmlspecialchars($val('logradouro')) ?>">
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
                 <div>
                     <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_numero')) ?></label>
                     <input type="text" name="numero" class="form-control-dark" value="<?= htmlspecialchars($val('numero')) ?>">
                 </div>
+            </div>
+
+            <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 90px;">
                 <div>
                     <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_complemento')) ?></label>
                     <input type="text" name="complemento" class="form-control-dark" value="<?= htmlspecialchars($val('complemento')) ?>">
                 </div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem;">
                 <div>
                     <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_bairro')) ?></label>
                     <input type="text" id="medicoBairro" name="bairro" class="form-control-dark" value="<?= htmlspecialchars($val('bairro')) ?>">
@@ -126,25 +123,29 @@ $val = function (string $campo) use ($medico) {
                     <select id="medicoEstado" name="estado" class="form-control-dark">
                         <option value="">—</option>
                         <?php foreach ($estados as $uf => $nomeEstado): ?>
-                            <option value="<?= $uf ?>" <?= strtoupper($val('estado')) === $uf ? 'selected' : '' ?>><?= $uf ?> — <?= htmlspecialchars($nomeEstado) ?></option>
+                            <option value="<?= $uf ?>" <?= strtoupper($val('estado')) === $uf ? 'selected' : '' ?>><?= $uf ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
             </div>
 
-            <div style="margin-bottom:1rem;">
-                <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_usuario')) ?></label>
-                <select name="usuario_id" class="form-control-dark">
-                    <option value=""><?= htmlspecialchars(t('medicos.form.usuario_nao_vinculado')) ?></option>
-                    <?php foreach ($usuarios as $u): ?>
-                        <?php $uId = is_array($u) ? $u['id'] : $u->id; $uNome = is_array($u) ? $u['name'] : $u->name; ?>
-                        <option value="<?= (int) $uId ?>" <?= $uId == $usuarioIdAtual ? 'selected' : '' ?>><?= htmlspecialchars($uNome) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <small style="color:var(--pacs-text-muted);"><?= htmlspecialchars(t('medicos.form.campo_usuario_ajuda')) ?></small>
+            <div class="form-section-title">Vínculo e Unidades</div>
+
+            <div class="form-grid" style="grid-template-columns:1fr;">
+                <div>
+                    <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_usuario')) ?></label>
+                    <select name="usuario_id" class="form-control-dark" style="max-width:420px;">
+                        <option value=""><?= htmlspecialchars(t('medicos.form.usuario_nao_vinculado')) ?></option>
+                        <?php foreach ($usuarios as $u): ?>
+                            <?php $uId = is_array($u) ? $u['id'] : $u->id; $uNome = is_array($u) ? $u['name'] : $u->name; ?>
+                            <option value="<?= (int) $uId ?>" <?= $uId == $usuarioIdAtual ? 'selected' : '' ?>><?= htmlspecialchars($uNome) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small style="color:var(--pacs-text-muted);"><?= htmlspecialchars(t('medicos.form.campo_usuario_ajuda')) ?></small>
+                </div>
             </div>
 
-            <div style="margin-bottom:1rem;">
+            <div style="margin-bottom:1.25rem;">
                 <label class="form-label-dark"><?= htmlspecialchars(t('medicos.form.campo_unidades')) ?></label>
                 <div style="display:flex;flex-wrap:wrap;gap:.6rem;padding:.6rem;border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;">
                     <?php if (empty($unidades)): ?>
@@ -160,7 +161,7 @@ $val = function (string $campo) use ($medico) {
                 </div>
             </div>
 
-            <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;">
+            <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;border-top:1px solid var(--pacs-border);padding-top:1.25rem;">
                 <a href="/medicos" class="btn-pacs-outline"><i class="fa fa-arrow-left"></i> Cancelar</a>
                 <button type="submit" class="btn-pacs-primary">
                     <i class="fa fa-floppy-disk"></i> <?= $isEdit ? 'Salvar Alterações' : 'Cadastrar Médico' ?>

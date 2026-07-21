@@ -1252,6 +1252,29 @@ body {
 .tb-assinado { background: #f0fdfa; color: #0d9488; border-color: #99f6e4; }
 .tb-rascunho { background: var(--gray-100);   color: var(--gray-600); border-color: var(--gray-200); }
 
+/* ── FORMULÁRIOS COM SEÇÕES (ex: medicos/form.php) ── */
+.form-section-title {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: .4rem;
+    margin: 1.5rem 0 1rem;
+}
+.form-section-title:first-of-type { margin-top: .5rem; }
+
+.form-grid {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+@media (max-width: 700px) {
+    .form-grid { grid-template-columns: 1fr !important; }
+}
+
 /* ── VIEWER LAUNCHER (dropdown do botão Abrir: Web / RadiAnt / Weasis) ── */
 .viewer-launcher {
     position: relative;

@@ -40,29 +40,42 @@ class DesktopViewerService
     {
         $pdo = Database::getInstance();
 
+        // Config por tenant é "melhor esforço": se a tabela ainda não existir
+        // (ex: migration não aplicada neste ambiente) ou a consulta falhar por
+        // qualquer motivo, degrada silenciosamente para o fallback do servidor
+        // PACS global em vez de quebrar a abertura do viewer.
         $config = null;
         if ($tenantId) {
-            $stmt = $pdo->prepare("
-                SELECT host, porta, ae_title, calling_ae
-                FROM bi_viewer_desktop_config
-                WHERE tenant_id = :tenant_id AND viewer = :viewer AND ativo = 1
-                LIMIT 1
-            ");
-            $stmt->execute([':tenant_id' => $tenantId, ':viewer' => $viewer]);
-            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-            if ($row) {
-                $config = $row;
+            try {
+                $stmt = $pdo->prepare("
+                    SELECT host, porta, ae_title, calling_ae
+                    FROM bi_viewer_desktop_config
+                    WHERE tenant_id = :tenant_id AND viewer = :viewer AND ativo = 1
+                    LIMIT 1
+                ");
+                $stmt->execute([':tenant_id' => $tenantId, ':viewer' => $viewer]);
+                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($row) {
+                    $config = $row;
+                }
+            } catch (\Throwable $ex) {
+                error_log('[DesktopViewerService::resolverConfig] bi_viewer_desktop_config: ' . $ex->getMessage());
             }
         }
 
         // Fallback: servidor PACS global (bi_pacs_servidor), já usado pelo
         // fluxo de sincronização — não duplicamos essa configuração.
-        $servidor = $pdo->query("
-            SELECT url, dicom_aet, dicom_port
-            FROM bi_pacs_servidor
-            WHERE id = 1
-            LIMIT 1
-        ")->fetch(\PDO::FETCH_ASSOC);
+        try {
+            $servidor = $pdo->query("
+                SELECT url, dicom_aet, dicom_port
+                FROM bi_pacs_servidor
+                WHERE id = 1
+                LIMIT 1
+            ")->fetch(\PDO::FETCH_ASSOC);
+        } catch (\Throwable $ex) {
+            error_log('[DesktopViewerService::resolverConfig] bi_pacs_servidor: ' . $ex->getMessage());
+            $servidor = null;
+        }
 
         $hostServidor = null;
         if ($servidor && !empty($servidor['url'])) {
