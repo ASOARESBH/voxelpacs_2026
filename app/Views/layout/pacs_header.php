@@ -6,7 +6,7 @@
     <title><?= htmlspecialchars($title ?? 'VOXEL PACS') ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
 </head>
 <body>
@@ -163,16 +163,16 @@
 
             <!-- Badges de status (contadores) -->
             <div class="topbar-badges d-none d-lg-flex">
-                <span class="topbar-badge" style="background:#1565c0;color:#90caf9;" title="Estudos Novos">
+                <span class="topbar-badge" style="background:var(--info-bg);color:var(--info);" title="Estudos Novos">
                     <span class="badge-count" id="cnt-novo">—</span> NOVO
                 </span>
-                <span class="topbar-badge" style="background:#2e7d32;color:#a5d6a7;" title="Estudos Abertos">
+                <span class="topbar-badge" style="background:var(--success-bg);color:var(--success);" title="Estudos Abertos">
                     <span class="badge-count" id="cnt-aberto">—</span> ABERTO
                 </span>
-                <span class="topbar-badge" style="background:#4a148c;color:#ce93d8;" title="Rascunhos">
+                <span class="topbar-badge" style="background:#f5f3ff;color:#7c3aed;" title="Rascunhos">
                     <span class="badge-count" id="cnt-rascunho">—</span> RASCUNHO
                 </span>
-                <span class="topbar-badge" style="background:#004d40;color:#80cbc4;" title="Assinados">
+                <span class="topbar-badge" style="background:#f0fdfa;color:#0d9488;" title="Assinados">
                     <span class="badge-count" id="cnt-assinado">—</span> ASSINADO
                 </span>
             </div>

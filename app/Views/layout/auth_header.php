@@ -10,23 +10,34 @@
     <link rel="stylesheet" href="/assets/css/auth.css">
 </head>
 <body>
-<div id="auth-bg"></div>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
 
 <div class="auth-layout">
     <div class="auth-brand">
         <span class="auth-brand-tag">Plataforma Cloud PACS</span>
         <h1>Smart Imaging.<br><span>Secure Data.</span><br>Better Care.</h1>
         <p>PACS em nuvem para teleradiologia. Conecte clínicas, médicos laudadores e pacientes num único sistema seguro e rastreável.</p>
+
+        <ul class="benefits-list">
+            <li><i class="fa fa-bolt"></i> Worklist em tempo real, direto do Orthanc PACS</li>
+            <li><i class="fa fa-file-medical"></i> Laudo estruturado com exportação em PDF</li>
+            <li><i class="fa fa-users"></i> Multi-tenant: várias clínicas, um único acesso</li>
+            <li><i class="fa fa-chart-line"></i> Analytics e SLA de laudo em tempo real</li>
+        </ul>
+
         <div class="feature-pills">
-            <span class="pill"><i class="fa fa-bolt"></i> Worklist em tempo real</span>
             <span class="pill"><i class="fa fa-shield-halved"></i> Conformidade LGPD</span>
-            <span class="pill"><i class="fa fa-users"></i> Multi-tenant</span>
-            <span class="pill"><i class="fa fa-file-medical"></i> Laudo + PDF</span>
-            <span class="pill"><i class="fa fa-chart-line"></i> Analytics PACS</span>
             <span class="pill"><i class="fa fa-lock"></i> Auditoria total</span>
+        </div>
+
+        <div class="compliance-cards">
+            <div class="compliance-card">
+                <i class="fa fa-shield-halved"></i>
+                <span><strong>LGPD</strong>Dados protegidos</span>
+            </div>
+            <div class="compliance-card">
+                <i class="fa fa-file-shield"></i>
+                <span><strong>HIPAA</strong>Padrão internacional</span>
+            </div>
         </div>
     </div>
 

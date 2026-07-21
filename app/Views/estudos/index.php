@@ -420,8 +420,8 @@ $periodoLabel = [
 .prio-critico{color:#ef4444;}
 .row-urgente td:first-child{border-left:3px solid #f97316;}
 .row-critico td:first-child{border-left:3px solid #ef4444;}
-.sit-em-laudo{background:rgba(168,85,247,.18);color:#c084fc;}
-.sit-liberado{background:rgba(16,185,129,.18);color:#34d399;}
+.sit-em-laudo{background:#f5f3ff;color:#7c3aed;}
+.sit-liberado{background:#f0fdf4;color:#059669;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
