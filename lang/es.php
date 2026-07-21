@@ -120,7 +120,7 @@ return [
     'medicos.index.sem_vinculo'      => 'Sin vínculo',
     'medicos.index.aviso_sem_vinculo'=> 'Este médico no puede ser objetivo de Reglas de SLA hasta vincularse a una cuenta de usuario',
 
-    'viewer_desktop.menu.web'              => 'Visor Web (OHIF)',
+    'viewer_desktop.menu.web'              => 'Voxel View',
     'viewer_desktop.menu.radiant'           => 'RadiAnt Viewer',
     'viewer_desktop.menu.weasis'            => 'Weasis Viewer',
     'viewer_desktop.config.titulo'          => 'Visores de Escritorio',

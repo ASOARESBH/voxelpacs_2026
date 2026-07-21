@@ -284,7 +284,7 @@ $periodoLabel = [
                     $hrFmt = substr($e['study_time'],0,2).':'.substr($e['study_time'],2,2);
                 }
             ?>
-            <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" title="Duplo clique para abrir no OHIF">
+            <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" title="Duplo clique para abrir no Voxel View">
                 <td><input type="checkbox" class="row-check" value="<?= $e['id'] ?>" style="accent-color:var(--pacs-primary);"></td>
 
                 <td class="dt-estudo">
@@ -351,10 +351,10 @@ $periodoLabel = [
                                 <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
                             </a>
                             <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>">
-                                <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
+                                <img src="/assets/img/icon-radiant.ico" alt="" class="viewer-menu-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
                             </a>
                             <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>">
-                                <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
+                                <img src="/assets/img/icon-weasis.svg" alt="" class="viewer-menu-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
                             </a>
                         </div>
                     </div>

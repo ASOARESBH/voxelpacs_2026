@@ -49,7 +49,7 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
                     <input type="url" name="viewer_url" class="form-control-dark"
                            value="<?= htmlspecialchars($config['viewer_url'] ?? '') ?>"
                            placeholder="http://localhost:3000">
-                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">URL base do OHIF Viewer ou Weasis</small>
+                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">URL base do Voxel View (o visualizador web do VOXEL PACS)</small>
                 </div>
                 <button type="submit" class="btn-pacs-primary" style="width:100%;">
                     <i class="fa fa-floppy-disk"></i> Salvar Configurações PACS

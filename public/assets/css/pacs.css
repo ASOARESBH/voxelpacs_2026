@@ -1329,6 +1329,13 @@ body {
     flex-shrink: 0;
 }
 
+.viewer-menu-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
 /* ── Animação de entrada ── */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(6px); }

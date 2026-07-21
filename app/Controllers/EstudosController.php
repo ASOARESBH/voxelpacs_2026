@@ -513,6 +513,9 @@ class EstudosController extends Controller
         $downloadUrl  = $viewer === 'radiant'
             ? 'https://www.radiantviewer.com/download/'
             : 'https://weasis.org/en/download/';
+        $iconSrc      = $viewer === 'radiant'
+            ? '/assets/img/icon-radiant.ico'
+            : '/assets/img/icon-weasis.svg';
         ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -533,6 +536,7 @@ class EstudosController extends Controller
             padding: 2.5rem 3rem; max-width: 480px; width: 90%; text-align: center;
         }
         .icon { font-size: 3rem; margin-bottom: 1rem; }
+        .icon img { width: 56px; height: 56px; object-fit: contain; }
         h1 { font-size: 1.3rem; margin-bottom: .75rem; color: #f0f6fc; }
         p  { font-size: .92rem; color: #8b949e; line-height: 1.6; }
         .btn {
@@ -545,7 +549,7 @@ class EstudosController extends Controller
 </head>
 <body>
     <div class="card" id="tentando">
-        <div class="icon">🖥️</div>
+        <div class="icon"><img src="<?= htmlspecialchars($iconSrc) ?>" alt="<?= htmlspecialchars($nomeViewer) ?>"></div>
         <h1>Abrindo no <?= htmlspecialchars($nomeViewer) ?>…</h1>
         <p>Se nada acontecer em alguns segundos, o <?= htmlspecialchars($nomeViewer) ?> pode não estar instalado neste computador.</p>
     </div>

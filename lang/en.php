@@ -120,7 +120,7 @@ return [
     'medicos.index.sem_vinculo'      => 'Not linked',
     'medicos.index.aviso_sem_vinculo'=> 'This doctor cannot be targeted by SLA Rules until linked to a user account',
 
-    'viewer_desktop.menu.web'              => 'Web Viewer (OHIF)',
+    'viewer_desktop.menu.web'              => 'Voxel View',
     'viewer_desktop.menu.radiant'           => 'RadiAnt Viewer',
     'viewer_desktop.menu.weasis'            => 'Weasis Viewer',
     'viewer_desktop.config.titulo'          => 'Desktop Viewers',
