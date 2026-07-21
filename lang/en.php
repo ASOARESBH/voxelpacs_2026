@@ -119,4 +119,16 @@ return [
     'medicos.index.coluna_usuario'   => 'Linked account',
     'medicos.index.sem_vinculo'      => 'Not linked',
     'medicos.index.aviso_sem_vinculo'=> 'This doctor cannot be targeted by SLA Rules until linked to a user account',
+
+    'viewer_desktop.menu.web'              => 'Web Viewer (OHIF)',
+    'viewer_desktop.menu.radiant'           => 'RadiAnt Viewer',
+    'viewer_desktop.menu.weasis'            => 'Weasis Viewer',
+    'viewer_desktop.config.titulo'          => 'Desktop Viewers',
+    'viewer_desktop.config.descricao'       => 'DICOM connection settings (Query/Retrieve) used to open studies directly in RadiAnt and Weasis from the "Open" button in Studies. Blank fields automatically use the PACS server configuration.',
+    'viewer_desktop.config.campo_host'      => 'Host (PACS IP)',
+    'viewer_desktop.config.campo_porta'     => 'DICOM Port',
+    'viewer_desktop.config.campo_ae_title'  => 'AE Title (PACS)',
+    'viewer_desktop.config.campo_calling_ae'=> 'Calling AE Title (viewer)',
+    'viewer_desktop.config.campo_ativo'     => 'Active',
+    'viewer_desktop.config.botao_salvar'    => 'Save',
 ];

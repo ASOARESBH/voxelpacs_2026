@@ -23,6 +23,8 @@ Router::get('/dashboard', 'DashboardController@index');
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
+Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
+Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');
 Router::get('/api/estudos/contadores', 'EstudosController@contadores');
 
 // ============================================================
@@ -84,6 +86,7 @@ Router::post('/usuarios/{id}/toggle',  'UsuariosController@toggleStatus');
 
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
+Router::post('/configuracoes/viewer-desktop/salvar', 'ConfiguracoesController@salvarViewerDesktop');
 
 // ============================================================
 // API — Orthanc ping (público, para status na tela de login)

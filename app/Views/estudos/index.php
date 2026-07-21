@@ -342,12 +342,22 @@ $periodoLabel = [
 
                 <td style="text-align:center;">
                     <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
-                    <a href="/estudos/<?= $e['id'] ?>/abrir"
-                       class="pacs-btn btn-open"
-                       title="Abrir no OHIF Viewer"
-                       target="_blank">
-                        <i class="fa fa-eye"></i> Abrir
-                    </a>
+                    <div class="viewer-launcher">
+                        <button type="button" class="pacs-btn btn-open viewer-launcher-trigger" title="Abrir estudo">
+                            <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.6rem;margin-left:.15rem;"></i>
+                        </button>
+                        <div class="viewer-menu">
+                            <a href="/estudos/<?= $e['id'] ?>/abrir" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>">
+                                <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
+                            </a>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>">
+                                <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
+                            </a>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>">
+                                <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
+                            </a>
+                        </div>
+                    </div>
                     <?php else: ?>
                     <span class="pacs-btn" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
                         <i class="fa fa-eye-slash"></i>
@@ -457,4 +467,39 @@ document.querySelectorAll('.pacs-table tbody tr[data-id]').forEach(row => {
         window.open('/estudos/' + this.dataset.id + '/abrir', '_blank');
     });
 });
+
+// ── Menu "Abrir" (Web / RadiAnt / Weasis) — listener único delegado ────────
+(function () {
+    let menuAberto = null;
+
+    function fecharMenuAberto() {
+        if (menuAberto) {
+            menuAberto.classList.remove('show');
+            menuAberto = null;
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        const trigger = e.target.closest('.viewer-launcher-trigger');
+        if (trigger) {
+            e.preventDefault();
+            e.stopPropagation();
+            const menu = trigger.parentElement.querySelector('.viewer-menu');
+            const jaAberto = menu === menuAberto;
+            fecharMenuAberto();
+            if (!jaAberto) {
+                menu.classList.add('show');
+                menuAberto = menu;
+            }
+            return;
+        }
+        if (!e.target.closest('.viewer-menu')) {
+            fecharMenuAberto();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') fecharMenuAberto();
+    });
+})();
 </script>

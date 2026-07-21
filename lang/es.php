@@ -119,4 +119,16 @@ return [
     'medicos.index.coluna_usuario'   => 'Cuenta vinculada',
     'medicos.index.sem_vinculo'      => 'Sin vínculo',
     'medicos.index.aviso_sem_vinculo'=> 'Este médico no puede ser objetivo de Reglas de SLA hasta vincularse a una cuenta de usuario',
+
+    'viewer_desktop.menu.web'              => 'Visor Web (OHIF)',
+    'viewer_desktop.menu.radiant'           => 'RadiAnt Viewer',
+    'viewer_desktop.menu.weasis'            => 'Weasis Viewer',
+    'viewer_desktop.config.titulo'          => 'Visores de Escritorio',
+    'viewer_desktop.config.descricao'       => 'Configuración de conexión DICOM (Query/Retrieve) usada para abrir estudios directamente en RadiAnt y Weasis desde el botón "Abrir" en Estudios. Los campos en blanco usan automáticamente la configuración del servidor PACS.',
+    'viewer_desktop.config.campo_host'      => 'Host (IP del PACS)',
+    'viewer_desktop.config.campo_porta'     => 'Puerto DICOM',
+    'viewer_desktop.config.campo_ae_title'  => 'AE Title (PACS)',
+    'viewer_desktop.config.campo_calling_ae'=> 'Calling AE Title (visor)',
+    'viewer_desktop.config.campo_ativo'     => 'Activo',
+    'viewer_desktop.config.botao_salvar'    => 'Guardar',
 ];

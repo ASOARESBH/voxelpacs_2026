@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Auth;
+use App\Services\DesktopViewerService;
 
 /**
  * VOXEL PACS — EstudosController
@@ -383,6 +384,189 @@ class EstudosController extends Controller
         $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
         $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
         header('Location: ' . $viewerUrl, true, 302);
+        exit;
+    }
+
+    // =========================================================================
+    // Abertura em visualizadores desktop (RadiAnt / Weasis)
+    // Complementa abrir() (OHIF) acima — não altera nada do fluxo existente.
+    // =========================================================================
+
+    public function abrirRadiant(int $id): void
+    {
+        $this->abrirDesktop($id, 'radiant');
+    }
+
+    public function abrirWeasis(int $id): void
+    {
+        $this->abrirDesktop($id, 'weasis');
+    }
+
+    private function abrirDesktop(int $id, string $viewer): void
+    {
+        $inicio   = microtime(true);
+        $tenantId = Auth::tenantId();
+        $service  = new DesktopViewerService();
+
+        $contexto = [
+            'tenant_id'  => $tenantId,
+            'study_id'   => $id,
+            'viewer'     => $viewer,
+            'usuario_id' => Auth::userId(),
+            'ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+        ];
+
+        // ── RBAC — mesma permissão que já governa o módulo Estudos ──────────
+        if (!Auth::can('view_exames')) {
+            $service->registrarAcesso($contexto + [
+                'status'        => 'negado',
+                'mensagem_erro' => 'Usuário sem permissão view_exames.',
+            ]);
+            $this->renderErroViewer(403, 'Você não tem permissão para visualizar este estudo.');
+            return;
+        }
+
+        // ── Busca do estudo — mesmo escopo tenant-aware usado em abrir() ────
+        $pdo          = Database::getInstance();
+        $isAdmin      = Auth::isPlatformAdmin();
+        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+        $estudo       = null;
+
+        try {
+            $where  = 'id = :id AND servidor_id = 1';
+            $params = [':id' => $id];
+            if ($tenantId) {
+                $where           .= ' AND tenant_id = :tid';
+                $params[':tid']   = $tenantId;
+            } elseif (!$bypassGlobal) {
+                $where .= ' AND 1=0';
+            }
+            $stmt = $pdo->prepare(
+                "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name,
+                        accession_number, tenant_id
+                 FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
+            );
+            $stmt->execute($params);
+            $estudo = $stmt->fetch(\PDO::FETCH_ASSOC);
+        } catch (\Throwable $ex) {
+            error_log("[EstudosController::abrirDesktop:{$viewer}] " . $ex->getMessage());
+        }
+
+        if (!$estudo) {
+            $service->registrarAcesso($contexto + [
+                'status'        => 'erro',
+                'mensagem_erro' => 'Estudo não encontrado ou sem permissão de acesso.',
+            ]);
+            $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
+            return;
+        }
+
+        $contexto['patient_id']         = $estudo['patient_id']         ?? null;
+        $contexto['study_instance_uid'] = $estudo['study_instance_uid'] ?? null;
+        $contexto['accession_number']   = $estudo['accession_number']   ?? null;
+
+        if (empty($estudo['study_instance_uid'])) {
+            $service->registrarAcesso($contexto + [
+                'status'        => 'erro',
+                'mensagem_erro' => 'Este estudo não possui StudyInstanceUID.',
+            ]);
+            $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
+            return;
+        }
+
+        // ── Resolve config (tenant > servidor PACS global) e valida ─────────
+        $config = $service->resolverConfig($tenantId, $viewer);
+        if (!$service->validarConfig($config)) {
+            $service->registrarAcesso($contexto + [
+                'status'        => 'erro',
+                'mensagem_erro' => 'Configuração de conexão DICOM não encontrada para este tenant/viewer.',
+            ]);
+            $this->renderErroViewer(
+                500,
+                'Este visualizador ainda não foi configurado para a sua empresa. Peça ao administrador para configurar em Configurações › Visualizadores Desktop.'
+            );
+            return;
+        }
+
+        $launcherUri = $viewer === 'radiant'
+            ? $service->gerarLauncherRadiant($estudo, $config)
+            : $service->gerarLauncherWeasis($estudo, $config);
+
+        $service->registrarAcesso($contexto + [
+            'status'            => 'sucesso',
+            'tempo_execucao_ms' => (int) round((microtime(true) - $inicio) * 1000),
+        ]);
+
+        $this->renderLauncherDesktop($viewer, $launcherUri);
+    }
+
+    /**
+     * Página intermediária que tenta abrir o protocolo do viewer desktop e,
+     * caso a aba continue visível após um pequeno intervalo (heurística
+     * padrão de mercado para detectar handler de protocolo ausente), mostra
+     * uma mensagem amigável com link de download do visualizador.
+     */
+    private function renderLauncherDesktop(string $viewer, string $launcherUri): void
+    {
+        $nomeViewer   = $viewer === 'radiant' ? 'RadiAnt Viewer' : 'Weasis Viewer';
+        $downloadUrl  = $viewer === 'radiant'
+            ? 'https://www.radiantviewer.com/download/'
+            : 'https://weasis.org/en/download/';
+        ?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOXEL PACS — Abrindo <?= htmlspecialchars($nomeViewer) ?></title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0d1117; color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            padding: 2.5rem 3rem; max-width: 480px; width: 90%; text-align: center;
+        }
+        .icon { font-size: 3rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.3rem; margin-bottom: .75rem; color: #f0f6fc; }
+        p  { font-size: .92rem; color: #8b949e; line-height: 1.6; }
+        .btn {
+            display: inline-block; margin-top: 1.25rem; padding: .6rem 1.4rem;
+            background: #1a56db; color: #fff; border-radius: 8px;
+            text-decoration: none; font-weight: 600; font-size: .85rem;
+        }
+        #fallback { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card" id="tentando">
+        <div class="icon">🖥️</div>
+        <h1>Abrindo no <?= htmlspecialchars($nomeViewer) ?>…</h1>
+        <p>Se nada acontecer em alguns segundos, o <?= htmlspecialchars($nomeViewer) ?> pode não estar instalado neste computador.</p>
+    </div>
+    <div class="card" id="fallback">
+        <div class="icon">⚠️</div>
+        <h1><?= htmlspecialchars($nomeViewer) ?> não encontrado</h1>
+        <p>Não conseguimos detectar o <?= htmlspecialchars($nomeViewer) ?> instalado. Deseja instalar?</p>
+        <a class="btn" href="<?= htmlspecialchars($downloadUrl) ?>" target="_blank" rel="noopener">Download</a>
+    </div>
+    <script>
+        window.location.href = <?= json_encode($launcherUri) ?>;
+        setTimeout(function () {
+            if (!document.hidden) {
+                document.getElementById('tentando').style.display = 'none';
+                document.getElementById('fallback').style.display = 'block';
+            }
+        }, 1500);
+    </script>
+</body>
+</html>
+        <?php
         exit;
     }
 

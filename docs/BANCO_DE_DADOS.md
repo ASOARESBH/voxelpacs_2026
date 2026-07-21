@@ -39,6 +39,7 @@ Trate `database/migrations/` como **histórico de scripts de deploy**, não como
 | 13 | `2026-07-05_bi_pacs_estudos_indices.sql` | `bi_pacs_estudos` | Colunas `prioridade`, `medico_responsavel`, `sincronizado_em` + índices |
 | 14 | `2026-07-05_bi_pacs_estudos_worklist_indices.sql` | `bi_pacs_estudos` | 7 índices adicionais — referencia colunas não criadas em nenhuma migration do repo |
 | 15 | `2026-07-05_reports_module.sql` | `reports`, `report_versions`, `report_templates`, `report_logs`, `report_autotext`, `report_favorites`, `report_signatures` | **2ª versão, incompatível com a #12**, do módulo de Laudos — colunas de texto separadas em vez de JSON |
+| — | `2026-07-20_viewer_desktop_integracao.sql` | `bi_viewer_desktop_config`, `bi_viewer_access_log` | Integração com visualizadores desktop (RadiAnt/Weasis) a partir do botão "Abrir" em Estudos — config por tenant + auditoria de abertura. Não altera nenhuma tabela existente. Numeração "—" porque esta tabela de migrations em si já estava desatualizada em relação ao diretório antes desta entrada (faltam #16 em diante do módulo Médicos/SLA) |
 
 ---
 
@@ -212,6 +213,13 @@ Coexiste no schema com o modelo ativo (`bi_pacs_servidor` + roteamento). `bi_ort
 
 ---
 
+### 2.X `bi_viewer_desktop_config` / `bi_viewer_access_log` — visualizadores desktop
+
+| Tabela | Coluna-chave | Comentário |
+|---|---|---|
+| `bi_viewer_desktop_config` | `tenant_id`, `viewer` (UNIQUE composto) | Host/porta/AE Title/Calling AE por tenant e por viewer (`radiant`\|`weasis`). Campos NULL herdam de `bi_pacs_servidor` (fallback global) via `DesktopViewerService::resolverConfig()`. |
+| `bi_viewer_access_log` | `tenant_id`, `viewer` (`ohif`\|`radiant`\|`weasis`), `status` (`sucesso`\|`negado`\|`erro`) | Auditoria de toda tentativa de abertura de estudo em qualquer viewer. Sem FK para `bi_pacs_estudos` (mesmo racional de `bi_sla_regras_execucoes`: precisa sobreviver a re-sincronizações). Base para os futuros gráficos de "visualizações por viewer/médico/unidade/modalidade". |
+
 ## 3. Relacionamentos entre tabelas
 
 ### FKs explícitas (`CONSTRAINT ... FOREIGN KEY`)
@@ -250,9 +258,9 @@ Coexiste no schema com o modelo ativo (`bi_pacs_servidor` + roteamento). `bi_ort
 |---|---|
 | **Autenticação/usuários/permissões** | `bi_users`, `bi_user_tenants` |
 | **Multi-tenancy/planos** | `bi_tenants`, `bi_plans`, `bi_negocio_plano_historico`, `bi_negocio_contatos`, `bi_negocio_institution_names` |
-| **Estudos/DICOM/PACS** | `bi_pacs_servidor`, `bi_pacs_roteamento`, `bi_pacs_estudos`, `bi_pacs_sync_log`, `bi_pacs_sync_execucoes`, `bi_orthanc_servidores`, `bi_orthanc_sync_log`, `pacs_viewer_tokens` |
+| **Estudos/DICOM/PACS** | `bi_pacs_servidor`, `bi_pacs_roteamento`, `bi_pacs_estudos`, `bi_pacs_sync_log`, `bi_pacs_sync_execucoes`, `bi_orthanc_servidores`, `bi_orthanc_sync_log`, `pacs_viewer_tokens`, `bi_viewer_desktop_config` |
 | **Laudos** | `reports`, `report_versions`, `report_templates`, `report_autotext`, `report_signatures`, `report_logs`, `report_favorites` |
-| **Auditoria/logs** | `bi_audit_logs`, `report_logs`, `bi_pacs_sync_log`, `bi_orthanc_sync_log` |
+| **Auditoria/logs** | `bi_audit_logs`, `report_logs`, `bi_pacs_sync_log`, `bi_orthanc_sync_log`, `bi_viewer_access_log` |
 | **Negócio/financeiro/importação** | `bi_exames`, `bi_importacoes`, `bi_layouts_importacao`, `bi_kpi_snapshots`, `bi_medicos`, `bi_unidades`, `bi_modalidades`, `bi_pacs_conexoes` |
 | **Configuração/sincronização** | `bi_configuracoes`, colunas `sync_*` de `bi_pacs_servidor` |
 

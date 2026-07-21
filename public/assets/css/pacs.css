@@ -1252,6 +1252,60 @@ body {
 .tb-assinado { background: #f0fdfa; color: #0d9488; border-color: #99f6e4; }
 .tb-rascunho { background: var(--gray-100);   color: var(--gray-600); border-color: var(--gray-200); }
 
+/* ── VIEWER LAUNCHER (dropdown do botão Abrir: Web / RadiAnt / Weasis) ── */
+.viewer-launcher {
+    position: relative;
+    display: inline-block;
+}
+
+.viewer-launcher-trigger {
+    font-family: inherit;
+}
+
+.viewer-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 950;
+    min-width: 200px;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    padding: .3rem;
+    text-align: left;
+}
+
+.viewer-menu.show { display: block; }
+
+.viewer-menu-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .5rem .6rem;
+    border-radius: var(--radius-xs);
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--gray-700);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background .12s, color .12s;
+}
+
+.viewer-menu-item:hover {
+    background: var(--blue-50);
+    color: var(--royal);
+}
+
+.viewer-menu-item i {
+    width: 16px;
+    text-align: center;
+    color: var(--royal);
+    font-size: .82rem;
+    flex-shrink: 0;
+}
+
 /* ── Animação de entrada ── */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(6px); }

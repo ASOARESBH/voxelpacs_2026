@@ -88,6 +88,33 @@ Esta é a tabela consultada pelo módulo. O sistema **nunca** consulta o Orthanc
 3. Um token UUID é gerado e salvo na tabela `pacs_viewer_tokens`.
 4. O sistema redireciona para a URL do OHIF Viewer (`VIEWER_URL`), passando o `StudyInstanceUID`.
 
+## Visualizadores Desktop (RadiAnt e Weasis)
+
+Além do OHIF (web), o botão "Abrir" oferece um menu com "RadiAnt Viewer" e
+"Weasis Viewer" — abertura direta via Query/Retrieve DICOM, sem download
+manual de arquivos.
+
+- **Rotas:** `/estudos/{id}/abrir-radiant` e `/estudos/{id}/abrir-weasis`
+  (`EstudosController::abrirRadiant()`/`abrirWeasis()`, que delegam para o
+  método privado `abrirDesktop()`). O método `abrir()` original (OHIF) **não
+  foi alterado**.
+- **Serviço:** `App\Services\DesktopViewerService` monta as URIs
+  `radiant://` e `weasis://` a partir do estudo + configuração resolvida, e
+  registra toda tentativa de abertura em `bi_viewer_access_log`.
+- **Configuração:** por tenant, em Configurações › Visualizadores Desktop
+  (tabela `bi_viewer_desktop_config`). Quando o tenant não tem configuração
+  própria ativa, o serviço usa como fallback o AE Title/porta/host já
+  cadastrados em `bi_pacs_servidor` (host extraído da `url` do servidor).
+- **RBAC:** mesma permissão `view_exames` que já protege o módulo Estudos.
+  Tentativas negadas também são registradas em `bi_viewer_access_log`
+  (`status = 'negado'`).
+- **⚠️ Atenção:** a sintaxe exata dos parâmetros de `radiant://` e `weasis://`
+  segue o formato documentado publicamente pelos fabricantes (Medixant e
+  comunidade Weasis), mas **precisa ser validada contra uma instalação real**
+  antes de considerar a integração pronta para produção — os pontos de ajuste
+  estão isolados em `DesktopViewerService::gerarLauncherRadiant()` e
+  `gerarLauncherWeasis()`.
+
 ## Migração de Índices Sugeridos
 
 Para garantir a performance da worklist com grandes volumes de dados, o arquivo `2026-07-05_bi_pacs_estudos_worklist_indices.sql` foi criado com os seguintes índices:
