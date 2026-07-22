@@ -3,6 +3,7 @@ namespace App\Controllers\Platform;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\Audit\AuditLogger;
 use App\Models\Tenant;
 use App\Models\TenantPlan;
 use App\Models\User;
@@ -98,6 +99,7 @@ class NegociosController extends Controller {
             $existing = $pdo->prepare("SELECT id FROM bi_tenants WHERE slug = ? LIMIT 1");
             $existing->execute([$tenantData['slug']]);
             if ($existing->fetch()) {
+                $pdo->rollBack();
                 $_SESSION['error'] = "Já existe um negócio com este slug: {$tenantData['slug']}";
                 $this->redirect('/platform/negocios/create');
                 return;
@@ -148,34 +150,88 @@ class NegociosController extends Controller {
                 }
             }
 
-            // Usuário admin do negócio (opcional)
+            // Usuário admin do negócio — opcional (o formulário só exige o e-mail
+            // para tentar criar), mas se informado PRECISA ser criado com sucesso:
+            // um negócio sem nenhum admin vinculado é um estado incompleto (o
+            // relacionamento Tenant → Admin → Usuário → Perfil não se estabelece),
+            // então qualquer falha aqui invalida a transação inteira em vez de ser
+            // engolida silenciosamente.
+            //
+            // Usa o Model canônico (User::create() + attachToTenant()), o mesmo
+            // usado pelo restante do sistema (ex: fluxo de login/tenant switch em
+            // Auth::login()) — bi_users NÃO tem coluna tenant_id; o vínculo com o
+            // tenant vive exclusivamente em bi_user_tenants.
+            $adminUserId = null;
             if (!empty($_POST['admin_email'])) {
-                try {
-                    $senhaHash = password_hash($_POST['admin_senha'] ?? 'Mudar@123', PASSWORD_DEFAULT);
-                    $pdo->prepare("
-                        INSERT INTO bi_users (tenant_id, name, email, password, role, status)
-                        VALUES (?, ?, ?, ?, 'admin', 'ativo')
-                    ")->execute([
-                        $tenantId,
-                        $_POST['admin_nome'] ?? 'Administrador',
-                        $_POST['admin_email'],
-                        $senhaHash,
-                    ]);
-                } catch (\Throwable $e) {
-                    error_log("[NegociosController::store] Usuário admin: " . $e->getMessage());
+                $emailExistente = $pdo->prepare("SELECT id FROM bi_users WHERE email = ? LIMIT 1");
+                $emailExistente->execute([$_POST['admin_email']]);
+                if ($emailExistente->fetch()) {
+                    throw new \RuntimeException("Já existe um usuário cadastrado com o e-mail \"{$_POST['admin_email']}\".");
                 }
+
+                $userModel = new User();
+                $adminUserId = $userModel->create([
+                    'name'     => $_POST['admin_nome'] ?: 'Administrador',
+                    'email'    => $_POST['admin_email'],
+                    'password' => $_POST['admin_senha'] ?: 'Mudar@123',
+                    'role'     => 'admin',
+                    'status'   => 'ativo',
+                ]);
+                $userModel->attachToTenant($adminUserId, $tenantId, 'admin');
             }
 
             $pdo->commit();
             $_SESSION['success'] = "Negócio criado com sucesso!";
+
+            AuditLogger::log('negocio.criar', 'bi_tenants', $tenantId, [
+                'nome'             => $tenantData['nome'],
+                'slug'             => $tenantData['slug'],
+                'admin_criado'     => $adminUserId !== null,
+                'admin_email'      => $_POST['admin_email'] ?? null,
+                'user_agent'       => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'        => 'sucesso',
+            ], $tenantId);
+
             $this->redirect('/platform/negocios');
 
+        } catch (\RuntimeException $e) {
+            // Erro de validação de negócio (ex: e-mail duplicado) — mensagem
+            // segura para exibir diretamente ao usuário.
+            if (isset($pdo)) { try { $pdo->rollBack(); } catch (\Throwable $rb) {} }
+            error_log("[NegociosController::store] " . $e->getMessage());
+            $_SESSION['error'] = $e->getMessage();
+
+            AuditLogger::log('negocio.criar.falha', 'bi_tenants', null, [
+                'payload'    => $this->payloadParaAuditoria($_POST),
+                'erro'       => $e->getMessage(),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'  => 'erro',
+            ]);
+
+            $this->redirect('/platform/negocios/create');
         } catch (\Throwable $e) {
             if (isset($pdo)) { try { $pdo->rollBack(); } catch (\Throwable $rb) {} }
             error_log("[NegociosController::store] Erro crítico: " . $e->getMessage() . " | " . $e->getFile() . ":" . $e->getLine());
             $_SESSION['error'] = "Erro ao criar negócio. Verifique os logs.";
+
+            AuditLogger::log('negocio.criar.falha', 'bi_tenants', null, [
+                'payload'    => $this->payloadParaAuditoria($_POST),
+                'erro'       => $e->getMessage(),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'  => 'erro',
+            ]);
+
             $this->redirect('/platform/negocios/create');
         }
+    }
+
+    /**
+     * Remove campos sensíveis (senha) antes de gravar o payload recebido em
+     * bi_audit_logs.details — auditoria não pode armazenar senha em texto plano.
+     */
+    private function payloadParaAuditoria(array $post): array {
+        unset($post['admin_senha'], $post['_csrf_token']);
+        return $post;
     }
 
     public function edit(int $id): void {
@@ -271,6 +327,38 @@ class NegociosController extends Controller {
 
             (new Tenant())->update($id, $tenantData);
 
+            // Administrador Principal — o formulário só exibe os campos de
+            // criação quando o negócio ainda não tem admin vinculado (ver
+            // form.php, aba Perfil/Acesso). Antes desta correção, update()
+            // simplesmente não lia admin_nome/admin_email/admin_senha — os
+            // dados eram descartados em silêncio. Mesma regra de store():
+            // opcional, mas se informado precisa funcionar ou reportar erro.
+            $adminUserId = null;
+            if (!empty($_POST['admin_email'])) {
+                $existeAdmin = $pdo->prepare("
+                    SELECT 1 FROM bi_user_tenants WHERE tenant_id = ? AND role = 'admin' AND ativo = 1 LIMIT 1
+                ");
+                $existeAdmin->execute([$id]);
+
+                if (!$existeAdmin->fetchColumn()) {
+                    $emailExistente = $pdo->prepare("SELECT id FROM bi_users WHERE email = ? LIMIT 1");
+                    $emailExistente->execute([$_POST['admin_email']]);
+                    if ($emailExistente->fetch()) {
+                        throw new \RuntimeException("Já existe um usuário cadastrado com o e-mail \"{$_POST['admin_email']}\".");
+                    }
+
+                    $userModel = new User();
+                    $adminUserId = $userModel->create([
+                        'name'     => $_POST['admin_nome'] ?: 'Administrador',
+                        'email'    => $_POST['admin_email'],
+                        'password' => $_POST['admin_senha'] ?: 'Mudar@123',
+                        'role'     => 'admin',
+                        'status'   => 'ativo',
+                    ]);
+                    $userModel->attachToTenant($adminUserId, $id, 'admin');
+                }
+            }
+
             // Contatos
             try {
                 $pdo->prepare("DELETE FROM bi_negocio_contatos WHERE tenant_id = ?")->execute([$id]);
@@ -318,12 +406,42 @@ class NegociosController extends Controller {
 
             $pdo->commit();
             $_SESSION['success'] = "Negócio atualizado com sucesso!";
+
+            AuditLogger::log('negocio.editar', 'bi_tenants', $id, [
+                'nome'         => $tenantData['nome'],
+                'admin_criado' => $adminUserId !== null,
+                'admin_email'  => $_POST['admin_email'] ?? null,
+                'user_agent'   => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'    => 'sucesso',
+            ], $id);
+
             $this->redirect('/platform/negocios');
 
+        } catch (\RuntimeException $e) {
+            if (isset($pdo)) { try { $pdo->rollBack(); } catch (\Throwable $rb) {} }
+            error_log("[NegociosController::update] " . $e->getMessage());
+            $_SESSION['error'] = $e->getMessage();
+
+            AuditLogger::log('negocio.editar.falha', 'bi_tenants', $id, [
+                'payload'    => $this->payloadParaAuditoria($_POST),
+                'erro'       => $e->getMessage(),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'  => 'erro',
+            ], $id);
+
+            $this->redirect("/platform/negocios/{$id}/edit");
         } catch (\Throwable $e) {
             if (isset($pdo)) { try { $pdo->rollBack(); } catch (\Throwable $rb) {} }
             error_log("[NegociosController::update] Erro crítico: " . $e->getMessage());
             $_SESSION['error'] = "Erro ao atualizar negócio. Verifique os logs.";
+
+            AuditLogger::log('negocio.editar.falha', 'bi_tenants', $id, [
+                'payload'    => $this->payloadParaAuditoria($_POST),
+                'erro'       => $e->getMessage(),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'resultado'  => 'erro',
+            ], $id);
+
             $this->redirect("/platform/negocios/{$id}/edit");
         }
     }

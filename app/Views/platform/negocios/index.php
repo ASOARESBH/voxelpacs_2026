@@ -14,6 +14,10 @@
     <div class="pacs-alert pacs-alert-success mb-3"><i class="fa fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success']) ?></div>
     <?php unset($_SESSION['success']); ?>
 <?php endif; ?>
+<?php if (!empty($_SESSION['error'])): ?>
+    <div class="pacs-alert pacs-alert-danger mb-3"><i class="fa fa-triangle-exclamation"></i> <?= htmlspecialchars($_SESSION['error']) ?></div>
+    <?php unset($_SESSION['error']); ?>
+<?php endif; ?>
 
 <div class="pacs-card">
     <div style="overflow-x:auto;">

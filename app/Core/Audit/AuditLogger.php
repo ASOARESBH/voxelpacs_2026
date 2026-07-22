@@ -6,7 +6,13 @@ use App\Core\Auth;
 use App\Core\TenantContext;
 
 class AuditLogger {
-    public static function log(string $action, string $entity, ?int $entityId = null, array $details = []): void {
+    /**
+     * @param int|null $tenantId Override explícito do tenant. Necessário em rotas
+     *                           /platform/* (ex: NegociosController), onde não há
+     *                           TenantContext ativo mas o tenant afetado é conhecido.
+     *                           Se omitido, cai no comportamento original (TenantContext::id()).
+     */
+    public static function log(string $action, string $entity, ?int $entityId = null, array $details = [], ?int $tenantId = null): void {
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare("
@@ -14,7 +20,7 @@ class AuditLogger {
                 VALUES (:tenant_id, :user_id, :action, :entity, :entity_id, :details, :ip, NOW())
             ");
             $stmt->execute([
-                'tenant_id' => TenantContext::id(),
+                'tenant_id' => $tenantId ?? TenantContext::id(),
                 'user_id'   => Auth::user()?->id,
                 'action'    => $action,
                 'entity'    => $entity,

@@ -5,6 +5,15 @@
     </a>
 </div>
 
+<?php if (!empty($_SESSION['success'])): ?>
+    <div class="alert alert-success"><i class="fa fa-check-circle me-2"></i><?= htmlspecialchars($_SESSION['success']) ?></div>
+    <?php unset($_SESSION['success']); ?>
+<?php endif; ?>
+<?php if (!empty($_SESSION['error'])): ?>
+    <div class="alert alert-danger"><i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars($_SESSION['error']) ?></div>
+    <?php unset($_SESSION['error']); ?>
+<?php endif; ?>
+
 <div class="card shadow mb-4">
     <div class="card-header bg-white py-3">
         <ul class="nav nav-tabs card-header-tabs" id="negocioTabs" role="tablist">
