@@ -267,7 +267,10 @@ class NegociosController extends Controller {
         try {
             $contatos = $pdo->prepare("SELECT * FROM bi_negocio_contatos WHERE tenant_id = ? ORDER BY principal DESC, id ASC");
             $contatos->execute([$id]);
-            $contatos = $contatos->fetchAll();
+            // FETCH_ASSOC explícito: o padrão do PDO neste projeto é FETCH_OBJ
+            // (Database.php), mas form.php acessa $c['nome'] com sintaxe de
+            // array — sem isso, "Cannot use object of type stdClass as array".
+            $contatos = $contatos->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\Throwable $e) { $contatos = []; }
 
         try {
