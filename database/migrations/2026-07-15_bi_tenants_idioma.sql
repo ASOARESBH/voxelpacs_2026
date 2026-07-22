@@ -14,8 +14,8 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME   = p_table
-          AND COLUMN_NAME  = p_col
+          AND TABLE_NAME   = p_table COLLATE utf8_general_ci
+          AND COLUMN_NAME  = p_col   COLLATE utf8_general_ci
     ) THEN
         SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_col, '` ', p_def);
         PREPARE stmt FROM @sql;

@@ -65,11 +65,13 @@ class NegociosController extends Controller {
                 'plan_id'       => $_POST['plan_id'] ?? null,
                 'status'        => $_POST['status'] ?? 'trial',
                 'cor_primaria'  => $_POST['cor_primaria'] ?? '#3b82f6',
-                'idioma_padrao' => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
-                                    ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
-            // Campos opcionais — só inclui se a coluna existir
+            // Campos opcionais — só inclui se a coluna existir. `idioma_padrao`
+            // está aqui (e não nos "campos base") porque a migration que a
+            // cria (2026-07-15_bi_tenants_idioma.sql) pode não ter sido
+            // aplicada em todos os ambientes ainda — sem esse filtro, o INSERT
+            // inteiro falha com "Unknown column" e nem o negócio é salvo.
             $camposOpcionais = [
                 'razao_social'        => $_POST['razao_social'] ?? null,
                 'nome_fantasia'       => $_POST['nome'] ?? null,
@@ -82,6 +84,8 @@ class NegociosController extends Controller {
                 'bairro'              => $_POST['bairro'] ?? null,
                 'cidade'              => $_POST['cidade'] ?? null,
                 'estado'              => $_POST['estado'] ?? null,
+                'idioma_padrao'       => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
+                                            ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
             try {
@@ -90,6 +94,9 @@ class NegociosController extends Controller {
                     if (in_array($campo, $colunas)) {
                         $tenantData[$campo] = $valor;
                     }
+                }
+                if (!in_array('idioma_padrao', $colunas, true)) {
+                    error_log("[NegociosController::store] Coluna 'idioma_padrao' não existe em bi_tenants — rode a migration 2026-07-15_bi_tenants_idioma.sql. Campo ignorado nesta gravação.");
                 }
             } catch (\Throwable $e) {
                 error_log("[NegociosController::store] SHOW COLUMNS falhou: " . $e->getMessage());
@@ -298,10 +305,13 @@ class NegociosController extends Controller {
                 'plan_id'       => $_POST['plan_id'] ?? null,
                 'status'        => $_POST['status'] ?? 'ativo',
                 'cor_primaria'  => $_POST['cor_primaria'] ?? '#3b82f6',
-                'idioma_padrao' => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
-                                    ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
+            // `idioma_padrao` fica nos campos opcionais (filtrados por
+            // SHOW COLUMNS) pelo mesmo motivo do store(): a migration
+            // 2026-07-15_bi_tenants_idioma.sql pode não ter rodado ainda em
+            // todos os ambientes, e sem esse filtro o UPDATE inteiro falhava
+            // com "Unknown column 'idioma_padrao'".
             $camposOpcionais = [
                 'razao_social'        => $_POST['razao_social'] ?? null,
                 'nome_fantasia'       => $_POST['nome'] ?? null,
@@ -314,12 +324,17 @@ class NegociosController extends Controller {
                 'bairro'              => $_POST['bairro'] ?? null,
                 'cidade'              => $_POST['cidade'] ?? null,
                 'estado'              => $_POST['estado'] ?? null,
+                'idioma_padrao'       => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
+                                            ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
 
             try {
                 $colunas = $pdo->query("SHOW COLUMNS FROM bi_tenants")->fetchAll(\PDO::FETCH_COLUMN);
                 foreach ($camposOpcionais as $campo => $valor) {
                     if (in_array($campo, $colunas)) $tenantData[$campo] = $valor;
+                }
+                if (!in_array('idioma_padrao', $colunas, true)) {
+                    error_log("[NegociosController::update] Coluna 'idioma_padrao' não existe em bi_tenants — rode a migration 2026-07-15_bi_tenants_idioma.sql. Campo ignorado nesta gravação.");
                 }
             } catch (\Throwable $e) {
                 error_log("[NegociosController::update] SHOW COLUMNS: " . $e->getMessage());
