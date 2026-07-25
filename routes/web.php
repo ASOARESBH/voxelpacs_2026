@@ -25,7 +25,8 @@ Router::get('/estudos',                'EstudosController@index');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
 Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
 Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');
-Router::get('/api/estudos/contadores', 'EstudosController@contadores');
+Router::get('/api/estudos/contadores',  'EstudosController@contadores');
+Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
 
 // ============================================================
 // AGENDAMENTOS

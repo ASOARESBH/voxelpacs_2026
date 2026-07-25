@@ -12,16 +12,57 @@ function estudoUrl(array $filtros, int $pagina = 1): string {
 
 function situacaoBadge(string $sit): string {
     $map = [
-        'novo'     => ['sit-novo',     'NOVO'],
-        'aberto'   => ['sit-aberto',   'ABERTO'],
-        'em_laudo' => ['sit-em-laudo', 'EM LAUDO'],
-        'rascunho' => ['sit-rascunho', 'RASCUNHO'],
-        'assinado' => ['sit-assinado', 'ASSINADO'],
-        'liberado' => ['sit-liberado', 'LIBERADO'],
-        'urgente'  => ['sit-urgente',  'URGENTE'],
+        'novo'     => ['sit-novo',      'NOVO'],
+        'aberto'   => ['sit-aberto',    'ABERTO'],
+        'a_laudar' => ['sit-a-laudar',  'A LAUDAR'],
+        'em_laudo' => ['sit-em-laudo',  'EM LAUDO'],
+        'rascunho' => ['sit-rascunho',  'RASCUNHO'],
+        'assinado' => ['sit-assinado',  'ASSINADO'],
+        'liberado' => ['sit-liberado',  'LIBERADO'],
+        'urgente'  => ['sit-urgente',   'URGENTE'],
     ];
     [$cls, $label] = $map[$sit] ?? ['sit-novo', strtoupper(str_replace('_',' ',$sit))];
     return "<span class=\"situacao-badge {$cls}\">{$label}</span>";
+}
+
+/**
+ * Formata diferença de tempo entre dois DateTime de forma legível.
+ * Retorna string como: "2h 15m", "3d 4h", "1 mês", "2 anos"
+ */
+function formatarSla(?string $inicio, ?string $fim = null): string {
+    if (!$inicio) return '';
+    try {
+        $dtInicio = new DateTime($inicio);
+        $dtFim    = $fim ? new DateTime($fim) : new DateTime();
+        $diff     = $dtInicio->diff($dtFim);
+        if ($diff->y >= 1)  return $diff->y . ' ano'  . ($diff->y > 1 ? 's' : '');
+        if ($diff->m >= 1)  return $diff->m . ' mês'  . ($diff->m > 1 ? 'es' : '');
+        if ($diff->d >= 1)  return $diff->d . 'd ' . $diff->h . 'h';
+        if ($diff->h >= 1)  return $diff->h . 'h ' . $diff->i . 'm';
+        if ($diff->i >= 1)  return $diff->i . 'm';
+        return 'agora';
+    } catch (\Throwable $t) {
+        return '';
+    }
+}
+
+/**
+ * Retorna classe CSS de cor para o SLA com base no tempo decorrido (em minutos).
+ * Verde: < 60min | Amarelo: 60-240min | Laranja: 240-1440min | Vermelho: > 1440min
+ */
+function slaColorClass(?string $inicio, ?string $fim = null): string {
+    if (!$inicio) return 'sla-verde';
+    try {
+        $dtInicio = new DateTime($inicio);
+        $dtFim    = $fim ? new DateTime($fim) : new DateTime();
+        $minutos  = (int)(($dtFim->getTimestamp() - $dtInicio->getTimestamp()) / 60);
+        if ($minutos < 60)   return 'sla-verde';
+        if ($minutos < 240)  return 'sla-amarelo';
+        if ($minutos < 1440) return 'sla-laranja';
+        return 'sla-vermelho';
+    } catch (\Throwable $t) {
+        return 'sla-verde';
+    }
 }
 
 function prioridadeBadge(string $p): string {
@@ -259,6 +300,9 @@ $periodoLabel = [
                 <th style="width:130px;"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
                 <th>Estudo</th>
                 <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
+                <th style="width:70px;text-align:center;" title="SLA Padrão: tempo desde chegada na plataforma">
+                    <span class="sla-th-label"><i class="fa fa-clock"></i> SLA</span>
+                </th>
                 <th style="width:80px;text-align:center;">Ações</th>
             </tr>
         </thead>
@@ -354,7 +398,59 @@ $periodoLabel = [
 
                 <td><?= situacaoBadge($sit) ?></td>
 
+                <?php
+                // ── SLA Padrão: tempo desde recebido_em (chegada na plataforma)
+                $slaPadraoTxt   = formatarSla($e['recebido_em'] ?? null);
+                $slaPadraoClass = slaColorClass($e['recebido_em'] ?? null);
+                // ── SLA Médico: tempo desde assumido_em (só exibe se estudo foi assumido)
+                $slaMedicoTxt   = '';
+                $slaMedicoClass = '';
+                if (!empty($e['assumido_em'])) {
+                    // SLA Médico para quando estudo está liberado: usa laudo_assinado_em como fim
+                    $fimSla = ($sit === 'liberado' || $sit === 'assinado') ? ($e['laudo_assinado_em'] ?? null) : null;
+                    $slaMedicoTxt   = formatarSla($e['assumido_em'], $fimSla);
+                    $slaMedicoClass = slaColorClass($e['assumido_em'], $fimSla);
+                }
+                ?>
                 <td style="text-align:center;">
+                    <?php if ($slaPadraoTxt): ?>
+                    <div class="sla-badge <?= $slaPadraoClass ?>" title="SLA Padrão: <?= htmlspecialchars($slaPadraoTxt) ?> desde chegada na plataforma">
+                        <i class="fa fa-clock" style="font-size:.6rem;"></i> <?= $slaPadraoTxt ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($slaMedicoTxt): ?>
+                    <div class="sla-badge sla-medico-badge <?= $slaMedicoClass ?>" title="SLA Médico: <?= htmlspecialchars($slaMedicoTxt) ?> desde assunção por <?= htmlspecialchars($e['assumido_por'] ?? '') ?>">
+                        <i class="fa fa-user-doctor" style="font-size:.6rem;"></i> <?= $slaMedicoTxt ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!$slaPadraoTxt && !$slaMedicoTxt): ?>
+                    <span style="color:var(--pacs-text-muted);font-size:.7rem;">—</span>
+                    <?php endif; ?>
+                </td>
+
+                <td style="text-align:center;">
+                    <?php
+                    // Botão Assumir: visível para médicos logados quando estudo está em novo/aberto
+                    $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
+                    // Botão Laudo: visível para médicos logados quando estudo está a_laudar/em_laudo
+                    $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
+                    ?>
+                    <?php if ($podeAssumir): ?>
+                    <button type="button"
+                            class="pacs-btn btn-assumir"
+                            data-id="<?= $e['id'] ?>"
+                            data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
+                            title="Assumir este estudo para laudo">
+                        <i class="fa fa-hand-holding-medical"></i> Assumir
+                    </button>
+                    <?php elseif ($podeLaudar): ?>
+                    <div style="display:flex;flex-direction:column;gap:.2rem;align-items:center;">
+                        <span class="pacs-btn btn-laudo-placeholder" title="Laudo disponível — módulo em breve"
+                              style="opacity:.7;cursor:default;font-size:.68rem;">
+                            <i class="fa fa-file-medical"></i> Laudo
+                        </span>
+                    </div>
+                    <?php endif; ?>
                     <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
                     <div class="viewer-launcher">
                         <button type="button" class="pacs-btn btn-open viewer-launcher-trigger" title="Abrir estudo">
@@ -445,7 +541,29 @@ $periodoLabel = [
 .row-urgente td:first-child{border-left:3px solid #f97316;}
 .row-critico td:first-child{border-left:3px solid #ef4444;}
 .sit-em-laudo{background:#f5f3ff;color:#7c3aed;}
+.sit-a-laudar{background:#fff7ed;color:#c2410c;font-weight:700;}
 .sit-liberado{background:#f0fdf4;color:#059669;}
+/* ── SLA badges ─────────────────────────────────────────────── */
+.sla-th-label{font-size:.65rem;color:var(--pacs-text-muted);text-transform:uppercase;letter-spacing:.04em;}
+.sla-badge{display:inline-flex;align-items:center;gap:.2rem;font-size:.65rem;font-weight:600;
+    border-radius:4px;padding:.1rem .35rem;white-space:nowrap;line-height:1.3;}
+.sla-medico-badge{margin-top:.15rem;}
+.sla-verde  {background:rgba(16,185,129,.12);color:#059669;}
+.sla-amarelo{background:rgba(234,179,8,.15); color:#a16207;}
+.sla-laranja{background:rgba(249,115,22,.15);color:#c2410c;}
+.sla-vermelho{background:rgba(239,68,68,.15);color:#dc2626;}
+/* ── Botão Assumir ──────────────────────────────────────────── */
+.btn-assumir{
+    background:linear-gradient(135deg,#0ea5e9,#0284c7);
+    color:#fff;border:none;border-radius:6px;
+    padding:.28rem .6rem;font-size:.7rem;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;gap:.25rem;
+    transition:opacity .15s,transform .1s;white-space:nowrap;
+}
+.btn-assumir:hover{opacity:.88;transform:scale(1.03);}
+.btn-assumir:active{transform:scale(.97);}
+.btn-assumir:disabled{opacity:.45;cursor:not-allowed;}
+.btn-laudo-placeholder{background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.25);border-radius:6px;padding:.28rem .6rem;font-size:.68rem;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -475,6 +593,52 @@ function setFiltroRapido(campo, valor) {
 function toggleAll(master) {
     document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
 }
+
+// ── Botão Assumir — AJAX ──────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-assumir');
+    if (!btn) return;
+    e.stopPropagation();
+    const estudoId  = btn.dataset.id;
+    const paciente  = btn.dataset.paciente || 'este estudo';
+    if (!confirm('Assumir o estudo de ' + paciente + '?\nO status será alterado para A LAUDAR.')) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Assumindo...';
+    fetch('/api/estudos/assumir', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+        body: JSON.stringify({estudo_id: parseInt(estudoId)})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            // Atualiza badge de situação na linha sem recarregar
+            const row = btn.closest('tr');
+            const sitCell = row ? row.querySelector('.situacao-badge') : null;
+            if (sitCell) {
+                sitCell.className = 'situacao-badge sit-a-laudar';
+                sitCell.textContent = 'A LAUDAR';
+            }
+            // Substitui botão Assumir pelo placeholder de Laudo
+            btn.outerHTML = '<span class="pacs-btn btn-laudo-placeholder" title="Laudo disponível — módulo em breve" style="opacity:.7;cursor:default;font-size:.68rem;"><i class="fa fa-file-medical"></i> Laudo</span>';
+            // Feedback visual na linha
+            if (row) {
+                row.style.transition = 'background .4s';
+                row.style.background = 'rgba(14,165,233,.08)';
+                setTimeout(() => { row.style.background = ''; }, 1200);
+            }
+        } else {
+            alert('Não foi possível assumir: ' + (data.msg || 'Erro desconhecido'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
+        }
+    })
+    .catch(() => {
+        alert('Erro de comunicação. Tente novamente.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
+    });
+});
 document.querySelectorAll('.pacs-table tbody tr[data-id]').forEach(row => {
     row.addEventListener('dblclick', function(e) {
         if (e.target.closest('a,button,input')) return;
