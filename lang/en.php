@@ -131,4 +131,11 @@ return [
     'viewer_desktop.config.campo_calling_ae'=> 'Calling AE Title (viewer)',
     'viewer_desktop.config.campo_ativo'     => 'Active',
     'viewer_desktop.config.botao_salvar'    => 'Save',
+
+    // Studies Worklist — Priority column DICOM (0040,1003) (2026-07-25)
+    'estudos.worklist.coluna_prioridade'       => 'Priority',
+    'estudos.worklist.prioridade.emergencia'   => 'Emergency',
+    'estudos.worklist.prioridade.urgencia'     => 'Urgent',
+    'estudos.worklist.prioridade.rotina'       => 'Routine',
+    'estudos.worklist.prioridade.ambulatorial' => 'Outpatient',
 ];
