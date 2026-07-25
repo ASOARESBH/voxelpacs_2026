@@ -253,6 +253,7 @@ class EstudosController extends Controller
                     COALESCE(e.situacao,     'novo')   AS situacao,
                     COALESCE(e.especialidade,'')       AS especialidade,
                     COALESCE(e.prioridade,   'normal') AS prioridade,
+                    COALESCE(e.dicom_priority, '')     AS dicom_priority,
                     COALESCE(e.assumido_por, '')       AS assumido_por,
                     e.assumido_em,
                     e.laudo_assinado_em,
@@ -833,6 +834,67 @@ class EstudosController extends Controller
             \App\Core\Logger::error('[EstudosController::assumirEstudo] ' . $e->getMessage());
             echo json_encode(['ok' => false, 'msg' => 'Erro interno. Tente novamente.']);
         }
+    }
+
+    /**
+     * Mapeia o valor bruto da tag DICOM (0040,1003) ScheduledProcedureStepPriority
+     * para o label de exibição na worklist.
+     *
+     * @param  string|null $dicomValue  Valor bruto do banco (ex: 'STAT', 'HIGH', 'ROUTINE', ...)
+     * @param  string      $lang        Idioma do tenant ('pt_BR', 'en', 'es')
+     * @return array{label: string, css: string, key: string}
+     */
+    public static function mapPriorityLabel(?string $dicomValue, string $lang = 'pt_BR'): array
+    {
+        $val = strtoupper(trim((string)$dicomValue));
+
+        // Mapeamento DICOM → chave interna (fail-safe: qualquer valor não mapeado → rotina)
+        $map = [
+            'STAT'    => 'emergencia',
+            'HIGH'    => 'urgencia',
+            'ROUTINE' => 'rotina',
+            'MEDIUM'  => 'rotina',
+            'LOW'     => 'ambulatorial',
+        ];
+        $key = $map[$val] ?? 'rotina';
+
+        // Traduções por idioma
+        $labels = [
+            'pt_BR' => [
+                'emergencia'   => 'Emergência',
+                'urgencia'     => 'Urgência',
+                'rotina'       => 'Rotina',
+                'ambulatorial' => 'Ambulatorial',
+            ],
+            'en' => [
+                'emergencia'   => 'Emergency',
+                'urgencia'     => 'Urgent',
+                'rotina'       => 'Routine',
+                'ambulatorial' => 'Outpatient',
+            ],
+            'es' => [
+                'emergencia'   => 'Emergencia',
+                'urgencia'     => 'Urgente',
+                'rotina'       => 'Rutina',
+                'ambulatorial' => 'Ambulatorio',
+            ],
+        ];
+
+        // Classe CSS por prioridade
+        $css = [
+            'emergencia'   => 'wl-prio-emergencia',   // vermelho  #DC2626
+            'urgencia'     => 'wl-prio-urgencia',     // laranja   #F97316
+            'rotina'       => 'wl-prio-rotina',       // azul      #3B82F6
+            'ambulatorial' => 'wl-prio-ambulatorial', // verde     #22C55E
+        ];
+
+        $langKey = isset($labels[$lang]) ? $lang : 'pt_BR';
+
+        return [
+            'label' => $labels[$langKey][$key],
+            'css'   => $css[$key],
+            'key'   => $key,
+        ];
     }
 
     private function renderErroViewer(int $code, string $msg): void

@@ -11,6 +11,26 @@ function estudoUrl(array $filtros, int $pagina = 1): string {
     return '/estudos?' . http_build_query(array_filter($p, fn($v) => $v !== '' && $v !== null));
 }
 
+/* ─── badge de prioridade DICOM (0040,1003) ─────────────────────────────── */
+function prioridadeBadge(string $dicomValue, string $lang = 'pt_BR'): string {
+    $val = strtoupper(trim($dicomValue));
+    $map = [
+        'STAT'    => 'emergencia',
+        'HIGH'    => 'urgencia',
+        'ROUTINE' => 'rotina',
+        'MEDIUM'  => 'rotina',
+        'LOW'     => 'ambulatorial',
+    ];
+    $key = $map[$val] ?? 'rotina';
+    $labels = [
+        'pt_BR' => ['emergencia'=>'Emerg&ecirc;ncia','urgencia'=>'Urg&ecirc;ncia','rotina'=>'Rotina','ambulatorial'=>'Ambulatorial'],
+        'en'    => ['emergencia'=>'Emergency','urgencia'=>'Urgent','rotina'=>'Routine','ambulatorial'=>'Outpatient'],
+        'es'    => ['emergencia'=>'Emergencia','urgencia'=>'Urgente','rotina'=>'Rutina','ambulatorial'=>'Ambulatorio'],
+    ];
+    $langKey = isset($labels[$lang]) ? $lang : 'pt_BR';
+    $label = $labels[$langKey][$key];
+    return "<span class=\"wl-prio-badge wl-prio-{$key}\">{$label}</span>";
+}
 /* ─── badge de situação ──────────────────────────────────────────────────── */
 function situacaoBadge(string $sit): string {
     $map = [
@@ -41,8 +61,8 @@ function modBadge(string $mod): string {
     return "<span class=\"mod-badge mod-{$mod}\">{$mod}</span>";
 }
 
-/* ─── badge de prioridade ────────────────────────────────────────────────── */
-function prioridadeBadge(string $p): string {
+/* ─── badge de prioridade interna (urgente/critico) ─────────────────────────────── */
+function prioridadeInternaBadge(string $p): string {
     if ($p === 'urgente') return '<span class="prio-urgente" title="Urgente"><i class="fa fa-triangle-exclamation"></i></span>';
     if ($p === 'critico') return '<span class="prio-critico" title="Crítico"><i class="fa fa-circle-exclamation"></i></span>';
     return '';
@@ -306,6 +326,7 @@ $periodoLabel = [
             <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
             <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente') ?></th>
             <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
+            <th class="col-prioridade" title="Prioridade DICOM (0040,1003)">Prioridade</th>
             <th class="col-estudo">Estudo</th>
             <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
             <th class="col-sit"><?= sortLink($filtros,'situacao','Situação') ?></th>
@@ -316,7 +337,7 @@ $periodoLabel = [
     <tbody>
     <?php if (empty($estudos)): ?>
         <tr>
-            <td colspan="9" class="wl-empty">
+            <td colspan="10" class="wl-empty">
                 <i class="fa fa-magnifying-glass"></i>
                 <div>Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.</div>
                 <?php if ($temFiltroAtivo): ?>
@@ -371,7 +392,7 @@ $periodoLabel = [
 
             <!-- Data/Hora -->
             <td class="col-dt">
-                <?= prioridadeBadge($prio) ?>
+                <?= prioridadeInternaBadge($prio) ?>
                 <div class="wl-date"><?= $dtFmt ?></div>
                 <?php if ($hrFmt): ?><div class="wl-time"><?= $hrFmt ?></div><?php endif; ?>
             </td>
@@ -392,11 +413,14 @@ $periodoLabel = [
                 </div>
             </td>
 
-            <!-- Unidade -->
+                        <!-- Unidade -->
             <td class="col-unidade">
                 <?= htmlspecialchars($e['institution_name'] ?? '—') ?>
             </td>
-
+            <!-- Prioridade DICOM (0040,1003) -->
+            <td class="col-prioridade">
+                <?= prioridadeBadge($e['dicom_priority'] ?? '', 'pt_BR') ?>
+            </td>
             <!-- Estudo: modalidade + descrição + séries/imagens + accession -->
             <td class="col-estudo">
                 <div class="wl-estudo-top">
@@ -613,8 +637,15 @@ $periodoLabel = [
 .col-check{width:24px;text-align:center;}
 .col-dt{width:88px;}
 .col-paciente{min-width:180px;max-width:240px;}
-.col-unidade{width:130px;font-size:.72rem;color:var(--pacs-text-secondary);}
-.col-estudo{min-width:160px;}
+.col-unidade{width:110px;font-size:.72rem;color:var(--pacs-text-secondary);}
+.col-prioridade{width:100px;text-align:center;}
+.col-estudo{min-width:150px;}
+/* Badges de prioridade DICOM */
+.wl-prio-badge{display:inline-block;padding:.18rem .55rem;border-radius:20px;font-size:.68rem;font-weight:700;letter-spacing:.03em;white-space:nowrap;}
+.wl-prio-emergencia{background:#DC2626;color:#fff;}
+.wl-prio-urgencia{background:#F97316;color:#fff;}
+.wl-prio-rotina{background:#3B82F6;color:#fff;}
+.wl-prio-ambulatorial{background:#22C55E;color:#fff;}
 .col-solicitante{width:150px;}
 .col-sit{width:100px;}
 .col-sla{width:88px;text-align:center;}
