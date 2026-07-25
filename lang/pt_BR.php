@@ -134,6 +134,16 @@ return [
     'viewer_desktop.config.campo_ativo'     => 'Ativo',
     'viewer_desktop.config.botao_salvar'    => 'Salvar',
 
+    // Download em Lote DICOM (2026-07-25)
+    'download_lote.titulo'           => 'Download em Lote',
+    'download_lote.selecione'        => 'Selecione até 5 estudos para download',
+    'download_lote.preparando'       => 'Preparando archive no Orthanc...',
+    'download_lote.processando'      => 'Processando...',
+    'download_lote.pronto'           => 'Pronto! Iniciando download...',
+    'download_lote.erro_limite'      => 'Máximo de 5 estudos por download.',
+    'download_lote.erro_sem_orthanc' => 'Estudo sem ID Orthanc — não é possível baixar.',
+    'download_lote.erro_timeout'     => 'Timeout: o Orthanc demorou demais para gerar o arquivo.',
+
     // Worklist de Estudos — Coluna Prioridade DICOM (0040,1003) (2026-07-25)
     'estudos.worklist.coluna_prioridade'       => 'Prioridade',
     'estudos.worklist.prioridade.emergencia'   => 'Emergência',

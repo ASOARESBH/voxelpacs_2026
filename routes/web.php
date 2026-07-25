@@ -29,6 +29,13 @@ Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
 
 // ============================================================
+// API — Download em Lote (DICOM ZIP via Orthanc)
+// ============================================================
+Router::post('/api/download-lote/iniciar', 'DownloadLoteController@iniciar');
+Router::get('/api/download-lote/status',   'DownloadLoteController@status');
+Router::get('/api/download-lote/baixar',   'DownloadLoteController@baixar');
+
+// ============================================================
 // AGENDAMENTOS
 // ============================================================
 Router::get('/agendamentos', 'AgendamentosController@index');
