@@ -39,7 +39,7 @@ class MedicoRepository
         $sql = "
             SELECT m.*,
                    u.name AS usuario_nome,
-                   (SELECT COUNT(*) FROM bi_pacs_estudos e WHERE e.medico_id = m.id AND e.tenant_id = m.tenant_id) AS total_exames
+                   (SELECT COUNT(*) FROM bi_exames e WHERE e.medico_id = m.id AND e.tenant_id = m.tenant_id) AS total_exames
             FROM bi_medicos m
             LEFT JOIN bi_users u ON u.id = m.usuario_id
             {$where}
@@ -140,7 +140,7 @@ class MedicoRepository
     public function possuiEstudos(int $medicoId): bool
     {
         try {
-            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE medico_id = :id LIMIT 1");
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM bi_exames WHERE medico_id = :id LIMIT 1");
             $stmt->execute(['id' => $medicoId]);
             return (int) $stmt->fetchColumn() > 0;
         } catch (\Throwable $e) {
@@ -213,8 +213,7 @@ class MedicoRepository
         try {
             $stmt = $this->pdo->prepare("
                 UPDATE bi_medicos
-                SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END,
-                    status = CASE WHEN ativo = 1 THEN 'inativo' ELSE 'ativo' END
+                SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END
                 WHERE id = :id AND tenant_id = :tenant_id
             ");
             $stmt->execute(['id' => $id, 'tenant_id' => $tenantId]);
