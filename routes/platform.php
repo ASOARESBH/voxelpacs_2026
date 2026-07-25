@@ -29,6 +29,13 @@ Router::get('/platform/negocios/{id}/unidades/{uid}',                  'Platform
 // Logo upload isolado por tenant
 Router::post('/platform/negocios/{id}/logo',                           'Platform\NegociosController@uploadLogo');
 
+// Webhooks HUB
+Router::post('/platform/api/negocios/{id}/webhook-hub/save',           'Platform\WebhookHubController@save');
+Router::get('/platform/api/negocios/{id}/webhook-hub/health',          'Platform\WebhookHubController@healthCheck');
+Router::post('/platform/api/negocios/{id}/webhook-hub/test',           'Platform\WebhookHubController@testConnection');
+Router::get('/platform/api/negocios/{id}/webhook-hub/logs',            'Platform\WebhookHubController@logs');
+Router::post('/platform/api/negocios/{id}/webhook-hub/retry/{evtId}',  'Platform\WebhookHubController@retryEvent');
+
 // Token de acesso para admin (Etapa 4)
 Router::post('/platform/negocios/{id}/enviar-token',                   'Platform\NegociosController@enviarTokenAcesso');
 

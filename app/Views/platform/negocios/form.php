@@ -32,6 +32,9 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="dicom-tab" data-bs-toggle="tab" data-bs-target="#dicom" type="button" role="tab"><i class="fa fa-x-ray me-1"></i> DICOM (InstitutionName)</button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="webhook-tab" data-bs-toggle="tab" data-bs-target="#webhook" type="button" role="tab"><i class="fa fa-plug me-1"></i> Webhooks HUB</button>
+            </li>
         </ul>
     </div>
     
@@ -247,6 +250,212 @@
                     </div>
                 </div>
 
+                <!-- ABA 6: WEBHOOKS HUB -->
+                <div class="tab-pane fade" id="webhook" role="tabpanel">
+<?php
+$webhookConfig = [];
+try {
+    $whModel = new \App\Models\WebhookHubConfig();
+    $webhookConfig = $whModel->getByTenant($negocio['id'] ?? 0) ?: [];
+} catch (\Throwable $e) { /* tabela pode não existir ainda */ }
+$whEventsEnabled = json_decode($webhookConfig['events_enabled'] ?? '["study.received"]', true) ?: ['study.received'];
+$whBackoff = json_decode($webhookConfig['retry_backoff_seconds'] ?? '[5,15,60,300]', true) ?: [5,15,60,300];
+$negocioId = (int)($negocio['id'] ?? 0);
+?>
+                    <div class="row g-4">
+                        <div class="col-lg-8">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-header bg-dark text-white d-flex align-items-center gap-2">
+                                    <i class="fa fa-plug"></i><strong>Configuração do VOXEL HUB</strong>
+                                    <?php if (!empty($webhookConfig['status'])): ?>
+                                    <span class="badge ms-auto <?= $webhookConfig['status']==='enabled'?'bg-success':($webhookConfig['status']==='testing'?'bg-warning text-dark':'bg-secondary') ?>">
+                                        <?= $webhookConfig['status']==='enabled'?'Habilitado':($webhookConfig['status']==='testing'?'Testando':'Desabilitado') ?>
+                                    </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="card-body">
+                                    <h6 class="text-muted fw-semibold mb-3"><i class="fa fa-link me-1"></i> Conexão</h6>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">URL do VOXEL HUB <span class="text-danger">*</span></label>
+                                        <input type="url" id="wh_hub_url" class="form-control" value="<?= htmlspecialchars($webhookConfig['hub_url'] ?? '') ?>" placeholder="https://hub.voxelpacs.com.br">
+                                        <small class="text-muted">URL base do servidor VOXEL HUB (sem barra final).</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">JWT Secret <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <input type="password" id="wh_jwt_secret" class="form-control" value="<?= htmlspecialchars($webhookConfig['jwt_secret'] ?? '') ?>" placeholder="Mínimo 16 caracteres">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="whToggleSecret()" title="Mostrar/ocultar"><i class="fa fa-eye" id="wh_eye_icon"></i></button>
+                                            <button class="btn btn-outline-primary" type="button" onclick="whGenerateSecret()" title="Gerar chave aleatória"><i class="fa fa-key"></i></button>
+                                        </div>
+                                        <small class="text-muted">Chave compartilhada para assinatura JWT HMAC-SHA256.</small>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label fw-semibold">Algoritmo JWT</label>
+                                            <select id="wh_jwt_algorithm" class="form-select"><option value="HS256" selected>HS256</option></select>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label fw-semibold">Issuer</label>
+                                            <input type="text" id="wh_jwt_issuer" class="form-control" value="<?= htmlspecialchars($webhookConfig['jwt_issuer'] ?? 'voxel-pacs') ?>">
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label class="form-label fw-semibold">Audience</label>
+                                            <input type="text" id="wh_jwt_audience" class="form-control" value="<?= htmlspecialchars($webhookConfig['jwt_audience'] ?? 'voxel-hub') ?>">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Expiração do Token (segundos)</label>
+                                        <input type="number" id="wh_jwt_expiry" class="form-control" min="60" max="86400" value="<?= (int)($webhookConfig['jwt_expiry_seconds'] ?? 3600) ?>">
+                                    </div>
+                                    <hr>
+                                    <h6 class="text-muted fw-semibold mb-3"><i class="fa fa-bell me-1"></i> Eventos Habilitados</h6>
+                                    <div class="row">
+                                        <?php
+                                        $allEvents = [
+                                            'study.received'  => ['label'=>'Estudo Recebido',   'icon'=>'fa-file-medical','desc'=>'Novo estudo DICOM chegou ao PACS'],
+                                            'study.assumed'   => ['label'=>'Estudo Assumido',   'icon'=>'fa-user-check',  'desc'=>'Médico assumiu o estudo'],
+                                            'study.signed'    => ['label'=>'Laudo Assinado',    'icon'=>'fa-signature',   'desc'=>'Laudo assinado/liberado'],
+                                            'study.updated'   => ['label'=>'Estudo Atualizado', 'icon'=>'fa-edit',        'desc'=>'Dados do estudo foram alterados'],
+                                            'patient.created' => ['label'=>'Paciente Criado',   'icon'=>'fa-user-plus',   'desc'=>'Novo paciente cadastrado'],
+                                        ];
+                                        foreach ($allEvents as $evKey => $evInfo):
+                                            $checked = in_array($evKey, $whEventsEnabled) ? 'checked' : '';
+                                        ?>
+                                        <div class="col-md-6 mb-2">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input wh-event-check" type="checkbox" id="ev_<?= $evKey ?>" value="<?= $evKey ?>" <?= $checked ?>>
+                                                <label class="form-check-label" for="ev_<?= $evKey ?>">
+                                                    <i class="fa <?= $evInfo['icon'] ?> me-1 text-primary"></i>
+                                                    <strong><?= $evInfo['label'] ?></strong><br>
+                                                    <small class="text-muted"><?= $evInfo['desc'] ?></small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <hr>
+                                    <h6 class="text-muted fw-semibold mb-3"><i class="fa fa-redo me-1"></i> Política de Retry</h6>
+                                    <div class="row">
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label fw-semibold">Retry Ativo</label>
+                                            <div class="form-check form-switch mt-2">
+                                                <input class="form-check-input" type="checkbox" id="wh_retry_enabled" <?= ($webhookConfig['retry_enabled'] ?? 1) ? 'checked' : '' ?>>
+                                                <label class="form-check-label" for="wh_retry_enabled">Habilitado</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label fw-semibold">Máx. Tentativas</label>
+                                            <input type="number" id="wh_retry_max" class="form-control" min="1" max="10" value="<?= (int)($webhookConfig['retry_max_attempts'] ?? 5) ?>">
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label fw-semibold">Timeout (s)</label>
+                                            <input type="number" id="wh_timeout" class="form-control" min="5" max="120" value="<?= (int)($webhookConfig['request_timeout_seconds'] ?? 30) ?>">
+                                        </div>
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label fw-semibold">Rate Limit/min</label>
+                                            <input type="number" id="wh_rate_limit" class="form-control" min="1" max="10000" value="<?= (int)($webhookConfig['rate_limit_per_minute'] ?? 1000) ?>">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Backoff (segundos, separados por vírgula)</label>
+                                        <input type="text" id="wh_backoff" class="form-control" value="<?= htmlspecialchars(implode(',', $whBackoff)) ?>" placeholder="5,15,60,300">
+                                        <small class="text-muted">Delay entre tentativas. Ex: 5,15,60,300</small>
+                                    </div>
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="wh_dlq_enabled" <?= ($webhookConfig['retry_dlq_enabled'] ?? 1) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="wh_dlq_enabled"><strong>DLQ (Dead Letter Queue)</strong> — Mover para fila de falhas após esgotar tentativas</label>
+                                    </div>
+                                    <hr>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Status da Integração</label>
+                                        <select id="wh_status" class="form-select">
+                                            <option value="disabled" <?= ($webhookConfig['status'] ?? 'disabled')==='disabled'?'selected':'' ?>>Desabilitado</option>
+                                            <option value="enabled"  <?= ($webhookConfig['status'] ?? '')==='enabled' ?'selected':'' ?>>Habilitado</option>
+                                        </select>
+                                    </div>
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        <button type="button" class="btn btn-primary" onclick="whSaveConfig(<?= $negocioId ?>)"><i class="fa fa-save me-1"></i> Salvar Configuração</button>
+                                        <button type="button" class="btn btn-outline-info" onclick="whHealthCheck(<?= $negocioId ?>)"><i class="fa fa-heartbeat me-1"></i> Health Check</button>
+                                        <button type="button" class="btn btn-outline-success" onclick="whTestConnection(<?= $negocioId ?>)"><i class="fa fa-paper-plane me-1"></i> Enviar Evento de Teste</button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="whLoadLogs(<?= $negocioId ?>)"><i class="fa fa-list me-1"></i> Ver Logs</button>
+                                    </div>
+                                    <div id="wh_feedback" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-dark text-white"><i class="fa fa-heartbeat me-1"></i> Último Health Check</div>
+                                <div class="card-body">
+                                    <?php if (!empty($webhookConfig['last_health_check'])): ?>
+                                    <?php
+                                    $hcStatus = $webhookConfig['last_health_status'] ?? 'unknown';
+                                    $hcBadge  = ['ok'=>'success','error'=>'danger','timeout'=>'warning','unknown'=>'secondary'][$hcStatus] ?? 'secondary';
+                                    $hcIcon   = ['ok'=>'fa-check-circle','error'=>'fa-times-circle','timeout'=>'fa-clock','unknown'=>'fa-question-circle'][$hcStatus] ?? 'fa-question-circle';
+                                    ?>
+                                    <span class="badge bg-<?= $hcBadge ?> fs-6"><i class="fa <?= $hcIcon ?> me-1"></i><?= strtoupper($hcStatus) ?></span>
+                                    <p class="text-muted small mt-2 mb-1"><?= htmlspecialchars($webhookConfig['last_health_message'] ?? '') ?></p>
+                                    <small class="text-muted">Verificado em: <?= date('d/m/Y H:i', strtotime($webhookConfig['last_health_check'])) ?></small>
+                                    <?php else: ?>
+                                    <p class="text-muted small mb-0"><i class="fa fa-info-circle me-1"></i> Nenhum health check realizado ainda.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-dark text-white"><i class="fa fa-chart-bar me-1"></i> Estatísticas de Eventos</div>
+                                <div class="card-body" id="wh_stats_panel">
+                                    <?php
+                                    $whStats = ['total'=>0,'sent'=>0,'pending'=>0,'failed'=>0,'dlq'=>0];
+                                    try { $whEventModel = new \App\Models\WebhookHubEvent(); $whStats = $whEventModel->statsByTenant($negocioId); } catch (\Throwable $e) {}
+                                    ?>
+                                    <div class="row text-center g-2">
+                                        <div class="col-6"><div class="bg-light rounded p-2"><div class="fs-4 fw-bold text-dark"><?= (int)$whStats['total'] ?></div><small class="text-muted">Total</small></div></div>
+                                        <div class="col-6"><div class="bg-light rounded p-2"><div class="fs-4 fw-bold text-success"><?= (int)$whStats['sent'] ?></div><small class="text-muted">Enviados</small></div></div>
+                                        <div class="col-6"><div class="bg-light rounded p-2"><div class="fs-4 fw-bold text-warning"><?= (int)$whStats['pending'] ?></div><small class="text-muted">Pendentes</small></div></div>
+                                        <div class="col-6"><div class="bg-light rounded p-2"><div class="fs-4 fw-bold text-danger"><?= (int)$whStats['failed'] + (int)$whStats['dlq'] ?></div><small class="text-muted">Falhas/DLQ</small></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-header bg-dark text-white"><i class="fa fa-book me-1"></i> Documentação</div>
+                                <div class="card-body">
+                                    <ul class="list-unstyled small text-muted mb-0">
+                                        <li class="mb-2"><i class="fa fa-check text-success me-1"></i> JWT HMAC-SHA256 (HS256)</li>
+                                        <li class="mb-2"><i class="fa fa-check text-success me-1"></i> Retry com backoff configurável</li>
+                                        <li class="mb-2"><i class="fa fa-check text-success me-1"></i> DLQ para eventos com falha</li>
+                                        <li class="mb-2"><i class="fa fa-check text-success me-1"></i> Idempotência por event_id</li>
+                                        <li class="mb-2"><i class="fa fa-check text-success me-1"></i> Log completo de auditoria</li>
+                                        <li><i class="fa fa-info-circle text-primary me-1"></i> Endpoint HUB: <code>/api/webhook/receive</code></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modal de Logs -->
+                    <div class="modal fade" id="whLogsModal" tabindex="-1">
+                        <div class="modal-dialog modal-xl">
+                            <div class="modal-content">
+                                <div class="modal-header bg-dark text-white">
+                                    <h5 class="modal-title"><i class="fa fa-list me-2"></i> Logs de Eventos Webhook HUB</h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="row g-2 mb-3">
+                                        <div class="col-md-3"><select id="wh_log_status" class="form-select form-select-sm"><option value="">Todos os status</option><option value="sent">Enviados</option><option value="pending">Pendentes</option><option value="failed">Falhos</option><option value="dlq">DLQ</option></select></div>
+                                        <div class="col-md-3"><select id="wh_log_event_type" class="form-select form-select-sm"><option value="">Todos os eventos</option><option value="study.received">study.received</option><option value="study.assumed">study.assumed</option><option value="study.signed">study.signed</option><option value="system.test">system.test</option></select></div>
+                                        <div class="col-md-2"><input type="date" id="wh_log_date_from" class="form-control form-control-sm"></div>
+                                        <div class="col-md-2"><input type="date" id="wh_log_date_to" class="form-control form-control-sm"></div>
+                                        <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="whLoadLogs(<?= $negocioId ?>)"><i class="fa fa-search me-1"></i> Filtrar</button></div>
+                                    </div>
+                                    <div id="wh_logs_table"><div class="text-center text-muted py-4"><i class="fa fa-spinner fa-spin me-2"></i> Carregando...</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <hr class="my-4">
@@ -289,6 +498,132 @@ function addContato() {
     contatoIndex++;
 }
 
+// ============================================================
+// WEBHOOK HUB — JavaScript
+// ============================================================
+function whToggleSecret() {
+    const inp = document.getElementById('wh_jwt_secret');
+    const ico = document.getElementById('wh_eye_icon');
+    if (inp.type === 'password') { inp.type = 'text'; ico.className = 'fa fa-eye-slash'; }
+    else { inp.type = 'password'; ico.className = 'fa fa-eye'; }
+}
+
+function whGenerateSecret() {
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    const secret = btoa(String.fromCharCode(...arr)).replace(/[+/=]/g,'').substring(0,48);
+    document.getElementById('wh_jwt_secret').value = secret;
+    document.getElementById('wh_jwt_secret').type = 'text';
+}
+
+function whCollectConfig() {
+    const events = [...document.querySelectorAll('.wh-event-check:checked')].map(c => c.value);
+    const backoffRaw = document.getElementById('wh_backoff').value;
+    const backoff = backoffRaw.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+    return {
+        hub_url:                document.getElementById('wh_hub_url').value.trim(),
+        jwt_secret:             document.getElementById('wh_jwt_secret').value.trim(),
+        jwt_algorithm:          document.getElementById('wh_jwt_algorithm').value,
+        jwt_issuer:             document.getElementById('wh_jwt_issuer').value.trim(),
+        jwt_audience:           document.getElementById('wh_jwt_audience').value.trim(),
+        jwt_expiry_seconds:     parseInt(document.getElementById('wh_jwt_expiry').value) || 3600,
+        events_enabled:         events,
+        retry_enabled:          document.getElementById('wh_retry_enabled').checked ? 1 : 0,
+        retry_max_attempts:     parseInt(document.getElementById('wh_retry_max').value) || 5,
+        retry_backoff_seconds:  backoff,
+        retry_dlq_enabled:      document.getElementById('wh_dlq_enabled').checked ? 1 : 0,
+        request_timeout_seconds:parseInt(document.getElementById('wh_timeout').value) || 30,
+        rate_limit_per_minute:  parseInt(document.getElementById('wh_rate_limit').value) || 1000,
+        status:                 document.getElementById('wh_status').value,
+    };
+}
+
+function whFeedback(html, type) {
+    const fb = document.getElementById('wh_feedback');
+    if (!fb) return;
+    fb.innerHTML = `<div class="alert alert-${type} py-2">${html}</div>`;
+    setTimeout(() => { fb.innerHTML = ''; }, 8000);
+}
+
+function whSaveConfig(negocioId) {
+    const cfg = whCollectConfig();
+    if (!cfg.hub_url) { whFeedback('<i class="fa fa-exclamation-triangle me-1"></i> Informe a URL do VOXEL HUB.', 'warning'); return; }
+    if (!cfg.jwt_secret || cfg.jwt_secret.length < 16) { whFeedback('<i class="fa fa-exclamation-triangle me-1"></i> JWT Secret deve ter ao menos 16 caracteres.', 'warning'); return; }
+    whFeedback('<i class="fa fa-spinner fa-spin me-1"></i> Salvando...', 'info');
+    fetch(`/platform/api/negocios/${negocioId}/webhook-hub/save`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(cfg)
+    }).then(r => r.json()).then(d => {
+        if (d.success) whFeedback('<i class="fa fa-check-circle me-1"></i> Configuração salva com sucesso!', 'success');
+        else whFeedback('<i class="fa fa-times-circle me-1"></i> Erro: ' + (d.error || 'desconhecido'), 'danger');
+    }).catch(() => whFeedback('<i class="fa fa-times-circle me-1"></i> Erro de comunicação.', 'danger'));
+}
+
+function whHealthCheck(negocioId) {
+    whFeedback('<i class="fa fa-spinner fa-spin me-1"></i> Verificando health check...', 'info');
+    fetch(`/platform/api/negocios/${negocioId}/webhook-hub/health`)
+        .then(r => r.json()).then(d => {
+            const icon = d.status === 'ok' ? 'fa-check-circle' : 'fa-times-circle';
+            const type = d.status === 'ok' ? 'success' : 'danger';
+            whFeedback(`<i class="fa ${icon} me-1"></i> ${d.message || d.status}`, type);
+        }).catch(() => whFeedback('<i class="fa fa-times-circle me-1"></i> Erro de comunicação.', 'danger'));
+}
+
+function whTestConnection(negocioId) {
+    whFeedback('<i class="fa fa-spinner fa-spin me-1"></i> Enviando evento de teste...', 'info');
+    fetch(`/platform/api/negocios/${negocioId}/webhook-hub/test`, { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            if (d.success) whFeedback('<i class="fa fa-check-circle me-1"></i> Evento de teste enviado! HTTP ' + (d.http_code || ''), 'success');
+            else whFeedback('<i class="fa fa-times-circle me-1"></i> Falha: ' + (d.error || 'desconhecido'), 'danger');
+        }).catch(() => whFeedback('<i class="fa fa-times-circle me-1"></i> Erro de comunicação.', 'danger'));
+}
+
+function whLoadLogs(negocioId) {
+    const modal = new bootstrap.Modal(document.getElementById('whLogsModal'));
+    modal.show();
+    const status    = document.getElementById('wh_log_status')?.value || '';
+    const evType    = document.getElementById('wh_log_event_type')?.value || '';
+    const dateFrom  = document.getElementById('wh_log_date_from')?.value || '';
+    const dateTo    = document.getElementById('wh_log_date_to')?.value || '';
+    const params    = new URLSearchParams({ status, event_type: evType, date_from: dateFrom, date_to: dateTo });
+    document.getElementById('wh_logs_table').innerHTML = '<div class="text-center text-muted py-4"><i class="fa fa-spinner fa-spin me-2"></i> Carregando...</div>';
+    fetch(`/platform/api/negocios/${negocioId}/webhook-hub/logs?${params}`)
+        .then(r => r.json()).then(d => {
+            if (!d.events || d.events.length === 0) {
+                document.getElementById('wh_logs_table').innerHTML = '<p class="text-center text-muted py-4">Nenhum evento encontrado.</p>';
+                return;
+            }
+            let html = `<table class="table table-sm table-hover">
+                <thead class="table-dark"><tr>
+                    <th>Data</th><th>Evento</th><th>Status</th><th>HTTP</th><th>Tentativas</th><th>Ações</th>
+                </tr></thead><tbody>`;
+            d.events.forEach(ev => {
+                const badgeMap = {sent:'success',pending:'warning',failed:'danger',dlq:'dark'};
+                const badge = badgeMap[ev.status] || 'secondary';
+                html += `<tr>
+                    <td><small>${ev.created_at || ''}</small></td>
+                    <td><code>${ev.event_type || ''}</code></td>
+                    <td><span class="badge bg-${badge}">${ev.status}</span></td>
+                    <td>${ev.last_http_code || '—'}</td>
+                    <td>${ev.attempt_count || 0}/${ev.max_attempts || 5}</td>
+                    <td>${ev.status === 'failed' || ev.status === 'dlq' ? `<button class="btn btn-xs btn-outline-warning" onclick="whRetryEvent(${negocioId},${ev.id})"><i class="fa fa-redo"></i></button>` : ''}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('wh_logs_table').innerHTML = html;
+        }).catch(() => { document.getElementById('wh_logs_table').innerHTML = '<p class="text-danger">Erro ao carregar logs.</p>'; });
+}
+
+function whRetryEvent(negocioId, eventId) {
+    fetch(`/platform/api/negocios/${negocioId}/webhook-hub/retry/${eventId}`, { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            if (d.success) { alert('Evento reagendado para reenvio!'); whLoadLogs(negocioId); }
+            else alert('Erro: ' + (d.error || 'desconhecido'));
+        });
+}
+
+// ============================================================
 function buscarCnpj() {
     const cnpj = document.getElementById('cnpj').value.replace(/\D/g, '');
     const btn = document.getElementById('btnBuscarCnpj');
