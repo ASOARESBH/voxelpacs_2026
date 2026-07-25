@@ -37,8 +37,23 @@ class UnidadesController extends Controller
         $this->sincronizarInstitutionNames($tenantId);
 
         try {
+            // Colunas explícitas + COALESCE para colunas opcionais (migrations podem não ter sido aplicadas ainda)
             $stmt = $this->pdo->prepare("
-                SELECT n.*,
+                SELECT
+                    n.id,
+                    n.tenant_id,
+                    n.institution_name,
+                    COALESCE(n.descricao,   '')  AS descricao,
+                    COALESCE(n.responsavel, '')  AS responsavel,
+                    COALESCE(n.cidade,      '')  AS cidade,
+                    COALESCE(n.estado,      '')  AS estado,
+                    COALESCE(n.telefone,    '')  AS telefone,
+                    COALESCE(n.email,       '')  AS email,
+                    COALESCE(n.cnpj,        '')  AS cnpj,
+                    COALESCE(n.horario,     '')  AS horario,
+                    COALESCE(n.sla_minutos, 0)   AS sla_minutos,
+                    COALESCE(n.ativo,       1)   AS ativo,
+                    n.created_at,
                     (SELECT COUNT(*) FROM bi_pacs_estudos e
                      WHERE e.tenant_id = n.tenant_id
                        AND e.institution_name = n.institution_name) AS total_estudos
