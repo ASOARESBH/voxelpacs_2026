@@ -44,8 +44,16 @@ class ExamesPacsController extends Controller
         $offset  = ($filtros['page'] - 1) * $perPage;
 
         // Monta WHERE dinâmico
-        $where  = ['e.tenant_id = :tenant_id'];
-        $params = [':tenant_id' => $tenantId];
+        // FONTE ÚNICA DA VERDADE: InstitutionResolverService
+        $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        if (!empty($institutionNames)) {
+            $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
+            $where  = ["e.institution_name IN ({$placeholders})"];
+            $params = $institutionNames;
+        } else {
+            $where  = ['e.tenant_id = :tenant_id'];
+            $params = [':tenant_id' => $tenantId];
+        }
 
         if ($filtros['data_ini']) {
             $where[]              = 'e.study_date >= :data_ini';

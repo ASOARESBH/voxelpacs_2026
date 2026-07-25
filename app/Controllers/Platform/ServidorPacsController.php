@@ -4,6 +4,7 @@ namespace App\Controllers\Platform;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Services\OrthancService;
+use App\Services\InstitutionResolverService;
 
 /**
  * ServidorPacsController — Gerenciamento do servidor PACS global (Orthanc)
@@ -269,6 +270,14 @@ class ServidorPacsController extends Controller
                 try {
                     $instKey  = strtolower(trim($study['institution_name'] ?? ''));
                     $tenantId = $roteamentosMap[$instKey] ?? null;
+                    // FALLBACK: se bi_pacs_roteamento não resolver, usa InstitutionResolverService
+                    // (busca em bi_negocio_institution_names — fonte única da verdade)
+                    if (!$tenantId && !empty($study['institution_name'])) {
+                        $tenantId = InstitutionResolverService::resolveTenantByInstitutionName($study['institution_name']);
+                        if ($tenantId) {
+                            error_log('[ServidorPacs::import] InstitutionResolver resolveu tenant_id=' . $tenantId . ' para institution_name=' . $study['institution_name']);
+                        }
+                    }
                     if ($tenantId) $roteados++;
 
                     // Previne duplicatas — verifica se já existe

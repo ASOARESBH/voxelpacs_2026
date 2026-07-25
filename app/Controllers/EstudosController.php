@@ -5,6 +5,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Auth;
 use App\Services\DesktopViewerService;
+use App\Services\InstitutionResolverService;
 
 /**
  * VOXEL PACS — EstudosController
@@ -118,9 +119,23 @@ class EstudosController extends Controller
         $where  = ['e.servidor_id = 1'];
         $params = [];
 
-        if ($tenantId) {
-            $where[]              = 'e.tenant_id = :tenant_id';
-            $params[':tenant_id'] = $tenantId;
+        // FONTE ÚNICA DA VERDADE: InstitutionResolverService
+        // Busca InstitutionNames do tenant e filtra estudos por IN (institution_names)
+        // Garante que o tenant veja TODOS os seus estudos independente do tenant_id gravado
+        if ($tenantId && !$bypassGlobal) {
+            $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+            if (!empty($institutionNames)) {
+                $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
+                $where[] = "e.institution_name IN ({$placeholders})";
+                foreach ($institutionNames as $iName) {
+                    $params[] = $iName;
+                }
+            } else {
+                // Fallback: tenant sem InstitutionNames cadastradas — usa tenant_id
+                $where[]              = 'e.tenant_id = :tenant_id';
+                $params[':tenant_id'] = $tenantId;
+                error_log('[EstudosController::index] Tenant ' . $tenantId . ' sem InstitutionNames — fallback tenant_id');
+            }
         } elseif (!$bypassGlobal) {
             $where[] = '1=0';
         }
