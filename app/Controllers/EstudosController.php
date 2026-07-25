@@ -51,9 +51,10 @@ class EstudosController extends Controller
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
 
         // ── Filtros ───────────────────────────────────────────────────────────────────────
-        $periodo = trim($_GET['periodo'] ?? 'hoje');
+        // Padrão: 30dias (não "hoje") para mostrar dados relevantes ao abrir o módulo
+        $periodo = trim($_GET['periodo'] ?? '30dias');
         if (!in_array($periodo, ['hoje','ontem','7dias','30dias','90dias','ano','todos','personalizado'])) {
-            $periodo = 'hoje';
+            $periodo = '30dias';
         }
 
         $filtros = [
@@ -115,77 +116,91 @@ class EstudosController extends Controller
             // 'personalizado': usa dt_inicio e dt_fim do GET
         }
 
+        // ── Resolução de InstitutionNames (fonte única da verdade multi-tenant) ──────────
+        // Retorna array de nomes de unidades vinculadas ao tenant.
+        // Usado tanto no WHERE principal quanto nos contadores/resumo para consistência.
+        $institutionNames     = [];
+        $usaInstitutionFilter = false;
+        if ($tenantId && !$bypassGlobal) {
+            $institutionNames     = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+            $usaInstitutionFilter = true;
+        }
+
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
+        // REGRA CRÍTICA: TODOS os parâmetros são posicionais (?) — nunca misturar com :nome
         $where  = ['e.servidor_id = 1'];
         $params = [];
 
-        // FONTE ÚNICA DA VERDADE: InstitutionResolverService
-        // Busca InstitutionNames do tenant e filtra estudos por IN (institution_names)
-        // Garante que o tenant veja TODOS os seus estudos independente do tenant_id gravado
-        if ($tenantId && !$bypassGlobal) {
-            $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        if ($usaInstitutionFilter) {
             if (!empty($institutionNames)) {
+                // Filtro por InstitutionName: fonte única da verdade para multi-tenant
                 $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
-                $where[] = "e.institution_name IN ({$placeholders})";
+                $where[]      = "e.institution_name IN ({$placeholders})";
                 foreach ($institutionNames as $iName) {
                     $params[] = $iName;
                 }
             } else {
-                // Fallback: tenant sem InstitutionNames cadastradas — usa tenant_id
-                $where[]              = 'e.tenant_id = :tenant_id';
-                $params[':tenant_id'] = $tenantId;
+                // Tenant sem InstitutionNames cadastradas — fallback por tenant_id
+                $where[]  = 'e.tenant_id = ?';
+                $params[] = $tenantId;
                 error_log('[EstudosController::index] Tenant ' . $tenantId . ' sem InstitutionNames — fallback tenant_id');
             }
         } elseif (!$bypassGlobal) {
+            // Sem tenant e sem bypass: não mostra nada
             $where[] = '1=0';
         }
 
-        // Pesquisa global
+        // Pesquisa global (6 campos) — todos com parâmetros posicionais
         if ($filtros['q'] !== '') {
-            $like = '%' . $filtros['q'] . '%';
-            $where[] = '(e.patient_name LIKE :q1 OR e.patient_id LIKE :q2
-                      OR e.study_instance_uid LIKE :q3 OR e.accession_number LIKE :q4
-                      OR e.study_description LIKE :q5 OR e.institution_name LIKE :q6)';
-            $params[':q1'] = $like; $params[':q2'] = $like;
-            $params[':q3'] = $like; $params[':q4'] = $like;
-            $params[':q5'] = $like; $params[':q6'] = $like;
+            $like    = '%' . $filtros['q'] . '%';
+            $where[] = '(e.patient_name LIKE ? OR e.patient_id LIKE ?
+                      OR e.study_instance_uid LIKE ? OR e.accession_number LIKE ?
+                      OR e.study_description LIKE ? OR e.institution_name LIKE ?)';
+            for ($i = 0; $i < 6; $i++) {
+                $params[] = $like;
+            }
         }
 
         if ($filtros['paciente'] !== '') {
-            $where[]        = 'e.patient_name LIKE :pac';
-            $params[':pac'] = '%' . $filtros['paciente'] . '%';
+            $where[]  = 'e.patient_name LIKE ?';
+            $params[] = '%' . $filtros['paciente'] . '%';
         }
         if ($filtros['dt_inicio'] !== '') {
-            $where[]              = 'e.study_date >= :dt_inicio';
-            $params[':dt_inicio'] = $filtros['dt_inicio'];
+            $where[]  = 'e.study_date >= ?';
+            $params[] = $filtros['dt_inicio'];
         }
         if ($filtros['dt_fim'] !== '') {
-            $where[]            = 'e.study_date <= :dt_fim';
-            $params[':dt_fim']  = $filtros['dt_fim'];
+            $where[]  = 'e.study_date <= ?';
+            $params[] = $filtros['dt_fim'];
         }
+        // Filtro de unidade: match exato (não LIKE) pois o valor vem do dropdown
+        // e já está no conjunto de InstitutionNames do tenant
         if ($filtros['unidade'] !== '') {
-            $where[]            = 'e.institution_name LIKE :unidade';
-            $params[':unidade'] = '%' . $filtros['unidade'] . '%';
+            $where[]  = 'e.institution_name = ?';
+            $params[] = $filtros['unidade'];
         }
         if ($filtros['modalidade'] !== '') {
-            $where[]               = 'e.modalities LIKE :modalidade';
-            $params[':modalidade'] = '%' . $filtros['modalidade'] . '%';
+            $where[]  = 'e.modalities LIKE ?';
+            $params[] = '%' . $filtros['modalidade'] . '%';
         }
         if ($filtros['especialidade'] !== '') {
-            $where[]        = 'e.especialidade LIKE :esp';
-            $params[':esp'] = '%' . $filtros['especialidade'] . '%';
+            // Busca em especialidade e também em referring_physician_name
+            $like    = '%' . $filtros['especialidade'] . '%';
+            $where[] = '(e.especialidade LIKE ? OR e.referring_physician_name LIKE ?)';
+            $params[] = $like;
+            $params[] = $like;
         }
         if ($filtros['situacao'] !== '') {
-            $where[]             = "COALESCE(e.situacao,'novo') = :situacao";
-            $params[':situacao'] = $filtros['situacao'];
+            $where[]  = "COALESCE(e.situacao,'novo') = ?";
+            $params[] = $filtros['situacao'];
         }
         if ($filtros['prioridade'] !== '') {
-            $where[]               = 'e.prioridade = :prioridade';
-            $params[':prioridade'] = $filtros['prioridade'];
+            $where[]  = 'e.prioridade = ?';
+            $params[] = $filtros['prioridade'];
         }
         if ($filtros['medico'] !== '') {
-            $where[]           = 'e.assumido_por LIKE :medico';
-            $params[':medico'] = '%' . $filtros['medico'] . '%';
+            $where[]  = 'e.assumido_por LIKE ?';
+            $params[] = '%' . $filtros['medico'] . '%';
         }
 
         $whereStr = implode(' AND ', $where);
@@ -287,45 +302,70 @@ class EstudosController extends Controller
             )->fetchAll(\PDO::FETCH_COLUMN);
         } catch (\Throwable $ex) { $medicos = []; }
 
-        // ── Contadores topbar ─────────────────────────────────────────────────────────────
+        // ── Contadores topbar (usa InstitutionNames para consistência com a tabela) ───────
         $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
         try {
-            $cW = ['servidor_id = 1'];
-            $cP = [];
-            if ($tenantId) { $cW[] = 'tenant_id = :tid'; $cP[':tid'] = $tenantId; }
-            $cBase = implode(' AND ', $cW);
+            $cWhere  = ['servidor_id = 1'];
+            $cParams = [];
+            if ($usaInstitutionFilter) {
+                if (!empty($institutionNames)) {
+                    $cPh      = implode(',', array_fill(0, count($institutionNames), '?'));
+                    $cWhere[] = "institution_name IN ({$cPh})";
+                    foreach ($institutionNames as $iName) { $cParams[] = $iName; }
+                } else {
+                    $cWhere[]  = 'tenant_id = ?';
+                    $cParams[] = $tenantId;
+                }
+            } elseif (!$bypassGlobal) {
+                $cWhere[] = '1=0';
+            }
+            $cBase = implode(' AND ', $cWhere);
+
             $cStmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE {$cBase} GROUP BY situacao");
-            $cStmt->execute($cP);
+            $cStmt->execute($cParams);
             foreach ($cStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
                 if (isset($contadores[$r['situacao']])) $contadores[$r['situacao']] = (int)$r['total'];
             }
             $uStmt = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$cBase} AND prioridade IN ('urgente','critico')");
-            $uStmt->execute($cP);
+            $uStmt->execute($cParams);
             $contadores['urgente'] = (int)$uStmt->fetchColumn();
-        } catch (\Throwable $ex) {}
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::index] contadores: ' . $ex->getMessage());
+        }
 
-        // ── Painel de resumo ──────────────────────────────────────────────────────────────
+        // ── Painel de resumo (usa InstitutionNames para consistência com a tabela) ────────
         $resumo = ['hoje'=>0,'semana'=>0,'mes'=>0,'urgentes'=>$contadores['urgente'],'total'=>0];
         try {
-            $rW = ['servidor_id = 1'];
-            $rP = [];
-            if ($tenantId) { $rW[] = 'tenant_id = :tid3'; $rP[':tid3'] = $tenantId; }
-            $rBase = implode(' AND ', $rW);
+            $rWhere  = ['servidor_id = 1'];
+            $rBase_p = []; // params base sem data
+            if ($usaInstitutionFilter) {
+                if (!empty($institutionNames)) {
+                    $rPh      = implode(',', array_fill(0, count($institutionNames), '?'));
+                    $rWhere[] = "institution_name IN ({$rPh})";
+                    foreach ($institutionNames as $iName) { $rBase_p[] = $iName; }
+                } else {
+                    $rWhere[]  = 'tenant_id = ?';
+                    $rBase_p[] = $tenantId;
+                }
+            } elseif (!$bypassGlobal) {
+                $rWhere[] = '1=0';
+            }
+            $rBase = implode(' AND ', $rWhere);
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date = :d");
-            $s->execute(array_merge($rP, [':d' => $today]));
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date = ?");
+            $s->execute(array_merge($rBase_p, [$today]));
             $resumo['hoje'] = (int)$s->fetchColumn();
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= :d");
-            $s->execute(array_merge($rP, [':d' => date('Y-m-d', strtotime('-6 days'))]));
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= ?");
+            $s->execute(array_merge($rBase_p, [date('Y-m-d', strtotime('-6 days'))]));
             $resumo['semana'] = (int)$s->fetchColumn();
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= :d");
-            $s->execute(array_merge($rP, [':d' => date('Y-m-d', strtotime('-29 days'))]));
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= ?");
+            $s->execute(array_merge($rBase_p, [date('Y-m-d', strtotime('-29 days'))]));
             $resumo['mes'] = (int)$s->fetchColumn();
 
             $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase}");
-            $s->execute($rP);
+            $s->execute($rBase_p);
             $resumo['total'] = (int)$s->fetchColumn();
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] resumo: ' . $ex->getMessage());
@@ -609,8 +649,8 @@ class EstudosController extends Controller
         $params   = [];
 
         if ($tenantId) {
-            $where[]       = 'tenant_id = :tid';
-            $params[':tid'] = $tenantId;
+            $where[]  = 'tenant_id = ?';
+            $params[] = $tenantId;
         } elseif (!$bypassGlobal) {
             $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
             return;

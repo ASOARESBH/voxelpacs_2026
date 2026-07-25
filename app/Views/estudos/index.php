@@ -65,7 +65,7 @@ $temFiltroAtivo = array_filter(array_diff_key($filtros, [
 $periodoLabel = [
     'hoje'=>'Hoje','ontem'=>'Ontem','7dias'=>'7 dias','30dias'=>'30 dias',
     '90dias'=>'90 dias','ano'=>'Este ano','todos'=>'Todos','personalizado'=>'Personalizado'
-][$filtros['periodo']] ?? 'Hoje';
+][$filtros['periodo']] ?? '30 dias';
 ?>
 
 <!-- ═══════════════════════════════════════════════════════════
