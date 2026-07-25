@@ -258,7 +258,8 @@ class EstudosController extends Controller
                     e.laudo_assinado_em,
                     e.urgente_em,
                     e.importado_em,
-                    e.atualizado_em
+                    e.atualizado_em,
+                    COALESCE(e.recebido_em, e.importado_em) AS recebido_em
                 FROM bi_pacs_estudos e
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
@@ -728,6 +729,110 @@ class EstudosController extends Controller
         $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
         $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ASSUMIR ESTUDO — endpoint AJAX exclusivo para médicos
+    // POST /api/estudos/assumir   body: { estudo_id: int }
+    // Muda situacao: novo|aberto → a_laudar
+    // Registra assumido_em, assumido_por (nome médico), usuario_responsavel_id
+    // ─────────────────────────────────────────────────────────────────────────
+    public function assumirEstudo(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!Auth::check()) {
+            echo json_encode(['ok' => false, 'msg' => 'Não autenticado.']);
+            return;
+        }
+
+        $input    = json_decode(file_get_contents('php://input'), true) ?? [];
+        $estudoId = (int)($input['estudo_id'] ?? 0);
+        $userId   = Auth::userId();
+        $tenantId = Auth::tenantId();
+        $isAdmin  = Auth::isPlatformAdmin();
+
+        if (!$estudoId) {
+            echo json_encode(['ok' => false, 'msg' => 'ID inválido.']);
+            return;
+        }
+
+        $pdo = Database::getInstance();
+
+        try {
+            // Verifica se o usuário é médico cadastrado neste tenant
+            $nomeMedico = null;
+            if ($tenantId) {
+                $stmtMed = $pdo->prepare(
+                    'SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
+                );
+                $stmtMed->execute([$tenantId, $userId]);
+                $medico = $stmtMed->fetch(\PDO::FETCH_ASSOC);
+                if ($medico) {
+                    $nomeMedico = $medico['nome'];
+                }
+            }
+
+            // Admins também podem assumir (sem restrição de médico)
+            if (!$nomeMedico && !$isAdmin) {
+                echo json_encode(['ok' => false, 'msg' => 'Apenas médicos podem assumir estudos.']);
+                return;
+            }
+
+            if (!$nomeMedico) {
+                $u = Auth::user();
+                $nomeMedico = $u->nome ?? $u->name ?? 'Admin';
+            }
+
+            // Verifica se o estudo pertence ao tenant e está em estado assumível
+            $tWhere = $tenantId ? 'AND tenant_id = ?' : '';
+            $tParam = $tenantId ? [$estudoId, $tenantId] : [$estudoId];
+
+            $stmtCheck = $pdo->prepare(
+                "SELECT id, situacao, assumido_por FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
+            );
+            $stmtCheck->execute($tParam);
+            $estudo = $stmtCheck->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$estudo) {
+                echo json_encode(['ok' => false, 'msg' => 'Estudo não encontrado.']);
+                return;
+            }
+
+            $sit = $estudo['situacao'] ?? 'novo';
+            if (!in_array($sit, ['novo', 'aberto', ''])) {
+                echo json_encode([
+                    'ok'       => false,
+                    'msg'      => 'Este estudo já foi assumido ou está em outro estado (' . strtoupper(str_replace('_',' ',$sit)) . ').',
+                    'situacao' => $sit,
+                ]);
+                return;
+            }
+
+            // Atualiza o estudo
+            $pdo->prepare(
+                "UPDATE bi_pacs_estudos SET
+                    situacao               = 'a_laudar',
+                    assumido_por           = ?,
+                    assumido_em            = NOW(),
+                    usuario_responsavel_id = ?
+                 WHERE id = ?"
+            )->execute([$nomeMedico, $userId, $estudoId]);
+
+            \App\Core\Logger::info("[EstudosController::assumirEstudo] estudo_id={$estudoId} medico={$nomeMedico} user_id={$userId}");
+
+            echo json_encode([
+                'ok'           => true,
+                'msg'          => 'Estudo assumido com sucesso.',
+                'situacao'     => 'a_laudar',
+                'assumido_por' => $nomeMedico,
+                'assumido_em'  => date('Y-m-d H:i:s'),
+            ]);
+
+        } catch (\Throwable $e) {
+            \App\Core\Logger::error('[EstudosController::assumirEstudo] ' . $e->getMessage());
+            echo json_encode(['ok' => false, 'msg' => 'Erro interno. Tente novamente.']);
+        }
     }
 
     private function renderErroViewer(int $code, string $msg): void
