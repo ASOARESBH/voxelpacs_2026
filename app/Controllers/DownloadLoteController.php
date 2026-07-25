@@ -57,7 +57,8 @@ class DownloadLoteController extends Controller
 
             // ── 1. Ler e validar payload ──────────────────────────────────
             $body = json_decode(file_get_contents('php://input'), true);
-            $ids  = array_map('intval', (array)($body['ids'] ?? []));
+            // Aceita 'estudo_ids' (JS) ou 'ids' (alias legado)
+            $ids  = array_map('intval', (array)($body['estudo_ids'] ?? $body['ids'] ?? []));
             $ids  = array_filter($ids, fn($id) => $id > 0);
             $ids  = array_values(array_unique($ids));
 
@@ -213,10 +214,11 @@ class DownloadLoteController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // ENDPOINT 2: Polling de status do job
-    // GET /api/estudos/download-lote/{jobId}/status
+    // GET /api/download-lote/status?job_id=xxx&log_id=yyy
     // ─────────────────────────────────────────────────────────────────────────
-    public function status(string $jobId): void
+    public function status(): void
     {
+        $jobId = trim($_GET['job_id'] ?? '');
         header('Content-Type: application/json');
         header('Cache-Control: no-store');
 
@@ -230,8 +232,8 @@ class DownloadLoteController extends Controller
                 return;
             }
 
-            // Validar jobId (apenas alfanumérico + hífens — UUID do Orthanc)
-            if (!preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
+            // Validar jobId
+            if (empty($jobId) || !preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
                 http_response_code(400);
                 echo json_encode(['ok' => false, 'msg' => 'Job ID inválido.']);
                 return;
@@ -307,10 +309,11 @@ class DownloadLoteController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // ENDPOINT 3: Streaming do ZIP (proxy autenticado — nunca expõe URL Orthanc)
-    // GET /api/estudos/download-lote/{jobId}/arquivo
+    // GET /api/download-lote/baixar?job_id=xxx&log_id=yyy
     // ─────────────────────────────────────────────────────────────────────────
-    public function arquivo(string $jobId): void
+    public function baixar(): void
     {
+        $jobId = trim($_GET['job_id'] ?? '');
         try {
             $userId   = Auth::userId();
             $tenantId = TenantContext::id();
@@ -322,7 +325,7 @@ class DownloadLoteController extends Controller
             }
 
             // Validar jobId
-            if (!preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
+            if (empty($jobId) || !preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
                 http_response_code(400);
                 echo 'Job ID inválido.';
                 return;
