@@ -150,4 +150,14 @@ return [
     'estudos.worklist.prioridade.urgencia'     => 'Urgência',
     'estudos.worklist.prioridade.rotina'       => 'Rotina',
     'estudos.worklist.prioridade.ambulatorial' => 'Ambulatorial',
+
+    // Unidades — CNPJ e Endereço
+    'unidades.cnpj_buscar' => 'Buscar CNPJ',
+    'unidades.cnpj_buscando' => 'Consultando...',
+    'unidades.cnpj_sucesso' => 'Dados preenchidos com sucesso',
+    'unidades.cnpj_erro' => 'CNPJ não encontrado',
+    'unidades.logo_upload' => 'Selecionar Logo',
+    'unidades.razao_social' => 'Razão Social',
+    'unidades.nome_fantasia' => 'Nome Fantasia',
+    'unidades.endereco' => 'Endereço',
 ];

@@ -64,6 +64,7 @@ Router::get('/unidades/create',        'UnidadesController@create');
 Router::post('/unidades',              'UnidadesController@store');
 Router::get('/unidades/{id}/edit',     'UnidadesController@edit');
 Router::post('/unidades/{id}/update',  'UnidadesController@update');
+Router::get('/api/unidades/cnpj',         'UnidadesController@apiCnpj');
 
 Router::get('/modalidades',            'ModalidadesController@index');
 Router::get('/modalidades/create',     'ModalidadesController@create');

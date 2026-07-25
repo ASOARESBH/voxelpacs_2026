@@ -148,4 +148,14 @@ return [
     'estudos.worklist.prioridade.urgencia'     => 'Urgent',
     'estudos.worklist.prioridade.rotina'       => 'Routine',
     'estudos.worklist.prioridade.ambulatorial' => 'Outpatient',
+
+    // Unidades — CNPJ e Endereço
+    'unidades.cnpj_buscar' => 'Search CNPJ',
+    'unidades.cnpj_buscando' => 'Searching...',
+    'unidades.cnpj_sucesso' => 'Data filled successfully',
+    'unidades.cnpj_erro' => 'CNPJ not found',
+    'unidades.logo_upload' => 'Select Logo',
+    'unidades.razao_social' => 'Company Name',
+    'unidades.nome_fantasia' => 'Trade Name',
+    'unidades.endereco' => 'Address',
 ];
