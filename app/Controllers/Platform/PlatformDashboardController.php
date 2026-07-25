@@ -13,7 +13,7 @@ class PlatformDashboardController extends Controller {
             'total_negocios'  => "SELECT COUNT(*) FROM bi_tenants",
             'negocios_ativos' => "SELECT COUNT(*) FROM bi_tenants WHERE status = 'ativo'",
             'total_usuarios'  => "SELECT COUNT(*) FROM bi_users WHERE status = 'ativo'",
-            'total_estudos'   => "SELECT COUNT(*) FROM pacs_estudos",
+            'total_estudos'   => "SELECT COUNT(*) FROM bi_pacs_estudos",
             'total_planos'    => "SELECT COUNT(*) FROM bi_plans WHERE ativo = 1",
         ];
         foreach ($queries as $key => $sql) {
