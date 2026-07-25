@@ -58,6 +58,9 @@
                 <i class="fa fa-eye" id="iconEye"></i>
             </button>
         </div>
+        <div style="text-align:right;margin-top:.4rem;">
+            <a href="/esqueci-senha" style="font-size:.78rem;">Esqueceu a senha?</a>
+        </div>
     </div>
 
     <button type="submit" class="btn-login" id="btnLogin">

@@ -10,6 +10,7 @@ class Router {
         '/selecionar-empresa',
         '/open/',
         '/acesso/criar-senha/',
+        '/esqueci-senha',
         '/api/sla-regras/executar',
     ];
 

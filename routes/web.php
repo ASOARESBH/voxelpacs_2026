@@ -142,3 +142,11 @@ Router::get('/open/{token}', 'ViewerTokenController@abrir');
 // ============================================================
 Router::get('/acesso/criar-senha/{token}',  'Auth\AccessTokenController@formCriarSenha');
 Router::post('/acesso/criar-senha/{token}', 'Auth\AccessTokenController@salvarSenha');
+
+// ============================================================
+// Esqueci minha senha — reaproveita bi_tenant_access_tokens e o fluxo
+// /acesso/criar-senha/{token} acima (tipo='redefinir_senha')
+// Rotas PÚBLICAS: não exigem autenticação
+// ============================================================
+Router::get('/esqueci-senha',  'Auth\AccessTokenController@formEsqueciSenha');
+Router::post('/esqueci-senha', 'Auth\AccessTokenController@enviarLinkRedefinicao');
