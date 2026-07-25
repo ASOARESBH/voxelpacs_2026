@@ -82,7 +82,8 @@ Router::get('/usuarios/create',        'UsuariosController@create');
 Router::post('/usuarios',              'UsuariosController@store');
 Router::get('/usuarios/{id}/edit',     'UsuariosController@edit');
 Router::post('/usuarios/{id}/update',  'UsuariosController@update');
-Router::post('/usuarios/{id}/toggle',  'UsuariosController@toggleStatus');
+Router::post('/usuarios/{id}/toggle',        'UsuariosController@toggleStatus');
+Router::post('/usuarios/{id}/reenviar-link', 'UsuariosController@reenviarLink');
 
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
