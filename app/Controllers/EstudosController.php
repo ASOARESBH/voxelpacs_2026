@@ -469,29 +469,67 @@ class EstudosController extends Controller
             return;
         }
 
+        // ── FIX LGPD/UID: Se o study_instance_uid for numérico (inválido como UID DICOM),
+        //    busca o UID real no Orthanc via orthanc_id e atualiza o banco.
+        $uidInvalido = !empty($studyUid) && preg_match('/^\d+$/', $studyUid);
+        if ($uidInvalido && !empty($orthancId)) {
+            try {
+                $servidor = $pdo->query("SELECT url, usuario, senha FROM bi_pacs_servidor WHERE id=1 LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
+                if ($servidor) {
+                    $orthanc = new \App\Services\OrthancService(
+                        $servidor['url'],
+                        $servidor['usuario'] ?? null,
+                        $servidor['senha']   ?? null,
+                        10
+                    );
+                    $studyData = $orthanc->getStudy($orthancId);
+                    $uidReal   = $studyData['MainDicomTags']['StudyInstanceUID'] ?? '';
+                    if (!empty($uidReal) && !preg_match('/^\d+$/', $uidReal)) {
+                        // Atualiza o banco com o UID correto
+                        $pdo->prepare("UPDATE bi_pacs_estudos SET study_instance_uid=? WHERE id=?")
+                            ->execute([$uidReal, $id]);
+                        $studyUid = $uidReal;
+                        error_log("[EstudosController::abrir] UID corrigido: {$studyUid} → {$uidReal} (estudo id={$id})");
+                    }
+                }
+            } catch (\Throwable $ex) {
+                error_log('[EstudosController::abrir] Falha ao corrigir UID: ' . $ex->getMessage());
+            }
+        }
+
         $uidParaViewer = $studyUid ?: $orthancId;
 
+        // ── Token de uso único para abertura segura (LGPD) ──────────────────────
+        $token = $this->gerarToken();
         try {
             $pdo->prepare("
                 INSERT INTO pacs_viewer_tokens
                     (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
                 VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,:expires_at)
             ")->execute([
-                ':token'      => $this->gerarToken(),
+                ':token'      => $token,
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
                 ':tenant_id'  => Auth::tenantId() ?: null,
                 ':usuario_id' => Auth::userId()   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
-                ':expires_at' => date('Y-m-d H:i:s', strtotime('+1 hour')),
+                ':expires_at' => date('Y-m-d H:i:s', strtotime('+2 hours')),
             ]);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
+            // Fallback: redireciona direto se token falhar
+            $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
+            header('Location: ' . $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer), true, 302);
+            exit;
         }
 
-        $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
-        $viewerUrl = $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer);
+        // Redireciona para o endpoint seguro /open/{token} no PHP (Hostgator)
+        // O PHP (ViewerTokenController) valida o token e redireciona para o OHIF com o UID real
+        // VIEWER_ERP_URL = https://server.voxelpacs.com.br (PHP Hostgator)
+        // VIEWER_URL     = https://view.voxelpacs.com.br  (OHIF VPS)
+        $erpBase   = rtrim(getenv('VIEWER_ERP_URL') ?: 'https://server.voxelpacs.com.br', '/');
+        $viewerUrl = $erpBase . '/open/' . urlencode($token);
         header('Location: ' . $viewerUrl, true, 302);
         exit;
     }
