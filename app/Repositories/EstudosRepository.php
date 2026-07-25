@@ -154,30 +154,32 @@ class EstudosRepository
     public function getUnidades(?int $tenantId, bool $isAdmin): array
     {
         try {
-            // Unidades cadastradas na tabela de unidades DICOM do tenant
+            // Fonte primária: bi_negocio_institution_names (tabela oficial de unidades por tenant)
             $fromCadastro = [];
             try {
-                $uCad = $this->pdo->prepare("
-                    SELECT DISTINCT institution_name
-                    FROM bi_tenant_unidades_dicom
-                    WHERE status = 'ativo'
-                      AND institution_name IS NOT NULL
-                      AND institution_name != ''
-                      " . (!$isAdmin && $tenantId ? 'AND tenant_id = ' . (int)$tenantId : '') . "
-                    ORDER BY institution_name
-                ");
-                $uCad->execute();
-                $fromCadastro = $uCad->fetchAll(\PDO::FETCH_COLUMN);
+                $sql = "SELECT institution_name
+                        FROM bi_negocio_institution_names
+                        WHERE ativo = 1
+                          AND institution_name IS NOT NULL
+                          AND institution_name != ''";
+                if (!$isAdmin && $tenantId) {
+                    $sql .= ' AND tenant_id = ' . (int)$tenantId;
+                }
+                $sql .= ' ORDER BY institution_name';
+                $fromCadastro = $this->pdo->query($sql)->fetchAll(\PDO::FETCH_COLUMN);
             } catch (\Throwable $ex2) { /* tabela pode nao existir ainda */ }
 
-            // Unidades que já aparecem nos estudos PACS
-            $uW = ['servidor_id = 1', "institution_name IS NOT NULL", "institution_name != ''"];
-            if (!$isAdmin && $tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
-            $fromEstudos = $this->pdo->query(
-                "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
-            )->fetchAll(\PDO::FETCH_COLUMN);
+            // Fallback: institution_names que aparecem nos estudos PACS mas nao foram cadastradas ainda
+            $fromEstudos = [];
+            try {
+                $uW = ["institution_name IS NOT NULL", "institution_name != ''"];
+                if (!$isAdmin && $tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
+                $fromEstudos = $this->pdo->query(
+                    "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
+                )->fetchAll(\PDO::FETCH_COLUMN);
+            } catch (\Throwable $ex3) { /* tabela pode nao existir */ }
 
-            // Mescla e ordena, sem duplicatas
+            // Mescla e ordena, sem duplicatas (cadastradas primeiro)
             $merged = array_values(array_unique(array_merge($fromCadastro, $fromEstudos)));
             sort($merged);
             return $merged;

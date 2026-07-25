@@ -244,14 +244,24 @@ class EstudosController extends Controller
         $tempoConsulta = round((microtime(true) - $tempoInicio) * 1000, 1);
 
         // ── Dados para selects ────────────────────────────────────────────────────────────
+        // Fonte primária: bi_negocio_institution_names (tabela oficial de unidades por tenant)
         $unidades = [];
         try {
-            $uW = ['servidor_id = 1', "institution_name IS NOT NULL", "institution_name != ''"];
-            if ($tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
-            $unidades = $pdo->query(
-                "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
-            )->fetchAll(\PDO::FETCH_COLUMN);
+            $uSql = "SELECT institution_name FROM bi_negocio_institution_names WHERE ativo = 1 AND institution_name IS NOT NULL AND institution_name != ''";
+            if ($tenantId) $uSql .= ' AND tenant_id = ' . (int)$tenantId;
+            $uSql .= ' ORDER BY institution_name';
+            $unidades = $pdo->query($uSql)->fetchAll(\PDO::FETCH_COLUMN);
         } catch (\Throwable $ex) { $unidades = []; }
+        // Fallback: institution_names dos estudos PACS (para tenants sem cadastro ainda)
+        if (empty($unidades)) {
+            try {
+                $uW = ["institution_name IS NOT NULL", "institution_name != ''"];
+                if ($tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
+                $unidades = $pdo->query(
+                    "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
+                )->fetchAll(\PDO::FETCH_COLUMN);
+            } catch (\Throwable $ex) { $unidades = []; }
+        }
 
         $medicos = [];
         try {
