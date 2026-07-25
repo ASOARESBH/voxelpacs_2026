@@ -199,12 +199,26 @@ $periodoLabel = [
            placeholder="Solicitante" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
 
     <?php if (!empty($medicos)): ?>
-    <select name="medico" class="form-select" style="width:155px;font-size:.72rem;height:28px;padding:.1rem .5rem;">
-        <option value="">Médico responsável</option>
-        <?php foreach ($medicos as $med): ?>
-            <option value="<?= htmlspecialchars($med) ?>" <?= $filtros['medico']===$med?'selected':'' ?>><?= htmlspecialchars($med) ?></option>
-        <?php endforeach; ?>
-    </select>
+    <div style="position:relative;display:flex;align-items:center;gap:.25rem;">
+        <select name="medico" class="form-select" style="width:175px;font-size:.72rem;height:28px;padding:.1rem .5rem;<?= $isMedicoLogado ? 'border-color:var(--pacs-primary);' : '' ?>">
+            <?php if (!$isMedicoLogado): ?>
+            <option value="">Médico responsável</option>
+            <?php endif; ?>
+            <?php foreach ($medicos as $med): ?>
+                <?php $nomeMed = is_array($med) ? $med['nome'] : $med; ?>
+                <option value="<?= htmlspecialchars($nomeMed) ?>"
+                    <?= $filtros['medico']===$nomeMed?'selected':'' ?>>
+                    <?= htmlspecialchars($nomeMed) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <?php if ($isMedicoLogado): ?>
+        <span title="Você só pode visualizar seus próprios estudos"
+              style="font-size:.65rem;color:var(--pacs-primary);white-space:nowrap;cursor:help;">
+            <i class="fa fa-lock"></i>
+        </span>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
 
     <select name="por_pagina" class="form-select" style="width:80px;font-size:.72rem;height:28px;padding:.1rem .5rem;"

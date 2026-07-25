@@ -293,14 +293,56 @@ class EstudosController extends Controller
             } catch (\Throwable $ex) { $unidades = []; }
         }
 
-        $medicos = [];
+        // ── Médicos para o dropdown ───────────────────────────────────────────────────────
+        // Fonte: bi_medicos (cadastro oficial) — não mais DISTINCT assumido_por dos estudos.
+        // Regra de visibilidade:
+        //   - Médico logado (usuario_id = Auth::userId() em bi_medicos): vê APENAS o próprio nome
+        //   - Admin/analista/viewer: vê todos os médicos ativos do tenant
+        $medicos          = []; // array de ['id'=>int, 'nome'=>string]
+        $medicoLogadoId   = null;  // id em bi_medicos do usuário logado (se for médico)
+        $medicoLogadoNome = null;  // nome do médico logado
+        $isMedicoLogado   = false; // flag: usuário logado é um médico cadastrado
         try {
-            $mW = ['servidor_id = 1', "assumido_por IS NOT NULL", "assumido_por != ''"];
-            if ($tenantId) $mW[] = 'tenant_id = ' . (int)$tenantId;
-            $medicos = $pdo->query(
-                "SELECT DISTINCT assumido_por FROM bi_pacs_estudos WHERE " . implode(' AND ', $mW) . " ORDER BY assumido_por"
-            )->fetchAll(\PDO::FETCH_COLUMN);
-        } catch (\Throwable $ex) { $medicos = []; }
+            if ($tenantId) {
+                $userId = Auth::userId();
+                // Verifica se o usuário logado é um médico cadastrado neste tenant
+                if ($userId) {
+                    $stmtMe = $pdo->prepare(
+                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
+                    );
+                    $stmtMe->execute([(int)$tenantId, (int)$userId]);
+                    $meRow = $stmtMe->fetch(\PDO::FETCH_ASSOC);
+                    if ($meRow) {
+                        $isMedicoLogado   = true;
+                        $medicoLogadoId   = (int)$meRow['id'];
+                        $medicoLogadoNome = $meRow['nome'];
+                    }
+                }
+                if ($isMedicoLogado) {
+                    // Médico logado: dropdown só mostra o próprio nome
+                    $medicos = [['id' => $medicoLogadoId, 'nome' => $medicoLogadoNome]];
+                    // Força o filtro para o próprio médico se nenhum filtro foi aplicado
+                    if ($filtros['medico'] === '') {
+                        $filtros['medico'] = $medicoLogadoNome;
+                    }
+                } else {
+                    // Admin/analista: lista todos os médicos ativos do tenant
+                    $stmtAll = $pdo->prepare(
+                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome"
+                    );
+                    $stmtAll->execute([(int)$tenantId]);
+                    $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
+                }
+            } elseif ($bypassGlobal) {
+                // Superadmin sem impersonação: lista todos os médicos de todos os tenants
+                $medicos = $pdo->query(
+                    "SELECT id, nome FROM bi_medicos WHERE ativo = 1 ORDER BY nome"
+                )->fetchAll(\PDO::FETCH_ASSOC);
+            }
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::index] medicos: ' . $ex->getMessage());
+            $medicos = [];
+        }
 
         // ── Contadores topbar (usa InstitutionNames para consistência com a tabela) ───────
         $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
@@ -381,7 +423,7 @@ class EstudosController extends Controller
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin'
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado'
         ), 'pacs');
     }
 
