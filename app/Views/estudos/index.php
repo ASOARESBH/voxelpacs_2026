@@ -1,81 +1,54 @@
 <?php
 /**
- * VOXEL PACS — Worklist de Estudos (v3)
- * Painel de resumo, filtros avançados, período inteligente, tabela otimizada.
+ * VOXEL PACS — Worklist de Estudos (v4)
+ * Layout reformulado: compacto, ícones de sexo coloridos, SLA semafórico, Ações espaçosas.
  */
 
+/* ─── helpers de URL ─────────────────────────────────────────────────────── */
 function estudoUrl(array $filtros, int $pagina = 1): string {
     $p = array_merge($filtros, ['pagina' => $pagina]);
     unset($p['situacao_rapida']);
     return '/estudos?' . http_build_query(array_filter($p, fn($v) => $v !== '' && $v !== null));
 }
 
+/* ─── badge de situação ──────────────────────────────────────────────────── */
 function situacaoBadge(string $sit): string {
     $map = [
-        'novo'     => ['sit-novo',      'NOVO'],
-        'aberto'   => ['sit-aberto',    'ABERTO'],
-        'a_laudar' => ['sit-a-laudar',  'A LAUDAR'],
-        'em_laudo' => ['sit-em-laudo',  'EM LAUDO'],
-        'rascunho' => ['sit-rascunho',  'RASCUNHO'],
-        'assinado' => ['sit-assinado',  'ASSINADO'],
-        'liberado' => ['sit-liberado',  'LIBERADO'],
-        'urgente'  => ['sit-urgente',   'URGENTE'],
+        'novo'     => ['sit-novo',     'NOVO'],
+        'aberto'   => ['sit-aberto',   'ABERTO'],
+        'a_laudar' => ['sit-a-laudar', 'A LAUDAR'],
+        'em_laudo' => ['sit-em-laudo', 'EM LAUDO'],
+        'rascunho' => ['sit-rascunho', 'RASCUNHO'],
+        'assinado' => ['sit-assinado', 'ASSINADO'],
+        'liberado' => ['sit-liberado', 'LIBERADO'],
+        'urgente'  => ['sit-urgente',  'URGENTE'],
     ];
-    [$cls, $label] = $map[$sit] ?? ['sit-novo', strtoupper(str_replace('_',' ',$sit))];
-    return "<span class=\"situacao-badge {$cls}\">{$label}</span>";
+    [$cls, $label] = $map[$sit] ?? ['sit-novo', strtoupper(str_replace('_', ' ', $sit))];
+    return "<span class=\"sit-badge {$cls}\">{$label}</span>";
 }
 
-/**
- * Formata diferença de tempo entre dois DateTime de forma legível.
- * Retorna string como: "2h 15m", "3d 4h", "1 mês", "2 anos"
- */
-function formatarSla(?string $inicio, ?string $fim = null): string {
-    if (!$inicio) return '';
-    try {
-        $dtInicio = new DateTime($inicio);
-        $dtFim    = $fim ? new DateTime($fim) : new DateTime();
-        $diff     = $dtInicio->diff($dtFim);
-        if ($diff->y >= 1)  return $diff->y . ' ano'  . ($diff->y > 1 ? 's' : '');
-        if ($diff->m >= 1)  return $diff->m . ' mês'  . ($diff->m > 1 ? 'es' : '');
-        if ($diff->d >= 1)  return $diff->d . 'd ' . $diff->h . 'h';
-        if ($diff->h >= 1)  return $diff->h . 'h ' . $diff->i . 'm';
-        if ($diff->i >= 1)  return $diff->i . 'm';
-        return 'agora';
-    } catch (\Throwable $t) {
-        return '';
-    }
+/* ─── ícone de sexo colorido ─────────────────────────────────────────────── */
+function sexoIcon(?string $sex): string {
+    $s = strtoupper(trim($sex ?? ''));
+    if ($s === 'M') return '<span class="sexo-m" title="Masculino"><i class="fa fa-mars"></i></span>';
+    if ($s === 'F') return '<span class="sexo-f" title="Feminino"><i class="fa fa-venus"></i></span>';
+    return '<span class="sexo-nd" title="Não informado"><i class="fa fa-circle-question"></i></span>';
 }
 
-/**
- * Retorna classe CSS de cor para o SLA com base no tempo decorrido (em minutos).
- * Verde: < 60min | Amarelo: 60-240min | Laranja: 240-1440min | Vermelho: > 1440min
- */
-function slaColorClass(?string $inicio, ?string $fim = null): string {
-    if (!$inicio) return 'sla-verde';
-    try {
-        $dtInicio = new DateTime($inicio);
-        $dtFim    = $fim ? new DateTime($fim) : new DateTime();
-        $minutos  = (int)(($dtFim->getTimestamp() - $dtInicio->getTimestamp()) / 60);
-        if ($minutos < 60)   return 'sla-verde';
-        if ($minutos < 240)  return 'sla-amarelo';
-        if ($minutos < 1440) return 'sla-laranja';
-        return 'sla-vermelho';
-    } catch (\Throwable $t) {
-        return 'sla-verde';
-    }
+/* ─── badge de modalidade ────────────────────────────────────────────────── */
+function modBadge(string $mod): string {
+    $mod = strtoupper(trim($mod));
+    return "<span class=\"mod-badge mod-{$mod}\">{$mod}</span>";
 }
 
+/* ─── badge de prioridade ────────────────────────────────────────────────── */
 function prioridadeBadge(string $p): string {
-    if ($p === 'urgente') return '<span class="prio-badge prio-urgente" title="Urgente"><i class="fa fa-triangle-exclamation"></i></span>';
-    if ($p === 'critico') return '<span class="prio-badge prio-critico" title="Crítico"><i class="fa fa-circle-exclamation"></i></span>';
+    if ($p === 'urgente') return '<span class="prio-urgente" title="Urgente"><i class="fa fa-triangle-exclamation"></i></span>';
+    if ($p === 'critico') return '<span class="prio-critico" title="Crítico"><i class="fa fa-circle-exclamation"></i></span>';
     return '';
 }
 
-function modBadge(string $mod): string {
-    $mod = strtolower(trim($mod));
-    return "<span class=\"mod-badge {$mod}\">" . strtoupper($mod) . "</span>";
-}
-
+/* ─── formatar idade ─────────────────────────────────────────────────────── */
 function formatarIdade(array $e): string {
     $age = $e['patient_age'] ?? '';
     if ($age) {
@@ -91,17 +64,49 @@ function formatarIdade(array $e): string {
     return '';
 }
 
+/* ─── SLA: formatar tempo ────────────────────────────────────────────────── */
+function formatarSla(?string $inicio, ?string $fim = null): string {
+    if (!$inicio) return '';
+    try {
+        $dtI  = new DateTime($inicio);
+        $dtF  = $fim ? new DateTime($fim) : new DateTime();
+        $diff = $dtI->diff($dtF);
+        if ($diff->y >= 1)  return $diff->y . 'a';
+        if ($diff->m >= 1)  return $diff->m . 'm' . ($diff->d ? ' ' . $diff->d . 'd' : '');
+        if ($diff->d >= 1)  return $diff->d . 'd ' . $diff->h . 'h';
+        if ($diff->h >= 1)  return $diff->h . 'h ' . $diff->i . 'm';
+        if ($diff->i >= 1)  return $diff->i . 'm';
+        return 'agora';
+    } catch (\Throwable $t) { return ''; }
+}
+
+/* ─── SLA: cor semafórica ────────────────────────────────────────────────── */
+function slaClass(?string $inicio, ?string $fim = null): string {
+    if (!$inicio) return 'sla-verde';
+    try {
+        $min = (int)((( $fim ? new DateTime($fim) : new DateTime())->getTimestamp()
+                       - (new DateTime($inicio))->getTimestamp()) / 60);
+        if ($min < 60)   return 'sla-verde';
+        if ($min < 240)  return 'sla-amarelo';
+        if ($min < 1440) return 'sla-laranja';
+        return 'sla-vermelho';
+    } catch (\Throwable $t) { return 'sla-verde'; }
+}
+
+/* ─── link de ordenação ──────────────────────────────────────────────────── */
 function sortLink(array $filtros, string $col, string $label): string {
     $ativo = $filtros['ordenar'] === $col;
     $dir   = $ativo && $filtros['direcao'] === 'DESC' ? 'ASC' : 'DESC';
     $icon  = $ativo ? ($filtros['direcao'] === 'DESC' ? 'fa-sort-down' : 'fa-sort-up') : 'fa-sort';
     $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]));
-    return "<a href=\"{$url}\" style=\"color:inherit;text-decoration:none;white-space:nowrap;\">{$label} <i class=\"fa {$icon} sort-icon\"></i></a>";
+    return "<a href=\"{$url}\" class=\"sort-link\">{$label} <i class=\"fa {$icon}\"></i></a>";
 }
 
-$temFiltroAtivo = array_filter(array_diff_key($filtros, [
-    'ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1
-]), fn($v) => $v !== '');
+/* ─── variáveis de controle ──────────────────────────────────────────────── */
+$temFiltroAtivo = array_filter(
+    array_diff_key($filtros, ['ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1]),
+    fn($v) => $v !== ''
+);
 
 $periodoLabel = [
     'hoje'=>'Hoje','ontem'=>'Ontem','7dias'=>'7 dias','30dias'=>'30 dias',
@@ -109,62 +114,61 @@ $periodoLabel = [
 ][$filtros['periodo']] ?? '30 dias';
 ?>
 
-<!-- ═══════════════════════════════════════════════════════════
-     TABS
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════ TABS -->
 <div class="pacs-tabs">
     <a href="/agendamentos" class="pacs-tab"><i class="fa fa-calendar-days"></i> Agendamentos</a>
-    <a href="/estudos" class="pacs-tab active"><i class="fa fa-list-check"></i> Estudos</a>
+    <a href="/estudos"      class="pacs-tab active"><i class="fa fa-list-check"></i> Estudos</a>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     PAINEL DE RESUMO (cards)
-═══════════════════════════════════════════════════════════ -->
-<div class="estudos-resumo-cards">
-    <div class="resumo-card" onclick="setPeriodo('hoje')" title="Filtrar por hoje">
-        <div class="resumo-card-valor"><?= number_format($resumo['hoje']) ?></div>
-        <div class="resumo-card-label"><i class="fa fa-calendar-day"></i> Hoje</div>
+<!-- ═══════════════════════════════════════════════════════════ RESUMO -->
+<div class="wl-resumo">
+    <div class="wl-resumo-cards">
+        <div class="wl-card" onclick="setPeriodo('hoje')" title="Hoje">
+            <span class="wl-card-num"><?= number_format($resumo['hoje']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-calendar-day"></i> Hoje</span>
+        </div>
+        <div class="wl-card" onclick="setPeriodo('7dias')" title="7 dias">
+            <span class="wl-card-num"><?= number_format($resumo['semana']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-calendar-week"></i> 7 dias</span>
+        </div>
+        <div class="wl-card wl-card-active" onclick="setPeriodo('30dias')" title="30 dias">
+            <span class="wl-card-num"><?= number_format($resumo['mes']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-calendar"></i> 30 dias</span>
+        </div>
+        <?php if ($resumo['urgentes'] > 0): ?>
+        <div class="wl-card wl-card-urgente" onclick="setFiltroRapido('prioridade','urgente')" title="Urgentes">
+            <span class="wl-card-num"><?= number_format($resumo['urgentes']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-triangle-exclamation"></i> Urgentes</span>
+        </div>
+        <?php endif; ?>
     </div>
-    <div class="resumo-card" onclick="setPeriodo('7dias')" title="Últimos 7 dias">
-        <div class="resumo-card-valor"><?= number_format($resumo['semana']) ?></div>
-        <div class="resumo-card-label"><i class="fa fa-calendar-week"></i> 7 dias</div>
+    <div class="wl-resumo-right">
+        <div class="wl-card wl-card-total" onclick="setPeriodo('todos')" title="Total PACS">
+            <span class="wl-card-num"><?= number_format($resumo['total']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-database"></i> Total PACS</span>
+        </div>
+        <?php if ($ultimaSinc): ?>
+        <div class="wl-sinc">
+            <i class="fa fa-rotate"></i>
+            Sinc. <?= htmlspecialchars(date('d/m H:i', strtotime($ultimaSinc))) ?>
+        </div>
+        <?php endif; ?>
     </div>
-    <div class="resumo-card" onclick="setPeriodo('30dias')" title="Últimos 30 dias">
-        <div class="resumo-card-valor"><?= number_format($resumo['mes']) ?></div>
-        <div class="resumo-card-label"><i class="fa fa-calendar"></i> 30 dias</div>
-    </div>
-    <?php if ($resumo['urgentes'] > 0): ?>
-    <div class="resumo-card resumo-card-urgente" onclick="setFiltroRapido('prioridade','urgente')" title="Ver urgentes">
-        <div class="resumo-card-valor"><?= number_format($resumo['urgentes']) ?></div>
-        <div class="resumo-card-label"><i class="fa fa-triangle-exclamation"></i> Urgentes</div>
-    </div>
-    <?php endif; ?>
-    <div class="resumo-card resumo-card-total" onclick="setPeriodo('todos')" title="Ver todos" style="margin-left:auto;">
-        <div class="resumo-card-valor"><?= number_format($resumo['total']) ?></div>
-        <div class="resumo-card-label"><i class="fa fa-database"></i> Total PACS</div>
-    </div>
-    <?php if ($ultimaSinc): ?>
-    <div class="resumo-sinc-info">
-        <i class="fa fa-rotate"></i>
-        Sinc. <?= htmlspecialchars(date('d/m H:i', strtotime($ultimaSinc))) ?>
-    </div>
-    <?php endif; ?>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     FORMULÁRIO DE FILTROS
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════ FILTROS -->
 <form id="formFiltros" method="GET" action="/estudos" autocomplete="off">
 
-<!-- Linha 1 -->
-<div class="pacs-filters">
-    <input type="text" name="q" class="form-control" style="width:190px;"
-           placeholder="Pesquisar por..." value="<?= htmlspecialchars($filtros['q']) ?>">
-    <input type="text" name="paciente" class="form-control" style="width:175px;"
+<!-- Linha 1: busca geral + período + ordenação + unidade + situação + ações -->
+<div class="wl-filters wl-filters-row1">
+    <input type="text" name="q" class="wl-input" style="width:160px;"
+           placeholder="Pesquisar..." value="<?= htmlspecialchars($filtros['q']) ?>">
+
+    <input type="text" name="paciente" class="wl-input" style="width:160px;"
            placeholder="Nome do paciente" value="<?= htmlspecialchars($filtros['paciente']) ?>">
 
     <!-- Período -->
-    <select name="periodo" id="selectPeriodo" class="form-select" style="width:130px;"
+    <select name="periodo" id="selectPeriodo" class="wl-select" style="width:110px;"
             onchange="toggleDatasPersonalizadas(this.value)">
         <?php foreach (['hoje'=>'Hoje','ontem'=>'Ontem','7dias'=>'7 dias','30dias'=>'30 dias','90dias'=>'90 dias','ano'=>'Este ano','todos'=>'Todos','personalizado'=>'Personalizado'] as $v=>$l): ?>
             <option value="<?= $v ?>" <?= $filtros['periodo']===$v?'selected':'' ?>><?= $l ?></option>
@@ -172,81 +176,89 @@ $periodoLabel = [
     </select>
 
     <span id="datasPersonalizadas" style="display:<?= $filtros['periodo']==='personalizado'?'flex':'none' ?>;gap:.25rem;align-items:center;">
-        <input type="date" name="dt_inicio" class="form-control" style="width:135px;" value="<?= htmlspecialchars($filtros['dt_inicio']) ?>">
-        <span style="color:var(--pacs-text-muted);font-size:.8rem;">até</span>
-        <input type="date" name="dt_fim" class="form-control" style="width:135px;" value="<?= htmlspecialchars($filtros['dt_fim']) ?>">
+        <input type="date" name="dt_inicio" class="wl-input" style="width:130px;" value="<?= htmlspecialchars($filtros['dt_inicio']) ?>">
+        <span class="wl-sep">até</span>
+        <input type="date" name="dt_fim"    class="wl-input" style="width:130px;" value="<?= htmlspecialchars($filtros['dt_fim']) ?>">
     </span>
 
-    <select name="ordenar" class="form-select" style="width:155px;">
-        <option value="study_date"      <?= $filtros['ordenar']==='study_date'?'selected':'' ?>>Ordenar: Dt Estudo</option>
-        <option value="patient_name"    <?= $filtros['ordenar']==='patient_name'?'selected':'' ?>>Ordenar: Paciente</option>
-        <option value="institution_name"<?= $filtros['ordenar']==='institution_name'?'selected':'' ?>>Ordenar: Unidade</option>
-        <option value="modalities"      <?= $filtros['ordenar']==='modalities'?'selected':'' ?>>Ordenar: Modalidade</option>
-        <option value="situacao"        <?= $filtros['ordenar']==='situacao'?'selected':'' ?>>Ordenar: Situação</option>
-        <option value="prioridade"      <?= $filtros['ordenar']==='prioridade'?'selected':'' ?>>Ordenar: Prioridade</option>
+    <select name="ordenar" class="wl-select" style="width:148px;">
+        <option value="study_date"       <?= $filtros['ordenar']==='study_date'?'selected':'' ?>>Dt Estudo</option>
+        <option value="patient_name"     <?= $filtros['ordenar']==='patient_name'?'selected':'' ?>>Paciente</option>
+        <option value="institution_name" <?= $filtros['ordenar']==='institution_name'?'selected':'' ?>>Unidade</option>
+        <option value="modalities"       <?= $filtros['ordenar']==='modalities'?'selected':'' ?>>Modalidade</option>
+        <option value="situacao"         <?= $filtros['ordenar']==='situacao'?'selected':'' ?>>Situação</option>
+        <option value="prioridade"       <?= $filtros['ordenar']==='prioridade'?'selected':'' ?>>Prioridade</option>
     </select>
-    <select name="direcao" class="form-select" style="width:115px;">
-        <option value="DESC" <?= $filtros['direcao']==='DESC'?'selected':'' ?>>Decrescente</option>
-        <option value="ASC"  <?= $filtros['direcao']==='ASC'?'selected':'' ?>>Crescente</option>
+    <select name="direcao" class="wl-select" style="width:100px;">
+        <option value="DESC" <?= $filtros['direcao']==='DESC'?'selected':'' ?>>Desc.</option>
+        <option value="ASC"  <?= $filtros['direcao']==='ASC'?'selected':'' ?>>Cresc.</option>
     </select>
 
-    <select name="unidade" class="form-select" style="width:155px;">
+    <select name="unidade" class="wl-select" style="width:145px;">
         <option value="">Todas as unidades</option>
         <?php foreach ($unidades as $u): ?>
             <option value="<?= htmlspecialchars($u) ?>" <?= $filtros['unidade']===$u?'selected':'' ?>><?= htmlspecialchars($u) ?></option>
         <?php endforeach; ?>
     </select>
 
-    <select name="situacao" id="selectSituacao" class="form-select" style="width:150px;">
+    <select name="situacao" id="selectSituacao" class="wl-select" style="width:138px;">
         <option value="">Todas as situações</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>NOVO</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>ABERTO</option>
+        <option value="a_laudar" <?= $filtros['situacao']==='a_laudar'?'selected':'' ?>>A LAUDAR</option>
         <option value="em_laudo" <?= $filtros['situacao']==='em_laudo'?'selected':'' ?>>EM LAUDO</option>
         <option value="rascunho" <?= $filtros['situacao']==='rascunho'?'selected':'' ?>>RASCUNHO</option>
         <option value="assinado" <?= $filtros['situacao']==='assinado'?'selected':'' ?>>ASSINADO</option>
         <option value="liberado" <?= $filtros['situacao']==='liberado'?'selected':'' ?>>LIBERADO</option>
     </select>
 
-    <button type="submit" class="btn-pacs-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
+    <button type="submit" class="wl-btn-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
     <?php if ($temFiltroAtivo): ?>
-    <a href="/estudos" class="btn-pacs-outline" title="Limpar filtros"><i class="fa fa-xmark"></i> Limpar</a>
+    <a href="/estudos" class="wl-btn-outline"><i class="fa fa-xmark"></i> Limpar</a>
     <?php endif; ?>
 </div>
 
-<!-- Linha 2: modalidades + solicitante (rótulo; internamente ainda é o filtro/coluna "especialidade", ver modules/worklist-estudos.md) + médico + por página -->
-<div class="pacs-filters-row2">
-    <select name="situacao_rapida" class="form-select" style="width:150px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
+<!-- Linha 2: situação rápida + modalidades + solicitante + médico + por página + info -->
+<div class="wl-filters wl-filters-row2">
+    <!-- Situação rápida -->
+    <select name="situacao_rapida" class="wl-select wl-select-sm"
             onchange="document.getElementById('selectSituacao').value=this.value; document.getElementById('formFiltros').submit();">
         <option value="">A laudar (Todos)</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>Novo</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>Aberto</option>
+        <option value="a_laudar" <?= $filtros['situacao']==='a_laudar'?'selected':'' ?>>A laudar</option>
         <option value="em_laudo" <?= $filtros['situacao']==='em_laudo'?'selected':'' ?>>Em laudo</option>
         <option value="urgente"  <?= $filtros['situacao']==='urgente'?'selected':'' ?>>Urgente</option>
     </select>
-    <span style="color:var(--pacs-border);margin:0 .25rem;">|</span>
 
+    <span class="wl-divider"></span>
+
+    <!-- Botões de modalidade -->
     <?php
-    $mods    = ['CR','CT','CTG','DO','DR','DX','ECG','ES','MG','MR','NM','OF','OT','PT','RF','US','XA'];
+    $modsAll  = ['CR','CT','CTG','DO','DR','DX','ECG','ES','MG','MR','NM','OF','OT','PT','RF','US','XA'];
     $modAtual = strtoupper($filtros['modalidade']);
-    foreach ($mods as $m):
+    foreach ($modsAll as $m):
     ?>
-        <button type="button" class="mod-btn <?= $modAtual===$m?'active':'' ?>" onclick="setModalidade('<?= $m ?>')"><?= $m ?></button>
+        <button type="button" class="wl-mod-btn <?= $modAtual===$m?'active':'' ?>"
+                onclick="setModalidade('<?= $m ?>')"><?= $m ?></button>
     <?php endforeach; ?>
     <input type="hidden" name="modalidade" id="inputModalidade" value="<?= htmlspecialchars($filtros['modalidade']) ?>">
 
-    <span style="color:var(--pacs-border);margin:0 .25rem;">|</span>
+    <span class="wl-divider"></span>
 
-    <input type="text" name="especialidade" class="form-control" style="width:155px;"
+    <!-- Solicitante -->
+    <input type="text" name="especialidade" class="wl-input wl-input-sm" style="width:140px;"
            placeholder="Solicitante" value="<?= htmlspecialchars($filtros['especialidade']) ?>">
 
+    <!-- Médico responsável -->
     <?php if (!empty($medicos)): ?>
-    <div style="position:relative;display:flex;align-items:center;gap:.25rem;">
-        <select name="medico" class="form-select" style="width:175px;font-size:.72rem;height:28px;padding:.1rem .5rem;<?= $isMedicoLogado ? 'border-color:var(--pacs-primary);' : '' ?>">
+    <div class="wl-medico-wrap">
+        <select name="medico" class="wl-input wl-input-sm" style="width:180px;<?= $isMedicoLogado ? 'border-color:var(--pacs-primary);' : '' ?>">
             <?php if (!$isMedicoLogado): ?>
             <option value="">Médico responsável</option>
             <?php endif; ?>
-            <?php foreach ($medicos as $med): ?>
-                <?php $nomeMed = is_array($med) ? $med['nome'] : $med; ?>
+            <?php foreach ($medicos as $med):
+                $nomeMed = is_array($med) ? $med['nome'] : $med; ?>
                 <option value="<?= htmlspecialchars($nomeMed) ?>"
                     <?= $filtros['medico']===$nomeMed?'selected':'' ?>>
                     <?= htmlspecialchars($nomeMed) ?>
@@ -254,239 +266,250 @@ $periodoLabel = [
             <?php endforeach; ?>
         </select>
         <?php if ($isMedicoLogado): ?>
-        <span title="Você só pode visualizar seus próprios estudos"
-              style="font-size:.65rem;color:var(--pacs-primary);white-space:nowrap;cursor:help;">
-            <i class="fa fa-lock"></i>
-        </span>
+        <i class="fa fa-lock" style="font-size:.65rem;color:var(--pacs-primary);"
+           title="Você só pode visualizar seus próprios estudos"></i>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 
-    <select name="por_pagina" class="form-select" style="width:80px;font-size:.72rem;height:28px;padding:.1rem .5rem;"
+    <!-- Por página -->
+    <select name="por_pagina" class="wl-select wl-select-sm"
             onchange="document.getElementById('formFiltros').submit()">
         <?php foreach ([25,50,100,250] as $pp): ?>
             <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp ?>/pág</option>
         <?php endforeach; ?>
     </select>
 
-    <span style="font-size:.72rem;color:var(--pacs-text-muted);margin-left:auto;display:flex;align-items:center;gap:.4rem;">
-        <?= number_format($total) ?> estudo<?= $total!==1?'s':'' ?>
+    <!-- Info direita -->
+    <div class="wl-info-right">
+        <span><?= number_format($total) ?> estudo<?= $total!==1?'s':'' ?></span>
         <?php if (isset($tempoConsulta)): ?>
-            <span style="color:var(--pacs-border);">·</span>
-            <span title="Tempo de consulta SQL"><?= $tempoConsulta ?>ms</span>
+        <span class="wl-sep-dot">·</span>
+        <span title="Tempo SQL"><?= $tempoConsulta ?>ms</span>
         <?php endif; ?>
-        <span style="color:var(--pacs-border);">|</span>
-        <i class="fa fa-server" style="font-size:.65rem;"></i> Orthanc PACS
-        <?php if ($filtros['periodo']!=='todos'): ?>
-            <span style="color:var(--pacs-border);">·</span>
-            <span class="periodo-badge"><?= $periodoLabel ?></span>
+        <span class="wl-sep-dot">·</span>
+        <i class="fa fa-server" style="font-size:.62rem;"></i>
+        <span>Orthanc PACS</span>
+        <?php if ($filtros['periodo'] !== 'todos'): ?>
+        <span class="wl-period-badge"><?= $periodoLabel ?></span>
         <?php endif; ?>
-    </span>
+    </div>
 </div>
 </form>
 
-<!-- ═══════════════════════════════════════════════════════════
-     TABELA DE ESTUDOS
-═══════════════════════════════════════════════════════════ -->
-<div class="pacs-table-wrapper" style="max-height:calc(100vh - 340px);">
-    <table class="pacs-table">
-        <thead>
-            <tr>
-                <th style="width:20px;"><input type="checkbox" id="checkAll" onchange="toggleAll(this)" style="accent-color:var(--pacs-primary);"></th>
-                <th style="width:105px;"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
-                <th><?= sortLink($filtros,'patient_name','Paciente') ?></th>
-                <th style="width:145px;"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
-                <th style="width:50px;">M</th>
-                <th style="width:130px;"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
-                <th>Estudo</th>
-                <th style="width:95px;"><?= sortLink($filtros,'situacao','Situação') ?></th>
-                <th style="width:70px;text-align:center;" title="SLA Padrão: tempo desde chegada na plataforma">
-                    <span class="sla-th-label"><i class="fa fa-clock"></i> SLA</span>
-                </th>
-                <th style="width:80px;text-align:center;">Ações</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php if (empty($estudos)): ?>
-            <tr>
-                <td colspan="9" style="text-align:center;padding:3rem 1rem;">
-                    <div style="font-size:2rem;margin-bottom:.75rem;opacity:.4;"><i class="fa fa-magnifying-glass"></i></div>
-                    <div style="font-weight:600;color:var(--pacs-text-secondary);margin-bottom:.4rem;">
-                        Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.
+<!-- ═══════════════════════════════════════════════════════════ TABELA -->
+<div class="wl-table-wrap">
+<table class="wl-table">
+    <thead>
+        <tr>
+            <th class="col-check"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
+            <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
+            <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente') ?></th>
+            <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
+            <th class="col-estudo">Estudo</th>
+            <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
+            <th class="col-sit"><?= sortLink($filtros,'situacao','Situação') ?></th>
+            <th class="col-sla" title="SLA Padrão e SLA Médico"><i class="fa fa-clock"></i> SLA</th>
+            <th class="col-acoes">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    <?php if (empty($estudos)): ?>
+        <tr>
+            <td colspan="9" class="wl-empty">
+                <i class="fa fa-magnifying-glass"></i>
+                <div>Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.</div>
+                <?php if ($temFiltroAtivo): ?>
+                <a href="/estudos">Limpar filtros</a>
+                <?php endif; ?>
+            </td>
+        </tr>
+    <?php else: ?>
+        <?php foreach ($estudos as $e):
+            $sit  = $e['situacao']  ?? 'novo';
+            $prio = $e['prioridade']?? 'normal';
+            $sex  = strtoupper(trim($e['patient_sex'] ?? ''));
+            $mods = array_filter(array_map('trim', explode('\\', $e['modalities'] ?? '')));
+            if (empty($mods) && !empty($e['modalities'])) $mods = [trim($e['modalities'])];
+            $rowClass = 'wl-row' . ($prio==='urgente'?' row-urgente':($prio==='critico'?' row-critico':''));
+
+            // Data/Hora
+            $dtFmt = '—';
+            if (!empty($e['study_date'])) {
+                try { $dtFmt = (new DateTime($e['study_date']))->format('d/m/Y'); } catch(\Throwable $t) {}
+            }
+            $hrFmt = '';
+            if (!empty($e['study_time']) && strlen($e['study_time']) >= 4) {
+                $hrFmt = substr($e['study_time'],0,2).':'.substr($e['study_time'],2,2);
+            }
+
+            // SLA Padrão
+            $slaP    = formatarSla($e['recebido_em'] ?? null);
+            $slaPCls = slaClass($e['recebido_em'] ?? null);
+
+            // SLA Médico
+            $slaM    = '';
+            $slaMCls = '';
+            if (!empty($e['assumido_em'])) {
+                $fimSla = in_array($sit, ['liberado','assinado']) ? ($e['laudo_assinado_em'] ?? null) : null;
+                $slaM    = formatarSla($e['assumido_em'], $fimSla);
+                $slaMCls = slaClass($e['assumido_em'], $fimSla);
+            }
+
+            // Permissões de ação
+            $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
+            $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
+
+            // Recebido há
+            $recebidoHa = formatarSla($e['recebido_em'] ?? null);
+        ?>
+        <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" title="Duplo clique para abrir">
+            <!-- Check -->
+            <td class="col-check">
+                <input type="checkbox" class="row-check" value="<?= $e['id'] ?>">
+            </td>
+
+            <!-- Data/Hora -->
+            <td class="col-dt">
+                <?= prioridadeBadge($prio) ?>
+                <div class="wl-date"><?= $dtFmt ?></div>
+                <?php if ($hrFmt): ?><div class="wl-time"><?= $hrFmt ?></div><?php endif; ?>
+            </td>
+
+            <!-- Paciente: ícone sexo + nome + info -->
+            <td class="col-paciente">
+                <div class="wl-pac-row">
+                    <?= sexoIcon($sex) ?>
+                    <div class="wl-pac-info">
+                        <div class="wl-pac-nome"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></div>
+                        <div class="wl-pac-sub">
+                            <?php $idade = formatarIdade($e); if ($idade) echo $idade; ?>
+                            <?php if (!empty($e['patient_id'])): ?>
+                                <span class="wl-sep-dot">·</span><?= htmlspecialchars($e['patient_id']) ?>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                    <div style="font-size:.8rem;color:var(--pacs-text-muted);">
-                        <?php if ($temFiltroAtivo): ?>
-                            <a href="/estudos" style="color:var(--pacs-primary);">Limpar filtros</a> para ver todos os estudos.
-                        <?php else: ?>
-                            Os estudos são importados do servidor Orthanc PACS.<br>
-                            Acesse <a href="/platform/servidor-pacs" style="color:var(--pacs-primary);">Plataforma &rsaquo; Servidor PACS</a>
-                            e clique em <strong>Sincronizar</strong>.
-                        <?php endif; ?>
-                    </div>
-                </td>
-            </tr>
-        <?php else: ?>
-            <?php foreach ($estudos as $e):
-                $sit  = $e['situacao']  ?? 'novo';
-                $prio = $e['prioridade']?? 'normal';
-                $mods = array_filter(array_map('trim', explode('\\', $e['modalities'] ?? '')));
-                if (empty($mods) && !empty($e['modalities'])) $mods = [trim($e['modalities'])];
-                $rowClass = $prio==='urgente'?'row-urgente':($prio==='critico'?'row-critico':'');
-                // Data/Hora
-                $dtFmt = '—';
-                if (!empty($e['study_date'])) {
-                    try { $dtFmt = (new DateTime($e['study_date']))->format('d/m/Y'); } catch(\Throwable $t) { $dtFmt = $e['study_date']; }
-                }
-                $hrFmt = '';
-                if (!empty($e['study_time']) && strlen($e['study_time']) >= 4) {
-                    $hrFmt = substr($e['study_time'],0,2).':'.substr($e['study_time'],2,2);
-                }
-            ?>
-            <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" title="Duplo clique para abrir no Voxel View">
-                <td><input type="checkbox" class="row-check" value="<?= $e['id'] ?>" style="accent-color:var(--pacs-primary);"></td>
+                </div>
+            </td>
 
-                <td class="dt-estudo">
-                    <?= prioridadeBadge($prio) ?>
-                    <div class="date"><?= $dtFmt ?></div>
-                    <?php if ($hrFmt): ?><div class="time"><?= $hrFmt ?></div><?php endif; ?>
-                </td>
+            <!-- Unidade -->
+            <td class="col-unidade">
+                <?= htmlspecialchars($e['institution_name'] ?? '—') ?>
+            </td>
 
-                <td class="paciente-cell">
-                    <div class="nome"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></div>
-                    <div class="info">
-                        <?= $e['patient_sex'] ?? '' ?>
-                        <?php $idade = formatarIdade($e); if ($idade) echo ' · ' . $idade; ?>
-                        <?php if (!empty($e['patient_id'])): ?>
-                            · <span title="Patient ID"><?= htmlspecialchars($e['patient_id']) ?></span>
-                        <?php endif; ?>
-                    </div>
-                </td>
-
-                <td style="font-size:.75rem;color:var(--pacs-text-secondary);">
-                    <?= htmlspecialchars($e['institution_name'] ?? '—') ?>
-                </td>
-
-                <td>
+            <!-- Estudo: modalidade + descrição + séries/imagens + accession -->
+            <td class="col-estudo">
+                <div class="wl-estudo-top">
                     <?php foreach ($mods as $mod) echo modBadge($mod); ?>
-                    <?php if (empty($mods)) echo '<span class="text-pacs-muted">—</span>'; ?>
-                </td>
-
-                <td>
-                    <?php if (!empty($e['especialidade'])): ?>
-                        <span class="esp-tag"><?= htmlspecialchars($e['especialidade']) ?></span>
-                    <?php elseif (!empty($e['referring_physician_name'])): ?>
-                        <span class="esp-tag" style="opacity:.7;"><?= htmlspecialchars($e['referring_physician_name']) ?></span>
-                    <?php else: ?>
-                        <span class="text-pacs-muted">—</span>
+                    <span class="wl-estudo-desc"><?= htmlspecialchars($e['study_description'] ?: '') ?></span>
+                </div>
+                <div class="wl-estudo-sub">
+                    <?php if (!empty($e['num_series'])): ?>
+                        <span title="Séries"><i class="fa fa-layer-group"></i> <?= $e['num_series'] ?></span>
                     <?php endif; ?>
-                </td>
+                    <?php if (!empty($e['num_instances'])): ?>
+                        <span title="Imagens"><i class="fa fa-images"></i> <?= number_format($e['num_instances']) ?></span>
+                    <?php endif; ?>
+                    <?php if (!empty($e['accession_number'])): ?>
+                        <span class="wl-acc" title="Accession"><?= htmlspecialchars($e['accession_number']) ?></span>
+                    <?php endif; ?>
+                    <?php if ($recebidoHa): ?>
+                        <span class="wl-recebido" title="Recebido há <?= htmlspecialchars($recebidoHa) ?>">
+                            <i class="fa fa-clock"></i> <?= $recebidoHa ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </td>
 
-                <td>
-                    <div style="font-size:.78rem;font-weight:500;"><?= htmlspecialchars($e['study_description'] ?: '—') ?></div>
-                    <div style="font-size:.68rem;color:var(--pacs-text-muted);display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.1rem;">
-                        <?php if (!empty($e['num_series'])): ?>
-                            <span title="Séries"><i class="fa fa-layer-group"></i> <?= $e['num_series'] ?></span>
-                        <?php endif; ?>
-                        <?php if (!empty($e['num_instances'])): ?>
-                            <span title="Imagens"><i class="fa fa-images"></i> <?= number_format($e['num_instances']) ?></span>
-                        <?php endif; ?>
-                        <?php if (!empty($e['accession_number'])): ?>
-                            <span style="opacity:.6;" title="Accession"><?= htmlspecialchars($e['accession_number']) ?></span>
-                        <?php endif; ?>
-                    </div>
-                </td>
-
-                <td><?= situacaoBadge($sit) ?></td>
-
+            <!-- Solicitante -->
+            <td class="col-solicitante">
                 <?php
-                // ── SLA Padrão: tempo desde recebido_em (chegada na plataforma)
-                $slaPadraoTxt   = formatarSla($e['recebido_em'] ?? null);
-                $slaPadraoClass = slaColorClass($e['recebido_em'] ?? null);
-                // ── SLA Médico: tempo desde assumido_em (só exibe se estudo foi assumido)
-                $slaMedicoTxt   = '';
-                $slaMedicoClass = '';
-                if (!empty($e['assumido_em'])) {
-                    // SLA Médico para quando estudo está liberado: usa laudo_assinado_em como fim
-                    $fimSla = ($sit === 'liberado' || $sit === 'assinado') ? ($e['laudo_assinado_em'] ?? null) : null;
-                    $slaMedicoTxt   = formatarSla($e['assumido_em'], $fimSla);
-                    $slaMedicoClass = slaColorClass($e['assumido_em'], $fimSla);
-                }
-                ?>
-                <td style="text-align:center;">
-                    <?php if ($slaPadraoTxt): ?>
-                    <div class="sla-badge <?= $slaPadraoClass ?>" title="SLA Padrão: <?= htmlspecialchars($slaPadraoTxt) ?> desde chegada na plataforma">
-                        <i class="fa fa-clock" style="font-size:.6rem;"></i> <?= $slaPadraoTxt ?>
-                    </div>
-                    <?php endif; ?>
-                    <?php if ($slaMedicoTxt): ?>
-                    <div class="sla-badge sla-medico-badge <?= $slaMedicoClass ?>" title="SLA Médico: <?= htmlspecialchars($slaMedicoTxt) ?> desde assunção por <?= htmlspecialchars($e['assumido_por'] ?? '') ?>">
-                        <i class="fa fa-user-doctor" style="font-size:.6rem;"></i> <?= $slaMedicoTxt ?>
-                    </div>
-                    <?php endif; ?>
-                    <?php if (!$slaPadraoTxt && !$slaMedicoTxt): ?>
-                    <span style="color:var(--pacs-text-muted);font-size:.7rem;">—</span>
-                    <?php endif; ?>
-                </td>
+                $sol = $e['especialidade'] ?: ($e['referring_physician_name'] ?? '');
+                if ($sol): ?>
+                    <span class="wl-sol-tag"><?= htmlspecialchars($sol) ?></span>
+                <?php else: ?>
+                    <span class="wl-muted">—</span>
+                <?php endif; ?>
+            </td>
 
-                <td style="text-align:center;">
-                    <?php
-                    // Botão Assumir: visível para médicos logados quando estudo está em novo/aberto
-                    $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
-                    // Botão Laudo: visível para médicos logados quando estudo está a_laudar/em_laudo
-                    $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
-                    ?>
+            <!-- Situação -->
+            <td class="col-sit">
+                <?= situacaoBadge($sit) ?>
+                <?php if (!empty($e['assumido_por'])): ?>
+                <div class="wl-assumido-por" title="Assumido por <?= htmlspecialchars($e['assumido_por']) ?>">
+                    <i class="fa fa-user-doctor"></i> <?= htmlspecialchars(explode(' ', $e['assumido_por'])[0]) ?>
+                </div>
+                <?php endif; ?>
+            </td>
+
+            <!-- SLA -->
+            <td class="col-sla">
+                <?php if ($slaP): ?>
+                <div class="sla-pill <?= $slaPCls ?>" title="SLA Padrão: <?= htmlspecialchars($slaP) ?> desde chegada">
+                    <i class="fa fa-clock"></i> <?= $slaP ?>
+                </div>
+                <?php endif; ?>
+                <?php if ($slaM): ?>
+                <div class="sla-pill sla-med <?= $slaMCls ?>" title="SLA Médico: <?= htmlspecialchars($slaM) ?> desde assunção">
+                    <i class="fa fa-user-doctor"></i> <?= $slaM ?>
+                </div>
+                <?php endif; ?>
+                <?php if (!$slaP && !$slaM): ?>
+                <span class="wl-muted">—</span>
+                <?php endif; ?>
+            </td>
+
+            <!-- Ações -->
+            <td class="col-acoes">
+                <div class="wl-acoes-wrap">
                     <?php if ($podeAssumir): ?>
-                    <button type="button"
-                            class="pacs-btn btn-assumir"
+                    <button type="button" class="wl-btn-assumir"
                             data-id="<?= $e['id'] ?>"
                             data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
-                            title="Assumir este estudo para laudo">
+                            title="Assumir para laudo">
                         <i class="fa fa-hand-holding-medical"></i> Assumir
                     </button>
                     <?php elseif ($podeLaudar): ?>
-                    <div style="display:flex;flex-direction:column;gap:.2rem;align-items:center;">
-                        <span class="pacs-btn btn-laudo-placeholder" title="Laudo disponível — módulo em breve"
-                              style="opacity:.7;cursor:default;font-size:.68rem;">
-                            <i class="fa fa-file-medical"></i> Laudo
-                        </span>
-                    </div>
+                    <button type="button" class="wl-btn-laudo" title="Módulo de laudo em breve" disabled>
+                        <i class="fa fa-file-medical"></i> Laudo
+                    </button>
                     <?php endif; ?>
+
                     <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
-                    <div class="viewer-launcher">
-                        <button type="button" class="pacs-btn btn-open viewer-launcher-trigger" title="Abrir estudo">
-                            <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.6rem;margin-left:.15rem;"></i>
+                    <div class="wl-viewer-wrap">
+                        <button type="button" class="wl-btn-abrir viewer-trigger" title="Abrir estudo">
+                            <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.55rem;"></i>
                         </button>
-                        <div class="viewer-menu">
-                            <a href="/estudos/<?= $e['id'] ?>/abrir" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>">
+                        <div class="wl-viewer-menu">
+                            <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
                                 <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
                             </a>
-                            <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>">
-                                <img src="/assets/img/icon-radiant.ico" alt="" class="viewer-menu-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
+                                <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
                             </a>
-                            <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="viewer-menu-item" target="_blank" title="<?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>">
-                                <img src="/assets/img/icon-weasis.svg" alt="" class="viewer-menu-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="wl-vm-item" target="_blank">
+                                <img src="/assets/img/icon-weasis.svg" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
                             </a>
                         </div>
                     </div>
                     <?php else: ?>
-                    <span class="pacs-btn" style="opacity:.35;cursor:not-allowed;" title="Sem StudyInstanceUID">
+                    <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="Sem UID">
                         <i class="fa fa-eye-slash"></i>
                     </span>
                     <?php endif; ?>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        <?php endif; ?>
-        </tbody>
-    </table>
+                </div>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+    <?php endif; ?>
+    </tbody>
+</table>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     PAGINAÇÃO
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════ PAGINAÇÃO -->
 <?php if ($totalPages > 1 || $total > 0): ?>
-<div class="pacs-pagination">
-    <span style="font-size:.75rem;color:var(--pacs-text-muted);">
+<div class="wl-pagination">
+    <span class="wl-pag-info">
         <?php if ($filtros['por_pagina'] > 0 && $total > 0): ?>
             Mostrando <?= number_format(($currentPage-1)*$filtros['por_pagina']+1) ?>–<?= number_format(min($currentPage*$filtros['por_pagina'],$total)) ?>
             de <?= number_format($total) ?> estudos
@@ -495,84 +518,248 @@ $periodoLabel = [
         <?php endif; ?>
     </span>
     <?php if ($totalPages > 1): ?>
-    <div class="page-links">
+    <div class="wl-pag-links">
         <?php if ($currentPage > 1): ?>
-            <a href="<?= estudoUrl($filtros, 1) ?>" class="page-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
-            <a href="<?= estudoUrl($filtros, $currentPage-1) ?>" class="page-btn"><i class="fa fa-chevron-left"></i></a>
+            <a href="<?= estudoUrl($filtros, 1) ?>" class="wl-pag-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage-1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-left"></i></a>
         <?php endif; ?>
         <?php
         $start = max(1, $currentPage-2); $end = min($totalPages, $currentPage+2);
-        if ($start > 1) echo '<span class="page-btn" style="pointer-events:none;opacity:.4;">…</span>';
-        for ($p = $start; $p <= $end; $p++):
+        if ($start > 1) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
+        for ($pg = $start; $pg <= $end; $pg++):
         ?>
-            <a href="<?= estudoUrl($filtros, $p) ?>" class="page-btn <?= $p===$currentPage?'active':'' ?>"><?= $p ?></a>
+            <a href="<?= estudoUrl($filtros, $pg) ?>" class="wl-pag-btn <?= $pg===$currentPage?'active':'' ?>"><?= $pg ?></a>
         <?php endfor;
-        if ($end < $totalPages) echo '<span class="page-btn" style="pointer-events:none;opacity:.4;">…</span>';
+        if ($end < $totalPages) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
         ?>
         <?php if ($currentPage < $totalPages): ?>
-            <a href="<?= estudoUrl($filtros, $currentPage+1) ?>" class="page-btn"><i class="fa fa-chevron-right"></i></a>
-            <a href="<?= estudoUrl($filtros, $totalPages) ?>" class="page-btn" title="Última"><i class="fa fa-angles-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage+1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $totalPages) ?>" class="wl-pag-btn" title="Última"><i class="fa fa-angles-right"></i></a>
         <?php endif; ?>
     </div>
-    <span style="font-size:.72rem;color:var(--pacs-text-muted);">Página <?= $currentPage ?> de <?= $totalPages ?></span>
+    <span class="wl-pag-info">Página <?= $currentPage ?> de <?= $totalPages ?></span>
     <?php endif; ?>
 </div>
 <?php endif; ?>
 
-<!-- ═══════════════════════════════════════════════════════════
-     ESTILOS ADICIONAIS
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════ ESTILOS -->
 <style>
-.estudos-resumo-cards{display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;}
-.resumo-card{background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:8px;padding:.5rem .9rem;min-width:90px;text-align:center;transition:border-color .15s,background .15s;cursor:pointer;}
-.resumo-card:hover{border-color:var(--pacs-primary);background:rgba(79,195,247,.06);}
-.resumo-card-urgente{border-color:#f97316;}
-.resumo-card-urgente:hover{background:rgba(249,115,22,.08);}
-.resumo-card-total{border-color:var(--pacs-primary);}
-.resumo-card-valor{font-size:1.4rem;font-weight:700;color:var(--pacs-text-primary);line-height:1.2;}
-.resumo-card-urgente .resumo-card-valor{color:#f97316;}
-.resumo-card-total .resumo-card-valor{color:var(--pacs-primary);}
-.resumo-card-label{font-size:.65rem;color:var(--pacs-text-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:.15rem;}
-.resumo-sinc-info{display:flex;align-items:center;font-size:.7rem;color:var(--pacs-text-muted);padding:.25rem .5rem;border-left:1px solid var(--pacs-border);gap:.3rem;}
-.periodo-badge{background:rgba(79,195,247,.15);color:var(--pacs-primary);border-radius:4px;padding:.05rem .35rem;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
-.prio-badge{display:inline-block;margin-right:.2rem;}
-.prio-urgente{color:#f97316;}
-.prio-critico{color:#ef4444;}
+/* ── Reset / base ───────────────────────────────────────────────────────── */
+.wl-muted{color:var(--pacs-text-muted);font-size:.72rem;}
+.wl-sep{color:var(--pacs-text-muted);font-size:.75rem;}
+.wl-sep-dot{color:var(--pacs-border);margin:0 .2rem;}
+.wl-divider{width:1px;height:18px;background:var(--pacs-border);margin:0 .3rem;flex-shrink:0;}
+
+/* ── Resumo ─────────────────────────────────────────────────────────────── */
+.wl-resumo{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap;}
+.wl-resumo-cards{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+.wl-resumo-right{display:flex;align-items:center;gap:.5rem;}
+.wl-card{background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:8px;
+    padding:.4rem .85rem;min-width:82px;text-align:center;cursor:pointer;
+    transition:border-color .15s,background .15s;display:flex;flex-direction:column;gap:.05rem;}
+.wl-card:hover{border-color:var(--pacs-primary);background:rgba(79,195,247,.06);}
+.wl-card-active{border-color:var(--pacs-primary);}
+.wl-card-urgente{border-color:#f97316;}
+.wl-card-urgente:hover{background:rgba(249,115,22,.08);}
+.wl-card-total{border-color:var(--pacs-primary);}
+.wl-card-num{font-size:1.35rem;font-weight:700;color:var(--pacs-text-primary);line-height:1.2;}
+.wl-card-urgente .wl-card-num{color:#f97316;}
+.wl-card-total .wl-card-num{color:var(--pacs-primary);}
+.wl-card-lbl{font-size:.62rem;color:var(--pacs-text-muted);text-transform:uppercase;letter-spacing:.04em;}
+.wl-sinc{font-size:.68rem;color:var(--pacs-text-muted);display:flex;align-items:center;gap:.25rem;
+    padding:.2rem .5rem;border-left:1px solid var(--pacs-border);}
+
+/* ── Filtros ────────────────────────────────────────────────────────────── */
+.wl-filters{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;margin-bottom:.3rem;}
+.wl-input{background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:6px;
+    color:var(--pacs-text-primary);padding:.3rem .55rem;font-size:.78rem;outline:none;height:30px;}
+.wl-input:focus{border-color:var(--pacs-primary);}
+.wl-input-sm{height:26px;font-size:.72rem;padding:.15rem .45rem;}
+.wl-select{background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:6px;
+    color:var(--pacs-text-primary);padding:.3rem .55rem;font-size:.78rem;height:30px;cursor:pointer;}
+.wl-select-sm{height:26px;font-size:.72rem;padding:.1rem .4rem;}
+.wl-btn-primary{background:var(--pacs-primary);color:#fff;border:none;border-radius:6px;
+    padding:.3rem .85rem;font-size:.78rem;font-weight:600;cursor:pointer;height:30px;
+    display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;}
+.wl-btn-primary:hover{opacity:.88;}
+.wl-btn-outline{background:transparent;border:1px solid var(--pacs-border);border-radius:6px;
+    color:var(--pacs-text-secondary);padding:.3rem .75rem;font-size:.78rem;cursor:pointer;height:30px;
+    display:inline-flex;align-items:center;gap:.3rem;text-decoration:none;white-space:nowrap;}
+.wl-btn-outline:hover{border-color:var(--pacs-primary);color:var(--pacs-primary);}
+.wl-mod-btn{background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:4px;
+    color:var(--pacs-text-muted);font-size:.65rem;font-weight:600;padding:.1rem .3rem;cursor:pointer;
+    height:22px;transition:all .12s;white-space:nowrap;}
+.wl-mod-btn:hover{border-color:var(--pacs-primary);color:var(--pacs-primary);}
+.wl-mod-btn.active{background:var(--pacs-primary);border-color:var(--pacs-primary);color:#fff;}
+.wl-medico-wrap{display:flex;align-items:center;gap:.25rem;}
+.wl-info-right{display:flex;align-items:center;gap:.3rem;font-size:.7rem;color:var(--pacs-text-muted);
+    margin-left:auto;flex-wrap:wrap;}
+.wl-period-badge{background:rgba(79,195,247,.15);color:var(--pacs-primary);border-radius:4px;
+    padding:.05rem .35rem;font-size:.63rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+
+/* ── Tabela ─────────────────────────────────────────────────────────────── */
+.wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 320px);border-radius:8px;
+    border:1px solid var(--pacs-border);margin-top:.4rem;}
+.wl-table{width:100%;border-collapse:collapse;font-size:.78rem;}
+.wl-table thead th{background:var(--pacs-surface-2, var(--pacs-surface));
+    border-bottom:2px solid var(--pacs-border);padding:.45rem .55rem;
+    white-space:nowrap;font-size:.7rem;font-weight:600;color:var(--pacs-text-secondary);
+    text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:2;}
+.wl-table tbody tr{border-bottom:1px solid var(--pacs-border);transition:background .1s;}
+.wl-table tbody tr:hover{background:rgba(79,195,247,.04);}
+.wl-table td{padding:.45rem .55rem;vertical-align:middle;}
+
+/* Larguras das colunas */
+.col-check{width:24px;text-align:center;}
+.col-dt{width:88px;}
+.col-paciente{min-width:180px;max-width:240px;}
+.col-unidade{width:130px;font-size:.72rem;color:var(--pacs-text-secondary);}
+.col-estudo{min-width:160px;}
+.col-solicitante{width:150px;}
+.col-sit{width:100px;}
+.col-sla{width:88px;text-align:center;}
+.col-acoes{width:140px;text-align:center;}
+
+/* Linhas especiais */
 .row-urgente td:first-child{border-left:3px solid #f97316;}
 .row-critico td:first-child{border-left:3px solid #ef4444;}
+
+/* ── Ícones de sexo ─────────────────────────────────────────────────────── */
+.sexo-m{color:#3b82f6;font-size:.9rem;flex-shrink:0;}
+.sexo-f{color:#ec4899;font-size:.9rem;flex-shrink:0;}
+.sexo-nd{color:var(--pacs-text-muted);font-size:.8rem;flex-shrink:0;}
+
+/* ── Célula paciente ────────────────────────────────────────────────────── */
+.wl-pac-row{display:flex;align-items:center;gap:.4rem;}
+.wl-pac-info{min-width:0;}
+.wl-pac-nome{font-weight:600;font-size:.78rem;color:var(--pacs-text-primary);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
+.wl-pac-sub{font-size:.67rem;color:var(--pacs-text-muted);margin-top:.05rem;}
+
+/* ── Célula estudo ──────────────────────────────────────────────────────── */
+.wl-estudo-top{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;}
+.wl-estudo-desc{font-size:.75rem;font-weight:500;color:var(--pacs-text-primary);}
+.wl-estudo-sub{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem;
+    font-size:.67rem;color:var(--pacs-text-muted);}
+.wl-acc{opacity:.55;}
+.wl-recebido{color:var(--pacs-text-muted);font-size:.65rem;}
+
+/* ── Badges de modalidade ───────────────────────────────────────────────── */
+.mod-badge{display:inline-block;border-radius:3px;padding:.05rem .28rem;
+    font-size:.62rem;font-weight:700;letter-spacing:.03em;
+    background:rgba(79,195,247,.15);color:var(--pacs-primary);border:1px solid rgba(79,195,247,.3);}
+.mod-CT{background:rgba(239,68,68,.12);color:#dc2626;border-color:rgba(239,68,68,.25);}
+.mod-MR{background:rgba(124,58,237,.12);color:#7c3aed;border-color:rgba(124,58,237,.25);}
+.mod-US{background:rgba(16,185,129,.12);color:#059669;border-color:rgba(16,185,129,.25);}
+.mod-XA,.mod-CR,.mod-DR{background:rgba(234,179,8,.12);color:#a16207;border-color:rgba(234,179,8,.25);}
+.mod-MG{background:rgba(236,72,153,.12);color:#be185d;border-color:rgba(236,72,153,.25);}
+.mod-NM{background:rgba(249,115,22,.12);color:#c2410c;border-color:rgba(249,115,22,.25);}
+
+/* ── Badges de situação ─────────────────────────────────────────────────── */
+.sit-badge{display:inline-block;border-radius:4px;padding:.12rem .4rem;
+    font-size:.65rem;font-weight:700;letter-spacing:.04em;white-space:nowrap;}
+.sit-novo    {background:#f1f5f9;color:#475569;}
+.sit-aberto  {background:#eff6ff;color:#1d4ed8;}
+.sit-a-laudar{background:#fff7ed;color:#c2410c;border:1px solid rgba(194,65,12,.25);}
 .sit-em-laudo{background:#f5f3ff;color:#7c3aed;}
-.sit-a-laudar{background:#fff7ed;color:#c2410c;font-weight:700;}
+.sit-rascunho{background:#fefce8;color:#a16207;}
+.sit-assinado{background:#ecfdf5;color:#065f46;}
 .sit-liberado{background:#f0fdf4;color:#059669;}
-/* ── SLA badges ─────────────────────────────────────────────── */
-.sla-th-label{font-size:.65rem;color:var(--pacs-text-muted);text-transform:uppercase;letter-spacing:.04em;}
-.sla-badge{display:inline-flex;align-items:center;gap:.2rem;font-size:.65rem;font-weight:600;
-    border-radius:4px;padding:.1rem .35rem;white-space:nowrap;line-height:1.3;}
-.sla-medico-badge{margin-top:.15rem;}
-.sla-verde  {background:rgba(16,185,129,.12);color:#059669;}
-.sla-amarelo{background:rgba(234,179,8,.15); color:#a16207;}
-.sla-laranja{background:rgba(249,115,22,.15);color:#c2410c;}
-.sla-vermelho{background:rgba(239,68,68,.15);color:#dc2626;}
-/* ── Botão Assumir ──────────────────────────────────────────── */
-.btn-assumir{
-    background:linear-gradient(135deg,#0ea5e9,#0284c7);
-    color:#fff;border:none;border-radius:6px;
-    padding:.28rem .6rem;font-size:.7rem;font-weight:600;
-    cursor:pointer;display:inline-flex;align-items:center;gap:.25rem;
-    transition:opacity .15s,transform .1s;white-space:nowrap;
+.sit-urgente {background:#fef2f2;color:#dc2626;}
+.wl-assumido-por{font-size:.62rem;color:var(--pacs-text-muted);margin-top:.15rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:95px;}
+
+/* ── SLA pills ──────────────────────────────────────────────────────────── */
+.sla-pill{display:inline-flex;align-items:center;gap:.2rem;border-radius:4px;
+    padding:.1rem .32rem;font-size:.65rem;font-weight:600;white-space:nowrap;
+    line-height:1.3;margin-bottom:.1rem;}
+.sla-med{margin-top:.1rem;}
+.sla-verde  {background:rgba(16,185,129,.12); color:#059669;}
+.sla-amarelo{background:rgba(234,179,8,.15);  color:#a16207;}
+.sla-laranja{background:rgba(249,115,22,.15); color:#c2410c;}
+.sla-vermelho{background:rgba(239,68,68,.15); color:#dc2626;}
+
+/* ── Solicitante ────────────────────────────────────────────────────────── */
+.wl-sol-tag{font-size:.7rem;color:var(--pacs-text-secondary);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:145px;}
+
+/* ── Ações ──────────────────────────────────────────────────────────────── */
+.wl-acoes-wrap{display:flex;flex-direction:column;gap:.25rem;align-items:center;}
+.wl-btn-assumir{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;
+    border:none;border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;
+    transition:opacity .15s,transform .1s;width:100%;justify-content:center;}
+.wl-btn-assumir:hover{opacity:.88;transform:scale(1.02);}
+.wl-btn-assumir:disabled{opacity:.4;cursor:not-allowed;}
+.wl-btn-laudo{background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.3);
+    border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;cursor:not-allowed;
+    display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;width:100%;justify-content:center;}
+.wl-viewer-wrap{position:relative;width:100%;}
+.wl-btn-abrir{background:var(--pacs-primary);color:#fff;border:none;border-radius:5px;
+    padding:.22rem .55rem;font-size:.7rem;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;width:100%;
+    justify-content:center;transition:opacity .15s;}
+.wl-btn-abrir:hover{opacity:.88;}
+.wl-viewer-menu{display:none;position:absolute;right:0;top:calc(100% + 3px);z-index:50;
+    background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:6px;
+    box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:160px;overflow:hidden;}
+.wl-viewer-menu.show{display:block;}
+.wl-vm-item{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;
+    font-size:.75rem;color:var(--pacs-text-secondary);text-decoration:none;white-space:nowrap;}
+.wl-vm-item:hover{background:rgba(79,195,247,.08);color:var(--pacs-primary);}
+.wl-vm-icon{width:14px;height:14px;object-fit:contain;}
+
+/* ── Prioridade ─────────────────────────────────────────────────────────── */
+.prio-urgente{color:#f97316;margin-right:.2rem;}
+.prio-critico{color:#ef4444;margin-right:.2rem;}
+
+/* ── Data/Hora ──────────────────────────────────────────────────────────── */
+.wl-date{font-size:.78rem;font-weight:500;color:var(--pacs-text-primary);}
+.wl-time{font-size:.67rem;color:var(--pacs-text-muted);}
+
+/* ── Sort link ──────────────────────────────────────────────────────────── */
+.sort-link{color:inherit;text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:.2rem;}
+.sort-link:hover{color:var(--pacs-primary);}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.wl-empty{text-align:center;padding:3rem 1rem;color:var(--pacs-text-secondary);}
+.wl-empty i{font-size:2rem;opacity:.35;display:block;margin-bottom:.75rem;}
+.wl-empty a{color:var(--pacs-primary);}
+
+/* ── Paginação ──────────────────────────────────────────────────────────── */
+.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.5rem 0;flex-wrap:wrap;}
+.wl-pag-info{font-size:.72rem;color:var(--pacs-text-muted);}
+.wl-pag-links{display:flex;gap:.2rem;margin:0 auto;}
+.wl-pag-btn{display:inline-flex;align-items:center;justify-content:center;
+    min-width:28px;height:28px;border-radius:5px;font-size:.75rem;
+    background:var(--pacs-surface);border:1px solid var(--pacs-border);
+    color:var(--pacs-text-secondary);text-decoration:none;padding:0 .4rem;
+    transition:all .12s;cursor:pointer;}
+.wl-pag-btn:hover{border-color:var(--pacs-primary);color:var(--pacs-primary);}
+.wl-pag-btn.active{background:var(--pacs-primary);border-color:var(--pacs-primary);color:#fff;}
+
+/* ── Responsividade ─────────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+    .col-solicitante{display:none;}
+    .col-unidade{width:100px;}
 }
-.btn-assumir:hover{opacity:.88;transform:scale(1.03);}
-.btn-assumir:active{transform:scale(.97);}
-.btn-assumir:disabled{opacity:.45;cursor:not-allowed;}
-.btn-laudo-placeholder{background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.25);border-radius:6px;padding:.28rem .6rem;font-size:.68rem;}
+@media (max-width: 900px) {
+    .wl-filters-row1{flex-wrap:wrap;}
+    .col-estudo .wl-estudo-sub{display:none;}
+    .wl-pac-nome{max-width:130px;}
+}
+@media (max-width: 640px) {
+    .wl-resumo{flex-direction:column;align-items:flex-start;}
+    .wl-table-wrap{max-height:none;}
+    .col-unidade,.col-solicitante{display:none;}
+}
 </style>
 
-<!-- ═══════════════════════════════════════════════════════════
-     JAVASCRIPT
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
 <script>
 function setModalidade(mod) {
     const input = document.getElementById('inputModalidade');
-    const btns  = document.querySelectorAll('.mod-btn');
+    const btns  = document.querySelectorAll('.wl-mod-btn');
     if (input.value === mod) { input.value = ''; btns.forEach(b => b.classList.remove('active')); }
     else { input.value = mod; btns.forEach(b => b.classList.toggle('active', b.textContent.trim() === mod)); }
     document.getElementById('formFiltros').submit();
@@ -594,13 +781,40 @@ function toggleAll(master) {
     document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
 }
 
-// ── Botão Assumir — AJAX ──────────────────────────────────────────────────
+// Duplo clique para abrir
+document.querySelectorAll('.wl-table tbody tr[data-id]').forEach(row => {
+    row.addEventListener('dblclick', function(e) {
+        if (e.target.closest('a,button,input')) return;
+        window.open('/estudos/' + this.dataset.id + '/abrir', '_blank');
+    });
+});
+
+// ── Menu Abrir (dropdown) ────────────────────────────────────────────────
+(function () {
+    let menuAberto = null;
+    function fechar() { if (menuAberto) { menuAberto.classList.remove('show'); menuAberto = null; } }
+    document.addEventListener('click', function(e) {
+        const trigger = e.target.closest('.viewer-trigger');
+        if (trigger) {
+            e.preventDefault(); e.stopPropagation();
+            const menu = trigger.parentElement.querySelector('.wl-viewer-menu');
+            const jaAberto = menu === menuAberto;
+            fechar();
+            if (!jaAberto) { menu.classList.add('show'); menuAberto = menu; }
+            return;
+        }
+        if (!e.target.closest('.wl-viewer-menu')) fechar();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
+})();
+
+// ── Botão Assumir (AJAX) ─────────────────────────────────────────────────
 document.addEventListener('click', function(e) {
-    const btn = e.target.closest('.btn-assumir');
+    const btn = e.target.closest('.wl-btn-assumir');
     if (!btn) return;
     e.stopPropagation();
-    const estudoId  = btn.dataset.id;
-    const paciente  = btn.dataset.paciente || 'este estudo';
+    const estudoId = btn.dataset.id;
+    const paciente = btn.dataset.paciente || 'este estudo';
     if (!confirm('Assumir o estudo de ' + paciente + '?\nO status será alterado para A LAUDAR.')) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Assumindo...';
@@ -612,16 +826,13 @@ document.addEventListener('click', function(e) {
     .then(r => r.json())
     .then(data => {
         if (data.ok) {
-            // Atualiza badge de situação na linha sem recarregar
             const row = btn.closest('tr');
-            const sitCell = row ? row.querySelector('.situacao-badge') : null;
-            if (sitCell) {
-                sitCell.className = 'situacao-badge sit-a-laudar';
-                sitCell.textContent = 'A LAUDAR';
-            }
-            // Substitui botão Assumir pelo placeholder de Laudo
-            btn.outerHTML = '<span class="pacs-btn btn-laudo-placeholder" title="Laudo disponível — módulo em breve" style="opacity:.7;cursor:default;font-size:.68rem;"><i class="fa fa-file-medical"></i> Laudo</span>';
-            // Feedback visual na linha
+            // Atualiza badge de situação
+            const sitCell = row ? row.querySelector('.sit-badge') : null;
+            if (sitCell) { sitCell.className = 'sit-badge sit-a-laudar'; sitCell.textContent = 'A LAUDAR'; }
+            // Substitui botão
+            btn.outerHTML = '<button type="button" class="wl-btn-laudo" disabled title="Laudo em breve"><i class="fa fa-file-medical"></i> Laudo</button>';
+            // Flash na linha
             if (row) {
                 row.style.transition = 'background .4s';
                 row.style.background = 'rgba(14,165,233,.08)';
@@ -639,45 +850,4 @@ document.addEventListener('click', function(e) {
         btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
     });
 });
-document.querySelectorAll('.pacs-table tbody tr[data-id]').forEach(row => {
-    row.addEventListener('dblclick', function(e) {
-        if (e.target.closest('a,button,input')) return;
-        window.open('/estudos/' + this.dataset.id + '/abrir', '_blank');
-    });
-});
-
-// ── Menu "Abrir" (Web / RadiAnt / Weasis) — listener único delegado ────────
-(function () {
-    let menuAberto = null;
-
-    function fecharMenuAberto() {
-        if (menuAberto) {
-            menuAberto.classList.remove('show');
-            menuAberto = null;
-        }
-    }
-
-    document.addEventListener('click', function (e) {
-        const trigger = e.target.closest('.viewer-launcher-trigger');
-        if (trigger) {
-            e.preventDefault();
-            e.stopPropagation();
-            const menu = trigger.parentElement.querySelector('.viewer-menu');
-            const jaAberto = menu === menuAberto;
-            fecharMenuAberto();
-            if (!jaAberto) {
-                menu.classList.add('show');
-                menuAberto = menu;
-            }
-            return;
-        }
-        if (!e.target.closest('.viewer-menu')) {
-            fecharMenuAberto();
-        }
-    });
-
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') fecharMenuAberto();
-    });
-})();
 </script>
