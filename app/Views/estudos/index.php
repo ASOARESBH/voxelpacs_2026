@@ -530,6 +530,22 @@ $periodoLabel = [
 </table>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════ BARRA DE SELEÇÃO -->
+<div id="wl-sel-bar" class="wl-sel-bar" style="display:none;">
+    <div class="wl-sel-bar-inner">
+        <span id="wl-sel-count" class="wl-sel-count">0 selecionados</span>
+        <button type="button" id="btn-download-lote" class="wl-btn-download" onclick="iniciarDownloadLote()">
+            <i class="fa fa-download"></i> Download DICOM
+        </button>
+        <button type="button" class="wl-btn-limpar-sel" onclick="limparSelecao()">
+            <i class="fa fa-xmark"></i> Limpar
+        </button>
+    </div>
+    <div id="wl-dl-progress" class="wl-dl-progress" style="display:none;">
+        <div class="wl-dl-prog-label" id="wl-dl-prog-label"><i class="fa fa-spinner fa-spin"></i> Preparando download...</div>
+        <div class="wl-dl-prog-bar-wrap"><div class="wl-dl-prog-bar" id="wl-dl-prog-bar" style="width:0%"></div></div>
+    </div>
+</div>
 <!-- ═══════════════════════════════════════════════════════════ PAGINAÇÃO -->
 <?php if ($totalPages > 1 || $total > 0): ?>
 <div class="wl-pagination">
@@ -784,6 +800,27 @@ $periodoLabel = [
     .wl-table-wrap{max-height:none;}
     .col-unidade,.col-solicitante{display:none;}
 }
+/* ── Barra de Seleção / Download em Lote ─────────────────────────────── */
+.wl-sel-bar{background:var(--pacs-surface);border:1px solid var(--pacs-primary);border-radius:8px;
+    padding:.5rem .85rem;margin:.4rem 0;box-shadow:0 2px 8px rgba(14,165,233,.15);}
+.wl-sel-bar-inner{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+.wl-sel-count{font-size:.8rem;font-weight:600;color:var(--pacs-primary);min-width:160px;}
+.wl-btn-download{background:var(--pacs-primary);color:#fff;border:none;border-radius:6px;
+    padding:.3rem .85rem;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.35rem;
+    transition:background .15s;}
+.wl-btn-download:hover:not(:disabled){background:#0284c7;}
+.wl-btn-download:disabled{opacity:.55;cursor:not-allowed;}
+.wl-btn-limpar-sel{background:transparent;border:1px solid var(--pacs-border);border-radius:6px;
+    color:var(--pacs-text-muted);padding:.3rem .65rem;font-size:.75rem;cursor:pointer;
+    transition:border-color .15s,color .15s;}
+.wl-btn-limpar-sel:hover{border-color:var(--pacs-text-muted);color:var(--pacs-text-primary);}
+.wl-dl-progress{margin-top:.4rem;}
+.wl-dl-prog-label{font-size:.75rem;color:var(--pacs-text-muted);margin-bottom:.3rem;}
+.wl-dl-prog-bar-wrap{background:var(--pacs-bg);border-radius:4px;height:6px;overflow:hidden;}
+.wl-dl-prog-bar{height:100%;background:var(--pacs-primary);border-radius:4px;
+    transition:width .3s ease,background .3s;}
+/* checkbox desabilitado */
+.row-check:disabled{opacity:.3;cursor:not-allowed;}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
@@ -808,9 +845,42 @@ function setFiltroRapido(campo, valor) {
     const el = document.querySelector('[name="' + campo + '"]');
     if (el) { el.value = valor; document.getElementById('formFiltros').submit(); }
 }
-function toggleAll(master) {
-    document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
+const MAX_SEL = 5;
+function atualizarBarraSel() {
+    const selecionados = document.querySelectorAll('.row-check:checked');
+    const n = selecionados.length;
+    const bar = document.getElementById('wl-sel-bar');
+    const cnt = document.getElementById('wl-sel-count');
+    bar.style.display = n > 0 ? 'block' : 'none';
+    cnt.textContent = n + ' estudo' + (n !== 1 ? 's' : '') + ' selecionado' + (n !== 1 ? 's' : '') + (n >= MAX_SEL ? ' (máx. ' + MAX_SEL + ')' : '');
+    // Bloqueia checkboxes não selecionados se atingiu o limite
+    document.querySelectorAll('.row-check').forEach(c => {
+        if (!c.checked) c.disabled = n >= MAX_SEL;
+    });
+    // Atualiza checkAll
+    const todos = document.querySelectorAll('.row-check');
+    const checkAll = document.getElementById('checkAll');
+    if (checkAll) checkAll.checked = todos.length > 0 && n === todos.length;
 }
+function toggleAll(master) {
+    const checks = document.querySelectorAll('.row-check');
+    let count = 0;
+    checks.forEach(c => {
+        if (master.checked && count < MAX_SEL) { c.checked = true; c.disabled = false; count++; }
+        else if (!master.checked) { c.checked = false; c.disabled = false; }
+    });
+    atualizarBarraSel();
+}
+function limparSelecao() {
+    document.querySelectorAll('.row-check').forEach(c => { c.checked = false; c.disabled = false; });
+    const checkAll = document.getElementById('checkAll');
+    if (checkAll) checkAll.checked = false;
+    atualizarBarraSel();
+}
+// Listener nos checkboxes de linha
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('row-check')) atualizarBarraSel();
+});
 
 // Duplo clique para abrir
 document.querySelectorAll('.wl-table tbody tr[data-id]').forEach(row => {
@@ -881,4 +951,79 @@ document.addEventListener('click', function(e) {
         btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
     });
 });
+
+// ── Download em Lote ─────────────────────────────────────────────────────
+function iniciarDownloadLote() {
+    const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
+    if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
+    const btn  = document.getElementById('btn-download-lote');
+    const prog = document.getElementById('wl-dl-progress');
+    const bar  = document.getElementById('wl-dl-prog-bar');
+    const lbl  = document.getElementById('wl-dl-prog-label');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Iniciando...';
+    prog.style.display = 'block';
+    bar.style.width = '5%';
+    lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Criando archive no Orthanc...';
+    fetch('/api/download-lote/iniciar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+        body: JSON.stringify({estudo_ids: ids})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg || 'Erro ao iniciar job');
+        pollJob(data.job_id, data.log_id);
+    })
+    .catch(err => {
+        resetDownloadUI();
+        alert('Erro ao iniciar download: ' + err.message);
+    });
+}
+function pollJob(jobId, logId, tentativa = 0) {
+    const MAX_TENTATIVAS = 120; // ~2 min
+    const bar = document.getElementById('wl-dl-prog-bar');
+    const lbl = document.getElementById('wl-dl-prog-label');
+    if (tentativa > MAX_TENTATIVAS) {
+        resetDownloadUI();
+        alert('Timeout: o Orthanc demorou demais para gerar o arquivo.');
+        return;
+    }
+    fetch('/api/download-lote/status?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg || 'Erro no polling');
+        const pct = Math.max(5, Math.min(90, data.progress || 0));
+        bar.style.width = pct + '%';
+        if (data.state === 'Success') {
+            bar.style.width = '100%';
+            lbl.innerHTML = '<i class="fa fa-check"></i> Pronto! Iniciando download...';
+            bar.style.background = '#22c55e';
+            setTimeout(() => {
+                window.location.href = '/api/download-lote/baixar?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId);
+                setTimeout(resetDownloadUI, 3000);
+            }, 600);
+        } else if (data.state === 'Failure') {
+            throw new Error('O Orthanc falhou ao gerar o archive.');
+        } else {
+            lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Processando... ' + (data.progress || 0) + '%';
+            setTimeout(() => pollJob(jobId, logId, tentativa + 1), 1000);
+        }
+    })
+    .catch(err => {
+        resetDownloadUI();
+        alert('Erro no download: ' + err.message);
+    });
+}
+function resetDownloadUI() {
+    const btn  = document.getElementById('btn-download-lote');
+    const prog = document.getElementById('wl-dl-progress');
+    const bar  = document.getElementById('wl-dl-prog-bar');
+    if (btn)  { btn.disabled = false; btn.innerHTML = '<i class="fa fa-download"></i> Download DICOM'; }
+    if (prog) prog.style.display = 'none';
+    if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
+}
 </script>

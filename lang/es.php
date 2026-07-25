@@ -133,6 +133,16 @@ return [
     'viewer_desktop.config.botao_salvar'    => 'Guardar',
 
     // Worklist de Estudios — Columna Prioridad DICOM (0040,1003) (2026-07-25)
+    // Download en Lote DICOM (2026-07-25)
+    'download_lote.titulo'           => 'Descarga en Lote',
+    'download_lote.selecione'        => 'Seleccione hasta 5 estudios para descargar',
+    'download_lote.preparando'       => 'Preparando archivo en Orthanc...',
+    'download_lote.processando'      => 'Procesando...',
+    'download_lote.pronto'           => 'u00a1Listo! Iniciando descarga...',
+    'download_lote.erro_limite'      => 'Mu00e1ximo de 5 estudios por descarga.',
+    'download_lote.erro_sem_orthanc' => 'Estudio sin ID Orthanc u2014 no es posible descargar.',
+    'download_lote.erro_timeout'     => 'Timeout: Orthanc tardu00f3 demasiado en generar el archivo.',
+
     'estudos.worklist.coluna_prioridade'       => 'Prioridad',
     'estudos.worklist.prioridade.emergencia'   => 'Emergencia',
     'estudos.worklist.prioridade.urgencia'     => 'Urgente',

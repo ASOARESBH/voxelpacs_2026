@@ -133,6 +133,16 @@ return [
     'viewer_desktop.config.botao_salvar'    => 'Save',
 
     // Studies Worklist — Priority column DICOM (0040,1003) (2026-07-25)
+    // Download em Lote DICOM (2026-07-25)
+    'download_lote.titulo'           => 'Batch Download',
+    'download_lote.selecione'        => 'Select up to 5 studies to download',
+    'download_lote.preparando'       => 'Preparing archive in Orthanc...',
+    'download_lote.processando'      => 'Processing...',
+    'download_lote.pronto'           => 'Ready! Starting download...',
+    'download_lote.erro_limite'      => 'Maximum of 5 studies per download.',
+    'download_lote.erro_sem_orthanc' => 'Study has no Orthanc ID — cannot download.',
+    'download_lote.erro_timeout'     => 'Timeout: Orthanc took too long to generate the archive.',
+
     'estudos.worklist.coluna_prioridade'       => 'Priority',
     'estudos.worklist.prioridade.emergencia'   => 'Emergency',
     'estudos.worklist.prioridade.urgencia'     => 'Urgent',

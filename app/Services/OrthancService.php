@@ -503,4 +503,72 @@ class OrthancService {
         $i = (int) floor(log($bytes, 1024));
         return round($bytes / pow(1024, $i), 1) . ' ' . $u[$i];
     }
+
+    // ── Download em Lote ────────────────────────────────────────────────────
+
+    /**
+     * Cria um job de archive assíncrono no Orthanc.
+     * POST /tools/create-archive
+     * Body: {"Resources": ["orthancId1", ...], "Synchronous": false}
+     *
+     * @param  string[] $orthancIds  Lista de Orthanc Study UUIDs
+     * @return array{success: bool, data: array, error?: string}
+     */
+    public function createArchive(array $orthancIds): array {
+        return $this->request('/tools/create-archive', 'POST', [
+            'Resources'   => $orthancIds,
+            'Synchronous' => false,
+        ]);
+    }
+
+    /**
+     * Consulta o status de um job no Orthanc.
+     * GET /jobs/{jobId}
+     * Retorna State (Pending|Running|Success|Failure|Paused|Retry) e Progress (0-100).
+     *
+     * @param  string $jobId  UUID do job retornado por createArchive()
+     * @return array{success: bool, data: array, error?: string}
+     */
+    public function getJob(string $jobId): array {
+        return $this->request('/jobs/' . rawurlencode($jobId));
+    }
+
+    /**
+     * Faz streaming do ZIP gerado pelo job para o cliente, em chunks de 256 KB.
+     * GET /jobs/{jobId}/archive
+     * O backend atua como proxy autenticado — a URL do Orthanc nunca é exposta ao browser.
+     *
+     * @param  string   $jobId     UUID do job concluído
+     * @param  callable $callback  Recebe cada chunk (string) para enviar ao cliente
+     * @return void
+     */
+    public function streamJobArchive(string $jobId, callable $callback): void {
+        $url = $this->baseUrl . '/jobs/' . rawurlencode($jobId) . '/archive';
+        $ch  = curl_init($url);
+        $options = [
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_CUSTOMREQUEST  => 'GET',
+            CURLOPT_TIMEOUT        => 0,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_BUFFERSIZE     => 262144,
+            CURLOPT_WRITEFUNCTION  => function ($ch, string $data) use ($callback): int {
+                $callback($data);
+                return strlen($data);
+            },
+        ];
+        if ($this->username !== null && $this->username !== '') {
+            $options[CURLOPT_USERPWD]  = $this->username . ':' . ($this->password ?? '');
+            $options[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
+        }
+        curl_setopt_array($ch, $options);
+        curl_exec($ch);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+        if ($curlErr) {
+            Logger::error('[OrthancService::streamJobArchive] cURL error: ' . $curlErr, ['job_id' => $jobId]);
+        }
+    }
 }
