@@ -143,6 +143,9 @@ return [
     'download_lote.erro_sem_orthanc' => 'Study has no Orthanc ID — cannot download.',
     'download_lote.erro_timeout'     => 'Timeout: Orthanc took too long to generate the archive.',
 
+    // Worklist de Estudos — Coluna Modalidades multi-seleção (2026-07-27)
+    'estudos.worklist.coluna_modalidades'      => 'Modalities',
+
     'estudos.worklist.coluna_prioridade'       => 'Priority',
     'estudos.worklist.prioridade.emergencia'   => 'Emergency',
     'estudos.worklist.prioridade.urgencia'     => 'Urgent',

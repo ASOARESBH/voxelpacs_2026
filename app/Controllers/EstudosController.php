@@ -65,6 +65,10 @@ class EstudosController extends Controller
             'dt_fim'         => trim($_GET['dt_fim']        ?? ''),
             'unidade'        => trim($_GET['unidade']       ?? ''),
             'modalidade'     => strtoupper(trim($_GET['modalidade']    ?? '')),
+            'modalidades'    => array_values(array_filter(array_map(
+                                    function($m){ return strtoupper(trim($m)); },
+                                    (array)($_GET['modalidades'] ?? [])
+                                ))),  // multi-seleção
             'especialidade'  => trim($_GET['especialidade'] ?? ''),
             'situacao'       => trim($_GET['situacao']      ?? ''),
             'situacao_rapida'=> trim($_GET['situacao_rapida'] ?? ''),
@@ -179,9 +183,19 @@ class EstudosController extends Controller
             $where[]  = 'e.institution_name = ?';
             $params[] = $filtros['unidade'];
         }
-        if ($filtros['modalidade'] !== '') {
-            $where[]  = 'e.modalities LIKE ?';
-            $params[] = '%' . $filtros['modalidade'] . '%';
+        // Filtro de modalidade: multi-seleção via modalidades[] (OR entre selecionadas)
+        // Fallback: campo legado 'modalidade' (single) para compatibilidade
+        $modsAtivas = $filtros['modalidades'];
+        if (empty($modsAtivas) && $filtros['modalidade'] !== '') {
+            $modsAtivas = [$filtros['modalidade']];
+        }
+        if (!empty($modsAtivas)) {
+            $modClauses = [];
+            foreach ($modsAtivas as $m) {
+                $modClauses[] = 'e.modalities LIKE ?';
+                $params[]     = '%' . $m . '%';
+            }
+            $where[] = '(' . implode(' OR ', $modClauses) . ')';
         }
         if ($filtros['especialidade'] !== '') {
             // Busca em especialidade e também em referring_physician_name
@@ -425,7 +439,8 @@ class EstudosController extends Controller
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado'
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado',
+            'modsAtivas'
         ), 'pacs');
     }
 

@@ -143,6 +143,9 @@ return [
     'download_lote.erro_sem_orthanc' => 'Estudio sin ID Orthanc u2014 no es posible descargar.',
     'download_lote.erro_timeout'     => 'Timeout: Orthanc tardu00f3 demasiado en generar el archivo.',
 
+    // Worklist de Estudos — Columna Modalidades multi-selección (2026-07-27)
+    'estudos.worklist.coluna_modalidades'      => 'Modalidades',
+
     'estudos.worklist.coluna_prioridade'       => 'Prioridad',
     'estudos.worklist.prioridade.emergencia'   => 'Emergencia',
     'estudos.worklist.prioridade.urgencia'     => 'Urgente',
