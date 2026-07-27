@@ -163,4 +163,22 @@ return [
     'unidades.razao_social' => 'Razão Social',
     'unidades.nome_fantasia' => 'Nome Fantasia',
     'unidades.endereco' => 'Endereço',
+
+    // Partes do corpo — BodyPartExtractor (2026-07-27)
+    // Exibidas como badges na coluna ESTUDO da worklist.
+    'body_part.skull'          => 'Crânio',
+    'body_part.neck'           => 'Pescoço',
+    'body_part.thorax'         => 'Tórax',
+    'body_part.spine_cervical' => 'Col. Cervical',
+    'body_part.spine_thoracic' => 'Col. Torácica',
+    'body_part.spine_lumbar'   => 'Col. Lombar',
+    'body_part.spine'          => 'Coluna',
+    'body_part.abdomen'        => 'Abdômen',
+    'body_part.pelvis'         => 'Pelve',
+    'body_part.shoulder'       => 'Ombro',
+    'body_part.arm'            => 'Braço',
+    'body_part.forearm'        => 'Antebraço',
+    'body_part.knee'           => 'Joelho',
+    'body_part.foot'           => 'Perna/Pé',
+    'body_part.breast'         => 'Mama',
 ];

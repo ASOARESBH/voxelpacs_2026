@@ -161,4 +161,21 @@ return [
     'unidades.razao_social' => 'Company Name',
     'unidades.nome_fantasia' => 'Trade Name',
     'unidades.endereco' => 'Address',
+
+    // Body parts — BodyPartExtractor (2026-07-27)
+    'body_part.skull'          => 'Skull',
+    'body_part.neck'           => 'Neck',
+    'body_part.thorax'         => 'Chest',
+    'body_part.spine_cervical' => 'Cervical Spine',
+    'body_part.spine_thoracic' => 'Thoracic Spine',
+    'body_part.spine_lumbar'   => 'Lumbar Spine',
+    'body_part.spine'          => 'Spine',
+    'body_part.abdomen'        => 'Abdomen',
+    'body_part.pelvis'         => 'Pelvis',
+    'body_part.shoulder'       => 'Shoulder',
+    'body_part.arm'            => 'Arm',
+    'body_part.forearm'        => 'Forearm',
+    'body_part.knee'           => 'Knee',
+    'body_part.foot'           => 'Leg/Foot',
+    'body_part.breast'         => 'Breast',
 ];

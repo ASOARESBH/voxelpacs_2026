@@ -161,4 +161,21 @@ return [
     'unidades.razao_social' => 'Razón Social',
     'unidades.nome_fantasia' => 'Nombre Comercial',
     'unidades.endereco' => 'Dirección',
+
+    // Partes del cuerpo — BodyPartExtractor (2026-07-27)
+    'body_part.skull'          => 'Cráneo',
+    'body_part.neck'           => 'Cuello',
+    'body_part.thorax'         => 'Tórax',
+    'body_part.spine_cervical' => 'Col. Cervical',
+    'body_part.spine_thoracic' => 'Col. Torácica',
+    'body_part.spine_lumbar'   => 'Col. Lumbar',
+    'body_part.spine'          => 'Columna',
+    'body_part.abdomen'        => 'Abdomen',
+    'body_part.pelvis'         => 'Pelvis',
+    'body_part.shoulder'       => 'Hombro',
+    'body_part.arm'            => 'Brazo',
+    'body_part.forearm'        => 'Antebrazo',
+    'body_part.knee'           => 'Rodilla',
+    'body_part.foot'           => 'Pierna/Pie',
+    'body_part.breast'         => 'Mama',
 ];
