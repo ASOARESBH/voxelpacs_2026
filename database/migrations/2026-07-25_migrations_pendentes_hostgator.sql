@@ -462,9 +462,356 @@ SET @sql = IF(
 );
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- =============================================================================
+-- BLOCO 11: pacs_viewer_tokens — tokens de acesso seguro ao viewer (LGPD)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `pacs_viewer_tokens` (
+    `id`                   INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `token`                VARCHAR(64) NOT NULL COMMENT 'UUID v4 gerado pelo sistema',
+    `tenant_id`            INT(10) UNSIGNED NOT NULL,
+    `usuario_id`           INT(10) UNSIGNED NOT NULL,
+    `estudo_id`            INT(10) UNSIGNED NOT NULL,
+    `study_instance_uid`   VARCHAR(255) NOT NULL,
+    `orthanc_id`           VARCHAR(64)  NULL,
+    `usado`                TINYINT(1) NOT NULL DEFAULT 0,
+    `ip_origem`            VARCHAR(45) NULL,
+    `expires_at`           DATETIME NOT NULL,
+    `used_at`              DATETIME NULL,
+    `created_at`           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_token` (`token`),
+    INDEX `idx_pvt_tenant`   (`tenant_id`),
+    INDEX `idx_pvt_usuario`  (`usuario_id`),
+    INDEX `idx_pvt_estudo`   (`estudo_id`),
+    INDEX `idx_pvt_expires`  (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  COMMENT='Tokens de acesso seguro ao viewer DICOM (LGPD — uso unico, expira em 2h)';
+
+-- =============================================================================
+-- BLOCO 12: bi_viewer_access_log — auditoria de abertura de estudos (LGPD)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_viewer_access_log` (
+    `id`                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`            INT(10) UNSIGNED NULL,
+    `study_id`             INT(10) UNSIGNED NULL,
+    `patient_id`           VARCHAR(100) NULL,
+    `viewer`               ENUM('ohif','radiant','weasis') NOT NULL,
+    `usuario_id`           INT(10) UNSIGNED NULL,
+    `ip`                   VARCHAR(45) NULL,
+    `user_agent`           VARCHAR(255) NULL,
+    `study_instance_uid`   VARCHAR(255) NULL,
+    `accession_number`     VARCHAR(100) NULL,
+    `opened_at`            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `tempo_execucao_ms`    INT UNSIGNED NULL,
+    `status`               ENUM('sucesso','negado','erro') NOT NULL,
+    `mensagem_erro`        VARCHAR(500) NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_val_tenant`     (`tenant_id`),
+    INDEX `idx_val_viewer`     (`viewer`),
+    INDEX `idx_val_opened_at`  (`opened_at`),
+    INDEX `idx_val_usuario`    (`usuario_id`),
+    INDEX `idx_val_study`      (`study_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Auditoria de abertura de estudos em qualquer viewer (LGPD)';
+
+-- =============================================================================
+-- BLOCO 13: bi_download_lote_log — auditoria de downloads em lote (LGPD)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_download_lote_log` (
+    `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`       INT UNSIGNED NOT NULL,
+    `usuario_id`      INT UNSIGNED NOT NULL,
+    `usuario_nome`    VARCHAR(120) NOT NULL DEFAULT '',
+    `estudo_ids`      TEXT NOT NULL COMMENT 'JSON array de bi_pacs_estudos.id',
+    `orthanc_ids`     TEXT NOT NULL COMMENT 'JSON array de orthanc_id usados',
+    `orthanc_job_id`  VARCHAR(64) NULL,
+    `status`          ENUM('iniciado','concluido','erro') NOT NULL DEFAULT 'iniciado',
+    `erro_msg`        TEXT NULL,
+    `ip`              VARCHAR(45) NULL,
+    `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `concluido_at`    DATETIME NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_dll_tenant`   (`tenant_id`),
+    INDEX `idx_dll_usuario`  (`usuario_id`),
+    INDEX `idx_dll_job`      (`orthanc_job_id`),
+    INDEX `idx_dll_created`  (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  COMMENT='Auditoria de downloads em lote de estudos DICOM (LGPD)';
+
+-- =============================================================================
+-- BLOCO 14: bi_pacs_estudos — colunas adicionais de SLA e workflow
+-- =============================================================================
+
+-- recebido_em
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND COLUMN_NAME='recebido_em') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `recebido_em` DATETIME NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp de chegada do estudo'",
+    "SELECT 'recebido_em ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+UPDATE `bi_pacs_estudos` SET `recebido_em` = `importado_em` WHERE `recebido_em` IS NULL AND `importado_em` IS NOT NULL;
+
+-- assumido_em
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND COLUMN_NAME='assumido_em') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `assumido_em` DATETIME NULL COMMENT 'Timestamp em que o medico assumiu o estudo'",
+    "SELECT 'assumido_em ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- dicom_priority
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND COLUMN_NAME='dicom_priority') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `dicom_priority` TINYINT UNSIGNED NULL DEFAULT 0 COMMENT 'Tag DICOM 0008,0068 — prioridade (0=rotina,1=urgente,2=stat)'",
+    "SELECT 'dicom_priority ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- institution_name_resolved
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND COLUMN_NAME='institution_name_resolved') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `institution_name_resolved` VARCHAR(255) NULL COMMENT 'institution_name normalizado para matching'",
+    "SELECT 'institution_name_resolved ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- usuario_responsavel_id
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND COLUMN_NAME='usuario_responsavel_id') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD COLUMN `usuario_responsavel_id` INT UNSIGNED NULL COMMENT 'bi_users.id do medico que assumiu o laudo'",
+    "SELECT 'usuario_responsavel_id ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- Índice assumido_em
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND INDEX_NAME='idx_assumido_em') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD INDEX `idx_assumido_em` (`assumido_em`)",
+    "SELECT 'idx_assumido_em ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- Índice dicom_priority
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_estudos' AND INDEX_NAME='idx_dicom_priority') = 0,
+    "ALTER TABLE `bi_pacs_estudos` ADD INDEX `idx_dicom_priority` (`dicom_priority`)",
+    "SELECT 'idx_dicom_priority ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- =============================================================================
+-- BLOCO 15: bi_sla_regras_execucoes — histórico do motor de SLA
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_sla_regras_execucoes` (
+    `id`                          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`                   INT UNSIGNED NOT NULL,
+    `regra_id`                    INT UNSIGNED NOT NULL,
+    `regra_nome_snapshot`         VARCHAR(150) NOT NULL,
+    `estudo_id`                   INT UNSIGNED NOT NULL,
+    `medico_anterior_usuario_id`  INT UNSIGNED NULL,
+    `medico_novo_id`              INT UNSIGNED NOT NULL,
+    `medico_novo_usuario_id`      INT UNSIGNED NOT NULL,
+    `metrica`                     VARCHAR(20) NOT NULL,
+    `minutos_decorridos`          INT UNSIGNED NOT NULL,
+    `executado_em`                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_sre_tenant`       (`tenant_id`),
+    INDEX `idx_sre_estudo`       (`estudo_id`),
+    INDEX `idx_sre_regra`        (`regra_id`),
+    INDEX `idx_sre_executado_em` (`executado_em`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Historico de execucoes do motor de SLA automatico';
+
+-- =============================================================================
+-- BLOCO 16: bi_sla_robo_config — configuração global do robô SLA
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_sla_robo_config` (
+    `id`                       TINYINT UNSIGNED PRIMARY KEY DEFAULT 1,
+    `token`                    VARCHAR(64) NULL,
+    `ativo`                    TINYINT(1) NOT NULL DEFAULT 0,
+    `lock_adquirido_em`        DATETIME NULL,
+    `ultima_execucao_em`       DATETIME NULL,
+    `ultima_execucao_resumo`   TEXT NULL,
+    `created_at`               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`               TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Configuracao global do robo de SLA automatico';
+
+INSERT IGNORE INTO `bi_sla_robo_config` (`id`, `ativo`) VALUES (1, 0);
+
+-- =============================================================================
+-- BLOCO 17: business_webhook_hub_configs e events
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `business_webhook_hub_configs` (
+    `id`                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`               INT UNSIGNED NOT NULL,
+    `hub_url`                 VARCHAR(500) NOT NULL DEFAULT '',
+    `jwt_secret`              VARCHAR(255) NOT NULL DEFAULT '',
+    `jwt_algorithm`           VARCHAR(20)  NOT NULL DEFAULT 'HS256',
+    `jwt_issuer`              VARCHAR(100) NOT NULL DEFAULT 'voxel-pacs',
+    `jwt_audience`            VARCHAR(100) NOT NULL DEFAULT 'voxel-hub',
+    `jwt_expiry_seconds`      INT          NOT NULL DEFAULT 3600,
+    `events_enabled`          TEXT         NOT NULL COMMENT 'JSON array de eventos habilitados',
+    `retry_enabled`           TINYINT(1)   NOT NULL DEFAULT 1,
+    `retry_max_attempts`      INT          NOT NULL DEFAULT 5,
+    `retry_backoff_seconds`   TEXT         NOT NULL COMMENT 'JSON array de delays em segundos',
+    `retry_dlq_enabled`       TINYINT(1)   NOT NULL DEFAULT 1,
+    `request_timeout_seconds` INT          NOT NULL DEFAULT 30,
+    `rate_limit_per_minute`   INT          NOT NULL DEFAULT 1000,
+    `status`                  ENUM('enabled','disabled','testing') NOT NULL DEFAULT 'disabled',
+    `last_health_check`       DATETIME NULL,
+    `last_health_status`      ENUM('ok','error','timeout','unknown') NULL,
+    `last_health_message`     TEXT NULL,
+    `created_at`              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `created_by`              INT UNSIGNED NULL,
+    `updated_by`              INT UNSIGNED NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tenant_webhook` (`tenant_id`),
+    INDEX `idx_whc_status`     (`status`),
+    INDEX `idx_whc_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  COMMENT='Configuracao de Webhooks HUB por Negocio';
+
+CREATE TABLE IF NOT EXISTS `business_webhook_hub_events` (
+    `id`                      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`               INT UNSIGNED NOT NULL,
+    `webhook_config_id`       INT UNSIGNED NOT NULL,
+    `event_id`                VARCHAR(36) NOT NULL COMMENT 'UUID unico do evento',
+    `event_type`              VARCHAR(100) NOT NULL,
+    `event_timestamp`         DATETIME NOT NULL,
+    `payload`                 TEXT NOT NULL,
+    `status`                  ENUM('pending','sent','failed','dlq') NOT NULL DEFAULT 'pending',
+    `attempt_count`           INT NOT NULL DEFAULT 0,
+    `last_attempt_at`         DATETIME NULL,
+    `last_error`              TEXT NULL,
+    `http_status_code`        INT NULL,
+    `created_at`              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_whe_event_id`    (`event_id`),
+    INDEX `idx_whe_tenant_event`    (`tenant_id`, `event_id`),
+    INDEX `idx_whe_webhook_config`  (`webhook_config_id`),
+    INDEX `idx_whe_status`          (`status`),
+    INDEX `idx_whe_created_at`      (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  COMMENT='Log de Eventos Webhook HUB enviados';
+
+-- Preencher defaults para registros existentes
+UPDATE `business_webhook_hub_configs` SET `events_enabled` = '["study.received"]' WHERE `events_enabled` = '' OR `events_enabled` IS NULL;
+UPDATE `business_webhook_hub_configs` SET `retry_backoff_seconds` = '[5,15,60,300]' WHERE `retry_backoff_seconds` = '' OR `retry_backoff_seconds` IS NULL;
+
+-- =============================================================================
+-- BLOCO 18: report_templates, report_autotext, report_signatures
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `report_templates` (
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`   INT UNSIGNED NOT NULL,
+    `nome`        VARCHAR(255) NOT NULL,
+    `modalidade`  VARCHAR(20) NULL,
+    `conteudo`    TEXT NULL,
+    `ativo`       TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_rt_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Templates de laudo por modalidade';
+
+CREATE TABLE IF NOT EXISTS `report_autotext` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`  INT UNSIGNED NOT NULL,
+    `chave`      VARCHAR(100) NOT NULL,
+    `texto`      TEXT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_tenant_chave` (`tenant_id`, `chave`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Textos automaticos para o editor de laudo';
+
+CREATE TABLE IF NOT EXISTS `report_signatures` (
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `usuario_id`  INT UNSIGNED NOT NULL,
+    `tenant_id`   INT UNSIGNED NOT NULL,
+    `assinatura`  TEXT NULL COMMENT 'Assinatura digital ou imagem base64',
+    `crm`         VARCHAR(50) NULL,
+    `crm_uf`      CHAR(2) NULL,
+    `created_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_usuario_tenant` (`usuario_id`, `tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Assinaturas digitais dos medicos para os laudos';
+
+-- =============================================================================
+-- BLOCO 19: bi_pacs_sync_execucoes — histórico de sync automático
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_pacs_sync_execucoes` (
+    `id`                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `servidor_id`        INT UNSIGNED NOT NULL,
+    `executado_em`       DATETIME NOT NULL,
+    `origem`             VARCHAR(30) NOT NULL DEFAULT 'cron-job.org',
+    `sucesso`            TINYINT(1) NOT NULL DEFAULT 0,
+    `tempo_resposta_ms`  INT NULL,
+    `mensagem`           TEXT NULL,
+    `ip_origem`          VARCHAR(45) NULL,
+    `created_at`         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_servidor_data` (`servidor_id`, `executado_em`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  COMMENT='Historico de execucoes do ping automatico agendado';
+
+-- Colunas de sync automático em bi_pacs_servidor
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_servidor' AND COLUMN_NAME='sync_auto_ativo') = 0,
+    "ALTER TABLE `bi_pacs_servidor` ADD COLUMN `sync_auto_ativo` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Se 1, aceita chamadas do cron externo' AFTER `observacoes`",
+    "SELECT 'sync_auto_ativo ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_servidor' AND COLUMN_NAME='sync_cron_token') = 0,
+    "ALTER TABLE `bi_pacs_servidor` ADD COLUMN `sync_cron_token` VARCHAR(64) NULL COMMENT 'Token secreto para o cron-job.org' AFTER `sync_intervalo_minutos`",
+    "SELECT 'sync_cron_token ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bi_pacs_servidor' AND COLUMN_NAME='sync_ultima_execucao') = 0,
+    "ALTER TABLE `bi_pacs_servidor` ADD COLUMN `sync_ultima_execucao` DATETIME NULL COMMENT 'Data/hora da ultima execucao automatica' AFTER `sync_cron_token`",
+    "SELECT 'sync_ultima_execucao ja existe'"
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- =============================================================================
+-- BLOCO 20: bi_institution_name_pendentes — institution_names aguardando vínculo
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `bi_institution_name_pendentes` (
+    `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT UNSIGNED NOT NULL,
+    `institution_name` VARCHAR(255) NOT NULL,
+    `primeiro_visto`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `ultimo_visto`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `contagem`         INT UNSIGNED NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_tenant_institution` (`tenant_id`, `institution_name`),
+    INDEX `idx_inp_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  COMMENT='institution_names nao vinculados a nenhum negocio (aguardando configuracao)';
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =============================================================================
 -- FIM DA MIGRATION CONSOLIDADA
 -- Após executar, rode: SHOW COLUMNS FROM bi_tenants; SHOW COLUMNS FROM bi_medicos;
 -- =============================================================================
+
+SELECT 'Migration 2026-07-25_migrations_pendentes_hostgator.sql executada com sucesso!' AS resultado;
