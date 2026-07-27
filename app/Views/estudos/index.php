@@ -80,46 +80,25 @@ function bodyPartBadge(string $key): string {
     $label  = htmlspecialchars(t($i18n[$key] ?? $key));
     return "<span class=\"bp-badge\" style=\"background:{$bg};color:{$txt}\">{$label}</span>";
 }
-/* ─── renderiza coluna ESTUDO: badge colorido + texto descritivo + fallback ─────── */
+/* ─── renderiza coluna ESTUDO: apenas texto de study_description ────────────── */
 function renderEstudo(array $e): string {
-    // Cadeia de fontes em ordem de preferência:
-    // 1. study_description (0008,1030) — campo DICOM principal
-    // 2. requested_procedure_desc (0032,1070) — descrição do procedimento (RIS/HIS)
-    // 3. body_part_examined (0018,0015) — parte do corpo raw do DICOM
-    // 4. 'SEM DESCRIÇÃO' — fallback cinza
-
+    // Cadeia de fontes (0008,1030 → 0032,1070 → 0018,0015 → fallback)
     $desc     = trim($e['study_description']        ?? '');
     $procDesc = trim($e['requested_procedure_desc'] ?? '');
     $bodyPart = trim($e['body_part_examined']       ?? '');
 
-    // Escolhe o melhor texto disponível
     $texto = $desc !== '' ? $desc
            : ($procDesc !== '' ? $procDesc
            : ($bodyPart !== '' ? $bodyPart : ''));
 
-    if ($texto === '') {
-        return '<span class="study-description-badge sdb-vazio" title="Tag DICOM (0008,1030) Study Description: vazia">SEM DESCRIÇÃO</span>';
-    }
+    $tooltip  = htmlspecialchars('Tag DICOM (0008,1030) Study Description: ' . ($texto !== '' ? $texto : 'vazia'));
+    $display  = $texto !== '' ? htmlspecialchars($texto) : 'SEM DESCRIÇÃO';
 
-    // Determina cor pelo texto
-    $cor      = \App\Services\StudyDescriptionColor::resolve($texto);
-    $bg       = htmlspecialchars($cor['bg']);
-    $textClr  = htmlspecialchars($cor['text']);
-    $label    = $cor['label'] !== '' ? htmlspecialchars($cor['label']) : '';
-
-    // Texto truncado para exibição (máx 35 chars) + tooltip completo
-    $display  = htmlspecialchars(strlen($texto) > 35 ? substr($texto, 0, 35) . '...' : $texto);
-    $tooltip  = htmlspecialchars("Tag DICOM (0008,1030) Study Description: {$texto}");
-
-    // Badge: círculo colorido (label da modalidade) + texto do exame
-    $dot = $label !== ''
-        ? "<span class=\"sdb-dot\" style=\"background:{$bg};\"></span>"
-        : "<span class=\"sdb-dot sdb-dot-default\"></span>";
-
-    return "<span class=\"study-description-badge\" style=\"border-color:{$bg};color:{$bg};\" title=\"{$tooltip}\">"
-         . $dot
-         . "<span class=\"sdb-text\">{$display}</span>"
-         . "</span>";
+    return sprintf(
+        '<span class="study-description" title="%s">%s</span>',
+        $tooltip,
+        $display
+    );
 }
 
 /* ─── badge de prioridade interna (urgente/critico) ─────────────────────────────── */
@@ -493,28 +472,9 @@ $periodoLabel = [
             <td class="col-prioridade">
                 <?= prioridadeBadge($e['dicom_priority'] ?? '', 'pt_BR') ?>
             </td>
-            <!-- Estudo: modalidade + descrição + séries/imagens + accession -->
+            <!-- Estudo: apenas study_description -->
             <td class="col-estudo">
-                <div class="wl-estudo-top">
-                    <?php foreach ($mods as $mod) echo modBadge($mod); ?>
-                    <?= renderEstudo($e) ?>
-                </div>
-                <div class="wl-estudo-sub">
-                    <?php if (!empty($e['num_series'])): ?>
-                        <span title="Séries"><i class="fa fa-layer-group"></i> <?= $e['num_series'] ?></span>
-                    <?php endif; ?>
-                    <?php if (!empty($e['num_instances'])): ?>
-                        <span title="Imagens"><i class="fa fa-images"></i> <?= number_format($e['num_instances']) ?></span>
-                    <?php endif; ?>
-                    <?php if (!empty($e['accession_number'])): ?>
-                        <span class="wl-acc" title="Accession"><?= htmlspecialchars($e['accession_number']) ?></span>
-                    <?php endif; ?>
-                    <?php if ($recebidoHa): ?>
-                        <span class="wl-recebido" title="Recebido há <?= htmlspecialchars($recebidoHa) ?>">
-                            <i class="fa fa-clock"></i> <?= $recebidoHa ?>
-                        </span>
-                    <?php endif; ?>
-                </div>
+                <?= renderEstudo($e) ?>
             </td>
 
             <!-- Solicitante -->
@@ -729,6 +689,7 @@ $periodoLabel = [
 .col-modalidades{width:90px;text-align:center;}
 .col-prioridade{width:100px;text-align:center;}
 .col-estudo{min-width:150px;}
+.study-description{display:block;font-size:11px;font-weight:600;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;}
 /* Badges de prioridade DICOM */
 .wl-prio-badge{display:inline-block;padding:.18rem .55rem;border-radius:20px;font-size:.68rem;font-weight:700;letter-spacing:.03em;white-space:nowrap;}
 .wl-prio-emergencia{background:#DC2626;color:#fff;}
@@ -757,31 +718,16 @@ $periodoLabel = [
 .wl-pac-sub{font-size:.67rem;color:var(--pacs-text-muted);margin-top:.05rem;}
 
 /* ── Célula estudo ──────────────────────────────────────────────────────── */
-.wl-estudo-top{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;}
-.wl-estudo-desc{font-size:.75rem;font-weight:500;color:var(--pacs-text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.wl-estudo-vazio{color:var(--pacs-text-muted);font-size:.75rem;}
-/* ── Badge Study Description (StudyDescriptionColor) ──────────────────────────── */
-.study-description-badge{
-    display:inline-flex;align-items:center;gap:.3rem;
-    border:1.5px solid currentColor;border-radius:12px;
-    padding:.25rem .6rem;
-    font-size:11px;font-weight:600;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    max-width:200px;cursor:default;
-    background:transparent;
-}
-.sdb-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.sdb-dot-default{background:#0369a1;}
-.sdb-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-/* ── Badges de parte do corpo (BodyPartExtractor) ────────────────────────────────── */
+
+
+
 .bp-badge{display:inline-flex;align-items:center;justify-content:center;
     padding:.1rem .38rem;border-radius:4px;
     font-size:.62rem;font-weight:700;letter-spacing:.03em;
     margin:.05rem .05rem .05rem 0;white-space:nowrap;}
-.wl-estudo-sub{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem;
-    font-size:.67rem;color:var(--pacs-text-muted);}
-.wl-acc{opacity:.55;}
-.wl-recebido{color:var(--pacs-text-muted);font-size:.65rem;}
+
+
+
 
 /* ── Badges de modalidade ───────────────────────────────────────────────── */
 .mod-badge{display:inline-block;border-radius:3px;padding:.05rem .28rem;
@@ -885,7 +831,7 @@ $periodoLabel = [
 }
 @media (max-width: 900px) {
     .wl-filters-row1{flex-wrap:wrap;}
-    .col-estudo .wl-estudo-sub{display:none;}
+
     .wl-pac-nome{max-width:130px;}
 }
 @media (max-width: 640px) {
