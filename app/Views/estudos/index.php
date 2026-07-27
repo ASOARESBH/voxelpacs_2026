@@ -71,6 +71,44 @@ function modBadge(string $mod): string {
     $mod = strtoupper(trim($mod));
     return "<span class=\"mod-badge mod-{$mod}\">{$mod}</span>";
 }
+/* ─── badge de parte do corpo (BodyPartExtractor) ───────────────────────────────────── */
+function bodyPartBadge(string $key): string {
+    $colors = \App\Services\BodyPartExtractor::COLORS;
+    $i18n   = \App\Services\BodyPartExtractor::I18N_KEYS;
+    $bg     = $colors[$key]['bg']   ?? '#64748b';
+    $txt    = $colors[$key]['text'] ?? '#fff';
+    $label  = htmlspecialchars(t($i18n[$key] ?? $key));
+    return "<span class=\"bp-badge\" style=\"background:{$bg};color:{$txt}\">{$label}</span>";
+}
+/* ─── renderiza coluna ESTUDO: badges de partes do corpo + fallback ──────────────── */
+function renderEstudo(array $e): string {
+    $desc      = $e['study_description']   ?? '';
+    $bodyPart  = $e['body_part_examined']  ?? '';
+    // Tenta extrair partes do corpo da Study Description
+    $partes = \App\Services\BodyPartExtractor::extract($desc);
+    if (!empty($partes)) {
+        // Exibe uma badge por parte reconhecida
+        $html = '';
+        foreach ($partes as $key) {
+            $html .= bodyPartBadge($key);
+        }
+        return $html;
+    }
+    // Fallback 1: Study Description não tem parte reconhecida mas tem texto —
+    // exibe truncado com tooltip (texto livre útil, só não é parte do corpo)
+    if ($desc !== '' && $desc !== null) {
+        $truncado = htmlspecialchars(substr($desc, 0, 40));
+        $completo = htmlspecialchars($desc);
+        $reticencias = strlen($desc) > 40 ? '...' : '';
+        return "<span class=\"wl-estudo-desc\" title=\"{$completo}\">{$truncado}{$reticencias}</span>";
+    }
+    // Fallback 2: Study Description vazia — tenta Body Part Examined
+    if ($bodyPart !== '') {
+        return "<span class=\"wl-estudo-desc\">".htmlspecialchars($bodyPart)."</span>";
+    }
+    // Fallback 3: ambos vazios
+    return '<span class="wl-estudo-vazio">—</span>';
+}
 
 /* ─── badge de prioridade interna (urgente/critico) ─────────────────────────────── */
 function prioridadeInternaBadge(string $p): string {
@@ -452,7 +490,7 @@ $periodoLabel = [
             <td class="col-estudo">
                 <div class="wl-estudo-top">
                     <?php foreach ($mods as $mod) echo modBadge($mod); ?>
-                    <span class="wl-estudo-desc"><?= htmlspecialchars($e['study_description'] ?: '') ?></span>
+                    <?= renderEstudo($e) ?>
                 </div>
                 <div class="wl-estudo-sub">
                     <?php if (!empty($e['num_series'])): ?>
@@ -713,7 +751,13 @@ $periodoLabel = [
 
 /* ── Célula estudo ──────────────────────────────────────────────────────── */
 .wl-estudo-top{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;}
-.wl-estudo-desc{font-size:.75rem;font-weight:500;color:var(--pacs-text-primary);}
+.wl-estudo-desc{font-size:.75rem;font-weight:500;color:var(--pacs-text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.wl-estudo-vazio{color:var(--pacs-text-muted);font-size:.75rem;}
+/* ── Badges de parte do corpo (BodyPartExtractor) ────────────────────────────────── */
+.bp-badge{display:inline-flex;align-items:center;justify-content:center;
+    padding:.1rem .38rem;border-radius:4px;
+    font-size:.62rem;font-weight:700;letter-spacing:.03em;
+    margin:.05rem .05rem .05rem 0;white-space:nowrap;}
 .wl-estudo-sub{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem;
     font-size:.67rem;color:var(--pacs-text-muted);}
 .wl-acc{opacity:.55;}
