@@ -277,7 +277,8 @@ class EstudosController extends Controller
                     e.importado_em,
                     e.atualizado_em,
                     COALESCE(e.recebido_em, e.importado_em) AS recebido_em,
-                    COALESCE(e.body_part_examined, '')          AS body_part_examined
+                    COALESCE(e.body_part_examined, '')          AS body_part_examined,
+                    COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc
                 FROM bi_pacs_estudos e
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
