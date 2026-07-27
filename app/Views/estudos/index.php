@@ -80,73 +80,46 @@ function bodyPartBadge(string $key): string {
     $label  = htmlspecialchars(t($i18n[$key] ?? $key));
     return "<span class=\"bp-badge\" style=\"background:{$bg};color:{$txt}\">{$label}</span>";
 }
-/* ─── renderiza coluna ESTUDO: texto descritivo com cadeia de fallback ───────────── */
+/* ─── renderiza coluna ESTUDO: badge colorido + texto descritivo + fallback ─────── */
 function renderEstudo(array $e): string {
     // Cadeia de fontes em ordem de preferência:
     // 1. study_description (0008,1030) — campo DICOM principal
     // 2. requested_procedure_desc (0032,1070) — descrição do procedimento (RIS/HIS)
-    // 3. BodyPartExtractor sobre study_description — badges coloridas
-    // 4. body_part_examined (0018,0015) — parte do corpo raw do DICOM
-    // 5. '—' — sem informação
+    // 3. body_part_examined (0018,0015) — parte do corpo raw do DICOM
+    // 4. 'SEM DESCRIÇÃO' — fallback cinza
 
-    $desc      = trim($e['study_description']        ?? '');
-    $procDesc  = trim($e['requested_procedure_desc'] ?? '');
-    $bodyPart  = trim($e['body_part_examined']       ?? '');
+    $desc     = trim($e['study_description']        ?? '');
+    $procDesc = trim($e['requested_procedure_desc'] ?? '');
+    $bodyPart = trim($e['body_part_examined']       ?? '');
 
-    // Fonte 1: study_description preenchida
-    if ($desc !== '') {
-        // Tenta extrair partes do corpo para exibir como badges
-        $partes = \App\Services\BodyPartExtractor::extract($desc);
-        if (!empty($partes)) {
-            $html = '';
-            foreach ($partes as $key) {
-                $html .= bodyPartBadge($key);
-            }
-            // Após as badges, exibe o texto original como tooltip
-            $completo = htmlspecialchars($desc);
-            $html .= "<span class=\"wl-estudo-desc\" title=\"{$completo}\">".htmlspecialchars(substr($desc, 0, 30)).(strlen($desc)>30?'...':'')."</span>";
-            return $html;
-        }
-        // Texto livre sem parte reconhecida — exibe truncado com tooltip
-        $truncado = htmlspecialchars(substr($desc, 0, 40));
-        $completo = htmlspecialchars($desc);
-        $reticencias = strlen($desc) > 40 ? '...' : '';
-        return "<span class=\"wl-estudo-desc\" title=\"{$completo}\">{$truncado}{$reticencias}</span>";
+    // Escolhe o melhor texto disponível
+    $texto = $desc !== '' ? $desc
+           : ($procDesc !== '' ? $procDesc
+           : ($bodyPart !== '' ? $bodyPart : ''));
+
+    if ($texto === '') {
+        return '<span class="study-description-badge sdb-vazio" title="Tag DICOM (0008,1030) Study Description: vazia">SEM DESCRIÇÃO</span>';
     }
 
-    // Fonte 2: requested_procedure_desc (geralmente preenchido por RIS)
-    if ($procDesc !== '') {
-        $partes = \App\Services\BodyPartExtractor::extract($procDesc);
-        if (!empty($partes)) {
-            $html = '';
-            foreach ($partes as $key) {
-                $html .= bodyPartBadge($key);
-            }
-            $completo = htmlspecialchars($procDesc);
-            $html .= "<span class=\"wl-estudo-desc\" title=\"{$completo}\">".htmlspecialchars(substr($procDesc, 0, 30)).(strlen($procDesc)>30?'...':'')."</span>";
-            return $html;
-        }
-        $truncado = htmlspecialchars(substr($procDesc, 0, 40));
-        $completo = htmlspecialchars($procDesc);
-        $reticencias = strlen($procDesc) > 40 ? '...' : '';
-        return "<span class=\"wl-estudo-desc\" title=\"{$completo}\">{$truncado}{$reticencias}</span>";
-    }
+    // Determina cor pelo texto
+    $cor      = \App\Services\StudyDescriptionColor::resolve($texto);
+    $bg       = htmlspecialchars($cor['bg']);
+    $textClr  = htmlspecialchars($cor['text']);
+    $label    = $cor['label'] !== '' ? htmlspecialchars($cor['label']) : '';
 
-    // Fonte 3: body_part_examined raw (ex: 'CHEST', 'KNEE')
-    if ($bodyPart !== '') {
-        $partes = \App\Services\BodyPartExtractor::extract($bodyPart);
-        if (!empty($partes)) {
-            $html = '';
-            foreach ($partes as $key) {
-                $html .= bodyPartBadge($key);
-            }
-            return $html;
-        }
-        return "<span class=\"wl-estudo-desc\">".htmlspecialchars($bodyPart)."</span>";
-    }
+    // Texto truncado para exibição (máx 35 chars) + tooltip completo
+    $display  = htmlspecialchars(strlen($texto) > 35 ? substr($texto, 0, 35) . '...' : $texto);
+    $tooltip  = htmlspecialchars("Tag DICOM (0008,1030) Study Description: {$texto}");
 
-    // Fonte 4: sem informação
-    return '<span class="wl-estudo-vazio">—</span>';
+    // Badge: círculo colorido (label da modalidade) + texto do exame
+    $dot = $label !== ''
+        ? "<span class=\"sdb-dot\" style=\"background:{$bg};\"></span>"
+        : "<span class=\"sdb-dot sdb-dot-default\"></span>";
+
+    return "<span class=\"study-description-badge\" style=\"border-color:{$bg};color:{$bg};\" title=\"{$tooltip}\">"
+         . $dot
+         . "<span class=\"sdb-text\">{$display}</span>"
+         . "</span>";
 }
 
 /* ─── badge de prioridade interna (urgente/critico) ─────────────────────────────── */
@@ -300,6 +273,7 @@ $periodoLabel = [
         <option value="modalities"       <?= $filtros['ordenar']==='modalities'?'selected':'' ?>>Modalidade</option>
         <option value="situacao"         <?= $filtros['ordenar']==='situacao'?'selected':'' ?>>Situação</option>
         <option value="prioridade"       <?= $filtros['ordenar']==='prioridade'?'selected':'' ?>>Prioridade</option>
+        <option value="study_description" <?= $filtros['ordenar']==='study_description'?'selected':'' ?>>Descrição</option>
     </select>
     <select name="direcao" class="wl-select" style="width:100px;">
         <option value="DESC" <?= $filtros['direcao']==='DESC'?'selected':'' ?>>Desc.</option>
@@ -786,6 +760,19 @@ $periodoLabel = [
 .wl-estudo-top{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;}
 .wl-estudo-desc{font-size:.75rem;font-weight:500;color:var(--pacs-text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .wl-estudo-vazio{color:var(--pacs-text-muted);font-size:.75rem;}
+/* ── Badge Study Description (StudyDescriptionColor) ──────────────────────────── */
+.study-description-badge{
+    display:inline-flex;align-items:center;gap:.3rem;
+    border:1.5px solid currentColor;border-radius:12px;
+    padding:.25rem .6rem;
+    font-size:11px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    max-width:200px;cursor:default;
+    background:transparent;
+}
+.sdb-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sdb-dot-default{background:#0369a1;}
+.sdb-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* ── Badges de parte do corpo (BodyPartExtractor) ────────────────────────────────── */
 .bp-badge{display:inline-flex;align-items:center;justify-content:center;
     padding:.1rem .38rem;border-radius:4px;

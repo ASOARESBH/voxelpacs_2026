@@ -39,7 +39,7 @@ class EstudosController extends Controller
 {
     private const COLUNAS_ORDEM = [
         'study_date','study_time','patient_name','institution_name',
-        'modalities','especialidade','prioridade','situacao',
+        'modalities','especialidade','prioridade','situacao','study_description',
     ];
 
     public function index(): void
