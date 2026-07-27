@@ -135,8 +135,12 @@ function sortLink(array $filtros, string $col, string $label): string {
 
 /* ─── variáveis de controle ──────────────────────────────────────────────── */
 $temFiltroAtivo = array_filter(
-    array_diff_key($filtros, ['ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1]),
-    fn($v) => $v !== ''
+    array_diff_key($filtros, [
+        'ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1,
+        'situacao_rapida'=>1,  // alias de situacao, não é filtro independente
+        'modalidade'=>1,       // campo legado, substituído por modalidades[]
+    ]),
+    fn($v) => is_array($v) ? !empty($v) : $v !== ''
 );
 
 $periodoLabel = [
@@ -260,6 +264,9 @@ $periodoLabel = [
         <option value="a_laudar" <?= $filtros['situacao']==='a_laudar'?'selected':'' ?>>A laudar</option>
         <option value="em_laudo" <?= $filtros['situacao']==='em_laudo'?'selected':'' ?>>Em laudo</option>
         <option value="urgente"  <?= $filtros['situacao']==='urgente'?'selected':'' ?>>Urgente</option>
+        <option value="rascunho" <?= $filtros['situacao']==='rascunho'?'selected':'' ?>>Rascunho</option>
+        <option value="assinado" <?= $filtros['situacao']==='assinado'?'selected':'' ?>>Assinado</option>
+        <option value="liberado" <?= $filtros['situacao']==='liberado'?'selected':'' ?>>Liberado</option>
     </select>
 
     <span class="wl-divider"></span>
