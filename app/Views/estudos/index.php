@@ -333,10 +333,8 @@ $periodoLabel = [
     <!-- Médico responsável -->
     <?php if (!empty($medicos)): ?>
     <div class="wl-medico-wrap">
-        <select name="medico" class="wl-input wl-input-sm" style="width:180px;<?= $isMedicoLogado ? 'border-color:var(--pacs-primary);' : '' ?>">
-            <?php if (!$isMedicoLogado): ?>
+        <select name="medico" class="wl-input wl-input-sm" style="width:180px;">
             <option value="">Médico responsável</option>
-            <?php endif; ?>
             <?php foreach ($medicos as $med):
                 $nomeMed = is_array($med) ? $med['nome'] : $med; ?>
                 <option value="<?= htmlspecialchars($nomeMed) ?>"
@@ -345,10 +343,6 @@ $periodoLabel = [
                 </option>
             <?php endforeach; ?>
         </select>
-        <?php if ($isMedicoLogado): ?>
-        <i class="fa fa-lock" style="font-size:.65rem;color:var(--pacs-primary);"
-           title="Você só pode visualizar seus próprios estudos"></i>
-        <?php endif; ?>
     </div>
     <?php endif; ?>
 
