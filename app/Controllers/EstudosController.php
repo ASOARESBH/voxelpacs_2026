@@ -337,20 +337,18 @@ class EstudosController extends Controller
                         $medicoLogadoNome = $meRow['nome'];
                     }
                 }
-                if ($isMedicoLogado) {
-                    // Médico logado: dropdown só mostra o próprio nome
-                    $medicos = [['id' => $medicoLogadoId, 'nome' => $medicoLogadoNome]];
-                    // Força o filtro para o próprio médico se nenhum filtro foi aplicado
-                    if ($filtros['medico'] === '') {
-                        $filtros['medico'] = $medicoLogadoNome;
-                    }
-                } else {
-                    // Admin/analista: lista todos os médicos ativos do tenant
-                    $stmtAll = $pdo->prepare(
-                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome"
-                    );
-                    $stmtAll->execute([(int)$tenantId]);
-                    $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
+                // Todos os perfis vêem todos os médicos ativos do tenant.
+                // O médico logado tem seu nome pré-selecionado por conveniência,
+                // mas pode alterar o filtro livremente (sem restrição de visibilidade).
+                $stmtAll = $pdo->prepare(
+                    "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome"
+                );
+                $stmtAll->execute([(int)$tenantId]);
+                $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
+                // Pré-seleciona o próprio médico apenas se nenhum filtro foi aplicado
+                // (conveniência — o usuário pode limpar e buscar qualquer médico)
+                if ($isMedicoLogado && $filtros['medico'] === '') {
+                    $filtros['medico'] = $medicoLogadoNome;
                 }
             } elseif ($bypassGlobal) {
                 // Superadmin sem impersonação: lista todos os médicos de todos os tenants
