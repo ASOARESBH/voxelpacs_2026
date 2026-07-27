@@ -80,33 +80,72 @@ function bodyPartBadge(string $key): string {
     $label  = htmlspecialchars(t($i18n[$key] ?? $key));
     return "<span class=\"bp-badge\" style=\"background:{$bg};color:{$txt}\">{$label}</span>";
 }
-/* ─── renderiza coluna ESTUDO: badges de partes do corpo + fallback ──────────────── */
+/* ─── renderiza coluna ESTUDO: texto descritivo com cadeia de fallback ───────────── */
 function renderEstudo(array $e): string {
-    $desc      = $e['study_description']   ?? '';
-    $bodyPart  = $e['body_part_examined']  ?? '';
-    // Tenta extrair partes do corpo da Study Description
-    $partes = \App\Services\BodyPartExtractor::extract($desc);
-    if (!empty($partes)) {
-        // Exibe uma badge por parte reconhecida
-        $html = '';
-        foreach ($partes as $key) {
-            $html .= bodyPartBadge($key);
+    // Cadeia de fontes em ordem de preferência:
+    // 1. study_description (0008,1030) — campo DICOM principal
+    // 2. requested_procedure_desc (0032,1070) — descrição do procedimento (RIS/HIS)
+    // 3. BodyPartExtractor sobre study_description — badges coloridas
+    // 4. body_part_examined (0018,0015) — parte do corpo raw do DICOM
+    // 5. '—' — sem informação
+
+    $desc      = trim($e['study_description']        ?? '');
+    $procDesc  = trim($e['requested_procedure_desc'] ?? '');
+    $bodyPart  = trim($e['body_part_examined']       ?? '');
+
+    // Fonte 1: study_description preenchida
+    if ($desc !== '') {
+        // Tenta extrair partes do corpo para exibir como badges
+        $partes = \App\Services\BodyPartExtractor::extract($desc);
+        if (!empty($partes)) {
+            $html = '';
+            foreach ($partes as $key) {
+                $html .= bodyPartBadge($key);
+            }
+            // Após as badges, exibe o texto original como tooltip
+            $completo = htmlspecialchars($desc);
+            $html .= "<span class=\"wl-estudo-desc\" title=\"{$completo}\">".htmlspecialchars(substr($desc, 0, 30)).(strlen($desc)>30?'...':'')."</span>";
+            return $html;
         }
-        return $html;
-    }
-    // Fallback 1: Study Description não tem parte reconhecida mas tem texto —
-    // exibe truncado com tooltip (texto livre útil, só não é parte do corpo)
-    if ($desc !== '' && $desc !== null) {
+        // Texto livre sem parte reconhecida — exibe truncado com tooltip
         $truncado = htmlspecialchars(substr($desc, 0, 40));
         $completo = htmlspecialchars($desc);
         $reticencias = strlen($desc) > 40 ? '...' : '';
         return "<span class=\"wl-estudo-desc\" title=\"{$completo}\">{$truncado}{$reticencias}</span>";
     }
-    // Fallback 2: Study Description vazia — tenta Body Part Examined
+
+    // Fonte 2: requested_procedure_desc (geralmente preenchido por RIS)
+    if ($procDesc !== '') {
+        $partes = \App\Services\BodyPartExtractor::extract($procDesc);
+        if (!empty($partes)) {
+            $html = '';
+            foreach ($partes as $key) {
+                $html .= bodyPartBadge($key);
+            }
+            $completo = htmlspecialchars($procDesc);
+            $html .= "<span class=\"wl-estudo-desc\" title=\"{$completo}\">".htmlspecialchars(substr($procDesc, 0, 30)).(strlen($procDesc)>30?'...':'')."</span>";
+            return $html;
+        }
+        $truncado = htmlspecialchars(substr($procDesc, 0, 40));
+        $completo = htmlspecialchars($procDesc);
+        $reticencias = strlen($procDesc) > 40 ? '...' : '';
+        return "<span class=\"wl-estudo-desc\" title=\"{$completo}\">{$truncado}{$reticencias}</span>";
+    }
+
+    // Fonte 3: body_part_examined raw (ex: 'CHEST', 'KNEE')
     if ($bodyPart !== '') {
+        $partes = \App\Services\BodyPartExtractor::extract($bodyPart);
+        if (!empty($partes)) {
+            $html = '';
+            foreach ($partes as $key) {
+                $html .= bodyPartBadge($key);
+            }
+            return $html;
+        }
         return "<span class=\"wl-estudo-desc\">".htmlspecialchars($bodyPart)."</span>";
     }
-    // Fallback 3: ambos vazios
+
+    // Fonte 4: sem informação
     return '<span class="wl-estudo-vazio">—</span>';
 }
 
