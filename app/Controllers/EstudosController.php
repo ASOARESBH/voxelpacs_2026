@@ -436,6 +436,10 @@ class EstudosController extends Controller
             $ultimaSinc = $s->fetchColumn() ?: '';
         } catch (\Throwable $ex) {}
 
+        // Impede que o browser (BFCache) sirva esta página do cache ao navegar
+        // de volta — garante que filtros sempre reflitam a URL atual.
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        header('Pragma: no-cache');
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
