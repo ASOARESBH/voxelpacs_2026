@@ -144,6 +144,9 @@ return [
     'download_lote.erro_sem_orthanc' => 'Estudo sem ID Orthanc — não é possível baixar.',
     'download_lote.erro_timeout'     => 'Timeout: o Orthanc demorou demais para gerar o arquivo.',
 
+    // Worklist de Estudos — Coluna Modalidades multi-seleção (2026-07-27)
+    'estudos.worklist.coluna_modalidades'      => 'Modalidades',
+
     // Worklist de Estudos — Coluna Prioridade DICOM (0040,1003) (2026-07-25)
     'estudos.worklist.coluna_prioridade'       => 'Prioridade',
     'estudos.worklist.prioridade.emergencia'   => 'Emergência',

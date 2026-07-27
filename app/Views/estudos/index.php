@@ -8,7 +8,18 @@
 function estudoUrl(array $filtros, int $pagina = 1): string {
     $p = array_merge($filtros, ['pagina' => $pagina]);
     unset($p['situacao_rapida']);
-    return '/estudos?' . http_build_query(array_filter($p, fn($v) => $v !== '' && $v !== null));
+    // Separar modalidades[] (array) dos demais campos escalares
+    $mods = isset($p['modalidades']) && is_array($p['modalidades']) ? $p['modalidades'] : [];
+    unset($p['modalidades']);
+    // Filtrar campos vazios/nulos (exceto arrays)
+    $query = http_build_query(array_filter($p, fn($v) => $v !== '' && $v !== null));
+    // Adicionar modalidades[] individualmente para gerar ?modalidades[]=CT&modalidades[]=MR
+    foreach ($mods as $mod) {
+        if ($mod !== '' && $mod !== null) {
+            $query .= ($query ? '&' : '') . 'modalidades%5B%5D=' . rawurlencode($mod);
+        }
+    }
+    return '/estudos?' . $query;
 }
 
 /* ─── badge de prioridade DICOM (0040,1003) ─────────────────────────────── */
@@ -256,13 +267,17 @@ $periodoLabel = [
     <!-- Botões de modalidade -->
     <?php
     $modsAll  = ['CR','CT','CTG','DO','DR','DX','ECG','ES','MG','MR','NM','OF','OT','PT','RF','US','XA'];
-    $modAtual = strtoupper($filtros['modalidade']);
-    foreach ($modsAll as $m):
+    $modsAtivas = $modsAtivas ?? [];
+    foreach ($modsAll as $m): $isAtivo = in_array($m, $modsAtivas, true);
     ?>
-        <button type="button" class="wl-mod-btn <?= $modAtual===$m?'active':'' ?>"
-                onclick="setModalidade('<?= $m ?>')"><?= $m ?></button>
+        <button type="button" class="wl-mod-btn <?= $isAtivo?'active':'' ?>"
+                data-mod="<?= $m ?>" onclick="toggleModalidade('<?= $m ?>')"><?= $m ?></button>
     <?php endforeach; ?>
-    <input type="hidden" name="modalidade" id="inputModalidade" value="<?= htmlspecialchars($filtros['modalidade']) ?>">
+    <div id="modalidadesInputs">
+    <?php foreach ($modsAtivas as $mAtiva): ?>
+        <input type="hidden" name="modalidades[]" value="<?= htmlspecialchars($mAtiva) ?>">
+    <?php endforeach; ?>
+    </div>
 
     <span class="wl-divider"></span>
 
@@ -326,6 +341,7 @@ $periodoLabel = [
             <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
             <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente') ?></th>
             <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
+            <th class="col-modalidades">Modalidades</th>
             <th class="col-prioridade" title="Prioridade DICOM (0040,1003)">Prioridade</th>
             <th class="col-estudo">Estudo</th>
             <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
@@ -337,7 +353,7 @@ $periodoLabel = [
     <tbody>
     <?php if (empty($estudos)): ?>
         <tr>
-            <td colspan="10" class="wl-empty">
+            <td colspan="11" class="wl-empty">
                 <i class="fa fa-magnifying-glass"></i>
                 <div>Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.</div>
                 <?php if ($temFiltroAtivo): ?>
@@ -416,6 +432,10 @@ $periodoLabel = [
                         <!-- Unidade -->
             <td class="col-unidade">
                 <?= htmlspecialchars($e['institution_name'] ?? '—') ?>
+            </td>
+            <!-- Modalidades -->
+            <td class="col-modalidades">
+                <?php foreach ($mods as $mod) echo modBadge($mod); ?>
             </td>
             <!-- Prioridade DICOM (0040,1003) -->
             <td class="col-prioridade">
@@ -654,6 +674,7 @@ $periodoLabel = [
 .col-dt{width:88px;}
 .col-paciente{min-width:180px;max-width:240px;}
 .col-unidade{width:110px;font-size:.72rem;color:var(--pacs-text-secondary);}
+.col-modalidades{width:90px;text-align:center;}
 .col-prioridade{width:100px;text-align:center;}
 .col-estudo{min-width:150px;}
 /* Badges de prioridade DICOM */
@@ -789,6 +810,7 @@ $periodoLabel = [
 @media (max-width: 1200px) {
     .col-solicitante{display:none;}
     .col-unidade{width:100px;}
+    .col-modalidades{display:none;}
 }
 @media (max-width: 900px) {
     .wl-filters-row1{flex-wrap:wrap;}
@@ -798,7 +820,7 @@ $periodoLabel = [
 @media (max-width: 640px) {
     .wl-resumo{flex-direction:column;align-items:flex-start;}
     .wl-table-wrap{max-height:none;}
-    .col-unidade,.col-solicitante{display:none;}
+    .col-unidade,.col-solicitante,.col-modalidades{display:none;}
 }
 /* ── Barra de Seleção / Download em Lote ─────────────────────────────── */
 .wl-sel-bar{background:var(--pacs-surface);border:1px solid var(--pacs-primary);border-radius:8px;
@@ -825,11 +847,21 @@ $periodoLabel = [
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
 <script>
-function setModalidade(mod) {
-    const input = document.getElementById('inputModalidade');
-    const btns  = document.querySelectorAll('.wl-mod-btn');
-    if (input.value === mod) { input.value = ''; btns.forEach(b => b.classList.remove('active')); }
-    else { input.value = mod; btns.forEach(b => b.classList.toggle('active', b.textContent.trim() === mod)); }
+function toggleModalidade(mod) {
+    const container = document.getElementById('modalidadesInputs');
+    const existing  = container.querySelector('input[value="' + mod + '"]');
+    if (existing) {
+        existing.remove();
+    } else {
+        const inp = document.createElement('input');
+        inp.type  = 'hidden';
+        inp.name  = 'modalidades[]';
+        inp.value = mod;
+        container.appendChild(inp);
+    }
+    document.querySelectorAll('.wl-mod-btn').forEach(b => {
+        b.classList.toggle('active', !!container.querySelector('input[value="' + b.dataset.mod + '"]'));
+    });
     document.getElementById('formFiltros').submit();
 }
 function toggleDatasPersonalizadas(val) {
