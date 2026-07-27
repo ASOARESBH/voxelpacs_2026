@@ -12,6 +12,7 @@ class Router {
         '/acesso/criar-senha/',
         '/esqueci-senha',
         '/api/sla-regras/executar',
+        '/api/servidor-pacs/sync-robo',
     ];
 
     public static function get(string $path, $handler): void {

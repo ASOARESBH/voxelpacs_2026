@@ -14,7 +14,7 @@ class EstudosRepository
 
     public function buildWhereClause(array $filtros, ?int $tenantId, bool $isAdmin): array
     {
-        $where  = ['e.servidor_id = 1'];
+        $where  = ['1=1'];
         $params = [];
 
         if (!$isAdmin && $tenantId) {
@@ -189,7 +189,7 @@ class EstudosRepository
     public function getMedicos(?int $tenantId, bool $isAdmin): array
     {
         try {
-            $mW = ['servidor_id = 1', "assumido_por IS NOT NULL", "assumido_por != ''"];
+            $mW = ["assumido_por IS NOT NULL", "assumido_por != ''"];
             if (!$isAdmin && $tenantId) $mW[] = 'tenant_id = ' . (int)$tenantId;
             return $this->pdo->query(
                 "SELECT DISTINCT assumido_por FROM bi_pacs_estudos WHERE " . implode(' AND ', $mW) . " ORDER BY assumido_por"
@@ -200,7 +200,7 @@ class EstudosRepository
     public function getEspecialidades(?int $tenantId, bool $isAdmin): array
     {
         try {
-            $eW = ['servidor_id = 1', "especialidade IS NOT NULL", "especialidade != ''"];
+            $eW = ["especialidade IS NOT NULL", "especialidade != ''"];
             if (!$isAdmin && $tenantId) $eW[] = 'tenant_id = ' . (int)$tenantId;
             return $this->pdo->query(
                 "SELECT DISTINCT especialidade FROM bi_pacs_estudos WHERE " . implode(' AND ', $eW) . " ORDER BY especialidade"
@@ -212,7 +212,7 @@ class EstudosRepository
     {
         $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
         try {
-            $cW = ['servidor_id = 1'];
+            $cW = ['1=1'];
             $cP = [];
             if (!$isAdmin && $tenantId) { $cW[] = 'tenant_id = :tid'; $cP[':tid'] = $tenantId; }
             $cBase = implode(' AND ', $cW);
@@ -236,7 +236,7 @@ class EstudosRepository
     {
         $resumo = ['hoje'=>0,'semana'=>0,'mes'=>0,'urgentes'=>$urgentes,'total'=>0];
         try {
-            $rW = ['servidor_id = 1'];
+            $rW = ['1=1'];
             $rP = [];
             if (!$isAdmin && $tenantId) { $rW[] = 'tenant_id = :tid3'; $rP[':tid3'] = $tenantId; }
             $rBase = implode(' AND ', $rW);
@@ -265,7 +265,7 @@ class EstudosRepository
     public function getUltimaSincronizacao(): string
     {
         try {
-            $s = $this->pdo->query("SELECT MAX(importado_em) FROM bi_pacs_estudos WHERE servidor_id = 1");
+            $s = $this->pdo->query("SELECT MAX(importado_em) FROM bi_pacs_estudos");
             return $s->fetchColumn() ?: '';
         } catch (\Throwable $ex) {
             return '';
@@ -275,7 +275,7 @@ class EstudosRepository
     public function getEstudoById(int $id, ?int $tenantId, bool $isAdmin): ?array
     {
         try {
-            $where  = 'id = :id AND servidor_id = 1';
+            $where  = 'id = :id';
             $params = [':id' => $id];
             if (!$isAdmin && $tenantId) {
                 $where           .= ' AND tenant_id = :tid';
@@ -304,7 +304,7 @@ class EstudosRepository
     public function findByStudyUid(string $studyUid, ?int $tenantId, bool $isAdmin): ?array
     {
         try {
-            $where  = 'e.study_instance_uid = :uid AND e.servidor_id = 1';
+            $where  = 'e.study_instance_uid = :uid';
             $params = [':uid' => $studyUid];
             if (!$isAdmin && $tenantId) {
                 $where           .= ' AND e.tenant_id = :tid';

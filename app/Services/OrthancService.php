@@ -71,6 +71,27 @@ class OrthancService {
 
     public function ping(): array { return $this->request('/system'); }
 
+    /**
+     * Endpoint incremental do Orthanc — só traz o que mudou desde o cursor salvo.
+     * GET /changes?since={since}&limit={limit} → {Changes:[{Seq,ChangeType,ResourceType,ID,...}], Last, Done}
+     * `Last` é o cursor a salvar para a próxima chamada; `Done=false` significa
+     * que ainda há mais páginas a buscar com since=Last antes de considerar o
+     * ciclo completo.
+     */
+    public function getChanges(int $since, int $limit = 100): array {
+        return $this->request('/changes?since=' . $since . '&limit=' . $limit);
+    }
+
+    /**
+     * Tags compartilhadas por todas as instâncias do estudo (dump DICOM mais
+     * completo que MainDicomTags de GET /studies/{id} — inclui tags que não
+     * fazem parte do "resumo" que o Orthanc indexa nas colunas principais).
+     * GET /studies/{id}/shared-tags?simplify
+     */
+    public function getSharedTags(string $studyId): array {
+        return $this->request("/studies/$studyId/shared-tags?simplify");
+    }
+
     public function getStudies(): array { return $this->request('/studies?expand'); }
 
     public function countStudies(): int {
@@ -139,6 +160,26 @@ class OrthancService {
         }
 
         return $normalized;
+    }
+
+    /**
+     * Busca e normaliza um único estudo (GET /studies/{id} + /series para
+     * modalidades) — mesma lógica por-estudo de importAllStudies(), extraída
+     * para ser reaproveitada pela sincronização incremental via /changes
+     * (PacsSyncService), que processa estudo a estudo em vez de em lote.
+     *
+     * @return array|null null se o estudo não pôde ser obtido do Orthanc
+     */
+    public function fetchAndNormalizeStudy(string $studyId): ?array
+    {
+        $studyRes = $this->request("/studies/$studyId");
+        if (!$studyRes['success'] || !is_array($studyRes['data'])) {
+            Logger::error("Orthanc: falha ao buscar estudo $studyId: " . ($studyRes['error'] ?? 'resposta inválida'));
+            return null;
+        }
+
+        $modalities = $this->fetchModalitiesInStudy($studyId);
+        return $this->normalizeStudy($studyRes['data'], $modalities);
     }
 
     /**

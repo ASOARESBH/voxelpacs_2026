@@ -60,14 +60,22 @@ Router::get('/platform/reports',                        'Platform\PlatformReport
 Router::get('/platform/reports/exportar',               'Platform\PlatformReportsController@exportar');
 
 // ============================================================
-// Servidor PACS (Orthanc Global)
+// Servidor PACS (N:N — vários servidores Orthanc, cada um associável a N negócios)
 // ============================================================
 Router::get('/platform/servidor-pacs',                              'Platform\ServidorPacsController@index');
-Router::get('/platform/servidor-pacs/configurar',                   'Platform\ServidorPacsController@configurar');
-Router::post('/platform/servidor-pacs/salvar-config',               'Platform\ServidorPacsController@salvarConfig');
-Router::post('/platform/servidor-pacs/testar',                      'Platform\ServidorPacsController@testar');
-Router::post('/platform/servidor-pacs/sincronizar',                 'Platform\ServidorPacsController@sincronizar');
+Router::get('/platform/servidor-pacs/novo',                         'Platform\ServidorPacsController@novoServidor');
+Router::post('/platform/servidor-pacs/criar',                       'Platform\ServidorPacsController@criarServidor');
+Router::post('/platform/servidor-pacs/sync-robo/gerar-token',       'Platform\ServidorPacsController@syncRoboGerarToken');
+Router::post('/platform/servidor-pacs/sync-robo/toggle',            'Platform\ServidorPacsController@syncRoboToggle');
 Router::get('/platform/servidor-pacs/roteamento',                   'Platform\ServidorPacsController@roteamento');
 Router::post('/platform/servidor-pacs/roteamento/salvar',           'Platform\ServidorPacsController@salvarRoteamento');
 Router::post('/platform/servidor-pacs/roteamento/{id}/remover',     'Platform\ServidorPacsController@removerRoteamento');
 Router::get('/platform/servidor-pacs/estudos',                      'Platform\ServidorPacsController@estudos');
+Router::post('/platform/servidor-pacs/estudos/{id}/resolver',       'Platform\ServidorPacsController@resolverEstudo');
+Router::get('/platform/servidor-pacs/estudos/{id}/tags',            'Platform\ServidorPacsController@tagsEstudo');
+Router::get('/platform/servidor-pacs/{id}/configurar',              'Platform\ServidorPacsController@configurar');
+Router::post('/platform/servidor-pacs/{id}/salvar-config',          'Platform\ServidorPacsController@salvarConfig');
+Router::post('/platform/servidor-pacs/{id}/testar',                 'Platform\ServidorPacsController@testar');
+Router::post('/platform/servidor-pacs/{id}/sincronizar',            'Platform\ServidorPacsController@sincronizar');
+Router::post('/platform/servidor-pacs/{id}/negocios/associar',      'Platform\ServidorPacsController@associarNegocio');
+Router::post('/platform/servidor-pacs/{id}/negocios/{tenantId}/desassociar', 'Platform\ServidorPacsController@desassociarNegocio');

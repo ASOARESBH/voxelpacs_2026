@@ -132,7 +132,9 @@ class EstudosController extends Controller
 
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
         // REGRA CRÍTICA: TODOS os parâmetros são posicionais (?) — nunca misturar com :nome
-        $where  = ['e.servidor_id = 1'];
+        // Nota: sem filtro por servidor_id — um negócio pode receber estudos de mais de
+        // um servidor Orthanc (N:N); o isolamento é por tenant_id/institution_name, não por servidor.
+        $where  = ['1=1'];
         $params = [];
 
         if ($usaInstitutionFilter) {
@@ -363,7 +365,7 @@ class EstudosController extends Controller
         // ── Contadores topbar (usa InstitutionNames para consistência com a tabela) ───────
         $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
         try {
-            $cWhere  = ['servidor_id = 1'];
+            $cWhere  = ['1=1'];
             $cParams = [];
             if ($usaInstitutionFilter) {
                 if (!empty($institutionNames)) {
@@ -394,7 +396,7 @@ class EstudosController extends Controller
         // ── Painel de resumo (usa InstitutionNames para consistência com a tabela) ────────
         $resumo = ['hoje'=>0,'semana'=>0,'mes'=>0,'urgentes'=>$contadores['urgente'],'total'=>0];
         try {
-            $rWhere  = ['servidor_id = 1'];
+            $rWhere  = ['1=1'];
             $rBase_p = []; // params base sem data
             if ($usaInstitutionFilter) {
                 if (!empty($institutionNames)) {
@@ -432,7 +434,7 @@ class EstudosController extends Controller
         // ── Última sincronização ───────────────────────────────────────────────────────────
         $ultimaSinc = '';
         try {
-            $s = $pdo->query("SELECT MAX(importado_em) FROM bi_pacs_estudos WHERE servidor_id = 1");
+            $s = $pdo->query("SELECT MAX(importado_em) FROM bi_pacs_estudos");
             $ultimaSinc = $s->fetchColumn() ?: '';
         } catch (\Throwable $ex) {}
 
@@ -453,7 +455,7 @@ class EstudosController extends Controller
         $estudo   = null;
 
         try {
-            $where  = 'id = :id AND servidor_id = 1';
+            $where  = 'id = :id';
             $params = [':id' => $id];
             if ($tenantId) {
                 $where           .= ' AND tenant_id = :tid';
@@ -462,7 +464,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id
+                "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
             $stmt->execute($params);
@@ -489,12 +491,14 @@ class EstudosController extends Controller
         $uidInvalido = !empty($studyUid) && preg_match('/^\d+$/', $studyUid);
         if ($uidInvalido && !empty($orthancId)) {
             try {
-                $servidor = $pdo->query("SELECT url, usuario, senha FROM bi_pacs_servidor WHERE id=1 LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
+                $servidorStmt = $pdo->prepare("SELECT url, usuario, senha FROM bi_pacs_servidor WHERE id = ? LIMIT 1");
+                $servidorStmt->execute([$estudo['servidor_id']]);
+                $servidor = $servidorStmt->fetch(\PDO::FETCH_ASSOC);
                 if ($servidor) {
                     $orthanc = new \App\Services\OrthancService(
                         $servidor['url'],
                         $servidor['usuario'] ?? null,
-                        $servidor['senha']   ?? null,
+                        \App\Core\Crypto::decrypt($servidor['senha'] ?? null),
                         10
                     );
                     $studyData = $orthanc->getStudy($orthancId);
@@ -596,7 +600,7 @@ class EstudosController extends Controller
         $estudo       = null;
 
         try {
-            $where  = 'id = :id AND servidor_id = 1';
+            $where  = 'id = :id';
             $params = [':id' => $id];
             if ($tenantId) {
                 $where           .= ' AND tenant_id = :tid';
@@ -606,7 +610,7 @@ class EstudosController extends Controller
             }
             $stmt = $pdo->prepare(
                 "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name,
-                        accession_number, tenant_id
+                        accession_number, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
             $stmt->execute($params);
@@ -638,7 +642,7 @@ class EstudosController extends Controller
         }
 
         // ── Resolve config (tenant > servidor PACS global) e valida ─────────
-        $config = $service->resolverConfig($tenantId, $viewer);
+        $config = $service->resolverConfig($tenantId, $viewer, isset($estudo['servidor_id']) ? (int) $estudo['servidor_id'] : null);
         if (!$service->validarConfig($config)) {
             $service->registrarAcesso($contexto + [
                 'status'        => 'erro',
@@ -742,7 +746,7 @@ class EstudosController extends Controller
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
-        $where    = ['servidor_id = 1'];
+        $where    = ['1=1'];
         $params   = [];
 
         if ($tenantId) {

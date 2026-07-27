@@ -68,7 +68,6 @@ class ReportsController extends Controller
                      FROM bi_pacs_estudos e
                      WHERE e.patient_id = :pid
                        AND e.study_instance_uid != :uid
-                       AND e.servidor_id = 1
                      ORDER BY e.study_date DESC
                      LIMIT 10"
                 );

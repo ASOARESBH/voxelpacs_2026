@@ -160,7 +160,7 @@ class ExamesPacsController extends Controller
         }
 
         // Busca séries do Orthanc via API pública (leitura direta da tabela de config)
-        $servidor = $this->getServidor($pdo);
+        $servidor = $this->getServidor($pdo, (int) $estudo['servidor_id']);
         $series   = [];
         if ($servidor && $estudo['orthanc_id']) {
             $series = $this->fetchSeriesFromOrthanc($servidor, $estudo['orthanc_id']);
@@ -279,9 +279,10 @@ class ExamesPacsController extends Controller
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
     }
 
-    private function getServidor(\PDO $pdo): ?array
+    private function getServidor(\PDO $pdo, int $servidorId): ?array
     {
-        $stmt = $pdo->query("SELECT * FROM bi_pacs_servidor WHERE ativo = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM bi_pacs_servidor WHERE id = ? AND ativo = 1 LIMIT 1");
+        $stmt->execute([$servidorId]);
         $row  = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row ?: null;
     }
@@ -290,7 +291,7 @@ class ExamesPacsController extends Controller
     {
         $url  = rtrim($servidor['url'], '/') . "/studies/$orthancId/series";
         $user = $servidor['usuario'] ?? null;
-        $pass = $servidor['senha']   ?? null;
+        $pass = \App\Core\Crypto::decrypt($servidor['senha'] ?? null);
         $to   = (int)($servidor['timeout'] ?? 15);
 
         $ch = curl_init($url);

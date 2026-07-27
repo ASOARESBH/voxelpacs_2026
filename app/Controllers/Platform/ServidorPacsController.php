@@ -2,86 +2,182 @@
 namespace App\Controllers\Platform;
 
 use App\Core\Controller;
+use App\Core\Crypto;
 use App\Core\Database;
+use App\Core\Auth;
 use App\Services\OrthancService;
-use App\Services\InstitutionResolverService;
+use App\Services\PacsRoutingService;
+use App\Services\PacsSyncService;
 
 /**
- * ServidorPacsController — Gerenciamento do servidor PACS global (Orthanc)
+ * ServidorPacsController — Gerenciamento dos servidores PACS (Orthanc), N:N com Negócios
  *
  * Responsabilidades:
- *  - Configurar e testar a conexão com o Orthanc
- *  - Sincronizar estudos DICOM para o banco local
- *  - Gerenciar roteamento InstitutionName → Negócio
- *  - Exibir estudos importados com filtros
+ *  - CRUD dos servidores Orthanc (podem ser vários, cada um compartilhado por N negócios)
+ *  - Associação N:N Negócio <-> Servidor (bi_negocio_servidor_pacs)
+ *  - Sincronização manual (botão) e status do robô automático (a cada 2 min)
+ *  - Exibir estudos importados com filtros, incluindo filas de não identificados/conflitos
+ *
+ * Ver docs/PACS_MULTISERVIDOR_ROTEAMENTO.md para o desenho completo do modelo N:N
+ * e do motor de roteamento por InstitutionName (App\Services\PacsRoutingService).
  */
 class ServidorPacsController extends Controller
 {
     // ----------------------------------------------------------------
-    // DASHBOARD DO SERVIDOR
+    // LISTA DE SERVIDORES (DASHBOARD)
     // ----------------------------------------------------------------
 
     public function index(): void
     {
         $pdo = Database::getInstance();
 
-        $servidor = $this->getServidor($pdo);
-
-        $totalEstudos     = 0;
-        $naoRoteados      = 0;
-        $totalRoteados    = 0;
-        $roteamentos      = [];
-        $ultimoSync       = null;
-        $institutionStats = [];
+        $servidores = [];
+        $roboConfig = null;
 
         try {
-            $totalEstudos  = (int)$pdo->query("SELECT COUNT(*) FROM bi_pacs_estudos WHERE servidor_id = 1")->fetchColumn();
-            $naoRoteados   = (int)$pdo->query("SELECT COUNT(*) FROM bi_pacs_estudos WHERE servidor_id = 1 AND tenant_id IS NULL")->fetchColumn();
-            $totalRoteados = $totalEstudos - $naoRoteados;
+            $servidores = $pdo->query("SELECT * FROM bi_pacs_servidor ORDER BY id")->fetchAll(\PDO::FETCH_ASSOC);
 
-            $roteamentos = $pdo->query("
-                SELECT r.*, t.nome as negocio_nome, t.slug as negocio_slug,
-                       COUNT(e.id) as total_estudos
-                FROM bi_pacs_roteamento r
-                JOIN bi_tenants t ON t.id = r.tenant_id
-                LEFT JOIN bi_pacs_estudos e ON e.servidor_id = r.servidor_id
-                    AND e.institution_name = r.institution_name
-                WHERE r.servidor_id = 1
-                GROUP BY r.id
-                ORDER BY r.institution_name
+            $contagens = $pdo->query("
+                SELECT servidor_id,
+                       SUM(roteamento_status = 'roteado')          AS roteados,
+                       SUM(roteamento_status = 'nao_identificado') AS nao_identificados,
+                       SUM(roteamento_status = 'conflito')         AS conflitos,
+                       COUNT(*)                                    AS total
+                FROM bi_pacs_estudos GROUP BY servidor_id
             ")->fetchAll(\PDO::FETCH_ASSOC);
+            $contagensPorServidor = [];
+            foreach ($contagens as $c) {
+                $contagensPorServidor[$c['servidor_id']] = $c;
+            }
 
-            $ultimoSync = $pdo->query("
-                SELECT * FROM bi_pacs_sync_log WHERE servidor_id = 1 ORDER BY id DESC LIMIT 1
-            ")->fetch(\PDO::FETCH_ASSOC);
+            $negociosStmt = $pdo->prepare("
+                SELECT t.id, t.nome FROM bi_negocio_servidor_pacs nsp
+                JOIN bi_tenants t ON t.id = nsp.tenant_id
+                WHERE nsp.servidor_id = ? AND nsp.ativo = 1 ORDER BY t.nome
+            ");
 
-            $institutionStats = $this->getInstitutionStats($pdo);
+            foreach ($servidores as &$srv) {
+                unset($srv['senha']); // nunca expõe credencial, nem criptografada, à view
+                $c = $contagensPorServidor[$srv['id']] ?? ['roteados' => 0, 'nao_identificados' => 0, 'conflitos' => 0, 'total' => 0];
+                $srv['total_estudos']      = (int) $c['total'];
+                $srv['total_roteados']     = (int) $c['roteados'];
+                $srv['nao_identificados']  = (int) $c['nao_identificados'];
+                $srv['conflitos']          = (int) $c['conflitos'];
 
+                $negociosStmt->execute([$srv['id']]);
+                $srv['negocios'] = $negociosStmt->fetchAll(\PDO::FETCH_ASSOC);
+            }
+            unset($srv);
+
+            $roboConfig = $pdo->query("SELECT * FROM bi_pacs_sync_robo_config WHERE id = 1")->fetch(\PDO::FETCH_ASSOC);
         } catch (\Exception $e) {
-            error_log("[PACS] Erro ao carregar dashboard: " . $e->getMessage());
+            error_log("[PACS] Erro ao carregar dashboard de servidores: " . $e->getMessage());
         }
 
-        $this->view('platform/servidor_pacs/index', compact(
-            'servidor', 'totalEstudos', 'naoRoteados', 'totalRoteados',
-            'roteamentos', 'ultimoSync', 'institutionStats'
-        ), 'platform');
+        $this->view('platform/servidor_pacs/index', compact('servidores', 'roboConfig'), 'platform');
     }
 
     // ----------------------------------------------------------------
-    // CONFIGURAÇÃO DO SERVIDOR
+    // ROBÔ DE SINCRONIZAÇÃO AUTOMÁTICA (global — 1 config, todos os servidores)
     // ----------------------------------------------------------------
 
-    public function configurar(): void
+    public function syncRoboGerarToken(): void
+    {
+        $token = bin2hex(random_bytes(24));
+        Database::getInstance()->prepare("
+            INSERT INTO bi_pacs_sync_robo_config (id, token) VALUES (1, ?)
+            ON DUPLICATE KEY UPDATE token = VALUES(token)
+        ")->execute([$token]);
+        $_SESSION['success'] = 'Token gerado com sucesso.';
+        $this->redirect('/platform/servidor-pacs');
+    }
+
+    public function syncRoboToggle(): void
+    {
+        Database::getInstance()
+            ->prepare("UPDATE bi_pacs_sync_robo_config SET ativo = CASE WHEN ativo=1 THEN 0 ELSE 1 END WHERE id = 1")
+            ->execute();
+        $this->redirect('/platform/servidor-pacs');
+    }
+
+    // ----------------------------------------------------------------
+    // CADASTRO / CONFIGURAÇÃO DE UM SERVIDOR
+    // ----------------------------------------------------------------
+
+    public function novoServidor(): void
+    {
+        $this->view('platform/servidor_pacs/configurar', [
+            'servidor' => null,
+            'negociosAssociados' => [],
+            'todosNegocios' => $this->listarNegociosAtivos(Database::getInstance()),
+        ], 'platform');
+    }
+
+    public function configurar(int $id): void
     {
         $pdo      = Database::getInstance();
-        $servidor = $this->getServidor($pdo);
-        $negocios = $pdo->query("SELECT id, nome, slug FROM bi_tenants WHERE status != 'cancelado' ORDER BY nome")
-                        ->fetchAll(\PDO::FETCH_ASSOC);
+        $servidor = $this->getServidor($pdo, $id);
 
-        $this->view('platform/servidor_pacs/configurar', compact('servidor', 'negocios'), 'platform');
+        if (!$servidor) {
+            $_SESSION['error'] = 'Servidor não encontrado.';
+            $this->redirect('/platform/servidor-pacs');
+        }
+
+        $servidor['tem_senha'] = !empty($servidor['senha']);
+        unset($servidor['senha']); // nunca envia credencial (nem criptografada) para a view
+
+        $negociosAssociados = $pdo->prepare("
+            SELECT nsp.id AS vinculo_id, t.id AS tenant_id, t.nome, t.slug
+            FROM bi_negocio_servidor_pacs nsp
+            JOIN bi_tenants t ON t.id = nsp.tenant_id
+            WHERE nsp.servidor_id = ? AND nsp.ativo = 1 ORDER BY t.nome
+        ");
+        $negociosAssociados->execute([$id]);
+
+        $this->view('platform/servidor_pacs/configurar', [
+            'servidor' => $servidor,
+            'negociosAssociados' => $negociosAssociados->fetchAll(\PDO::FETCH_ASSOC),
+            'todosNegocios' => $this->listarNegociosAtivos($pdo),
+        ], 'platform');
     }
 
-    public function salvarConfig(): void
+    private function listarNegociosAtivos(\PDO $pdo): array
+    {
+        return $pdo->query("SELECT id, nome, slug FROM bi_tenants WHERE status != 'cancelado' ORDER BY nome")
+                   ->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    public function criarServidor(): void
+    {
+        $pdo = Database::getInstance();
+
+        $url     = rtrim(trim($_POST['url'] ?? ''), '/');
+        $nome    = trim($_POST['nome'] ?? '') ?: 'Novo Servidor Orthanc';
+        $user    = trim($_POST['usuario'] ?? '') ?: null;
+        $senha   = trim($_POST['senha'] ?? '') ?: null;
+        $timeout = max(5, min(120, (int) ($_POST['timeout'] ?? 30)));
+
+        if (empty($url)) {
+            $_SESSION['error'] = 'A URL do servidor é obrigatória.';
+            $this->redirect('/platform/servidor-pacs/novo');
+        }
+
+        try {
+            $pdo->prepare("
+                INSERT INTO bi_pacs_servidor (nome, url, usuario, senha, timeout, ativo)
+                VALUES (?, ?, ?, ?, ?, 1)
+            ")->execute([$nome, $url, $user, Crypto::encrypt($senha), $timeout]);
+
+            $_SESSION['success'] = 'Servidor cadastrado com sucesso.';
+            $this->redirect('/platform/servidor-pacs');
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao criar servidor: " . $e->getMessage());
+            $_SESSION['error'] = 'Erro ao cadastrar servidor: ' . $e->getMessage();
+            $this->redirect('/platform/servidor-pacs/novo');
+        }
+    }
+
+    public function salvarConfig(int $id): void
     {
         $pdo = Database::getInstance();
 
@@ -89,38 +185,29 @@ class ServidorPacsController extends Controller
         $nome    = trim($_POST['nome'] ?? 'Orthanc Principal');
         $user    = trim($_POST['usuario'] ?? '') ?: null;
         $senha   = trim($_POST['senha'] ?? '') ?: null;
-        $timeout = max(5, min(120, (int)($_POST['timeout'] ?? 30)));
+        $timeout = max(5, min(120, (int) ($_POST['timeout'] ?? 30)));
 
         if (empty($url)) {
             $_SESSION['error'] = 'A URL do servidor é obrigatória.';
-            $this->redirect('/platform/servidor-pacs/configurar');
+            $this->redirect("/platform/servidor-pacs/{$id}/configurar");
         }
 
         try {
-            $existe = $pdo->query("SELECT id FROM bi_pacs_servidor WHERE id = 1")->fetchColumn();
-
-            if ($existe) {
-                if ($senha !== null) {
-                    $pdo->prepare("
-                        UPDATE bi_pacs_servidor
-                        SET nome=?, url=?, usuario=?, senha=?, timeout=?, ativo=1, updated_at=NOW()
-                        WHERE id = 1
-                    ")->execute([$nome, $url, $user, $senha, $timeout]);
-                } else {
-                    $pdo->prepare("
-                        UPDATE bi_pacs_servidor
-                        SET nome=?, url=?, usuario=?, timeout=?, ativo=1, updated_at=NOW()
-                        WHERE id = 1
-                    ")->execute([$nome, $url, $user, $timeout]);
-                }
+            if ($senha !== null) {
+                $pdo->prepare("
+                    UPDATE bi_pacs_servidor
+                    SET nome=?, url=?, usuario=?, senha=?, timeout=?, ativo=1, updated_at=NOW()
+                    WHERE id = ?
+                ")->execute([$nome, $url, $user, Crypto::encrypt($senha), $timeout, $id]);
             } else {
                 $pdo->prepare("
-                    INSERT INTO bi_pacs_servidor (id, nome, url, usuario, senha, timeout, ativo)
-                    VALUES (1, ?, ?, ?, ?, ?, 1)
-                ")->execute([$nome, $url, $user, $senha, $timeout]);
+                    UPDATE bi_pacs_servidor
+                    SET nome=?, url=?, usuario=?, timeout=?, ativo=1, updated_at=NOW()
+                    WHERE id = ?
+                ")->execute([$nome, $url, $user, $timeout, $id]);
             }
 
-            error_log("[PACS] Config salva: url=$url, usuario=$user, timeout=$timeout");
+            error_log("[PACS] Config salva: servidor_id=$id, url=$url, usuario=$user, timeout=$timeout");
             $_SESSION['success'] = 'Configurações do servidor PACS salvas com sucesso.';
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao salvar config: " . $e->getMessage());
@@ -131,16 +218,63 @@ class ServidorPacsController extends Controller
     }
 
     // ----------------------------------------------------------------
+    // ASSOCIAÇÃO N:N NEGÓCIO <-> SERVIDOR
+    // ----------------------------------------------------------------
+
+    public function associarNegocio(int $servidorId): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo      = Database::getInstance();
+        $tenantId = (int) ($_POST['tenant_id'] ?? 0);
+
+        if ($tenantId <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Negócio inválido.']);
+            return;
+        }
+
+        try {
+            $pdo->prepare("
+                INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por)
+                VALUES (?, ?, 1, ?)
+                ON DUPLICATE KEY UPDATE ativo = 1
+            ")->execute([$tenantId, $servidorId, Auth::userId()]);
+
+            echo json_encode(['success' => true, 'message' => 'Negócio associado ao servidor.']);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao associar negócio: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => 'Erro: ' . $e->getMessage()]);
+        }
+    }
+
+    public function desassociarNegocio(int $servidorId, int $tenantId): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo = Database::getInstance();
+
+        try {
+            $pdo->prepare("
+                UPDATE bi_negocio_servidor_pacs SET ativo = 0
+                WHERE servidor_id = ? AND tenant_id = ?
+            ")->execute([$servidorId, $tenantId]);
+
+            echo json_encode(['success' => true, 'message' => 'Negócio desassociado do servidor.']);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao desassociar negócio: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => 'Erro: ' . $e->getMessage()]);
+        }
+    }
+
+    // ----------------------------------------------------------------
     // TESTAR CONEXÃO (AJAX / POST)
     // ----------------------------------------------------------------
 
-    public function testar(): void
+    public function testar(int $id): void
     {
         @set_time_limit(120);
         @ini_set('display_errors', '0');
         header('Content-Type: application/json; charset=utf-8');
         $pdo      = Database::getInstance();
-        $servidor = $this->getServidor($pdo);
+        $servidor = $this->getServidor($pdo, $id);
 
         if (!$servidor) {
             echo json_encode(['success' => false, 'message' => 'Servidor não configurado.']);
@@ -150,7 +284,7 @@ class ServidorPacsController extends Controller
         $orthanc = new OrthancService(
             $servidor['url'],
             $servidor['usuario'] ?? null,
-            $servidor['senha']   ?? null,
+            Crypto::decrypt($servidor['senha'] ?? null),
             $servidor['timeout'] ?? 30
         );
 
@@ -171,7 +305,7 @@ class ServidorPacsController extends Controller
                     UPDATE bi_pacs_servidor
                     SET status_ping='online', ultimo_ping=NOW(), versao=?, dicom_aet=?, dicom_port=?,
                         total_estudos=?, total_pacientes=?, total_series=?, total_instancias=?, disk_size_mb=?
-                    WHERE id = 1
+                    WHERE id = ?
                 ")->execute([
                     $version, $aet, $port,
                     $statsData['CountStudies']    ?? 0,
@@ -179,6 +313,7 @@ class ServidorPacsController extends Controller
                     $statsData['CountSeries']     ?? 0,
                     $statsData['CountInstances']  ?? 0,
                     $statsData['TotalDiskSizeMB'] ?? 0,
+                    $id,
                 ]);
             } catch (\Exception $e) {
                 error_log("[PACS] Erro ao atualizar status ping: " . $e->getMessage());
@@ -197,8 +332,8 @@ class ServidorPacsController extends Controller
         } else {
             try {
                 $pdo->prepare("
-                    UPDATE bi_pacs_servidor SET status_ping='erro', ultimo_ping=NOW(), observacoes=? WHERE id = 1
-                ")->execute([$ping['error']]);
+                    UPDATE bi_pacs_servidor SET status_ping='erro', ultimo_ping=NOW(), observacoes=? WHERE id = ?
+                ")->execute([$ping['error'], $id]);
             } catch (\Exception $e) {}
 
             echo json_encode(['success' => false, 'message' => 'Falha na conexão: ' . $ping['error']]);
@@ -206,21 +341,18 @@ class ServidorPacsController extends Controller
     }
 
     // ----------------------------------------------------------------
-    // SINCRONIZAÇÃO DE ESTUDOS
+    // SINCRONIZAÇÃO MANUAL DE UM SERVIDOR (botão — complementar ao robô automático)
     // ----------------------------------------------------------------
 
-    public function sincronizar(): void
+    public function sincronizar(int $id): void
     {
-        // Aumenta o limite de execução para sincronizações longas
-        @set_time_limit(300);
-        @ini_set('max_execution_time', '300');
-
+        @set_time_limit(280);
+        @ini_set('max_execution_time', '280');
         header('Content-Type: application/json; charset=utf-8');
-        // Garante que erros PHP não quebrem o JSON
         @ini_set('display_errors', '0');
 
         $pdo      = Database::getInstance();
-        $servidor = $this->getServidor($pdo);
+        $servidor = $this->getServidor($pdo, $id);
 
         if (!$servidor) {
             echo json_encode(['success' => false, 'message' => 'Servidor não configurado.']);
@@ -230,8 +362,8 @@ class ServidorPacsController extends Controller
         $logId = null;
         try {
             $pdo->prepare("
-                INSERT INTO bi_pacs_sync_log (servidor_id, iniciado_em, status) VALUES (1, NOW(), 'em_andamento')
-            ")->execute();
+                INSERT INTO bi_pacs_sync_log (servidor_id, iniciado_em, status, origem) VALUES (?, NOW(), 'em_andamento', 'manual')
+            ")->execute([$id]);
             $logId = $pdo->lastInsertId();
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao criar log de sync: " . $e->getMessage());
@@ -240,226 +372,58 @@ class ServidorPacsController extends Controller
         $orthanc = new OrthancService(
             $servidor['url'],
             $servidor['usuario'] ?? null,
-            $servidor['senha']   ?? null,
+            Crypto::decrypt($servidor['senha'] ?? null),
             $servidor['timeout'] ?? 30
         );
 
-        $novos       = 0;
-        $atualizados = 0;
-        $roteados    = 0;
-        $erros       = 0;
+        $novos = 0; $atualizados = 0; $roteados = 0; $naoIdentificados = 0; $conflitos = 0; $erros = 0;
 
         try {
             $studies = $orthanc->importAllStudies(100);
 
-            // Mapa de roteamento: institution_name (lowercase) → tenant_id
-            $roteamentosMap = [];
-            try {
-                $rows = $pdo->query("
-                    SELECT institution_name, tenant_id FROM bi_pacs_roteamento
-                    WHERE servidor_id = 1 AND ativo = 1
-                ")->fetchAll(\PDO::FETCH_ASSOC);
-                foreach ($rows as $r) {
-                    $roteamentosMap[strtolower(trim($r['institution_name']))] = $r['tenant_id'];
-                }
-            } catch (\Exception $e) {
-                error_log("[PACS] Erro ao carregar roteamentos: " . $e->getMessage());
-            }
-
             foreach ($studies as $study) {
                 try {
-                    $instKey  = strtolower(trim($study['institution_name'] ?? ''));
-                    $tenantId = $roteamentosMap[$instKey] ?? null;
-                    // FALLBACK: se bi_pacs_roteamento não resolver, usa InstitutionResolverService
-                    // (busca em bi_negocio_institution_names — fonte única da verdade)
-                    if (!$tenantId && !empty($study['institution_name'])) {
-                        $tenantId = InstitutionResolverService::resolveTenantByInstitutionName($study['institution_name']);
-                        if ($tenantId) {
-                            error_log('[ServidorPacs::import] InstitutionResolver resolveu tenant_id=' . $tenantId . ' para institution_name=' . $study['institution_name']);
-                        }
-                    }
-                    if ($tenantId) $roteados++;
+                    $sharedTags    = $orthanc->getSharedTags($study['orthanc_id']);
+                    $dicomTagsJson = $sharedTags['success'] ? json_encode($sharedTags['data'], JSON_UNESCAPED_UNICODE) : null;
 
-                    // Previne duplicatas — verifica se já existe
-                    $existeStmt = $pdo->prepare("SELECT id FROM bi_pacs_estudos WHERE orthanc_id = ?");
-                    $existeStmt->execute([$study['orthanc_id']]);
-                    $existeId = $existeStmt->fetchColumn();
+                    $routing = PacsRoutingService::resolveTenant($id, $study['institution_name'] ?? null);
+                    match ($routing['status']) {
+                        PacsRoutingService::STATUS_ROTEADO          => $roteados++,
+                        PacsRoutingService::STATUS_NAO_IDENTIFICADO => $naoIdentificados++,
+                        PacsRoutingService::STATUS_CONFLITO         => $conflitos++,
+                    };
 
-                    // Monta array de colunas dinâmico — só grava TAGs que vieram preenchidas
-                    $cols = [
-                        'tenant_id'                     => $tenantId,
-                        'orthanc_parent_patient'        => $study['orthanc_parent_patient']        ?? null,
-                        'is_stable'                     => $study['is_stable']                     ?? 0,
-                        'last_update_orthanc'           => $study['last_update_orthanc']           ?? null,
-                        'tags_raw'                      => $study['tags_raw']                      ?? null,
-                        // Patient
-                        'patient_id'                    => $study['patient_id']                    ?? null,
-                        'patient_name'                  => $study['patient_name']                  ?? null,
-                        'patient_name_display'          => $study['patient_name_display']          ?? null,
-                        'patient_birth_date'            => $study['patient_birth_date']            ?? null,
-                        'patient_sex'                   => $study['patient_sex']                   ?? null,
-                        'patient_age'                   => $study['patient_age']                   ?? null,
-                        'patient_weight'                => $study['patient_weight']                ?? null,
-                        'patient_size'                  => $study['patient_size']                  ?? null,
-                        'patient_comments'              => $study['patient_comments']              ?? null,
-                        'patient_identity_removed'      => $study['patient_identity_removed']      ?? null,
-                        'responsible_person'            => $study['responsible_person']            ?? null,
-                        'responsible_organization'      => $study['responsible_organization']      ?? null,
-                        'patient_species_desc'          => $study['patient_species_desc']          ?? null,
-                        'patient_breed_desc'            => $study['patient_breed_desc']            ?? null,
-                        // Study
-                        'study_instance_uid'            => $study['study_instance_uid']            ?? null,
-                        'study_date'                    => $study['study_date']                    ?? null,
-                        'study_time'                    => $study['study_time']                    ?? null,
-                        'study_description'             => $study['study_description']             ?? null,
-                        'accession_number'              => $study['accession_number']              ?? null,
-                        'study_id'                      => $study['study_id']                      ?? null,
-                        'referring_physician_name'      => $study['referring_physician_name']      ?? null,
-                        'name_of_physicians_reading'    => $study['name_of_physicians_reading']    ?? null,
-                        'admitting_diagnoses_desc'      => $study['admitting_diagnoses_desc']      ?? null,
-                        'additional_patient_history'    => $study['additional_patient_history']    ?? null,
-                        'requested_procedure_desc'      => $study['requested_procedure_desc']      ?? null,
-                        'requested_procedure_id'        => $study['requested_procedure_id']        ?? null,
-                        'scheduled_procedure_step_id'   => $study['scheduled_procedure_step_id']   ?? null,
-                        // Equipment
-                        'institution_name'              => $study['institution_name']              ?? null,
-                        'institution_address'           => $study['institution_address']           ?? null,
-                        'institutional_dept_name'       => $study['institutional_dept_name']       ?? null,
-                        'station_name'                  => $study['station_name']                  ?? null,
-                        'manufacturer'                  => $study['manufacturer']                  ?? null,
-                        'manufacturer_model_name'       => $study['manufacturer_model_name']       ?? null,
-                        'device_serial_number'          => $study['device_serial_number']          ?? null,
-                        'software_versions'             => $study['software_versions']             ?? null,
-                        'operators_name'                => $study['operators_name']                ?? null,
-                        'performing_physician_name'     => $study['performing_physician_name']     ?? null,
-                        // Series
-                        'modalities'                    => $study['modalities']                    ?? null,
-                        'num_series'                    => $study['num_series']                    ?? 0,
-                        'num_instances'                 => $study['num_instances']                 ?? 0,
-                        // SOP
-                        'specific_character_set'        => $study['specific_character_set']        ?? null,
-                        // Acquisition
-                        'body_part_examined'            => $study['body_part_examined']            ?? null,
-                        'protocol_name'                 => $study['protocol_name']                 ?? null,
-                        'contrast_bolus_agent'          => $study['contrast_bolus_agent']          ?? null,
-                        'scanning_sequence'             => $study['scanning_sequence']             ?? null,
-                        'sequence_variant'              => $study['sequence_variant']              ?? null,
-                        'scan_options'                  => $study['scan_options']                  ?? null,
-                        'mr_acquisition_type'           => $study['mr_acquisition_type']           ?? null,
-                        'slice_thickness'               => $study['slice_thickness']               ?? null,
-                        'kvp'                           => $study['kvp']                           ?? null,
-                        'exposure_time'                 => $study['exposure_time']                 ?? null,
-                        'x_ray_tube_current'            => $study['x_ray_tube_current']            ?? null,
-                        'exposure'                      => $study['exposure']                      ?? null,
-                        'exposure_in_uas'               => $study['exposure_in_uas']               ?? null,
-                        'distance_source_to_detector'   => $study['distance_source_to_detector']   ?? null,
-                        'distance_source_to_patient'    => $study['distance_source_to_patient']    ?? null,
-                        'field_of_view_dimensions'      => $study['field_of_view_dimensions']      ?? null,
-                        'pixel_spacing'                 => $study['pixel_spacing']                 ?? null,
-                        'rows'                          => $study['rows']                          ?? null,
-                        'columns'                       => $study['columns']                       ?? null,
-                        'bits_allocated'                => $study['bits_allocated']                ?? null,
-                        'bits_stored'                   => $study['bits_stored']                   ?? null,
-                        'photometric_interpretation'    => $study['photometric_interpretation']    ?? null,
-                        'samples_per_pixel'             => $study['samples_per_pixel']             ?? null,
-                        'window_center'                 => $study['window_center']                 ?? null,
-                        'window_width'                  => $study['window_width']                  ?? null,
-                        'rescale_intercept'             => $study['rescale_intercept']             ?? null,
-                        'rescale_slope'                 => $study['rescale_slope']                 ?? null,
-                        // CT
-                        'reconstruction_diameter'       => $study['reconstruction_diameter']       ?? null,
-                        'convolution_kernel'            => $study['convolution_kernel']            ?? null,
-                        'gantry_detector_tilt'          => $study['gantry_detector_tilt']          ?? null,
-                        'table_height'                  => $study['table_height']                  ?? null,
-                        'rotation_direction'            => $study['rotation_direction']            ?? null,
-                        'spiral_pitch_factor'           => $study['spiral_pitch_factor']           ?? null,
-                        'ctdi_vol'                      => $study['ctdi_vol']                      ?? null,
-                        'data_collection_diameter'      => $study['data_collection_diameter']      ?? null,
-                        'number_of_slices'              => $study['number_of_slices']              ?? null,
-                        // MR
-                        'repetition_time'               => $study['repetition_time']               ?? null,
-                        'echo_time'                     => $study['echo_time']                     ?? null,
-                        'inversion_time'                => $study['inversion_time']                ?? null,
-                        'echo_train_length'             => $study['echo_train_length']             ?? null,
-                        'flip_angle'                    => $study['flip_angle']                    ?? null,
-                        'sar'                           => $study['sar']                           ?? null,
-                        'magnetic_field_strength'       => $study['magnetic_field_strength']       ?? null,
-                        'imaging_frequency'             => $study['imaging_frequency']             ?? null,
-                        'imaged_nucleus'                => $study['imaged_nucleus']                ?? null,
-                        'number_of_averages'            => $study['number_of_averages']            ?? null,
-                        'percent_sampling'              => $study['percent_sampling']              ?? null,
-                        'percent_phase_field_of_view'   => $study['percent_phase_field_of_view']   ?? null,
-                        'receive_coil_name'             => $study['receive_coil_name']             ?? null,
-                        'transmit_coil_name'            => $study['transmit_coil_name']            ?? null,
-                        'in_plane_phase_encoding_direction' => $study['in_plane_phase_encoding_direction'] ?? null,
-                        'diffusion_b_value'             => $study['diffusion_b_value']             ?? null,
-                        // US
-                        'mechanical_index'              => $study['mechanical_index']              ?? null,
-                        'bone_thermal_index'            => $study['bone_thermal_index']            ?? null,
-                        'cranial_thermal_index'         => $study['cranial_thermal_index']         ?? null,
-                        'soft_tissue_thermal_index'     => $study['soft_tissue_thermal_index']     ?? null,
-                        // NM/PET
-                        'radiopharmaceutical'           => $study['radiopharmaceutical']           ?? null,
-                        'radionuclide_total_dose'       => $study['radionuclide_total_dose']       ?? null,
-                        'radionuclide_half_life'        => $study['radionuclide_half_life']        ?? null,
-                        'radiopharmaceutical_start_time'=> $study['radiopharmaceutical_start_time']?? null,
-                        // Dose
-                        'entrance_dose_in_mgy'          => $study['entrance_dose_in_mgy']          ?? null,
-                        'dose_area_product'             => $study['dose_area_product']             ?? null,
-                        // Workflow
-                        'placer_order_number'           => $study['placer_order_number']           ?? null,
-                        'filler_order_number'           => $study['filler_order_number']           ?? null,
-                        'reason_for_requested_procedure'=> $study['reason_for_requested_procedure']?? null,
-                        'current_patient_location'      => $study['current_patient_location']      ?? null,
-                        'patient_state'                 => $study['patient_state']                 ?? null,
-                        'admission_id'                  => $study['admission_id']                  ?? null,
-                    ];
-
-                    if ($existeId) {
-                        // UPDATE dinâmico
-                        $sets   = implode(', ', array_map(fn($c) => "`$c` = ?", array_keys($cols)));
-                        $vals   = array_values($cols);
-                        $vals[] = $existeId;
-                        $pdo->prepare("UPDATE bi_pacs_estudos SET $sets, atualizado_em=NOW() WHERE id=?")
-                            ->execute($vals);
-                        $atualizados++;
-                    } else {
-                        // INSERT dinâmico
-                        $colNames = '`servidor_id`, ' . implode(', ', array_map(fn($c) => "`$c`", array_keys($cols))) . ', `orthanc_id`';
-                        $placeholders = '1, ' . implode(', ', array_fill(0, count($cols), '?')) . ', ?';
-                        $vals = array_values($cols);
-                        $vals[] = $study['orthanc_id'];
-                        $pdo->prepare("INSERT INTO bi_pacs_estudos ($colNames) VALUES ($placeholders)")
-                            ->execute($vals);
-                        $novos++;
-                    }
+                    $resultado = PacsSyncService::upsertEstudo($pdo, $id, $study, $routing, $dicomTagsJson);
+                    $resultado === 'novo' ? $novos++ : $atualizados++;
                 } catch (\Exception $e) {
                     $erros++;
                     error_log("[PACS] Erro ao importar estudo {$study['orthanc_id']}: " . $e->getMessage());
                 }
             }
 
-            $mensagem = "Sincronização concluída: {$novos} novos, {$atualizados} atualizados, {$roteados} roteados, {$erros} erros.";
+            $mensagem = "Sincronização manual: {$novos} novos, {$atualizados} atualizados, {$roteados} roteados, "
+                . "{$naoIdentificados} não identificados, {$conflitos} conflitos, {$erros} erros.";
             error_log("[PACS] $mensagem");
 
             if ($logId) {
-                try {
-                    $pdo->prepare("
-                        UPDATE bi_pacs_sync_log SET
-                            finalizado_em=NOW(), status='concluido',
-                            estudos_novos=?, estudos_atualizados=?, estudos_roteados=?, erros=?, mensagem=?
-                        WHERE id=?
-                    ")->execute([$novos, $atualizados, $roteados, $erros, $mensagem, $logId]);
-                } catch (\Exception $e) {}
+                $pdo->prepare("
+                    UPDATE bi_pacs_sync_log SET
+                        finalizado_em=NOW(), status='concluido',
+                        estudos_novos=?, estudos_atualizados=?, estudos_roteados=?,
+                        estudos_nao_identificados=?, estudos_conflito=?, erros=?, mensagem=?
+                    WHERE id=?
+                ")->execute([$novos, $atualizados, $roteados, $naoIdentificados, $conflitos, $erros, $mensagem, $logId]);
             }
 
             echo json_encode([
-                'success'     => true,
-                'message'     => $mensagem,
-                'novos'       => $novos,
-                'atualizados' => $atualizados,
-                'roteados'    => $roteados,
-                'erros'       => $erros,
+                'success'           => true,
+                'message'           => $mensagem,
+                'novos'             => $novos,
+                'atualizados'       => $atualizados,
+                'roteados'          => $roteados,
+                'nao_identificados' => $naoIdentificados,
+                'conflitos'         => $conflitos,
+                'erros'             => $erros,
             ]);
 
         } catch (\Exception $e) {
@@ -478,7 +442,9 @@ class ServidorPacsController extends Controller
     }
 
     // ----------------------------------------------------------------
-    // ROTEAMENTO InstitutionName → Negócio
+    // ROTEAMENTO InstitutionName → Negócio (legado — de-para manual, ver
+    // docs/PACS_MULTISERVIDOR_ROTEAMENTO.md sobre por que não foi removido
+    // nem passou a ser usado pelo motor novo de roteamento por Unidades)
     // ----------------------------------------------------------------
 
     public function roteamento(): void
@@ -544,7 +510,6 @@ class ServidorPacsController extends Controller
         }
 
         try {
-            // Previne duplicatas
             $existeStmt = $pdo->prepare("
                 SELECT id FROM bi_pacs_roteamento WHERE servidor_id = 1 AND institution_name = ?
             ");
@@ -564,7 +529,6 @@ class ServidorPacsController extends Controller
                 ")->execute([$tenantId, $institutionName, $aetitle, $descricao]);
             }
 
-            // Aplica roteamento retroativo nos estudos já importados sem negócio
             $updateStmt = $pdo->prepare("
                 UPDATE bi_pacs_estudos SET tenant_id = ?
                 WHERE servidor_id = 1 AND institution_name = ? AND tenant_id IS NULL
@@ -613,23 +577,28 @@ class ServidorPacsController extends Controller
     }
 
     // ----------------------------------------------------------------
-    // LISTA DE ESTUDOS
+    // LISTA DE ESTUDOS (com filas de não identificados / conflitos)
     // ----------------------------------------------------------------
 
     public function estudos(): void
     {
         $pdo = Database::getInstance();
 
+        $filtroServidor    = (int) ($_GET['servidor'] ?? 0);
         $filtroInstitution = $_GET['institution'] ?? '';
-        $filtroTenant      = (int)($_GET['tenant'] ?? 0);
-        $filtroStatus      = $_GET['status'] ?? '';
-        $pagina            = max(1, (int)($_GET['pagina'] ?? 1));
+        $filtroTenant      = (int) ($_GET['tenant'] ?? 0);
+        $filtroStatus      = $_GET['status'] ?? ''; // roteado|nao_identificado|conflito
+        $pagina            = max(1, (int) ($_GET['pagina'] ?? 1));
         $porPagina         = 50;
         $offset            = ($pagina - 1) * $porPagina;
 
-        $where  = ['servidor_id = 1'];
+        $where  = ['1=1'];
         $params = [];
 
+        if ($filtroServidor > 0) {
+            $where[]  = 'servidor_id = ?';
+            $params[] = $filtroServidor;
+        }
         if ($filtroInstitution) {
             $where[]  = 'institution_name = ?';
             $params[] = $filtroInstitution;
@@ -638,10 +607,9 @@ class ServidorPacsController extends Controller
             $where[]  = 'tenant_id = ?';
             $params[] = $filtroTenant;
         }
-        if ($filtroStatus === 'roteado') {
-            $where[] = 'tenant_id IS NOT NULL';
-        } elseif ($filtroStatus === 'nao_roteado') {
-            $where[] = 'tenant_id IS NULL';
+        if (in_array($filtroStatus, ['roteado', 'nao_identificado', 'conflito'], true)) {
+            $where[]  = 'roteamento_status = ?';
+            $params[] = $filtroStatus;
         }
 
         $whereStr = implode(' AND ', $where);
@@ -649,16 +617,20 @@ class ServidorPacsController extends Controller
         $total    = 0;
         $institutions = [];
         $negocios     = [];
+        $servidores   = [];
+        $naoIdentificados = [];
+        $conflitos        = [];
 
         try {
             $countStmt = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE $whereStr");
             $countStmt->execute($params);
-            $total = (int)$countStmt->fetchColumn();
+            $total = (int) $countStmt->fetchColumn();
 
             $listStmt = $pdo->prepare("
-                SELECT e.*, t.nome as negocio_nome
+                SELECT e.*, t.nome as negocio_nome, s.nome as servidor_nome
                 FROM bi_pacs_estudos e
                 LEFT JOIN bi_tenants t ON t.id = e.tenant_id
+                LEFT JOIN bi_pacs_servidor s ON s.id = e.servidor_id
                 WHERE $whereStr
                 ORDER BY e.study_date DESC, e.importado_em DESC
                 LIMIT $porPagina OFFSET $offset
@@ -668,108 +640,110 @@ class ServidorPacsController extends Controller
 
             $institutions = $pdo->query("
                 SELECT DISTINCT institution_name FROM bi_pacs_estudos
-                WHERE servidor_id = 1 AND institution_name IS NOT NULL
-                ORDER BY institution_name
+                WHERE institution_name IS NOT NULL ORDER BY institution_name
             ")->fetchAll(\PDO::FETCH_COLUMN);
 
-            $negocios = $pdo->query("
-                SELECT id, nome FROM bi_tenants WHERE status != 'cancelado' ORDER BY nome
+            $negocios   = $this->listarNegociosAtivos($pdo);
+            $servidores = $pdo->query("SELECT id, nome FROM bi_pacs_servidor ORDER BY nome")->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Seções de pendência — sempre visíveis, independente do filtro acima,
+            // para nunca deixar um estudo "invisível" para o Platform Admin.
+            $naoIdentificados = $pdo->query("
+                SELECT e.*, s.nome as servidor_nome
+                FROM bi_pacs_estudos e
+                LEFT JOIN bi_pacs_servidor s ON s.id = e.servidor_id
+                WHERE e.roteamento_status = 'nao_identificado'
+                ORDER BY e.importado_em DESC LIMIT 200
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+
+            $conflitos = $pdo->query("
+                SELECT e.*, s.nome as servidor_nome
+                FROM bi_pacs_estudos e
+                LEFT JOIN bi_pacs_servidor s ON s.id = e.servidor_id
+                WHERE e.roteamento_status = 'conflito'
+                ORDER BY e.importado_em DESC LIMIT 200
             ")->fetchAll(\PDO::FETCH_ASSOC);
 
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao listar estudos: " . $e->getMessage());
         }
 
-        $totalPaginas = $porPagina > 0 ? (int)ceil($total / $porPagina) : 1;
+        $totalPaginas = $porPagina > 0 ? (int) ceil($total / $porPagina) : 1;
 
         $this->view('platform/servidor_pacs/estudos', compact(
             'estudos', 'total', 'pagina', 'totalPaginas', 'porPagina',
-            'filtroInstitution', 'filtroTenant', 'filtroStatus',
-            'institutions', 'negocios'
+            'filtroServidor', 'filtroInstitution', 'filtroTenant', 'filtroStatus',
+            'institutions', 'negocios', 'servidores', 'naoIdentificados', 'conflitos'
         ), 'platform');
+    }
+
+    /**
+     * Dump completo de tags DICOM de um estudo, sob demanda (modal "Ver tags").
+     * Buscado lazy em vez de embutido na listagem para não inflar a página
+     * com o JSON completo de até 50 estudos por vez.
+     */
+    public function tagsEstudo(int $id): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo = Database::getInstance();
+
+        $stmt = $pdo->prepare("SELECT dicom_tags_completas FROM bi_pacs_estudos WHERE id = ?");
+        $stmt->execute([$id]);
+        $json = $stmt->fetchColumn();
+
+        if ($json === false || $json === null) {
+            echo json_encode(['success' => false, 'message' => 'Tags DICOM completas não disponíveis para este estudo.']);
+            return;
+        }
+
+        echo json_encode(['success' => true, 'tags' => json_decode($json, true)], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Resolução manual de um estudo não identificado ou em conflito. Grava
+     * roteamento_resolvido_por/em — a partir daqui, ciclos automáticos futuros
+     * (PacsSyncService) não sobrescrevem mais essa decisão (ver upsertEstudo()).
+     */
+    public function resolverEstudo(int $id): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $pdo      = Database::getInstance();
+        $tenantId = (int) ($_POST['tenant_id'] ?? 0);
+
+        if ($tenantId <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Selecione um negócio válido.']);
+            return;
+        }
+
+        try {
+            $pdo->prepare("
+                UPDATE bi_pacs_estudos
+                SET tenant_id = ?, roteamento_status = 'roteado', roteamento_candidatos = NULL,
+                    roteamento_resolvido_por = ?, roteamento_resolvido_em = NOW()
+                WHERE id = ?
+            ")->execute([$tenantId, Auth::userId(), $id]);
+
+            echo json_encode(['success' => true, 'message' => 'Estudo roteado manualmente com sucesso.']);
+        } catch (\Exception $e) {
+            error_log("[PACS] Erro ao resolver estudo $id: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => 'Erro: ' . $e->getMessage()]);
+        }
     }
 
     // ----------------------------------------------------------------
     // HELPER PRIVADO
     // ----------------------------------------------------------------
 
-    private function getServidor(\PDO $pdo): ?array
+    private function getServidor(\PDO $pdo, int $id): ?array
     {
         try {
-            $stmt = $pdo->query("SELECT * FROM bi_pacs_servidor WHERE id = 1 LIMIT 1");
-            $row  = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt = $pdo->prepare("SELECT * FROM bi_pacs_servidor WHERE id = ? LIMIT 1");
+            $stmt->execute([$id]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
             return $row ?: null;
         } catch (\Exception $e) {
             error_log("[PACS] Erro ao buscar servidor: " . $e->getMessage());
             return null;
         }
-    }
-
-    /**
-     * União de InstitutionNames: (a) já vistos em estudos sincronizados do Orthanc
-     * e (b) cadastrados no módulo Negócios (bi_negocio_institution_names), mesmo
-     * que ainda não tenham nenhum estudo roteado.
-     *
-     * A chave de deduplicação é strtolower(trim(institution_name)) — mesmo critério
-     * já usado em sincronizar() para casar InstitutionName com bi_pacs_roteamento.
-     * Isso não garante que o nome cadastrado em Negócios bata 100% com a tag DICOM
-     * real (case/acentuação podem divergir) — quando os dois só diferem em caixa,
-     * o valor exibido é o que veio do estudo (fonte de verdade do Orthanc).
-     */
-    private function getInstitutionStats(\PDO $pdo): array
-    {
-        $fromEstudos = $pdo->query("
-            SELECT institution_name, COUNT(*) as total, tenant_id,
-                   MAX(study_date) as ultimo_exame
-            FROM bi_pacs_estudos
-            WHERE servidor_id = 1 AND institution_name IS NOT NULL AND institution_name != ''
-            GROUP BY institution_name, tenant_id
-            ORDER BY total DESC
-        ")->fetchAll(\PDO::FETCH_ASSOC);
-
-        $fromNegocios = [];
-        try {
-            $fromNegocios = $pdo->query("
-                SELECT bin.institution_name, bin.tenant_id, t.nome as negocio_nome
-                FROM bi_negocio_institution_names bin
-                JOIN bi_tenants t ON t.id = bin.tenant_id
-                WHERE bin.ativo = 1
-                ORDER BY bin.institution_name
-            ")->fetchAll(\PDO::FETCH_ASSOC);
-        } catch (\Exception $e) {
-            error_log("[PACS] Erro ao carregar institution_names de Negócios: " . $e->getMessage());
-        }
-
-        $merged = [];
-        foreach ($fromEstudos as $row) {
-            $key = strtolower(trim($row['institution_name']));
-            $merged[$key] = [
-                'institution_name' => $row['institution_name'],
-                'total'             => (int)$row['total'],
-                'tenant_id'         => $row['tenant_id'],
-                'negocio_nome'      => null,
-                'ultimo_exame'      => $row['ultimo_exame'],
-                'tem_estudo'        => true,
-            ];
-        }
-        foreach ($fromNegocios as $row) {
-            $key = strtolower(trim($row['institution_name']));
-            if (isset($merged[$key])) {
-                $merged[$key]['negocio_nome'] = $merged[$key]['negocio_nome'] ?? $row['negocio_nome'];
-            } else {
-                $merged[$key] = [
-                    'institution_name' => $row['institution_name'],
-                    'total'             => 0,
-                    'tenant_id'         => $row['tenant_id'],
-                    'negocio_nome'      => $row['negocio_nome'],
-                    'ultimo_exame'      => null,
-                    'tem_estudo'        => false,
-                ];
-            }
-        }
-
-        $result = array_values($merged);
-        usort($result, fn($a, $b) => $b['total'] <=> $a['total']);
-        return $result;
     }
 }

@@ -36,7 +36,7 @@ class DesktopViewerService
      * @return array{host:?string,porta:?int,ae_title:?string,calling_ae:?string}|null
      *         null quando não há nenhuma fonte de configuração disponível.
      */
-    public function resolverConfig(?int $tenantId, string $viewer): ?array
+    public function resolverConfig(?int $tenantId, string $viewer, ?int $servidorId = null): ?array
     {
         $pdo = Database::getInstance();
 
@@ -63,15 +63,23 @@ class DesktopViewerService
             }
         }
 
-        // Fallback: servidor PACS global (bi_pacs_servidor), já usado pelo
-        // fluxo de sincronização — não duplicamos essa configuração.
+        // Fallback: servidor PACS de origem do estudo (bi_pacs_servidor), já usado
+        // pelo fluxo de sincronização — não duplicamos essa configuração. Quando o
+        // servidor de origem não é conhecido, cai no primeiro servidor ativo (
+        // preserva o comportamento anterior a existir mais de 1 servidor).
         try {
-            $servidor = $pdo->query("
-                SELECT url, dicom_aet, dicom_port
-                FROM bi_pacs_servidor
-                WHERE id = 1
-                LIMIT 1
-            ")->fetch(\PDO::FETCH_ASSOC);
+            if ($servidorId) {
+                $stmt = $pdo->prepare("SELECT url, dicom_aet, dicom_port FROM bi_pacs_servidor WHERE id = ? LIMIT 1");
+                $stmt->execute([$servidorId]);
+                $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
+            } else {
+                $servidor = $pdo->query("
+                    SELECT url, dicom_aet, dicom_port
+                    FROM bi_pacs_servidor
+                    WHERE ativo = 1
+                    ORDER BY id LIMIT 1
+                ")->fetch(\PDO::FETCH_ASSOC);
+            }
         } catch (\Throwable $ex) {
             error_log('[DesktopViewerService::resolverConfig] bi_pacs_servidor: ' . $ex->getMessage());
             $servidor = null;

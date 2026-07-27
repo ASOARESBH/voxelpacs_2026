@@ -110,6 +110,13 @@ Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
 Router::get('/api/sla-regras/executar', 'SlaRoboController@executar');
 
 // ============================================================
+// API — Robô de Sincronização automática do Servidor PACS (a cada 2 min,
+// público, protegido por token via query string, chamado por cron externo —
+// ver docs/PACS_MULTISERVIDOR_ROTEAMENTO.md)
+// ============================================================
+Router::get('/api/servidor-pacs/sync-robo', 'PacsSyncRoboController@executar');
+
+// ============================================================
 // REPORTS — Módulo de Laudos Médicos
 // ============================================================
 // Editor de laudo (GET /reports/{study_uid})
