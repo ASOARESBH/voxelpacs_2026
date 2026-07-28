@@ -25,6 +25,6 @@ $hrEstudo = $estudo->study_time ?: '—';
         <div class="report-field"><span>Accession Number</span><strong><?= htmlspecialchars($estudo->accession_number ?: '—') ?></strong></div>
         <div class="report-field"><span>Study UID</span><strong class="report-uid"><?= htmlspecialchars($estudo->study_instance_uid ?: '—') ?></strong></div>
         <div class="report-field"><span>Instituição</span><strong><?= htmlspecialchars($estudo->institution_name ?: '—') ?></strong></div>
-        <div class="report-field"><span>Solicitante</span><strong><?= htmlspecialchars($estudo->referring_physician_name ?: '—') ?></strong></div>
+        <div class="report-field"><span>Solicitante</span><strong><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($estudo->referring_physician_name ?? null) ?: '—') ?></strong></div>
     </div>
 </div>

@@ -6,7 +6,8 @@
 
 ## Documentação técnica completa
 
-- **[MANUAL_TECNICO.md](MANUAL_TECNICO.md)** — engenharia reversa completa da aplicação: arquitetura, fluxo de requisição, roteamento, autenticação/RBAC, multi-tenancy, comportamento de cada módulo/controller, frontend, integração DICOM/Orthanc, débito técnico e bugs conhecidos (priorizados), relatório de segurança, guia para novas integrações e checklist antes de implementar. **Leia antes de mexer no sistema.**
+- **[REGRAS_DE_NEGOCIO.md](REGRAS_DE_NEGOCIO.md)** — referência central de regras de negócio (multi-tenancy, roteamento PACS, SLA, segurança) e pontos críticos de desenvolvimento, consolidando `SKILL-VOXEL-PACS/` e este manual num único documento. **Leia primeiro.**
+- **[MANUAL_TECNICO.md](MANUAL_TECNICO.md)** — engenharia reversa completa da aplicação: arquitetura, fluxo de requisição, roteamento, autenticação/RBAC, multi-tenancy, comportamento de cada módulo/controller, frontend, integração DICOM/Orthanc, débito técnico e bugs conhecidos (priorizados), relatório de segurança, guia para novas integrações e checklist antes de implementar. **Datado (2026-07-17) — vários itens já corrigidos, ver ressalvas em REGRAS_DE_NEGOCIO.md §16.**
 - **[BANCO_DE_DADOS.md](BANCO_DE_DADOS.md)** — dicionário de dados completo (todas as migrations, tabelas, colunas, relacionamentos, tabelas críticas, avisos sobre schemas conflitantes).
 - **[MODULO_ESTUDOS.md](MODULO_ESTUDOS.md)** — detalhe do módulo de worklist (referência de padrão arquitetural).
 - **[MODULO_REPORTS.md](MODULO_REPORTS.md)** — detalhe do módulo de laudos (⚠️ ver `MANUAL_TECNICO.md` §14 — está com bug crítico em produção no código atual).

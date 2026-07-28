@@ -96,7 +96,7 @@ $download = $download ?? false;
             <div class="pdf-pinfo"><span>Idade: </span><strong><?= htmlspecialchars($r['patient_age'] ?? '—', ENT_QUOTES) ?></strong></div>
             <div class="pdf-pinfo"><span>Prontuário: </span><strong><?= htmlspecialchars($r['patient_id'] ?? '—', ENT_QUOTES) ?></strong></div>
             <div class="pdf-pinfo"><span>Instituição: </span><strong><?= htmlspecialchars($r['institution_name'] ?? '—', ENT_QUOTES) ?></strong></div>
-            <div class="pdf-pinfo"><span>Solicitante: </span><strong><?= htmlspecialchars($r['referring_physician_name'] ?? '—', ENT_QUOTES) ?></strong></div>
+            <div class="pdf-pinfo"><span>Solicitante: </span><strong><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—', ENT_QUOTES) ?></strong></div>
         </div>
     </div>
 
@@ -246,7 +246,7 @@ if (!empty($estudo->study_date)) {
         <td class="label">Instituição</td>
         <td><?= htmlspecialchars($estudo->institution_name ?: '—') ?></td>
         <td class="label">Solicitante</td>
-        <td><?= htmlspecialchars($estudo->referring_physician_name ?: '—') ?></td>
+        <td><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($estudo->referring_physician_name ?? null) ?: '—') ?></td>
     </tr>
     <tr>
         <td class="label">Descrição</td>

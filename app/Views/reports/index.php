@@ -94,7 +94,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
                 <div class="rinfo-row"><span class="rinfo-label">Fabricante</span><span class="rinfo-val"><?= htmlspecialchars($e['manufacturer'] ?? '—', ENT_QUOTES) ?></span></div>
                 <div class="rinfo-row"><span class="rinfo-label">Equipamento</span><span class="rinfo-val"><?= htmlspecialchars($e['station_name'] ?? '—', ENT_QUOTES) ?></span></div>
                 <div class="rinfo-row"><span class="rinfo-label">Instituição</span><span class="rinfo-val"><?= htmlspecialchars($e['institution_name'] ?? '—', ENT_QUOTES) ?></span></div>
-                <div class="rinfo-row"><span class="rinfo-label">Solicitante</span><span class="rinfo-val"><?= htmlspecialchars($e['referring_physician_name'] ?? '—', ENT_QUOTES) ?></span></div>
+                <div class="rinfo-row"><span class="rinfo-label">Solicitante</span><span class="rinfo-val"><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($e['referring_physician_name'] ?? null) ?: '—', ENT_QUOTES) ?></span></div>
                 <div class="rinfo-row"><span class="rinfo-label">Accession</span><span class="rinfo-val small"><?= htmlspecialchars($e['accession_number'] ?? '—', ENT_QUOTES) ?></span></div>
                 <div class="rinfo-row"><span class="rinfo-label">Study UID</span><span class="rinfo-val small text-truncate" title="<?= $studyUid ?>"><?= substr($studyUid, 0, 20) ?>…</span></div>
             </div>

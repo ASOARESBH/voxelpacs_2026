@@ -480,7 +480,7 @@ $periodoLabel = [
             <!-- Solicitante -->
             <td class="col-solicitante">
                 <?php
-                $sol = $e['especialidade'] ?: ($e['referring_physician_name'] ?? '');
+                $sol = $e['especialidade'] ?: \App\Helpers\DicomPersonName::format($e['referring_physician_name'] ?? null);
                 if ($sol): ?>
                     <span class="wl-sol-tag"><?= htmlspecialchars($sol) ?></span>
                 <?php else: ?>

@@ -83,9 +83,9 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
                     'Parte do Corpo' => $estudo['body_part_examined'],
                     'Protocolo'      => $estudo['protocol_name'],
                     'Contraste'      => $estudo['contrast_bolus_agent'],
-                    'Médico Solic.'  => $estudo['referring_physician_name'],
-                    'Médico Exec.'   => $estudo['performing_physician_name'],
-                    'Médico Laudo'   => $estudo['name_of_physicians_reading'],
+                    'Médico Solic.'  => \App\Helpers\DicomPersonName::format($estudo['referring_physician_name'] ?? null),
+                    'Médico Exec.'   => \App\Helpers\DicomPersonName::format($estudo['performing_physician_name'] ?? null),
+                    'Médico Laudo'   => \App\Helpers\DicomPersonName::format($estudo['name_of_physicians_reading'] ?? null),
                     'Diagnóstico'    => $estudo['admitting_diagnoses_desc'],
                     'Hist. Paciente' => $estudo['additional_patient_history'],
                     'Procedimento'   => $estudo['requested_procedure_desc'],
@@ -124,7 +124,7 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
                         'Modelo'             => $estudo['manufacturer_model_name'],
                         'Nº de Série'        => $estudo['device_serial_number'],
                         'Software'           => $estudo['software_versions'],
-                        'Operador'           => $estudo['operators_name'],
+                        'Operador'           => \App\Helpers\DicomPersonName::format($estudo['operators_name'] ?? null),
                     ];
                     foreach ($equip as $label => $val):
                         if ($val === null || $val === '') continue;
