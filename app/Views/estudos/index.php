@@ -66,10 +66,16 @@ function sexoIcon(?string $sex): string {
     return '<span class="sexo-nd" title="Não informado"><i class="fa fa-circle-question"></i></span>';
 }
 
-/* ─── badge de modalidade ────────────────────────────────────────────────── */
+/* ─── badge de modalidade (sigla + tooltip com a descrição no idioma ativo) ── */
 function modBadge(string $mod): string {
-    $mod = strtoupper(trim($mod));
-    return "<span class=\"mod-badge mod-{$mod}\">{$mod}</span>";
+    $mod  = \App\Services\DicomModalityService::code($mod);
+    $desc = \App\Services\DicomModalityService::description($mod);
+    return sprintf(
+        '<span class="dicom-modality mod-badge mod-%s" data-bs-toggle="tooltip" data-bs-placement="top" title="%s">%s</span>',
+        htmlspecialchars($mod),
+        htmlspecialchars($desc),
+        htmlspecialchars($mod)
+    );
 }
 /* ─── badge de parte do corpo (BodyPartExtractor) ───────────────────────────────────── */
 function bodyPartBadge(string $key): string {

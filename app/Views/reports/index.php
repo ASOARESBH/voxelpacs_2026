@@ -10,7 +10,14 @@ $reportId    = $r ? (int)$r->id : 0;
 $estudoId    = (int)($e['id'] ?? 0);
 $studyUid    = htmlspecialchars($e['study_instance_uid'] ?? '', ENT_QUOTES);
 $paciente    = htmlspecialchars($e['patient_name_display'] ?? $e['patient_name'] ?? 'Paciente', ENT_QUOTES);
-$modalidade  = htmlspecialchars($e['modalities'] ?? '', ENT_QUOTES);
+$modalidade  = '';
+foreach (array_filter(array_map('trim', explode('\\', $e['modalities'] ?? ''))) as $modItem) {
+    $modalidade .= sprintf(
+        '<span class="dicom-modality" data-bs-toggle="tooltip" data-bs-placement="top" title="%s">%s</span> ',
+        htmlspecialchars(\App\Services\DicomModalityService::description($modItem), ENT_QUOTES),
+        htmlspecialchars(\App\Services\DicomModalityService::code($modItem), ENT_QUOTES)
+    );
+}
 $descricao   = htmlspecialchars($e['study_description'] ?? '', ENT_QUOTES);
 $situacao    = $r ? $r->situacao : 'rascunho';
 $somenteLeitura = ($bloqueado ?? false) || in_array($situacao, ['assinado','liberado']);
@@ -121,7 +128,12 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
                 <?php foreach ($exames_anteriores as $ea): ?>
                 <div class="rexame-anterior" onclick="window.open('/reports/<?= urlencode($ea['study_instance_uid']) ?>', '_blank')">
                     <div class="d-flex justify-content-between align-items-center">
-                        <span class="badge bg-secondary"><?= htmlspecialchars($ea['modalities'] ?? '', ENT_QUOTES) ?></span>
+                        <span>
+                            <?php foreach (array_filter(array_map('trim', explode('\\', $ea['modalities'] ?? ''))) as $eaMod): ?>
+                                <span class="badge bg-secondary dicom-modality" data-bs-toggle="tooltip" data-bs-placement="top"
+                                      title="<?= htmlspecialchars(\App\Services\DicomModalityService::description($eaMod), ENT_QUOTES) ?>"><?= htmlspecialchars(\App\Services\DicomModalityService::code($eaMod), ENT_QUOTES) ?></span>
+                            <?php endforeach; ?>
+                        </span>
                         <small class="text-muted"><?= $ea['study_date'] ? date('d/m/Y', strtotime($ea['study_date'])) : '' ?></small>
                     </div>
                     <div class="small mt-1"><?= htmlspecialchars($ea['study_description'] ?? '—', ENT_QUOTES) ?></div>

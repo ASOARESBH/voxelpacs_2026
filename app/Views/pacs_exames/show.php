@@ -77,7 +77,6 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
                     'Descrição'      => $estudo['study_description'],
                     'Nº de Acesso'   => $estudo['accession_number'],
                     'Study ID'       => $estudo['study_id'],
-                    'Modalidades'    => $estudo['modalities'],
                     'Séries'         => $estudo['num_series'],
                     'Imagens'        => number_format($estudo['num_instances']),
                     'Parte do Corpo' => $estudo['body_part_examined'],
@@ -98,7 +97,21 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
                         <small class="text-muted"><?= $label ?></small>
                         <small class="fw-semibold text-end" style="max-width:65%;"><?= htmlspecialchars($val) ?></small>
                     </div>
-                <?php endforeach; ?>
+                <?php endforeach;
+                if (!empty($estudo['modalities'])): ?>
+                    <div class="d-flex justify-content-between border-bottom py-1">
+                        <small class="text-muted">Modalidades</small>
+                        <small class="text-end" style="max-width:65%;">
+                            <?php foreach (array_filter(array_map('trim', explode('\\', $estudo['modalities']))) as $mod):
+                                $modCod  = \App\Services\DicomModalityService::code($mod);
+                                $modDesc = \App\Services\DicomModalityService::description($mod);
+                            ?>
+                                <span class="dicom-modality" data-bs-toggle="tooltip" data-bs-placement="top"
+                                      title="<?= htmlspecialchars($modDesc) ?>"><?= htmlspecialchars($modCod) ?></span>
+                            <?php endforeach; ?>
+                        </small>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 

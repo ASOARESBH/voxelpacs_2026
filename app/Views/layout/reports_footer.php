@@ -14,6 +14,9 @@
 <script src="/assets/js/reports/reports-main.js?v=<?= $v ?>"></script>
 <script>
     window.VoxelReports.main.init();
+
+    // Tooltips (ex: descrição de modalidade DICOM — dicom-modality)
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 </script>
 </body>
 </html>

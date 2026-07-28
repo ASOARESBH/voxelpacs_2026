@@ -1342,3 +1342,19 @@ body {
     to   { opacity: 1; transform: translateY(0); }
 }
 .pacs-content > *, #pacs-page > * { animation: fadeInUp .2s ease; }
+
+/* ── Modalidade DICOM com tooltip (App\Services\DicomModalityService) ──────
+   Compartilhado por toda tela que exiba a tag Modality (0008,0060): Worklist,
+   Detalhe de Exame, Laudos, Servidor PACS. Cor/tamanho do "badge" em si
+   (ex: .mod-badge) é definido por cada tela; esta classe só cobre o
+   comportamento do tooltip. */
+.dicom-modality {
+    cursor: help;
+    font-weight: 600;
+    border-radius: 4px;
+    transition: .15s;
+    display: inline-block;
+}
+.dicom-modality:hover {
+    filter: brightness(0.92);
+}

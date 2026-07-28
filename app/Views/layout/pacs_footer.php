@@ -53,6 +53,9 @@ function toggleMobileSidebar() {
     sidebar.classList.toggle('mobile-open');
 }
 
+// ── TOOLTIPS (ex: descrição de modalidade DICOM — dicom-modality) ───────
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+
 // ── CONTADORES TOPBAR ──────────────────────────────────────
 (function loadCounters() {
     fetch('/api/estudos/contadores', { signal: AbortSignal.timeout(5000) })
