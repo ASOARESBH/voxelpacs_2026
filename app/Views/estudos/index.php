@@ -293,7 +293,7 @@ $periodoLabel = [
 <div class="wl-filters wl-filters-row2">
     <!-- Situação rápida -->
     <select name="situacao_rapida" class="wl-select wl-select-sm"
-            onchange="document.getElementById('selectSituacao').value=this.value; document.getElementById('formFiltros').submit();">
+            onchange="document.getElementById('selectSituacao').value=this.value;">
         <option value="">A laudar (Todos)</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>Novo</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>Aberto</option>
@@ -345,8 +345,7 @@ $periodoLabel = [
     <?php endif; ?>
 
     <!-- Por página -->
-    <select name="por_pagina" class="wl-select wl-select-sm"
-            onchange="document.getElementById('formFiltros').submit()">
+    <select name="por_pagina" class="wl-select wl-select-sm">
         <?php foreach ([25,50,100,250] as $pp): ?>
             <option value="<?= $pp ?>" <?= $filtros['por_pagina']===$pp?'selected':'' ?>><?= $pp ?>/pág</option>
         <?php endforeach; ?>
@@ -897,9 +896,41 @@ function setPeriodo(periodo) {
     document.getElementById('formFiltros').submit();
 }
 function setFiltroRapido(campo, valor) {
-    const el = document.querySelector('[name="' + campo + '"]');
-    if (el) { el.value = valor; document.getElementById('formFiltros').submit(); }
+    // Navega direto pela URL em vez de depender de um campo do form existir no
+    // DOM — corrige o card "Urgentes" (campo=prioridade), que não tem select
+    // visível na tela e por isso nunca filtrava nada antes desta correção.
+    const url = new URL(window.location.href);
+    url.searchParams.set(campo, valor);
+    url.searchParams.delete('pagina');
+    window.location.href = url.pathname + '?' + url.searchParams.toString();
 }
+
+// ── Auto-submit dos filtros — nenhuma alteração exige clique manual em
+//    "Buscar" nem recarregar a tela pelo menu lateral (causa raiz do bug:
+//    a maioria dos campos de filtro não tinha listener de 'change' nenhum;
+//    só situacao_rapida/por_pagina/modalidade já disparavam sozinhos, o que
+//    tornava o comportamento inconsistente entre os campos da mesma tela).
+(function () {
+    const form = document.getElementById('formFiltros');
+    if (!form) return;
+
+    // Selects e datas: submit imediato ao mudar. "periodo" fica de fora —
+    // já tem lógica própria (toggleDatasPersonalizadas) para não submeter
+    // antes de o usuário escolher as datas do período personalizado.
+    form.querySelectorAll('select:not([name="periodo"]), input[type="date"]').forEach(el => {
+        el.addEventListener('change', () => form.submit());
+    });
+
+    // Campos de texto livre (Pesquisar, Nome do paciente, Solicitante):
+    // submit após uma pausa de digitação, para não gerar 1 requisição por tecla.
+    let debounceTimer = null;
+    form.querySelectorAll('input[type="text"]').forEach(el => {
+        el.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => form.submit(), 600);
+        });
+    });
+})();
 const MAX_SEL = 5;
 function atualizarBarraSel() {
     const selecionados = document.querySelectorAll('.row-check:checked');
