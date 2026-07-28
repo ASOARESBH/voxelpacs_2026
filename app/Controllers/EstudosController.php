@@ -344,11 +344,21 @@ class EstudosController extends Controller
                 );
                 $stmtAll->execute([(int)$tenantId]);
                 $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
-                // Pré-seleciona o próprio médico apenas se nenhum filtro foi aplicado
-                // (conveniência — o usuário pode limpar e buscar qualquer médico)
-                if ($isMedicoLogado && $filtros['medico'] === '') {
-                    $filtros['medico'] = $medicoLogadoNome;
-                }
+                // CORREÇÃO BUG FILTROS MÉDICO (2026-07-28):
+                // NÃO pré-selecionar filtros['medico'] automaticamente.
+                //
+                // O problema: quando filtros['medico'] era pré-preenchido com o nome do médico,
+                // a query adicionava AND assumido_por LIKE '%nome%' a TODAS as buscas.
+                // Estudos com situacao='novo' têm assumido_por=NULL → eram eliminados
+                // quando o médico aplicava qualquer outro filtro (paciente, unidade, etc.).
+                //
+                // Regra correta (RBAC + Multi-Tenant):
+                //   1. Restrição de segurança: institution_name IN (tenant_names) — aplicada acima
+                //   2. Filtros opcionais: paciente, unidade, modalidade, situacao, medico, etc.
+                //      O médico PODE filtrar por si mesmo usando o dropdown, mas não é obrigatório.
+                //
+                // O médico vê todos os estudos do tenant (igual ao admin).
+                // A diferença de perfil está nos botões de ação (Assumir/Laudar), não na visibilidade.
             } elseif ($bypassGlobal) {
                 // Superadmin sem impersonação: lista todos os médicos de todos os tenants
                 $medicos = $pdo->query(
