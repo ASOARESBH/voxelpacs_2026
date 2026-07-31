@@ -190,8 +190,8 @@ $periodoLabel = [
     <a href="/estudos"      class="pacs-tab active"><i class="fa fa-list-check"></i> Estudos</a>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════ RESUMO -->
-<div class="wl-resumo">
+<!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
+<div class="wl-resumo" style="display:none;">
     <div class="wl-resumo-cards">
         <div class="wl-card" onclick="setPeriodo('hoje')" title="Hoje">
             <span class="wl-card-num"><?= number_format($resumo['hoje']) ?></span>
