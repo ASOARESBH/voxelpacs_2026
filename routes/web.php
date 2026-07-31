@@ -167,3 +167,9 @@ Router::post('/acesso/criar-senha/{token}', 'Auth\AccessTokenController@salvarSe
 // ============================================================
 Router::get('/esqueci-senha',  'Auth\AccessTokenController@formEsqueciSenha');
 Router::post('/esqueci-senha', 'Auth\AccessTokenController@enviarLinkRedefinicao');
+
+// ============================================================
+// VOXEL Copilot — Webhooks recebidos do Copilot (público, protegido por Bearer token)
+// ============================================================
+Router::post('/api/copilot/webhook/laudo-finalizado', 'CopilotWebhookController@laudoFinalizado');
+Router::post('/api/copilot/webhook/evento',           'CopilotWebhookController@evento');

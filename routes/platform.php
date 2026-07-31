@@ -79,3 +79,12 @@ Router::post('/platform/servidor-pacs/{id}/testar',                 'Platform\Se
 Router::post('/platform/servidor-pacs/{id}/sincronizar',            'Platform\ServidorPacsController@sincronizar');
 Router::post('/platform/servidor-pacs/{id}/negocios/associar',      'Platform\ServidorPacsController@associarNegocio');
 Router::post('/platform/servidor-pacs/{id}/negocios/{tenantId}/desassociar', 'Platform\ServidorPacsController@desassociarNegocio');
+
+// ============================================================
+// VOXEL Copilot — Integração sistêmica por negócio
+// ============================================================
+Router::get( '/platform/negocios/{id}/copilot',                                'Platform\CopilotIntegracaoController@show');
+Router::post('/platform/negocios/{id}/copilot/gerar-codigo',                   'Platform\CopilotIntegracaoController@gerarCodigo');
+Router::post('/platform/negocios/{id}/copilot/medico/{mid}/gerar-token',       'Platform\CopilotIntegracaoController@gerarTokenMedico');
+Router::post('/platform/negocios/{id}/copilot/medico/{mid}/revogar',           'Platform\CopilotIntegracaoController@revogarTokenMedico');
+Router::get( '/platform/api/negocios/{id}/copilot/status',                     'Platform\CopilotIntegracaoController@apiStatus');
