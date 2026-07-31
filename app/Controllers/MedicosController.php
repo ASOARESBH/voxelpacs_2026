@@ -160,7 +160,7 @@ class MedicosController extends Controller
         try {
             $pdo = Database::getInstance();
             $tkStmt = $pdo->prepare("
-                SELECT t.*, u.codigo_unidade, u.chave_secreta, u.pacs_webhook_url
+                SELECT t.*, u.codigo_unidade, u.chave_secreta, u.copilot_url
                 FROM bi_copilot_medico_tokens t
                 JOIN bi_copilot_unidades u ON u.id = t.unidade_id
                 WHERE t.medico_id = :mid AND t.tenant_id = :tid
@@ -303,7 +303,7 @@ class MedicosController extends Controller
         // ── Garante que a unidade Copilot existe para este tenant ────────────────────────
         try {
             $unidadeStmt = $pdo->prepare("
-                SELECT id, codigo_unidade, chave_secreta, pacs_webhook_url
+                SELECT id, codigo_unidade, chave_secreta, copilot_url
                 FROM bi_copilot_unidades WHERE tenant_id = :tid LIMIT 1
             ");
             $unidadeStmt->execute(['tid' => $tenantId]);
@@ -322,14 +322,14 @@ class MedicosController extends Controller
 
                 $pdo->prepare("
                     INSERT INTO bi_copilot_unidades
-                        (tenant_id, codigo_unidade, chave_secreta, nome_fantasia, status, created_at, updated_at)
+                        (tenant_id, codigo_unidade, chave_secreta, status, criado_por, created_at, updated_at)
                     VALUES
-                        (:tid, :cod, :chave, :nome, 'ativo', NOW(), NOW())
+                        (:tid, :cod, :chave, 'ativo', :criado_por, NOW(), NOW())
                 ")->execute([
-                    'tid'   => $tenantId,
-                    'cod'   => $codigoUnid,
-                    'chave' => $chaveSecreta,
-                    'nome'  => $tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Unidade PACS',
+                    'tid'        => $tenantId,
+                    'cod'        => $codigoUnid,
+                    'chave'      => $chaveSecreta,
+                    'criado_por' => Auth::userId(),
                 ]);
                 $unidadeId = (int) $pdo->lastInsertId();
                 $unidade   = ['id' => $unidadeId, 'codigo_unidade' => $codigoUnid, 'chave_secreta' => $chaveSecreta];
