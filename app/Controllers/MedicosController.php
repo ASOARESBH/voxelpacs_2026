@@ -313,12 +313,36 @@ class MedicosController extends Controller
                 // Cria a unidade automaticamente a partir dos dados do tenant
                 $tenantStmt = $pdo->prepare("SELECT * FROM bi_tenants WHERE id = :id LIMIT 1");
                 $tenantStmt->execute(['id' => $tenantId]);
-                $tenant = $tenantStmt->fetch(\PDO::FETCH_ASSOC);
+                $tenant = $tenantStmt->fetch(\PDO::FETCH_ASSOC) ?? [];
 
-                $uf          = strtoupper(substr($tenant['estado'] ?? 'BR', 0, 2));
-                $cidade      = strtoupper(substr(preg_replace('/[^A-Z0-9]/i', '', $tenant['cidade'] ?? 'CIDADE'), 0, 6));
-                $codigoUnid  = 'PACS-' . $uf . '-' . $cidade . '-' . date('Y') . '-' . str_pad($tenantId, 3, '0', STR_PAD_LEFT);
+                Logger::info('[MedicosController::copilotToken] Dados do tenant para gerar código', [
+                    'tenant_id'     => $tenantId,
+                    'tenant_estado' => $tenant['estado'] ?? null,
+                    'tenant_cidade' => $tenant['cidade'] ?? null,
+                    'tenant_nome'   => $tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? null,
+                ]);
+
+                // Gera código robusto: usa apenas o tenant_id se cidade/estado estiverem vazios
+                $uf     = strtoupper(trim($tenant['estado'] ?? ''));
+                $cidade = strtoupper(trim($tenant['cidade'] ?? ''));
+
+                if ($uf && $cidade) {
+                    // Remove acentos e caracteres especiais
+                    $cidadeLimpa = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $cidade);
+                    $cidadeLimpa = strtoupper(preg_replace('/[^A-Z0-9]/', '', $cidadeLimpa));
+                    $cidadeLimpa = substr($cidadeLimpa, 0, 6);
+                    $codigoUnid  = 'PACS-' . $uf . '-' . $cidadeLimpa . '-' . date('Y') . '-' . str_pad($tenantId, 3, '0', STR_PAD_LEFT);
+                } else {
+                    // Fallback: usa apenas o tenant_id + hash curto para garantir unicidade
+                    $codigoUnid = 'PACS-' . date('Y') . '-' . str_pad($tenantId, 4, '0', STR_PAD_LEFT) . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+                }
+
                 $chaveSecreta = bin2hex(random_bytes(32));
+
+                Logger::info('[MedicosController::copilotToken] Criando bi_copilot_unidades', [
+                    'tenant_id'      => $tenantId,
+                    'codigo_unidade' => $codigoUnid,
+                ]);
 
                 $pdo->prepare("
                     INSERT INTO bi_copilot_unidades
@@ -333,9 +357,20 @@ class MedicosController extends Controller
                 ]);
                 $unidadeId = (int) $pdo->lastInsertId();
                 $unidade   = ['id' => $unidadeId, 'codigo_unidade' => $codigoUnid, 'chave_secreta' => $chaveSecreta];
+
+                Logger::info('[MedicosController::copilotToken] bi_copilot_unidades criada', [
+                    'unidade_id'     => $unidadeId,
+                    'codigo_unidade' => $codigoUnid,
+                ]);
             }
         } catch (\Throwable $e) {
-            $this->json(['ok' => false, 'msg' => 'Erro ao acessar tabela bi_copilot_unidades. Execute a migration 2026-07-31_copilot_integracao.sql.'], 500);
+            Logger::error('[MedicosController::copilotToken] Erro ao acessar bi_copilot_unidades', [
+                'tenant_id' => $tenantId,
+                'medico_id' => $id,
+                'erro'      => $e->getMessage(),
+                'arquivo'   => $e->getFile() . ':' . $e->getLine(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Erro ao acessar tabela bi_copilot_unidades. Execute a migration 2026-07-31_copilot_integracao.sql. Detalhe: ' . $e->getMessage()], 500);
             return;
         }
 
@@ -357,6 +392,15 @@ class MedicosController extends Controller
         $medicoEsp  = $medicoArr['especialidade'] ?? '';
         $medicoEmail = $medicoArr['email'] ?? '';
 
+        Logger::info('[MedicosController::copilotToken] Iniciando acao', [
+            'tenant_id'      => $tenantId,
+            'medico_id'      => $id,
+            'acao'           => $acao,
+            'unidade_id'     => $unidadeId,
+            'codigo_unidade' => $unidade['codigo_unidade'],
+            'token_existente'=> $tokenExistente ? $tokenExistente['id'] : null,
+        ]);
+
         // ── Ação: REVOGAR ──────────────────────────────────────────────────────────────────────────
         if ($acao === 'revogar') {
             if (!$tokenExistente) {
@@ -368,6 +412,11 @@ class MedicosController extends Controller
                 SET status = 'revogado', motivo_revogacao = 'Revogado manualmente', updated_at = NOW()
                 WHERE id = :id
             ")->execute(['id' => $tokenExistente['id']]);
+            Logger::info('[MedicosController::copilotToken] Token revogado', [
+                'token_id'  => $tokenExistente['id'],
+                'medico_id' => $id,
+                'by_user'   => Auth::userId(),
+            ]);
             $this->json(['ok' => true, 'msg' => 'Token revogado com sucesso.']);
             return;
         }
@@ -394,6 +443,12 @@ class MedicosController extends Controller
                 'uid'   => Auth::userId(),
                 'id'    => $tokenExistente['id'],
             ]);
+            Logger::info('[MedicosController::copilotToken] Token regenerado', [
+                'token_id'       => $tokenExistente['id'],
+                'medico_id'      => $id,
+                'codigo_unidade' => $unidade['codigo_unidade'],
+                'by_user'        => Auth::userId(),
+            ]);
             $this->json([
                 'ok'               => true,
                 'token_integracao' => $novoToken,
@@ -406,6 +461,11 @@ class MedicosController extends Controller
         // ── Ação: GERAR (novo) ─────────────────────────────────────────────────────────────────────
         if ($tokenExistente) {
             // Já existe: retorna o atual sem criar novo
+            Logger::info('[MedicosController::copilotToken] Token já existia, retornando atual', [
+                'token_id'       => $tokenExistente['id'],
+                'medico_id'      => $id,
+                'codigo_unidade' => $unidade['codigo_unidade'],
+            ]);
             $this->json([
                 'ok'               => true,
                 'token_integracao' => $tokenExistente['token_integracao'],
@@ -436,6 +496,18 @@ class MedicosController extends Controller
             'esp'        => $medicoEsp,
             'email'      => $medicoEmail,
             'gerado_por' => Auth::userId(),
+        ]);
+
+        $novoTokenId = (int) $pdo->lastInsertId();
+
+        Logger::info('[MedicosController::copilotToken] Novo token criado com sucesso', [
+            'token_id'       => $novoTokenId,
+            'medico_id'      => $id,
+            'unidade_id'     => $unidadeId,
+            'codigo_unidade' => $unidade['codigo_unidade'],
+            'medico_nome'    => $medicoNome,
+            'medico_crm'     => $medicoCrm . '/' . $medicoCrmUf,
+            'by_user'        => Auth::userId(),
         ]);
 
         $this->json([
