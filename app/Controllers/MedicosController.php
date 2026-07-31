@@ -3,6 +3,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Controller;
+use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\MedicoService;
@@ -151,12 +152,36 @@ class MedicosController extends Controller
             $medico = array_merge($medico, $formDados);
         }
 
-        $form = $this->service->dadosFormulario($tenantId, $id);
+                $form = $this->service->dadosFormulario($tenantId, $id);
+
+        // Busca token Copilot existente para este médico
+        $copilotToken   = null;
+        $copilotUnidade = null;
+        try {
+            $pdo = Database::getInstance();
+            $tkStmt = $pdo->prepare("
+                SELECT t.*, u.codigo_unidade, u.chave_secreta, u.pacs_webhook_url
+                FROM bi_copilot_medico_tokens t
+                JOIN bi_copilot_unidades u ON u.id = t.unidade_id
+                WHERE t.medico_id = :mid AND t.tenant_id = :tid
+                ORDER BY t.created_at DESC LIMIT 1
+            ");
+            $tkStmt->execute(['mid' => $id, 'tid' => $tenantId]);
+            $row = $tkStmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row) {
+                $copilotToken   = $row;
+                $copilotUnidade = ['codigo_unidade' => $row['codigo_unidade']];
+            }
+        } catch (\Throwable $e) {
+            // Tabela pode não existir ainda
+        }
 
         $this->view('medicos/form', array_merge($form, [
-            'title'  => 'Editar Médico',
-            'medico' => $medico,
-            'erros'  => $erros,
+            'title'          => 'Editar Médico',
+            'medico'         => $medico,
+            'erros'          => $erros,
+            'copilotToken'   => $copilotToken,
+            'copilotUnidade' => $copilotUnidade,
         ]));
     }
 
@@ -251,6 +276,173 @@ class MedicosController extends Controller
             'bairro'      => $data['bairro'] ?? '',
             'cidade'      => $data['localidade'] ?? '',
             'estado'      => $data['uf'] ?? '',
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // API — TOKEN COPILOT (AJAX)
+    // POST /api/medicos/{id}/copilot-token
+    // Body JSON: { "acao": "gerar" | "regenerar" | "revogar" }
+    // -------------------------------------------------------------------------
+    public function copilotToken(int $id): void
+    {
+        $tenantId = $this->tenantId();
+
+        // Verifica se o médico pertence ao tenant
+        $medico = $this->service->buscarPorId($id, $tenantId);
+        if (!$medico) {
+            $this->json(['ok' => false, 'msg' => 'Médico não encontrado.'], 404);
+            return;
+        }
+
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $acao = $body['acao'] ?? 'gerar';
+
+        $pdo = Database::getInstance();
+
+        // ── Garante que a unidade Copilot existe para este tenant ────────────────────────
+        try {
+            $unidadeStmt = $pdo->prepare("
+                SELECT id, codigo_unidade, chave_secreta, pacs_webhook_url
+                FROM bi_copilot_unidades WHERE tenant_id = :tid LIMIT 1
+            ");
+            $unidadeStmt->execute(['tid' => $tenantId]);
+            $unidade = $unidadeStmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$unidade) {
+                // Cria a unidade automaticamente a partir dos dados do tenant
+                $tenantStmt = $pdo->prepare("SELECT * FROM bi_tenants WHERE id = :id LIMIT 1");
+                $tenantStmt->execute(['id' => $tenantId]);
+                $tenant = $tenantStmt->fetch(\PDO::FETCH_ASSOC);
+
+                $uf          = strtoupper(substr($tenant['estado'] ?? 'BR', 0, 2));
+                $cidade      = strtoupper(substr(preg_replace('/[^A-Z0-9]/i', '', $tenant['cidade'] ?? 'CIDADE'), 0, 6));
+                $codigoUnid  = 'PACS-' . $uf . '-' . $cidade . '-' . date('Y') . '-' . str_pad($tenantId, 3, '0', STR_PAD_LEFT);
+                $chaveSecreta = bin2hex(random_bytes(32));
+
+                $pdo->prepare("
+                    INSERT INTO bi_copilot_unidades
+                        (tenant_id, codigo_unidade, chave_secreta, nome_fantasia, status, created_at, updated_at)
+                    VALUES
+                        (:tid, :cod, :chave, :nome, 'ativo', NOW(), NOW())
+                ")->execute([
+                    'tid'   => $tenantId,
+                    'cod'   => $codigoUnid,
+                    'chave' => $chaveSecreta,
+                    'nome'  => $tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Unidade PACS',
+                ]);
+                $unidadeId = (int) $pdo->lastInsertId();
+                $unidade   = ['id' => $unidadeId, 'codigo_unidade' => $codigoUnid, 'chave_secreta' => $chaveSecreta];
+            }
+        } catch (\Throwable $e) {
+            $this->json(['ok' => false, 'msg' => 'Erro ao acessar tabela bi_copilot_unidades. Execute a migration 2026-07-31_copilot_integracao.sql.'], 500);
+            return;
+        }
+
+        $unidadeId = (int) $unidade['id'];
+
+        // ── Busca token existente ─────────────────────────────────────────────────────────────────
+        $tkStmt = $pdo->prepare("
+            SELECT id, token_integracao, status FROM bi_copilot_medico_tokens
+            WHERE medico_id = :mid AND tenant_id = :tid LIMIT 1
+        ");
+        $tkStmt->execute(['mid' => $id, 'tid' => $tenantId]);
+        $tokenExistente = $tkStmt->fetch(\PDO::FETCH_ASSOC);
+
+        // Dados do médico (snapshot)
+        $medicoArr = is_array($medico) ? $medico : (array) $medico;
+        $medicoNome = $medicoArr['nome'] ?? '';
+        $medicoCrm  = $medicoArr['crm'] ?? '';
+        $medicoCrmUf = $medicoArr['crm_uf'] ?? '';
+        $medicoEsp  = $medicoArr['especialidade'] ?? '';
+        $medicoEmail = $medicoArr['email'] ?? '';
+
+        // ── Ação: REVOGAR ──────────────────────────────────────────────────────────────────────────
+        if ($acao === 'revogar') {
+            if (!$tokenExistente) {
+                $this->json(['ok' => false, 'msg' => 'Nenhum token para revogar.']);
+                return;
+            }
+            $pdo->prepare("
+                UPDATE bi_copilot_medico_tokens
+                SET status = 'revogado', motivo_revogacao = 'Revogado manualmente', updated_at = NOW()
+                WHERE id = :id
+            ")->execute(['id' => $tokenExistente['id']]);
+            $this->json(['ok' => true, 'msg' => 'Token revogado com sucesso.']);
+            return;
+        }
+
+        // ── Ação: REGENERAR ─────────────────────────────────────────────────────────────────────────
+        $novoToken = 'CPLT-' . strtoupper(bin2hex(random_bytes(20)));
+
+        if ($acao === 'regenerar' && $tokenExistente) {
+            $pdo->prepare("
+                UPDATE bi_copilot_medico_tokens
+                SET token_integracao = :token,
+                    status = 'ativo',
+                    medico_nome = :nome, medico_crm = :crm, medico_crm_uf = :uf,
+                    medico_especialidade = :esp, medico_email = :email,
+                    gerado_por = :uid, updated_at = NOW()
+                WHERE id = :id
+            ")->execute([
+                'token' => $novoToken,
+                'nome'  => $medicoNome,
+                'crm'   => $medicoCrm,
+                'uf'    => $medicoCrmUf,
+                'esp'   => $medicoEsp,
+                'email' => $medicoEmail,
+                'uid'   => Auth::userId(),
+                'id'    => $tokenExistente['id'],
+            ]);
+            $this->json([
+                'ok'               => true,
+                'token_integracao' => $novoToken,
+                'codigo_unidade'   => $unidade['codigo_unidade'],
+                'msg'              => 'Token regenerado com sucesso.',
+            ]);
+            return;
+        }
+
+        // ── Ação: GERAR (novo) ─────────────────────────────────────────────────────────────────────
+        if ($tokenExistente) {
+            // Já existe: retorna o atual sem criar novo
+            $this->json([
+                'ok'               => true,
+                'token_integracao' => $tokenExistente['token_integracao'],
+                'codigo_unidade'   => $unidade['codigo_unidade'],
+                'msg'              => 'Token já existe. Use Regenerar para criar um novo.',
+            ]);
+            return;
+        }
+
+        // Cria novo token
+        $pdo->prepare("
+            INSERT INTO bi_copilot_medico_tokens
+                (unidade_id, tenant_id, medico_id, token_integracao,
+                 medico_nome, medico_crm, medico_crm_uf, medico_especialidade, medico_email,
+                 status, gerado_por, created_at, updated_at)
+            VALUES
+                (:uid, :tid, :mid, :token,
+                 :nome, :crm, :cuf, :esp, :email,
+                 'ativo', :gerado_por, NOW(), NOW())
+        ")->execute([
+            'uid'        => $unidadeId,
+            'tid'        => $tenantId,
+            'mid'        => $id,
+            'token'      => $novoToken,
+            'nome'       => $medicoNome,
+            'crm'        => $medicoCrm,
+            'cuf'        => $medicoCrmUf,
+            'esp'        => $medicoEsp,
+            'email'      => $medicoEmail,
+            'gerado_por' => Auth::userId(),
+        ]);
+
+        $this->json([
+            'ok'               => true,
+            'token_integracao' => $novoToken,
+            'codigo_unidade'   => $unidade['codigo_unidade'],
+            'msg'              => 'Token gerado com sucesso.',
         ]);
     }
 }
