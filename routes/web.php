@@ -22,6 +22,7 @@ Router::get('/dashboard', 'DashboardController@index');
 // WORKLIST — Estudos PACS (página principal)
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
+Router::get('/estudos/instalar',       'EstudosController@instalar');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
 Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
 Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');

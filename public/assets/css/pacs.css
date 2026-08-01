@@ -525,7 +525,45 @@ body {
     color: var(--royal);
     border-bottom-color: var(--royal);
 }
-
+/* ── WORKLIST PAGE HEADER (substitui pacs-tabs na worklist) ── */
+.wl-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .55rem 1.25rem;
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    min-height: 42px;
+}
+.wl-page-title {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    font-size: .85rem;
+    font-weight: 700;
+    color: var(--royal);
+    letter-spacing: .01em;
+}
+.wl-pwa-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: none;
+    padding: .28rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    transition: all .15s;
+    white-space: nowrap;
+    background: var(--white);
+}
+.wl-pwa-btn:hover {
+    color: var(--royal);
+    border-color: var(--royal);
+    background: var(--blue-50);
+}
 /* ── FILTROS / SEARCH BAR ── */
 .pacs-filters {
     background: var(--white);

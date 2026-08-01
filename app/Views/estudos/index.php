@@ -184,10 +184,15 @@ $periodoLabel = [
 ][$filtros['periodo']] ?? '30 dias';
 ?>
 
-<!-- ═══════════════════════════════════════════════════════════ TABS -->
-<div class="pacs-tabs">
-    <a href="/agendamentos" class="pacs-tab"><i class="fa fa-calendar-days"></i> Agendamentos</a>
-    <a href="/estudos"      class="pacs-tab active"><i class="fa fa-list-check"></i> Estudos</a>
+<!-- ═══════════════════════════════════════════════════════════ HEADER WORKLIST -->
+<div class="wl-page-header">
+    <div class="wl-page-title">
+        <i class="fa fa-list-check"></i>
+        <span>Worklist de Estudos</span>
+    </div>
+    <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
+        <i class="fa fa-download"></i> Instalar App
+    </a>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
