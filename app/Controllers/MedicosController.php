@@ -362,6 +362,9 @@ class MedicosController extends Controller
                     'unidade_id'     => $unidadeId,
                     'codigo_unidade' => $codigoUnid,
                 ]);
+
+                // ── Registra a unidade automaticamente no Copilot ──────────────────
+                $this->registrarUnidadeNoCopilot($pdo, $tenantId, $codigoUnid, $chaveSecreta);
             }
         } catch (\Throwable $e) {
             Logger::error('[MedicosController::copilotToken] Erro ao acessar bi_copilot_unidades', [
@@ -510,11 +513,122 @@ class MedicosController extends Controller
             'by_user'        => Auth::userId(),
         ]);
 
+        // ── Registra/atualiza a unidade no Copilot ao gerar novo token ────────────
+        $this->registrarUnidadeNoCopilot($pdo, $tenantId, $unidade['codigo_unidade'], $unidade['chave_secreta']);
+
         $this->json([
             'ok'               => true,
             'token_integracao' => $novoToken,
             'codigo_unidade'   => $unidade['codigo_unidade'],
             'msg'              => 'Token gerado com sucesso.',
         ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Registra ou atualiza a unidade no VoxelCopilot via API.
+    // Chamado ao gerar/regenerar token para garantir que cop_pacs_unidades
+    // do Copilot tenha a entrada correta antes do médico tentar vincular.
+    // ─────────────────────────────────────────────────────────────────────────
+    private function registrarUnidadeNoCopilot(\PDO $pdo, int $tenantId, string $codigoUnidade, string $chaveSecreta): void
+    {
+        try {
+            // Busca dados completos da unidade e do tenant
+            $unidadeRow = $pdo->prepare("
+                SELECT u.copilot_url, u.copilot_api_token,
+                       t.nome_fantasia, t.razao_social, t.nome, t.cnpj,
+                       t.cidade, t.estado, t.telefone, t.email_contato
+                FROM bi_copilot_unidades u
+                JOIN bi_tenants t ON t.id = u.tenant_id
+                WHERE u.tenant_id = :tid LIMIT 1
+            ");
+            $unidadeRow->execute(['tid' => $tenantId]);
+            $row = $unidadeRow->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                Logger::info('[MedicosController::registrarUnidadeNoCopilot] Unidade não encontrada no banco', [
+                    'tenant_id' => $tenantId,
+                ]);
+                return;
+            }
+
+            $copilotUrl = rtrim($row['copilot_url'] ?? '', '/');
+
+            if (!$copilotUrl) {
+                // URL do Copilot não configurada — usa a URL padrão do ambiente
+                $copilotUrl = defined('COPILOT_BASE_URL') ? rtrim(COPILOT_BASE_URL, '/') : 'https://demo.voxelpacs.com.br';
+                Logger::info('[MedicosController::registrarUnidadeNoCopilot] copilot_url não configurada, usando padrão', [
+                    'copilot_url' => $copilotUrl,
+                ]);
+            }
+
+            $endpoint = $copilotUrl . '/api/pacs/registrar-unidade';
+
+            $nomeInstituicao = $row['nome_fantasia'] ?? $row['razao_social'] ?? $row['nome'] ?? '';
+
+            $payload = json_encode([
+                'codigo_unidade'  => $codigoUnidade,
+                'chave_secreta'   => $chaveSecreta,
+                'nome_instituicao'=> $nomeInstituicao,
+                'cnpj'            => $row['cnpj']          ?? '',
+                'cidade'          => $row['cidade']        ?? '',
+                'estado'          => $row['estado']        ?? '',
+                'telefone'        => $row['telefone']      ?? '',
+                'email_contato'   => $row['email_contato'] ?? '',
+                'pacs_tipo'       => 'VoxelPACS',
+                'pacs_webhook_url'=> (isset($_SERVER['HTTP_HOST']) ? 'https://' . $_SERVER['HTTP_HOST'] : '') . '/api/copilot/webhook/laudo',
+            ]);
+
+            // Assinatura HMAC para autenticar a chamada
+            $assinatura = hash_hmac('sha256', $payload, $chaveSecreta);
+
+            $ch = curl_init($endpoint);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $payload,
+                CURLOPT_TIMEOUT        => 10,
+                CURLOPT_HTTPHEADER     => [
+                    'Content-Type: application/json',
+                    'X-Copilot-Signature: ' . $assinatura,
+                    'X-Copilot-Unidade: '   . $codigoUnidade,
+                    'Authorization: Bearer ' . ($row['copilot_api_token'] ?? ''),
+                ],
+            ]);
+
+            $resposta   = curl_exec($ch);
+            $httpCode   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErrno  = curl_errno($ch);
+            $curlErro   = curl_error($ch);
+            curl_close($ch);
+
+            if ($curlErrno) {
+                Logger::error('[MedicosController::registrarUnidadeNoCopilot] Erro cURL ao registrar unidade', [
+                    'endpoint'       => $endpoint,
+                    'curl_errno'     => $curlErrno,
+                    'curl_error'     => $curlErro,
+                    'codigo_unidade' => $codigoUnidade,
+                ]);
+                return;
+            }
+
+            $json = json_decode($resposta, true);
+
+            Logger::info('[MedicosController::registrarUnidadeNoCopilot] Resposta do Copilot', [
+                'endpoint'       => $endpoint,
+                'http_code'      => $httpCode,
+                'ok'             => $json['ok'] ?? false,
+                'acao'           => $json['acao'] ?? null,
+                'unidade_id'     => $json['unidade_id'] ?? null,
+                'codigo_unidade' => $codigoUnidade,
+            ]);
+
+        } catch (\Throwable $e) {
+            // Não interrompe o fluxo principal — o token já foi gerado
+            Logger::error('[MedicosController::registrarUnidadeNoCopilot] Exceção', [
+                'tenant_id' => $tenantId,
+                'erro'      => $e->getMessage(),
+                'arquivo'   => $e->getFile() . ':' . $e->getLine(),
+            ]);
+        }
     }
 }
