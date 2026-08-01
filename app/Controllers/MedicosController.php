@@ -555,6 +555,8 @@ class MedicosController extends Controller
 
             if (!$copilotUrl) {
                 // URL do Copilot não configurada — usa a URL padrão do ambiente
+                // demo.voxelpacs.com.br é o VoxelCopilot (porta 443)
+                // server.voxelpacs.com.br é o VoxelPACS
                 $copilotUrl = defined('COPILOT_BASE_URL') ? rtrim(COPILOT_BASE_URL, '/') : 'https://demo.voxelpacs.com.br';
                 Logger::info('[MedicosController::registrarUnidadeNoCopilot] copilot_url não configurada, usando padrão', [
                     'copilot_url' => $copilotUrl,

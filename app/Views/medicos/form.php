@@ -360,11 +360,16 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                             <div class="mt-3 p-3" style="background:rgba(0,0,0,.15);border-radius:6px;font-size:.8rem;">
                                 <strong><i class="fa fa-book-open me-1"></i>Como usar no VOXEL Copilot:</strong>
                                 <ol class="mb-0 mt-1 ps-4" style="line-height:1.8;">
-                                    <li>Acesse <strong>Configurações &rarr; Autorização</strong> no VOXEL Copilot</li>
-                                    <li>Informe o <strong>Código da Unidade</strong> acima</li>
-                                    <li>Informe o <strong>Token de Integração</strong> acima</li>
+                                    <li>Acesse <a href="https://demo.voxelpacs.com.br/configuracoes?tab=autorizacao" target="_blank" style="color:#818cf8;"><strong>Configurações &rarr; Autorização</strong></a> no VOXEL Copilot</li>
+                                    <li>No campo <strong>Código da Unidade</strong>, informe exatamente: <code style="background:rgba(255,255,255,.1);padding:.1rem .3rem;border-radius:3px;"><?= htmlspecialchars($copilotUnidade['codigo_unidade'] ?? '') ?></code></li>
+                                    <li>No campo <strong>Token de Integração</strong>, informe o token acima (começa com <code style="background:rgba(255,255,255,.1);padding:.1rem .3rem;border-radius:3px;">CPLT-</code>)</li>
                                     <li>Clique em <strong>Vincular Unidade</strong></li>
                                 </ol>
+                                <div class="mt-2 p-2" style="background:rgba(245,158,11,.15);border:1px solid #f59e0b;border-radius:4px;color:#fcd34d;">
+                                    <i class="fa fa-triangle-exclamation me-1"></i>
+                                    <strong>Atenção:</strong> No campo "Código da Unidade" informe o código acima (<code style="background:rgba(0,0,0,.2);padding:.1rem .3rem;border-radius:3px;"><?= htmlspecialchars($copilotUnidade['codigo_unidade'] ?? '') ?></code>),
+                                    <strong>NÃO</strong> o e-mail nem o nome do médico.
+                                </div>
                                 <p class="mb-0 mt-2" style="color:#a0aec0;">
                                     Após vincular, exames assumidos por este médico aparecerão automaticamente
                                     no Workspace do Copilot.
