@@ -893,6 +893,35 @@ class EstudosController extends Controller
 
             \App\Core\Logger::info("[EstudosController::assumirEstudo] estudo_id={$estudoId} medico={$nomeMedico} user_id={$userId}");
 
+            // ── Notifica o VoxelCopilot sobre o evento estudo.assumido ──────────
+            try {
+                $svc = new \App\Services\CopilotWebhookService();
+                $svc->notificarEstudoAssumido(
+                    (int)($tenantId ?? 0),
+                    [
+                        'id'                 => $estudoId,
+                        'study_instance_uid' => $estudo['study_instance_uid'] ?? '',
+                        'accession_number'   => $estudo['accession_number']   ?? '',
+                        'patient_name'       => $estudo['paciente_nome']      ?? '',
+                        'patient_id'         => $estudo['paciente_id']        ?? '',
+                        'modalities'         => $estudo['modalidade']         ?? '',
+                        'study_date'         => $estudo['data_estudo']        ?? '',
+                        'study_description'  => $estudo['study_description']  ?? '',
+                        'institution_name'   => $estudo['unidade']            ?? '',
+                        'prioridade'         => $estudo['prioridade']         ?? 'normal',
+                        'situacao'           => 'a_laudar',
+                        'assumido_em'        => date('Y-m-d H:i:s'),
+                    ],
+                    [
+                        'id'   => $medico['id']   ?? $userId,
+                        'nome' => $nomeMedico,
+                        'crm'  => $medico['crm']  ?? '',
+                    ]
+                );
+            } catch (\Throwable $webhookEx) {
+                \App\Core\Logger::error('[EstudosController::assumirEstudo] Webhook Copilot falhou: ' . $webhookEx->getMessage());
+            }
+
             echo json_encode([
                 'ok'           => true,
                 'msg'          => 'Estudo assumido com sucesso.',
@@ -966,6 +995,54 @@ class EstudosController extends Controller
             'css'   => $css[$key],
             'key'   => $key,
         ];
+    }
+
+    // ── API: GET /api/pacs/estudo-copilot-status?estudo_id=X ───────────────────
+    // Retorna o status atual do laudo no Copilot para o painel de acompanhamento
+    public function apiEstudoCopilotStatus(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $estudoId = (int)($_GET['estudo_id'] ?? 0);
+        if (!$estudoId) {
+            echo json_encode(['ok' => false, 'erro' => 'estudo_id_obrigatorio']);
+            return;
+        }
+        try {
+            $db   = Database::getInstance();
+            $stmt = $db->prepare("
+                SELECT copilot_status, copilot_enviado_em, copilot_laudo_em, copilot_medico_nome
+                FROM bi_pacs_estudos WHERE id = :id LIMIT 1
+            ");
+            $stmt->execute(['id' => $estudoId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$row) {
+                echo json_encode(['ok' => false, 'erro' => 'estudo_nao_encontrado']);
+                return;
+            }
+            // Busca últimas 5 entradas do log de sincronização
+            $logs = [];
+            try {
+                $logStmt = $db->prepare("
+                    SELECT evento, direcao, status, http_status, created_at, erro_msg
+                    FROM bi_copilot_sync_log WHERE estudo_id = :eid
+                    ORDER BY created_at DESC LIMIT 5
+                ");
+                $logStmt->execute(['eid' => $estudoId]);
+                $logs = $logStmt->fetchAll(\PDO::FETCH_ASSOC);
+            } catch (\Throwable $e) { /* tabela pode não existir ainda */ }
+
+            echo json_encode([
+                'ok'             => true,
+                'copilot_status' => $row['copilot_status'] ?? 'nenhum',
+                'enviado_em'     => $row['copilot_enviado_em'],
+                'laudo_em'       => $row['copilot_laudo_em'],
+                'medico_nome'    => $row['copilot_medico_nome'],
+                'logs'           => $logs,
+                'timestamp'      => date('H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false, 'erro' => $e->getMessage()]);
+        }
     }
 
     // ── PWA: página de instalação do app ────────────────────────────────────────

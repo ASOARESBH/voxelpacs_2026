@@ -39,6 +39,18 @@ class CopilotWebhookService
             'timestamp'  => date('c'),
         ];
         $this->enviar($tenantId, $medico['id'] ?? 0, $estudo['id'] ?? 0, 'estudo.assumido', $payload);
+        // Atualiza copilot_status no bi_pacs_estudos
+        if (!empty($estudo['id'])) {
+            try {
+                $this->pdo->prepare("
+                    UPDATE bi_pacs_estudos SET
+                        copilot_status     = 'enviado_copilot',
+                        copilot_enviado_em = NOW(),
+                        updated_at         = NOW()
+                    WHERE id = :id
+                ")->execute(['id' => $estudo['id']]);
+            } catch (\Throwable $e) { /* coluna pode não existir ainda */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -53,6 +65,17 @@ class CopilotWebhookService
             'timestamp' => date('c'),
         ];
         $this->enviar($tenantId, $medico['id'] ?? 0, $estudo['id'] ?? 0, 'estudo.aberto', $payload);
+        // Atualiza copilot_status no bi_pacs_estudos
+        if (!empty($estudo['id'])) {
+            try {
+                $this->pdo->prepare("
+                    UPDATE bi_pacs_estudos SET
+                        copilot_status = 'em_laudo',
+                        updated_at     = NOW()
+                    WHERE id = :id
+                ")->execute(['id' => $estudo['id']]);
+            } catch (\Throwable $e) { /* coluna pode não existir ainda */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -71,6 +94,19 @@ class CopilotWebhookService
             'timestamp' => date('c'),
         ];
         $this->enviar($tenantId, $medico['id'] ?? 0, $estudo['id'] ?? 0, 'estudo.liberado', $payload);
+        // Atualiza copilot_status no bi_pacs_estudos
+        if (!empty($estudo['id'])) {
+            try {
+                $this->pdo->prepare("
+                    UPDATE bi_pacs_estudos SET
+                        copilot_status     = 'assinado',
+                        copilot_laudo_em   = NOW(),
+                        copilot_medico_nome = :nome,
+                        updated_at         = NOW()
+                    WHERE id = :id
+                ")->execute(['id' => $estudo['id'], 'nome' => $medico['nome'] ?? null]);
+            } catch (\Throwable $e) { /* coluna pode não existir ainda */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

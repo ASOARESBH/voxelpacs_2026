@@ -28,6 +28,7 @@ Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
 Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');
 Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
+Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)

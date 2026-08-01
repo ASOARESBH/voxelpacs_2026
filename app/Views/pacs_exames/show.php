@@ -278,3 +278,232 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
 
     </div>
 </div>
+
+<?php
+// ─── PAINEL VOXEL COPILOT ─────────────────────────────────────────────────
+// Exibe o status do laudo no Copilot com acompanhamento em tempo real.
+// Requer as colunas copilot_status, copilot_enviado_em, copilot_laudo_em
+// adicionadas pela migration 2026-08-01_pacs_estudos_copilot_status.sql
+$copilotStatus    = $estudo['copilot_status']      ?? 'nenhum';
+$copilotEnviadoEm = $estudo['copilot_enviado_em']  ?? null;
+$copilotLaudoEm   = $estudo['copilot_laudo_em']    ?? null;
+$copilotMedico    = $estudo['copilot_medico_nome'] ?? null;
+
+$statusLabel = [
+    'nenhum'          => ['label' => 'Não enviado ao Copilot', 'color' => 'secondary', 'icon' => 'fa-circle'],
+    'enviado_copilot' => ['label' => 'Aguardando laudo',       'color' => 'warning',   'icon' => 'fa-clock'],
+    'em_laudo'        => ['label' => 'Em laudo (viewer aberto)','color' => 'info',      'icon' => 'fa-pen'],
+    'rascunho'        => ['label' => 'Rascunho salvo',         'color' => 'primary',   'icon' => 'fa-file-alt'],
+    'assinado'        => ['label' => 'Laudo assinado',         'color' => 'success',   'icon' => 'fa-check-circle'],
+    'erro'            => ['label' => 'Erro na integração',     'color' => 'danger',    'icon' => 'fa-exclamation-circle'],
+];
+$info = $statusLabel[$copilotStatus] ?? $statusLabel['nenhum'];
+?>
+
+<!-- PAINEL VOXEL COPILOT -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm" id="copilot-painel">
+            <div class="card-header py-2 d-flex align-items-center justify-content-between"
+                 style="background: linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;">
+                <h6 class="mb-0">
+                    <i class="fa fa-robot me-2"></i>VOXEL Copilot — Acompanhamento do Laudo
+                </h6>
+                <div class="d-flex align-items-center gap-2">
+                    <span id="copilot-last-update" class="small opacity-75">
+                        Atualizado: <?= date('H:i:s') ?>
+                    </span>
+                    <button class="btn btn-sm btn-light btn-outline-light" onclick="copilotRefresh()" title="Atualizar status">
+                        <i class="fa fa-sync-alt" id="copilot-refresh-icon"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-3" id="copilot-status-body">
+
+                <!-- TIMELINE DE STATUS -->
+                <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+                    <?php
+                    $steps = [
+                        'nenhum'          => ['Não enviado',   'fa-circle',          'secondary'],
+                        'enviado_copilot' => ['Assumido',      'fa-user-check',      'warning'],
+                        'em_laudo'        => ['Em laudo',      'fa-eye',             'info'],
+                        'rascunho'        => ['Rascunho',      'fa-file-medical-alt','primary'],
+                        'assinado'        => ['Assinado',      'fa-check-circle',    'success'],
+                    ];
+                    $stepOrder = array_keys($steps);
+                    $currentIdx = array_search($copilotStatus, $stepOrder);
+                    if ($currentIdx === false) $currentIdx = 0;
+                    foreach ($steps as $stepKey => $stepInfo):
+                        $idx = array_search($stepKey, $stepOrder);
+                        $done    = $idx <= $currentIdx && $copilotStatus !== 'nenhum';
+                        $current = ($stepKey === $copilotStatus);
+                        $color   = $done ? $stepInfo[2] : 'light';
+                        $textC   = $done ? 'white' : 'muted';
+                    ?>
+                    <div class="d-flex align-items-center <?= $idx < count($steps)-1 ? 'flex-grow-1' : '' ?>">
+                        <div class="d-flex flex-column align-items-center">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center
+                                        bg-<?= $color ?> text-<?= $textC ?> <?= $current ? 'shadow' : '' ?>"
+                                 style="width:38px;height:38px;border:2px solid <?= $done ? 'transparent' : '#dee2e6' ?>;
+                                        <?= $current ? 'box-shadow:0 0 0 3px rgba(99,102,241,.3)!important;' : '' ?>">
+                                <i class="fa <?= $stepInfo[1] ?>"></i>
+                            </div>
+                            <small class="mt-1 text-<?= $done ? $stepInfo[2] : 'muted' ?> fw-<?= $current ? 'bold' : 'normal' ?>"
+                                   style="font-size:.7rem;white-space:nowrap;"><?= $stepInfo[0] ?></small>
+                        </div>
+                        <?php if ($idx < count($steps)-1): ?>
+                        <div class="flex-grow-1 mx-1" style="height:2px;background:<?= $idx < $currentIdx ? '#6366f1' : '#dee2e6' ?>;"></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <!-- STATUS ATUAL + DETALHES -->
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 bg-light text-center">
+                            <div class="mb-1">
+                                <span class="badge bg-<?= $info['color'] ?> fs-6 px-3 py-2">
+                                    <i class="fa <?= $info['icon'] ?> me-1"></i>
+                                    <?= $info['label'] ?>
+                                </span>
+                            </div>
+                            <small class="text-muted">Status atual no Copilot</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 bg-light">
+                            <div class="d-flex justify-content-between border-bottom pb-1 mb-1">
+                                <small class="text-muted">Enviado ao Copilot</small>
+                                <small class="fw-semibold"><?= $copilotEnviadoEm ? date('d/m H:i', strtotime($copilotEnviadoEm)) : '—' ?></small>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-1 mb-1">
+                                <small class="text-muted">Laudo finalizado</small>
+                                <small class="fw-semibold"><?= $copilotLaudoEm ? date('d/m H:i', strtotime($copilotLaudoEm)) : '—' ?></small>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">Médico Copilot</small>
+                                <small class="fw-semibold"><?= $copilotMedico ? htmlspecialchars($copilotMedico) : '—' ?></small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 bg-light">
+                            <?php if ($copilotStatus === 'nenhum'): ?>
+                                <p class="small text-muted mb-0">
+                                    <i class="fa fa-info-circle me-1 text-info"></i>
+                                    Este estudo ainda não foi assumido por um médico vinculado ao Copilot.
+                                </p>
+                            <?php elseif ($copilotStatus === 'assinado'): ?>
+                                <p class="small text-success mb-0">
+                                    <i class="fa fa-check-circle me-1"></i>
+                                    Laudo finalizado e recebido do Copilot com sucesso.
+                                </p>
+                            <?php elseif ($copilotStatus === 'erro'): ?>
+                                <p class="small text-danger mb-0">
+                                    <i class="fa fa-exclamation-triangle me-1"></i>
+                                    Falha na comunicação com o Copilot. Verifique os logs em
+                                    <code>storage/logs/copilot-<?= date('Y-m-d') ?>.log</code>
+                                </p>
+                            <?php else: ?>
+                                <p class="small text-muted mb-0">
+                                    <i class="fa fa-sync-alt fa-spin me-1 text-primary"></i>
+                                    Laudo em andamento no Copilot. Esta página atualiza automaticamente.
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LOG DE SINCRONIZAÇÃO (últimas 5 entradas) -->
+                <?php
+                try {
+                    $db = \App\Core\Database::getInstance();
+                    $logStmt = $db->prepare("
+                        SELECT evento, direcao, status, http_status, created_at, erro_msg
+                        FROM bi_copilot_sync_log
+                        WHERE estudo_id = :eid
+                        ORDER BY created_at DESC
+                        LIMIT 5
+                    ");
+                    $logStmt->execute(['eid' => $estudo['id']]);
+                    $syncLogs = $logStmt->fetchAll(\PDO::FETCH_OBJ);
+                } catch (\Throwable $e) {
+                    $syncLogs = [];
+                }
+                if (!empty($syncLogs)): ?>
+                <div class="mt-3">
+                    <h6 class="text-muted small mb-2"><i class="fa fa-history me-1"></i>Histórico de Sincronização</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="small">Evento</th>
+                                    <th class="small">Direção</th>
+                                    <th class="small">Status</th>
+                                    <th class="small">HTTP</th>
+                                    <th class="small">Data/Hora</th>
+                                    <th class="small">Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($syncLogs as $log): ?>
+                                <tr>
+                                    <td><code class="small"><?= htmlspecialchars($log->evento) ?></code></td>
+                                    <td><small class="text-muted"><?= $log->direcao === 'pacs_para_copilot' ? '→ Copilot' : '← PACS' ?></small></td>
+                                    <td>
+                                        <span class="badge bg-<?= $log->status === 'sucesso' ? 'success' : 'danger' ?> small">
+                                            <?= $log->status ?>
+                                        </span>
+                                    </td>
+                                    <td><small><?= $log->http_status ?: '—' ?></small></td>
+                                    <td><small><?= date('d/m H:i:s', strtotime($log->created_at)) ?></small></td>
+                                    <td><small class="text-danger"><?= $log->erro_msg ? htmlspecialchars(substr($log->erro_msg, 0, 40)) . '...' : '—' ?></small></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+            </div><!-- /.card-body -->
+        </div><!-- /.card -->
+    </div>
+</div>
+
+<script>
+// Auto-refresh do painel Copilot a cada 60 segundos
+let copilotTimer = null;
+const copilotEstudoId = <?= (int)($estudo['id'] ?? 0) ?>;
+
+function copilotRefresh() {
+    const icon = document.getElementById('copilot-refresh-icon');
+    if (icon) { icon.classList.add('fa-spin'); }
+
+    fetch('/api/pacs/estudo-copilot-status?estudo_id=' + copilotEstudoId, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok && data.html) {
+            document.getElementById('copilot-status-body').innerHTML = data.html;
+        }
+        const ts = document.getElementById('copilot-last-update');
+        if (ts) {
+            const now = new Date();
+            ts.textContent = 'Atualizado: ' + now.toLocaleTimeString('pt-BR');
+        }
+    })
+    .catch(() => {})
+    .finally(() => {
+        if (icon) { icon.classList.remove('fa-spin'); }
+    });
+}
+
+// Inicia o auto-refresh
+copilotTimer = setInterval(copilotRefresh, 60000);
+
+// Limpa ao sair da página
+window.addEventListener('beforeunload', () => clearInterval(copilotTimer));
+</script>
