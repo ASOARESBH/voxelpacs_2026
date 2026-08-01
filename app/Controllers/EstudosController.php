@@ -926,6 +926,14 @@ class EstudosController extends Controller
         ];
     }
 
+    // ── PWA: página de instalação do app ────────────────────────────────────────
+    public function instalar(): void
+    {
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        $title = 'Instalar App — VOXEL PACS';
+        $this->view('estudos/instalar', compact('title'), 'pacs');
+    }
+
     private function renderErroViewer(int $code, string $msg): void
     {
         http_response_code($code);
