@@ -386,31 +386,73 @@ class DownloadLoteController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // Helper: instanciar OrthancService para o tenant atual
+    //
+    // Hierarquia de fontes (deny-by-default → fallback progressivo):
+    //  1. bi_orthanc_servidores (tabela multi-tenant por negócio) — se existir e tiver registro
+    //  2. bi_pacs_servidor (tabela global única, gerenciada pelo superadmin) — fallback
+    //  3. $_ENV['ORTHANC_URL'] — fallback de ambiente
     // ─────────────────────────────────────────────────────────────────────────
     private function getOrthancService(int $tenantId, \PDO $pdo): ?OrthancService
     {
-        $stmt = $pdo->prepare("
-            SELECT url, usuario, senha, timeout
-            FROM   bi_orthanc_servidores
-            WHERE  tenant_id = ? AND ativo = 1
-            ORDER  BY id ASC
-            LIMIT  1
-        ");
-        $stmt->execute([$tenantId]);
-        $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
+        // ── 1. Tentar bi_orthanc_servidores (multi-tenant) ────────────────────
+        // Usa try/catch para não explodir caso a tabela ainda não exista em produção
+        try {
+            $stmt = $pdo->prepare("
+                SELECT url, usuario, senha, timeout
+                FROM   bi_orthanc_servidores
+                WHERE  tenant_id = ? AND ativo = 1
+                ORDER  BY id ASC
+                LIMIT  1
+            ");
+            $stmt->execute([$tenantId]);
+            $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-        if (!$servidor) {
-            // Fallback: URL padrão do ambiente (para tenants sem servidor cadastrado)
-            $defaultUrl = $_ENV['ORTHANC_URL'] ?? null;
-            if (!$defaultUrl) return null;
+            if ($servidor) {
+                return new OrthancService(
+                    $servidor['url'],
+                    $servidor['usuario'] ?: null,
+                    $servidor['senha']   ?: null,
+                    (int)($servidor['timeout'] ?: 60)
+                );
+            }
+        } catch (\Throwable $e) {
+            // Tabela não existe ainda — continua para o fallback
+            Logger::error('[DownloadLote] bi_orthanc_servidores indisponível, usando fallback', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // ── 2. Fallback: bi_pacs_servidor (servidor global único do superadmin) ─
+        try {
+            $stmt = $pdo->query("
+                SELECT url, usuario, senha, timeout
+                FROM   bi_pacs_servidor
+                WHERE  ativo = 1
+                ORDER  BY id ASC
+                LIMIT  1
+            ");
+            $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($servidor) {
+                return new OrthancService(
+                    $servidor['url'],
+                    $servidor['usuario'] ?: null,
+                    $servidor['senha']   ?: null,
+                    (int)($servidor['timeout'] ?: 60)
+                );
+            }
+        } catch (\Throwable $e) {
+            Logger::error('[DownloadLote] bi_pacs_servidor indisponível', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // ── 3. Fallback final: variável de ambiente ORTHANC_URL ───────────────
+        $defaultUrl = $_ENV['ORTHANC_URL'] ?? getenv('ORTHANC_URL') ?: null;
+        if ($defaultUrl) {
             return new OrthancService($defaultUrl, null, null, 30);
         }
 
-        return new OrthancService(
-            $servidor['url'],
-            $servidor['usuario'] ?: null,
-            $servidor['senha']   ?: null,
-            (int)($servidor['timeout'] ?: 60)
-        );
+        return null;
     }
 }
