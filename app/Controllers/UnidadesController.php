@@ -56,7 +56,7 @@ class UnidadesController extends Controller
                     n.created_at,
                     (SELECT COUNT(*) FROM bi_pacs_estudos e
                      WHERE e.tenant_id = n.tenant_id
-                       AND e.institution_name = n.institution_name) AS total_estudos
+                       AND e.institution_name COLLATE utf8mb4_general_ci = n.institution_name COLLATE utf8mb4_general_ci) AS total_estudos
                 FROM bi_negocio_institution_names n
                 WHERE n.tenant_id = ?
                 ORDER BY n.institution_name ASC
@@ -85,7 +85,7 @@ class UnidadesController extends Controller
                     GROUP_CONCAT(n.institution_name ORDER BY n.institution_name SEPARATOR '|') AS institution_names
                 FROM bi_unidades u
                 LEFT JOIN bi_negocio_institution_names n
-                    ON n.bi_unidade_id = u.id AND n.tenant_id = u.tenant_id
+                    ON n.unidade_id = u.id AND n.tenant_id = u.tenant_id
                 WHERE u.tenant_id = ?
                 GROUP BY u.id
                 ORDER BY COALESCE(u.nome_fantasia, u.razao_social) ASC
@@ -101,7 +101,7 @@ class UnidadesController extends Controller
             $u['bi_unidade_nome'] = null;
             foreach ($biUnidades as $bu) {
                 $nomes = !empty($bu['institution_names']) ? explode('|', $bu['institution_names']) : [];
-                if (in_array($u['institution_name'], $nomes)) {
+                if (in_array($u['institution_name'], array_map('trim', $nomes))) {
                     $u['bi_unidade_nome'] = $bu['nome_fantasia'] ?: $bu['razao_social'];
                     break;
                 }
@@ -285,7 +285,7 @@ class UnidadesController extends Controller
                   AND NOT EXISTS (
                       SELECT 1 FROM bi_negocio_institution_names n
                       WHERE n.tenant_id = e.tenant_id
-                        AND n.institution_name = e.institution_name
+                        AND n.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
                   )
             ")->execute([$tenantId]);
         } catch (\Throwable $e) {
@@ -619,7 +619,7 @@ class UnidadesController extends Controller
                            GROUP_CONCAT(n.institution_name ORDER BY n.institution_name SEPARATOR '|') AS institution_names
                     FROM bi_unidades u
                     JOIN bi_negocio_institution_names n ON n.unidade_id = u.id AND n.tenant_id = u.tenant_id
-                    WHERE n.institution_name = ? AND u.tenant_id = ? AND u.ativo = 1
+                    WHERE n.institution_name COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci AND u.tenant_id = ? AND u.ativo = 1
                     GROUP BY u.id
                     LIMIT 1
                 ");
