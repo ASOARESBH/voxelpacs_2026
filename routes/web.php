@@ -66,6 +66,15 @@ Router::post('/unidades',              'UnidadesController@store');
 Router::get('/unidades/{id}/edit',     'UnidadesController@edit');
 Router::post('/unidades/{id}/update',  'UnidadesController@update');
 Router::get('/api/unidades/cnpj',         'UnidadesController@apiCnpj');
+Router::get('/api/unidades/listar',       'UnidadesController@apiListar');
+Router::get('/api/unidades/info',         'UnidadesController@apiInfo');
+
+// bi_unidades — entidade rica (CNPJ, endereço, logo)
+Router::get('/unidades/nova',             'UnidadesController@novaUnidade');
+Router::post('/unidades/nova',            'UnidadesController@criarUnidade');
+Router::get('/unidades/{id}/editar',      'UnidadesController@editarUnidade');
+Router::post('/unidades/{id}/editar',     'UnidadesController@atualizarUnidade');
+Router::post('/unidades/{id}/excluir',    'UnidadesController@excluirUnidade');
 
 Router::get('/modalidades',            'ModalidadesController@index');
 Router::get('/modalidades/create',     'ModalidadesController@create');
