@@ -680,7 +680,7 @@ $periodoLabel = [
     padding:.05rem .35rem;font-size:.63rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
 
 /* ── Tabela ─────────────────────────────────────────────────────────────── */
-.wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 320px);border-radius:8px;
+.wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 230px);border-radius:8px;
     border:1px solid var(--pacs-border);margin-top:.4rem;}
 .wl-table{width:100%;border-collapse:collapse;font-size:.78rem;}
 .wl-table thead th{background:var(--pacs-surface-2, var(--pacs-surface));
@@ -822,7 +822,7 @@ $periodoLabel = [
 .wl-empty a{color:var(--pacs-primary);}
 
 /* ── Paginação ──────────────────────────────────────────────────────────── */
-.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.5rem 0;flex-wrap:wrap;}
+.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.25rem 0 .15rem;flex-wrap:wrap;}
 .wl-pag-info{font-size:.72rem;color:var(--pacs-text-muted);}
 .wl-pag-links{display:flex;gap:.2rem;margin:0 auto;}
 .wl-pag-btn{display:inline-flex;align-items:center;justify-content:center;
@@ -870,6 +870,13 @@ $periodoLabel = [
     transition:width .3s ease,background .3s;}
 /* checkbox desabilitado */
 .row-check:disabled{opacity:.3;cursor:not-allowed;}
+
+/* ── Worklist: elimina padding excessivo do container principal ─────────── */
+/* O #pacs-page tem padding:1.25rem global; na worklist queremos padding mínimo
+   para maximizar a área visível de estudos na tela do médico.              */
+#pacs-page{
+    padding:.5rem .75rem .25rem;
+}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
