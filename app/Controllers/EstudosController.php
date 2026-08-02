@@ -861,7 +861,14 @@ class EstudosController extends Controller
             $tParam = $tenantId ? [$estudoId, $tenantId] : [$estudoId];
 
             $stmtCheck = $pdo->prepare(
-                "SELECT id, situacao, assumido_por FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
+                "SELECT id, situacao, assumido_por,
+                        study_instance_uid, accession_number,
+                        patient_name, patient_name_display, patient_id,
+                        patient_birth_date, patient_sex, patient_age,
+                        modalities, study_date, study_description,
+                        institution_name, num_series, num_instances,
+                        referring_physician_name, body_part_examined, orthanc_id
+                 FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
             );
             $stmtCheck->execute($tParam);
             $estudo = $stmtCheck->fetch(\PDO::FETCH_ASSOC);
@@ -899,18 +906,27 @@ class EstudosController extends Controller
                 $svc->notificarEstudoAssumido(
                     (int)($tenantId ?? 0),
                     [
-                        'id'                 => $estudoId,
-                        'study_instance_uid' => $estudo['study_instance_uid'] ?? '',
-                        'accession_number'   => $estudo['accession_number']   ?? '',
-                        'patient_name'       => $estudo['paciente_nome']      ?? '',
-                        'patient_id'         => $estudo['paciente_id']        ?? '',
-                        'modalities'         => $estudo['modalidade']         ?? '',
-                        'study_date'         => $estudo['data_estudo']        ?? '',
-                        'study_description'  => $estudo['study_description']  ?? '',
-                        'institution_name'   => $estudo['unidade']            ?? '',
-                        'prioridade'         => $estudo['prioridade']         ?? 'normal',
-                        'situacao'           => 'a_laudar',
-                        'assumido_em'        => date('Y-m-d H:i:s'),
+                        'id'                       => $estudoId,
+                        'study_instance_uid'       => $estudo['study_instance_uid']       ?? '',
+                        'accession_number'         => $estudo['accession_number']         ?? '',
+                        'patient_name'             => $estudo['patient_name']             ?? '',
+                        'patient_name_display'     => $estudo['patient_name_display']     ?? $estudo['patient_name'] ?? '',
+                        'patient_id'               => $estudo['patient_id']               ?? '',
+                        'patient_birth_date'       => $estudo['patient_birth_date']       ?? '',
+                        'patient_sex'              => $estudo['patient_sex']              ?? '',
+                        'patient_age'              => $estudo['patient_age']              ?? '',
+                        'modalities'               => $estudo['modalities']               ?? '',
+                        'study_date'               => $estudo['study_date']               ?? '',
+                        'study_description'        => $estudo['study_description']        ?? '',
+                        'institution_name'         => $estudo['institution_name']         ?? '',
+                        'num_series'               => $estudo['num_series']               ?? null,
+                        'num_instances'            => $estudo['num_instances']            ?? null,
+                        'referring_physician_name' => $estudo['referring_physician_name'] ?? '',
+                        'body_part_examined'       => $estudo['body_part_examined']       ?? '',
+                        'orthanc_id'               => $estudo['orthanc_id']               ?? '',
+                        'prioridade'               => 'normal',
+                        'situacao'                 => 'a_laudar',
+                        'assumido_em'              => date('Y-m-d H:i:s'),
                     ],
                     [
                         'id'   => $medico['id']   ?? $userId,

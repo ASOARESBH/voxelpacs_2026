@@ -624,6 +624,24 @@ class MedicosController extends Controller
                 'codigo_unidade' => $codigoUnidade,
             ]);
 
+            // Salva o copilot_api_token retornado pelo Copilot
+            // Este token é gerado pelo Copilot e deve ser usado como Bearer
+            // em todos os webhooks enviados ao Copilot pelo PACS
+            if (!empty($json['ok']) && !empty($json['copilot_api_token'])) {
+                $pdo->prepare("
+                    UPDATE bi_copilot_unidades
+                    SET copilot_api_token = :token, updated_at = NOW()
+                    WHERE codigo_unidade = :codigo
+                ")->execute([
+                    'token'  => $json['copilot_api_token'],
+                    'codigo' => $codigoUnidade,
+                ]);
+                Logger::info('[MedicosController::registrarUnidadeNoCopilot] copilot_api_token salvo', [
+                    'codigo_unidade' => $codigoUnidade,
+                    'token_prefix'   => substr($json['copilot_api_token'], 0, 16) . '...',
+                ]);
+            }
+
         } catch (\Throwable $e) {
             // Não interrompe o fluxo principal — o token já foi gerado
             Logger::error('[MedicosController::registrarUnidadeNoCopilot] Exceção', [
