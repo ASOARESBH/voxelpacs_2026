@@ -59,6 +59,7 @@ class UnidadesController extends Controller
                        AND e.institution_name COLLATE utf8mb4_general_ci = n.institution_name COLLATE utf8mb4_general_ci) AS total_estudos
                 FROM bi_negocio_institution_names n
                 WHERE n.tenant_id = ?
+                  AND (n.excluido_manualmente = 0 OR n.excluido_manualmente IS NULL)
                 ORDER BY n.institution_name ASC
             ");
             $stmt->execute([$tenantId]);
@@ -286,6 +287,12 @@ class UnidadesController extends Controller
                       SELECT 1 FROM bi_negocio_institution_names n
                       WHERE n.tenant_id = e.tenant_id
                         AND n.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bi_negocio_institution_names nx
+                      WHERE nx.tenant_id = e.tenant_id
+                        AND nx.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                        AND nx.excluido_manualmente = 1
                   )
             ")->execute([$tenantId]);
         } catch (\Throwable $e) {
