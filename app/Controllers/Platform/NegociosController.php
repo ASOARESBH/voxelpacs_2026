@@ -274,7 +274,12 @@ class NegociosController extends Controller {
         } catch (\Throwable $e) { $contatos = []; }
 
         try {
-            $rows = $pdo->prepare("SELECT institution_name FROM bi_negocio_institution_names WHERE tenant_id = ?");
+            $rows = $pdo->prepare("
+                SELECT institution_name FROM bi_negocio_institution_names
+                WHERE tenant_id = ?
+                  AND (excluido_manualmente = 0 OR excluido_manualmente IS NULL)
+                ORDER BY institution_name ASC
+            ");
             $rows->execute([$id]);
             $institutionNames = implode(', ', array_column($rows->fetchAll(\PDO::FETCH_ASSOC), 'institution_name'));
         } catch (\Throwable $e) { $institutionNames = ''; }
@@ -405,19 +410,54 @@ class NegociosController extends Controller {
                 error_log("[NegociosController::update] Contatos: " . $e->getMessage());
             }
 
-            // Institution Names
+            // Institution Names — soft-delete com excluido_manualmente=1
+            // Isso impede que sincronizarInstitutionNames (UnidadesController)
+            // reinsira automaticamente nomes que o operador removeu.
             try {
-                $pdo->prepare("DELETE FROM bi_negocio_institution_names WHERE tenant_id = ?")->execute([$id]);
+                $novosNomes = [];
                 if (!empty($_POST['institution_names'])) {
-                    $names   = array_map('trim', explode(',', $_POST['institution_names']));
-                    $stmtInst = $pdo->prepare("
-                        INSERT IGNORE INTO bi_negocio_institution_names (tenant_id, institution_name)
-                        VALUES (?, ?)
+                    $novosNomes = array_values(array_filter(
+                        array_map('trim', explode(',', $_POST['institution_names'])),
+                        fn($n) => $n !== ''
+                    ));
+                }
+
+                // 1. Marcar TODOS os nomes atuais do tenant como excluidos_manualmente
+                $pdo->prepare("
+                    UPDATE bi_negocio_institution_names
+                    SET excluido_manualmente = 1, ativo = 0
+                    WHERE tenant_id = ?
+                ")->execute([$id]);
+
+                // 2. Reativar (ou inserir) cada nome que permanece na lista
+                if (!empty($novosNomes)) {
+                    $stmtUpsert = $pdo->prepare("
+                        INSERT INTO bi_negocio_institution_names
+                            (tenant_id, institution_name, ativo, excluido_manualmente)
+                        VALUES (?, ?, 1, 0)
+                        ON DUPLICATE KEY UPDATE
+                            ativo = 1,
+                            excluido_manualmente = 0
                     ");
-                    foreach ($names as $name) {
-                        if (!empty($name)) $stmtInst->execute([$id, $name]);
+                    foreach ($novosNomes as $name) {
+                        $stmtUpsert->execute([$id, $name]);
                     }
                 }
+
+                // 3. Remover fisicamente os registros excluidos_manualmente
+                //    que NAO possuem estudos vinculados (limpeza segura)
+                $pdo->prepare("
+                    DELETE n FROM bi_negocio_institution_names n
+                    WHERE n.tenant_id = ?
+                      AND n.excluido_manualmente = 1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM bi_pacs_estudos e
+                          WHERE e.tenant_id = n.tenant_id
+                            AND e.institution_name COLLATE utf8mb4_general_ci
+                                = n.institution_name COLLATE utf8mb4_general_ci
+                      )
+                ")->execute([$id]);
+
             } catch (\Throwable $e) {
                 error_log("[NegociosController::update] InstitutionNames: " . $e->getMessage());
             }
