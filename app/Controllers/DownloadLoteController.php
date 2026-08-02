@@ -172,10 +172,10 @@ class DownloadLoteController extends Controller
 
             // ── 7. Registrar auditoria ────────────────────────────────────
             $usuarioNome = '';
-            $uStmt = $pdo->prepare("SELECT nome FROM bi_users WHERE id = ? LIMIT 1");
+            $uStmt = $pdo->prepare("SELECT name FROM bi_users WHERE id = ? LIMIT 1");
             $uStmt->execute([$userId]);
             $uRow = $uStmt->fetch(\PDO::FETCH_ASSOC);
-            if ($uRow) $usuarioNome = $uRow['nome'];
+            if ($uRow) $usuarioNome = $uRow['name'];
 
             $logId = null;
             try {
