@@ -187,6 +187,9 @@ $periodoLabel = [
     <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
         <i class="fa fa-download"></i> Instalar App
     </a>
+    <button type="button" id="btn-voxel-desktop" class="wl-desktop-btn" title="Baixar o VOXEL Desktop — visualizador oficial VOXEL PACS">
+        <i class="fa fa-desktop"></i> <span id="vd-label">VOXEL Desktop</span>
+    </button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
@@ -1016,6 +1019,12 @@ document.addEventListener('click', function(e) {
 // ── Download em Lote ─────────────────────────────────────────────────────
 function iniciarDownloadLote() {
     const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    // Captura o nome do primeiro paciente selecionado para nomear o ZIP
+    const primeiraLinha = document.querySelector('.row-check:checked');
+    const nomePaciente  = primeiraLinha
+        ? (primeiraLinha.closest('tr')?.querySelector('.wl-pac-nome')?.textContent?.trim() || 'PACIENTE')
+        : 'PACIENTE';
+    window._dlPaciente = nomePaciente;
     if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
     if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
     const btn  = document.getElementById('btn-download-lote');
@@ -1064,7 +1073,8 @@ function pollJob(jobId, logId, tentativa = 0) {
             lbl.innerHTML = '<i class="fa fa-check"></i> Pronto! Iniciando download...';
             bar.style.background = '#22c55e';
             setTimeout(() => {
-                window.location.href = '/api/download-lote/baixar?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId);
+                const patient = encodeURIComponent(window._dlPaciente || 'PACIENTE');
+                window.location.href = '/api/download-lote/baixar-inteligente?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId) + '&patient=' + patient;
                 setTimeout(resetDownloadUI, 3000);
             }, 600);
         } else if (data.state === 'Failure') {
@@ -1087,4 +1097,73 @@ function resetDownloadUI() {
     if (prog) prog.style.display = 'none';
     if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
 }
+
+// ── Botão VOXEL Desktop ─────────────────────────────────────────────────────
+(function () {
+    const btn   = document.getElementById('btn-voxel-desktop');
+    const label = document.getElementById('vd-label');
+    if (!btn) return;
+
+    // Detecta se o VOXEL Desktop está instalado tentando abrir o protocolo voxel://
+    // e verificando se a aba permanece visível (heurística padrão de mercado)
+    function detectarInstalado(cb) {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        let respondeu = false;
+        const t = setTimeout(function () {
+            if (!respondeu) cb(false);
+            document.body.removeChild(iframe);
+        }, 800);
+        try {
+            iframe.src = 'voxel://ping';
+            // Se o protocolo estiver registrado, o navegador não vai lançar erro
+            // Consideramos instalado após 300ms sem erro
+            setTimeout(function () {
+                respondeu = true;
+                clearTimeout(t);
+                cb(true);
+                document.body.removeChild(iframe);
+            }, 300);
+        } catch (e) {
+            respondeu = true;
+            clearTimeout(t);
+            cb(false);
+            document.body.removeChild(iframe);
+        }
+    }
+
+    // Verifica se já foi detectado nesta sessão (sessionStorage)
+    const cached = sessionStorage.getItem('voxel_desktop_instalado');
+    if (cached === '1') {
+        btn.classList.add('vd-instalado');
+        label.textContent = 'VOXEL Desktop Instalado';
+        btn.title = 'Abrir VOXEL Desktop';
+    } else if (cached !== '0') {
+        // Primeira visita: tenta detectar silenciosamente
+        detectarInstalado(function (instalado) {
+            sessionStorage.setItem('voxel_desktop_instalado', instalado ? '1' : '0');
+            if (instalado) {
+                btn.classList.add('vd-instalado');
+                label.textContent = 'VOXEL Desktop Instalado';
+                btn.title = 'Abrir VOXEL Desktop';
+            }
+        });
+    }
+
+    btn.addEventListener('click', function () {
+        const instalado = sessionStorage.getItem('voxel_desktop_instalado') === '1';
+        if (instalado) {
+            // Abre o VOXEL Desktop sem estudo específico
+            window.location.href = 'voxel://open';
+        } else {
+            // Detecta OS e faz download do instalador
+            const ua = navigator.userAgent || '';
+            let platform = 'windows';
+            if (/Mac/i.test(ua))   platform = 'mac';
+            if (/Linux/i.test(ua) && !/Android/i.test(ua)) platform = 'linux';
+            window.location.href = '/desktop/download?platform=' + platform;
+        }
+    });
+}());
 </script>

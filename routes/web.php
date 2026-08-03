@@ -28,13 +28,22 @@ Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
 Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');
 Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
+Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
 // ============================================================
-Router::post('/api/download-lote/iniciar', 'DownloadLoteController@iniciar');
-Router::get('/api/download-lote/status',   'DownloadLoteController@status');
-Router::get('/api/download-lote/baixar',   'DownloadLoteController@baixar');
+Router::post('/api/download-lote/iniciar',           'DownloadLoteController@iniciar');
+Router::get('/api/download-lote/status',             'DownloadLoteController@status');
+Router::get('/api/download-lote/baixar',             'DownloadLoteController@baixar');
+Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@baixarInteligente');
+// ============================================================
+// VOXEL Desktop — Atualização automática e download do instalador
+// GET  /api/desktop/version  — consultado pelo app ao iniciar
+// GET  /desktop/download     — redireciona para o instalador mais recente
+// ============================================================
+Router::get('/api/desktop/version', 'DesktopController@version');
+Router::get('/desktop/download',    'DesktopController@download');
 
 // ============================================================
 // AGENDAMENTOS
@@ -59,6 +68,7 @@ Router::post('/medicos',               'MedicosController@store');
 Router::get('/medicos/{id}/edit',      'MedicosController@edit');
 Router::post('/medicos/{id}/update',   'MedicosController@update');
 Router::post('/medicos/{id}/toggle',   'MedicosController@toggleStatus');
+Router::post('/api/medicos/{id}/copilot-token', 'MedicosController@copilotToken');
 
 Router::get('/unidades',               'UnidadesController@index');
 Router::get('/unidades/create',        'UnidadesController@create');
@@ -120,6 +130,13 @@ Router::get('/api/orthanc/ping', 'PacsController@pingPublic');
 Router::get('/api/sla-regras/executar', 'SlaRoboController@executar');
 
 // ============================================================
+// API — Robô de Sincronização automática do Servidor PACS (a cada 2 min,
+// público, protegido por token via query string, chamado por cron externo —
+// ver docs/PACS_MULTISERVIDOR_ROTEAMENTO.md)
+// ============================================================
+Router::get('/api/servidor-pacs/sync-robo', 'PacsSyncRoboController@executar');
+
+// ============================================================
 // REPORTS — Módulo de Laudos Médicos
 // ============================================================
 // Editor de laudo (GET /reports/{study_uid})
@@ -170,3 +187,9 @@ Router::post('/acesso/criar-senha/{token}', 'Auth\AccessTokenController@salvarSe
 // ============================================================
 Router::get('/esqueci-senha',  'Auth\AccessTokenController@formEsqueciSenha');
 Router::post('/esqueci-senha', 'Auth\AccessTokenController@enviarLinkRedefinicao');
+
+// ============================================================
+// VOXEL Copilot — Webhooks recebidos do Copilot (público, protegido por Bearer token)
+// ============================================================
+Router::post('/api/copilot/webhook/laudo-finalizado', 'CopilotWebhookController@laudoFinalizado');
+Router::post('/api/copilot/webhook/evento',           'CopilotWebhookController@evento');
