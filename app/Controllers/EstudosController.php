@@ -130,6 +130,40 @@ class EstudosController extends Controller
             $usaInstitutionFilter = true;
         }
 
+        // ── Filtro RBAC por unidades do médico ────────────────────────────────────────────
+        // Se o usuário logado é um médico cadastrado (bi_medicos.usuario_id = Auth::userId()),
+        // restringe os institutionNames às unidades onde ele atua (bi_medico_unidades).
+        // Admins e analistas veem tudo (sem restrição adicional).
+        if ($tenantId && !$bypassGlobal) {
+            try {
+                $stmtMedFiltro = $pdo->prepare(
+                    'SELECT id FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
+                );
+                $stmtMedFiltro->execute([(int)$tenantId, (int)Auth::userId()]);
+                $rowMedFiltro = $stmtMedFiltro->fetch(\PDO::FETCH_ASSOC);
+                if ($rowMedFiltro) {
+                    $medicoIdFiltro = (int)$rowMedFiltro['id'];
+                    $stmtMedUnid = $pdo->prepare(
+                        'SELECT institution_name FROM bi_medico_unidades WHERE medico_id = ? AND institution_name IS NOT NULL'
+                    );
+                    $stmtMedUnid->execute([$medicoIdFiltro]);
+                    $unidadesMedico = $stmtMedUnid->fetchAll(\PDO::FETCH_COLUMN);
+                    if (!empty($unidadesMedico)) {
+                        if (!empty($institutionNames)) {
+                            // Intersecção: só mostra unidades que o médico tem E que pertencem ao tenant
+                            $institutionNames = array_values(array_intersect($institutionNames, $unidadesMedico));
+                        } else {
+                            $institutionNames     = $unidadesMedico;
+                            $usaInstitutionFilter = true;
+                        }
+                    }
+                    // Se médico não tem unidades cadastradas: mantém filtro do tenant
+                }
+            } catch (\Throwable $ex) {
+                error_log('[EstudosController::index] filtro medico_unidades: ' . $ex->getMessage());
+            }
+        }
+
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
         // REGRA CRÍTICA: TODOS os parâmetros são posicionais (?) — nunca misturar com :nome
         // Nota: sem filtro por servidor_id — um negócio pode receber estudos de mais de
