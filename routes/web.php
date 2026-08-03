@@ -33,9 +33,17 @@ Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopil
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
 // ============================================================
-Router::post('/api/download-lote/iniciar', 'DownloadLoteController@iniciar');
-Router::get('/api/download-lote/status',   'DownloadLoteController@status');
-Router::get('/api/download-lote/baixar',   'DownloadLoteController@baixar');
+Router::post('/api/download-lote/iniciar',           'DownloadLoteController@iniciar');
+Router::get('/api/download-lote/status',             'DownloadLoteController@status');
+Router::get('/api/download-lote/baixar',             'DownloadLoteController@baixar');
+Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@baixarInteligente');
+// ============================================================
+// VOXEL Desktop — Atualização automática e download do instalador
+// GET  /api/desktop/version  — consultado pelo app ao iniciar
+// GET  /desktop/download     — redireciona para o instalador mais recente
+// ============================================================
+Router::get('/api/desktop/version', 'DesktopController@version');
+Router::get('/desktop/download',    'DesktopController@download');
 
 // ============================================================
 // AGENDAMENTOS
