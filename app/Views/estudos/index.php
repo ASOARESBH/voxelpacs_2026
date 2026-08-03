@@ -553,6 +553,9 @@ $periodoLabel = [
                             <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
                                 <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
                             </a>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
+                                <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
+                            </a>
                             <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
                                 <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
                             </a>
