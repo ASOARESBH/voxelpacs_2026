@@ -525,7 +525,74 @@ body {
     color: var(--royal);
     border-bottom-color: var(--royal);
 }
-
+/* ── WORKLIST PAGE HEADER (substitui pacs-tabs na worklist) ── */
+.wl-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .55rem 1.25rem;
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    min-height: 42px;
+}
+.wl-page-title {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    font-size: .85rem;
+    font-weight: 700;
+    color: var(--royal);
+    letter-spacing: .01em;
+}
+.wl-pwa-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: none;
+    padding: .28rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    transition: all .15s;
+    white-space: nowrap;
+    background: var(--white);
+}
+.wl-pwa-btn:hover {
+    color: var(--royal);
+    border-color: var(--royal);
+    background: var(--blue-50);
+}
+/* ── VOXEL Desktop button (worklist header) ── */
+.wl-desktop-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .72rem;
+    font-weight: 700;
+    color: #fff;
+    padding: .28rem .75rem;
+    border: none;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #1a56db 0%, #0e3a9e 100%);
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(26,86,219,.35);
+}
+.wl-desktop-btn:hover {
+    background: linear-gradient(135deg, #1e63f5 0%, #1244b8 100%);
+    box-shadow: 0 2px 8px rgba(26,86,219,.5);
+    transform: translateY(-1px);
+}
+.wl-desktop-btn.vd-instalado {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    box-shadow: 0 1px 4px rgba(5,150,105,.35);
+}
+.wl-desktop-btn.vd-instalado:hover {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
 /* ── FILTROS / SEARCH BAR ── */
 .pacs-filters {
     background: var(--white);

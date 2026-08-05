@@ -172,10 +172,10 @@ class DownloadLoteController extends Controller
 
             // ── 7. Registrar auditoria ────────────────────────────────────
             $usuarioNome = '';
-            $uStmt = $pdo->prepare("SELECT nome FROM bi_users WHERE id = ? LIMIT 1");
+            $uStmt = $pdo->prepare("SELECT name FROM bi_users WHERE id = ? LIMIT 1");
             $uStmt->execute([$userId]);
             $uRow = $uStmt->fetch(\PDO::FETCH_ASSOC);
-            if ($uRow) $usuarioNome = $uRow['nome'];
+            if ($uRow) $usuarioNome = $uRow['name'];
 
             $logId = null;
             try {
@@ -386,31 +386,270 @@ class DownloadLoteController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // Helper: instanciar OrthancService para o tenant atual
+    //
+    // Hierarquia de fontes (deny-by-default → fallback progressivo):
+    //  1. bi_orthanc_servidores (tabela multi-tenant por negócio) — se existir e tiver registro
+    //  2. bi_pacs_servidor (tabela global única, gerenciada pelo superadmin) — fallback
+    //  3. $_ENV['ORTHANC_URL'] — fallback de ambiente
     // ─────────────────────────────────────────────────────────────────────────
     private function getOrthancService(int $tenantId, \PDO $pdo): ?OrthancService
     {
-        $stmt = $pdo->prepare("
-            SELECT url, usuario, senha, timeout
-            FROM   bi_orthanc_servidores
-            WHERE  tenant_id = ? AND ativo = 1
-            ORDER  BY id ASC
-            LIMIT  1
-        ");
-        $stmt->execute([$tenantId]);
-        $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
+        // ── 1. Tentar bi_orthanc_servidores (multi-tenant) ────────────────────
+        // Usa try/catch para não explodir caso a tabela ainda não exista em produção
+        try {
+            $stmt = $pdo->prepare("
+                SELECT url, usuario, senha, timeout
+                FROM   bi_orthanc_servidores
+                WHERE  tenant_id = ? AND ativo = 1
+                ORDER  BY id ASC
+                LIMIT  1
+            ");
+            $stmt->execute([$tenantId]);
+            $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-        if (!$servidor) {
-            // Fallback: URL padrão do ambiente (para tenants sem servidor cadastrado)
-            $defaultUrl = $_ENV['ORTHANC_URL'] ?? null;
-            if (!$defaultUrl) return null;
+            if ($servidor) {
+                return new OrthancService(
+                    $servidor['url'],
+                    $servidor['usuario'] ?: null,
+                    $servidor['senha']   ?: null,
+                    (int)($servidor['timeout'] ?: 60)
+                );
+            }
+        } catch (\Throwable $e) {
+            // Tabela não existe ainda — continua para o fallback
+            Logger::error('[DownloadLote] bi_orthanc_servidores indisponível, usando fallback', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // ── 2. Fallback: bi_pacs_servidor (servidor global único do superadmin) ─
+        try {
+            $stmt = $pdo->query("
+                SELECT url, usuario, senha, timeout
+                FROM   bi_pacs_servidor
+                WHERE  ativo = 1
+                ORDER  BY id ASC
+                LIMIT  1
+            ");
+            $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($servidor) {
+                return new OrthancService(
+                    $servidor['url'],
+                    $servidor['usuario'] ?: null,
+                    $servidor['senha']   ?: null,
+                    (int)($servidor['timeout'] ?: 60)
+                );
+            }
+        } catch (\Throwable $e) {
+            Logger::error('[DownloadLote] bi_pacs_servidor indisponível', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // ── 3. Fallback final: variável de ambiente ORTHANC_URL ───────────────
+        $defaultUrl = $_ENV['ORTHANC_URL'] ?? getenv('ORTHANC_URL') ?: null;
+        if ($defaultUrl) {
             return new OrthancService($defaultUrl, null, null, 30);
         }
 
-        return new OrthancService(
-            $servidor['url'],
-            $servidor['usuario'] ?: null,
-            $servidor['senha']   ?: null,
-            (int)($servidor['timeout'] ?: 60)
-        );
+        return null;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ENDPOINT 4: Download Inteligente — ZIP com launcher + DICOMDIR + Leia-me
+    // GET /api/download-lote/baixar-inteligente?job_id=xxx&log_id=yyy&patient=Nome
+    //
+    // Novo fluxo (item 17 da especificação VOXEL Desktop):
+    //  1. Baixa o ZIP gerado pelo Orthanc para arquivo temporário
+    //  2. Reabre o ZIP e adiciona:
+    //     ├── Abrir Exame.exe  (launcher Windows — verifica VOXEL Desktop e abre o estudo)
+    //     ├── DICOMDIR         (gerado pelo Orthanc, já está no ZIP original)
+    //     └── Leia-me.pdf      (instruções de uso)
+    //  3. Serve o ZIP enriquecido com nome amigável (ex: 31192_GUSTAVO.zip)
+    // ─────────────────────────────────────────────────────────────────────────
+    public function baixarInteligente(): void
+    {
+        $jobId = trim($_GET['job_id'] ?? '');
+        $nomePaciente = preg_replace('/[^A-Za-z0-9_\-]/', '_', strtoupper(trim($_GET['patient'] ?? 'PACIENTE')));
+        $nomePaciente = substr($nomePaciente, 0, 30);
+
+        try {
+            $userId   = Auth::userId();
+            $tenantId = TenantContext::id();
+
+            if (!$userId || !$tenantId) {
+                http_response_code(401);
+                echo 'Não autenticado.';
+                return;
+            }
+
+            if (empty($jobId) || !preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
+                http_response_code(400);
+                echo 'Job ID inválido.';
+                return;
+            }
+
+            $pdo     = Database::getInstance();
+            $orthanc = $this->getOrthancService($tenantId, $pdo);
+
+            if (!$orthanc) {
+                http_response_code(503);
+                echo 'Servidor PACS não disponível.';
+                return;
+            }
+
+            // Verificar que o job pertence a este tenant
+            $logStmt = $pdo->prepare("
+                SELECT id FROM bi_download_lote_log
+                WHERE orthanc_job_id = ? AND tenant_id = ? AND usuario_id = ?
+                LIMIT 1
+            ");
+            $logStmt->execute([$jobId, $tenantId, $userId]);
+            if (!$logStmt->fetch(\PDO::FETCH_ASSOC)) {
+                http_response_code(403);
+                echo 'Acesso negado.';
+                return;
+            }
+
+            // Verificar que o job está concluído
+            $jobResult = $orthanc->getJob($jobId);
+            if (!$jobResult['success'] || ($jobResult['data']['State'] ?? '') !== 'Success') {
+                http_response_code(409);
+                echo 'O arquivo ainda não está pronto.';
+                return;
+            }
+
+            // ── 1. Baixar ZIP do Orthanc para arquivo temporário ─────────────────────
+            $tmpOrthanc = tempnam(sys_get_temp_dir(), 'voxel_dl_');
+            $fh = fopen($tmpOrthanc, 'wb');
+            $orthanc->streamJobArchive($jobId, function (string $chunk) use ($fh): void {
+                fwrite($fh, $chunk);
+            });
+            fclose($fh);
+
+            // ── 2. Verificar se ZipArchive está disponível ──────────────────────────
+            if (!class_exists('ZipArchive')) {
+                // Fallback: servir o ZIP original sem modificações
+                Logger::error('[DownloadLote::baixarInteligente] ZipArchive não disponível, usando ZIP original');
+                $filename = date('Ymd_Hi') . '_' . $nomePaciente . '.zip';
+                header('Content-Type: application/zip');
+                header('Content-Disposition: attachment; filename="' . $filename . '"');
+                header('Cache-Control: no-store');
+                readfile($tmpOrthanc);
+                @unlink($tmpOrthanc);
+                return;
+            }
+
+            // ── 3. Criar novo ZIP enriquecido ─────────────────────────────────────
+            $tmpFinal = tempnam(sys_get_temp_dir(), 'voxel_smart_');
+
+            // Copiar o ZIP original para o novo (preserva todos os arquivos DICOM)
+            copy($tmpOrthanc, $tmpFinal);
+            @unlink($tmpOrthanc);
+
+            $zip = new \ZipArchive();
+            if ($zip->open($tmpFinal, \ZipArchive::CREATE) !== true) {
+                Logger::error('[DownloadLote::baixarInteligente] Falha ao abrir ZIP temporário');
+                http_response_code(500);
+                echo 'Erro ao processar arquivo.';
+                @unlink($tmpFinal);
+                return;
+            }
+
+            // ── 3a. Adicionar launcher "Abrir Exame.exe" (script AutoIt compilado) ──
+            // Por enquanto, adicionamos um placeholder .bat que verifica o VOXEL Desktop
+            // e abre o estudo. Quando o .exe real estiver disponível, substituir o
+            // conteúdo abaixo pelo binário do launcher compilado.
+            $launcherPath = BASE_PATH . '/public/downloads/VOXELDesktopLauncher.exe';
+            if (file_exists($launcherPath)) {
+                $zip->addFile($launcherPath, 'Abrir Exame.exe');
+            } else {
+                // Placeholder: script .bat com instruções de abertura
+                $batContent = $this->gerarLauncherBat($nomePaciente);
+                $zip->addFromString('Abrir Exame.bat', $batContent);
+            }
+
+            // ── 3b. Adicionar Leia-me.pdf ou Leia-me.txt ─────────────────────────
+            $leiaMe = BASE_PATH . '/public/downloads/Leia-me.pdf';
+            if (file_exists($leiaMe)) {
+                $zip->addFile($leiaMe, 'Leia-me.pdf');
+            } else {
+                $zip->addFromString('Leia-me.txt', $this->gerarLeiaMe($nomePaciente));
+            }
+
+            $zip->close();
+
+            // ── 4. Servir o ZIP enriquecido ──────────────────────────────────────
+            $filename = date('Ymd') . '_' . $nomePaciente . '.zip';
+            $filesize = filesize($tmpFinal);
+
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . $filesize);
+            header('Cache-Control: no-store');
+            header('X-Accel-Buffering: no');
+
+            readfile($tmpFinal);
+            @unlink($tmpFinal);
+
+        } catch (\Throwable $e) {
+            Logger::error('[DownloadLote::baixarInteligente] Exceção', ['error' => $e->getMessage()]);
+            if (!headers_sent()) {
+                http_response_code(500);
+                echo 'Erro interno ao gerar download.';
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper: gera o conteúdo do launcher .bat (placeholder até o .exe estar disponível)
+    // ─────────────────────────────────────────────────────────────────────────
+    private function gerarLauncherBat(string $nomePaciente): string
+    {
+        return "@echo off\r\n" .
+            "title Abrir Exame VOXEL Desktop\r\n" .
+            "echo.\r\n" .
+            "echo  ====================================================\r\n" .
+            "echo   VOXEL Desktop - Visualizador de Imagens Medicas\r\n" .
+            "echo  ====================================================\r\n" .
+            "echo.\r\n" .
+            "echo  Paciente: {$nomePaciente}\r\n" .
+            "echo.\r\n" .
+            "echo  Verificando VOXEL Desktop instalado...\r\n" .
+            "echo.\r\n" .
+            "start voxel://open?dicomdir=DICOMDIR\r\n" .
+            "timeout /t 2 /nobreak >nul\r\n" .
+            "echo  Se o VOXEL Desktop nao abrir automaticamente,\r\n" .
+            "echo  acesse: https://server.voxelpacs.com.br/desktop/download\r\n" .
+            "echo.\r\n" .
+            "pause\r\n";
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper: gera o conteúdo do Leia-me.txt (placeholder até o PDF estar disponível)
+    // ─────────────────────────────────────────────────────────────────────────
+    private function gerarLeiaMe(string $nomePaciente): string
+    {
+        $data = date('d/m/Y');
+        return "VOXEL Desktop - Visualizador Oficial VOXEL PACS\r\n" .
+            "=================================================\r\n\r\n" .
+            "Paciente: {$nomePaciente}\r\n" .
+            "Data de exportacao: {$data}\r\n\r\n" .
+            "COMO ABRIR ESTE EXAME\r\n" .
+            "---------------------\r\n" .
+            "1. Execute o arquivo 'Abrir Exame.exe' (ou 'Abrir Exame.bat')\r\n" .
+            "   O VOXEL Desktop sera aberto automaticamente.\r\n\r\n" .
+            "2. Se o VOXEL Desktop nao estiver instalado:\r\n" .
+            "   Acesse https://server.voxelpacs.com.br/desktop/download\r\n" .
+            "   e instale o visualizador oficial.\r\n\r\n" .
+            "3. Voce tambem pode abrir o arquivo DICOMDIR com qualquer\r\n" .
+            "   visualizador DICOM compativel (RadiAnt, Weasis, etc.)\r\n\r\n" .
+            "SUPORTE\r\n" .
+            "-------\r\n" .
+            "Site:    https://www.voxelpacs.com.br\r\n" .
+            "Suporte: https://server.voxelpacs.com.br/suporte\r\n\r\n" .
+            "VOXEL Tecnologia em Diagnostico\r\n" .
+            "Copyright (c) " . date('Y') . " VOXEL PACS. Todos os direitos reservados.\r\n";
     }
 }

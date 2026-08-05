@@ -22,18 +22,29 @@ Router::get('/dashboard', 'DashboardController@index');
 // WORKLIST — Estudos PACS (página principal)
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
+Router::get('/estudos/instalar',       'EstudosController@instalar');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
-Router::get('/estudos/{id}/abrir-radiant', 'EstudosController@abrirRadiant');
-Router::get('/estudos/{id}/abrir-weasis',  'EstudosController@abrirWeasis');
+Router::get('/estudos/{id}/abrir-radiant',      'EstudosController@abrirRadiant');
+Router::get('/estudos/{id}/abrir-weasis',       'EstudosController@abrirWeasis');
+Router::get('/estudos/{id}/abrir-voxel',        'EstudosController@abrirVoxelDesktop');
 Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
+Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
 // ============================================================
-Router::post('/api/download-lote/iniciar', 'DownloadLoteController@iniciar');
-Router::get('/api/download-lote/status',   'DownloadLoteController@status');
-Router::get('/api/download-lote/baixar',   'DownloadLoteController@baixar');
+Router::post('/api/download-lote/iniciar',           'DownloadLoteController@iniciar');
+Router::get('/api/download-lote/status',             'DownloadLoteController@status');
+Router::get('/api/download-lote/baixar',             'DownloadLoteController@baixar');
+Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@baixarInteligente');
+// ============================================================
+// VOXEL Desktop — Atualização automática e download do instalador
+// GET  /api/desktop/version  — consultado pelo app ao iniciar
+// GET  /desktop/download     — redireciona para o instalador mais recente
+// ============================================================
+Router::get('/api/desktop/version', 'DesktopController@version');
+Router::get('/desktop/download',    'DesktopController@download');
 
 // ============================================================
 // AGENDAMENTOS
@@ -58,6 +69,7 @@ Router::post('/medicos',               'MedicosController@store');
 Router::get('/medicos/{id}/edit',      'MedicosController@edit');
 Router::post('/medicos/{id}/update',   'MedicosController@update');
 Router::post('/medicos/{id}/toggle',   'MedicosController@toggleStatus');
+Router::post('/api/medicos/{id}/copilot-token', 'MedicosController@copilotToken');
 
 Router::get('/unidades',               'UnidadesController@index');
 Router::get('/unidades/create',        'UnidadesController@create');
@@ -65,6 +77,15 @@ Router::post('/unidades',              'UnidadesController@store');
 Router::get('/unidades/{id}/edit',     'UnidadesController@edit');
 Router::post('/unidades/{id}/update',  'UnidadesController@update');
 Router::get('/api/unidades/cnpj',         'UnidadesController@apiCnpj');
+Router::get('/api/unidades/listar',       'UnidadesController@apiListar');
+Router::get('/api/unidades/info',         'UnidadesController@apiInfo');
+
+// bi_unidades — entidade rica (CNPJ, endereço, logo)
+Router::get('/unidades/nova',             'UnidadesController@novaUnidade');
+Router::post('/unidades/nova',            'UnidadesController@criarUnidade');
+Router::get('/unidades/{id}/editar',      'UnidadesController@editarUnidade');
+Router::post('/unidades/{id}/editar',     'UnidadesController@atualizarUnidade');
+Router::post('/unidades/{id}/excluir',    'UnidadesController@excluirUnidade');
 
 Router::get('/modalidades',            'ModalidadesController@index');
 Router::get('/modalidades/create',     'ModalidadesController@create');
@@ -167,3 +188,9 @@ Router::post('/acesso/criar-senha/{token}', 'Auth\AccessTokenController@salvarSe
 // ============================================================
 Router::get('/esqueci-senha',  'Auth\AccessTokenController@formEsqueciSenha');
 Router::post('/esqueci-senha', 'Auth\AccessTokenController@enviarLinkRedefinicao');
+
+// ============================================================
+// VOXEL Copilot — Webhooks recebidos do Copilot (público, protegido por Bearer token)
+// ============================================================
+Router::post('/api/copilot/webhook/laudo-finalizado', 'CopilotWebhookController@laudoFinalizado');
+Router::post('/api/copilot/webhook/evento',           'CopilotWebhookController@evento');

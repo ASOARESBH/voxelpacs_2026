@@ -174,6 +174,22 @@ class ReportService {
 
         if ($novoStatus === 'rascunho') {
             $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'rascunho');
+
+            // ── Notifica o VoxelCopilot sobre o rascunho salvo ─────────────
+            try {
+                $tenantId = Auth::tenantId();
+                $svc = new \App\Services\CopilotWebhookService();
+                $estudo = $this->repo->findEstudoById((int) $report->bi_pacs_estudos_id);
+                if ($estudo && $tenantId) {
+                    $svc->notificarEstudoAberto(
+                        (int) $tenantId,
+                        (array) $estudo,
+                        ['id' => Auth::userId(), 'nome' => Auth::user()->nome ?? '', 'crm' => '']
+                    );
+                }
+            } catch (\Throwable $e) {
+                \App\Core\Logger::error('[ReportService::salvar] Webhook Copilot rascunho falhou: ' . $e->getMessage());
+            }
         }
 
         $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
@@ -231,6 +247,22 @@ class ReportService {
         $this->repo->createVersion($reportId, json_decode($report->conteudo, true), 'assinado', $userId, $versaoNumero);
 
         AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash]);
+
+        // ── Notifica o VoxelCopilot sobre o laudo assinado/liberado ────────
+        try {
+            $tenantId = Auth::tenantId();
+            $svc = new \App\Services\CopilotWebhookService();
+            if ($tenantId) {
+                $svc->notificarLaudoLiberado(
+                    (int) $tenantId,
+                    (array) $estudo,
+                    ['id' => $userId, 'nome' => $user->nome ?? $user->name ?? '', 'crm' => $crm ?? ''],
+                    ['texto' => null, 'assinado_em' => $assinadoEm, 'hash' => $hash]
+                );
+            }
+        } catch (\Throwable $e) {
+            \App\Core\Logger::error('[ReportService::assinar] Webhook Copilot liberado falhou: ' . $e->getMessage());
+        }
 
         return [
             'ok' => true,

@@ -130,6 +130,40 @@ class EstudosController extends Controller
             $usaInstitutionFilter = true;
         }
 
+        // ── Filtro RBAC por unidades do médico ────────────────────────────────────────────
+        // Se o usuário logado é um médico cadastrado (bi_medicos.usuario_id = Auth::userId()),
+        // restringe os institutionNames às unidades onde ele atua (bi_medico_unidades).
+        // Admins e analistas veem tudo (sem restrição adicional).
+        if ($tenantId && !$bypassGlobal) {
+            try {
+                $stmtMedFiltro = $pdo->prepare(
+                    'SELECT id FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
+                );
+                $stmtMedFiltro->execute([(int)$tenantId, (int)Auth::userId()]);
+                $rowMedFiltro = $stmtMedFiltro->fetch(\PDO::FETCH_ASSOC);
+                if ($rowMedFiltro) {
+                    $medicoIdFiltro = (int)$rowMedFiltro['id'];
+                    $stmtMedUnid = $pdo->prepare(
+                        'SELECT institution_name FROM bi_medico_unidades WHERE medico_id = ? AND institution_name IS NOT NULL'
+                    );
+                    $stmtMedUnid->execute([$medicoIdFiltro]);
+                    $unidadesMedico = $stmtMedUnid->fetchAll(\PDO::FETCH_COLUMN);
+                    if (!empty($unidadesMedico)) {
+                        if (!empty($institutionNames)) {
+                            // Intersecção: só mostra unidades que o médico tem E que pertencem ao tenant
+                            $institutionNames = array_values(array_intersect($institutionNames, $unidadesMedico));
+                        } else {
+                            $institutionNames     = $unidadesMedico;
+                            $usaInstitutionFilter = true;
+                        }
+                    }
+                    // Se médico não tem unidades cadastradas: mantém filtro do tenant
+                }
+            } catch (\Throwable $ex) {
+                error_log('[EstudosController::index] filtro medico_unidades: ' . $ex->getMessage());
+            }
+        }
+
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
         // REGRA CRÍTICA: TODOS os parâmetros são posicionais (?) — nunca misturar com :nome
         // Nota: sem filtro por servidor_id — um negócio pode receber estudos de mais de
@@ -318,24 +352,26 @@ class EstudosController extends Controller
         // Regra de visibilidade:
         //   - Médico logado (usuario_id = Auth::userId() em bi_medicos): vê APENAS o próprio nome
         //   - Admin/analista/viewer: vê todos os médicos ativos do tenant
-        $medicos          = []; // array de ['id'=>int, 'nome'=>string]
-        $medicoLogadoId   = null;  // id em bi_medicos do usuário logado (se for médico)
-        $medicoLogadoNome = null;  // nome do médico logado
-        $isMedicoLogado   = false; // flag: usuário logado é um médico cadastrado
+        $medicos                  = []; // array de ['id'=>int, 'nome'=>string]
+        $medicoLogadoId           = null;  // id em bi_medicos do usuário logado (se for médico)
+        $medicoLogadoNome         = null;  // nome do médico logado
+        $isMedicoLogado           = false; // flag: usuário logado é um médico cadastrado
+        $workspaceLaudoHabilitado = false; // flag: médico tem Workspace Laudo habilitado
         try {
             if ($tenantId) {
                 $userId = Auth::userId();
                 // Verifica se o usuário logado é um médico cadastrado neste tenant
                 if ($userId) {
                     $stmtMe = $pdo->prepare(
-                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
+                        "SELECT id, nome, workspace_laudo_habilitado FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
                     );
                     $stmtMe->execute([(int)$tenantId, (int)$userId]);
                     $meRow = $stmtMe->fetch(\PDO::FETCH_ASSOC);
                     if ($meRow) {
-                        $isMedicoLogado   = true;
-                        $medicoLogadoId   = (int)$meRow['id'];
-                        $medicoLogadoNome = $meRow['nome'];
+                        $isMedicoLogado              = true;
+                        $medicoLogadoId              = (int)$meRow['id'];
+                        $medicoLogadoNome            = $meRow['nome'];
+                        $workspaceLaudoHabilitado    = !empty($meRow['workspace_laudo_habilitado']);
                     }
                 }
                 // Todos os perfis vêem todos os médicos ativos do tenant.
@@ -455,7 +491,7 @@ class EstudosController extends Controller
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado',
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
             'modsAtivas'
         ), 'pacs');
     }
@@ -580,6 +616,198 @@ class EstudosController extends Controller
     public function abrirWeasis(int $id): void
     {
         $this->abrirDesktop($id, 'weasis');
+    }
+
+    // =========================================================================
+    // Abertura via VOXEL Desktop (protocolo voxel://)
+    // GET /estudos/{id}/abrir-voxel
+    //
+    // Fluxo (item 7/8 da especificação VOXEL Desktop):
+    //  1. Valida permissão do usuário sobre o estudo
+    //  2. Gera token temporário (60 min) em pacs_viewer_tokens
+    //  3. Monta URI: voxel://open?study=UID&token=TOKEN&server=URL
+    //  4. Exibe página intermediária que tenta abrir o protocolo voxel://
+    //     e, se não instalado, oferece download do VOXEL Desktop
+    // =========================================================================
+    public function abrirVoxelDesktop(int $id): void
+    {
+        $pdo      = Database::getInstance();
+        $tenantId = Auth::tenantId();
+        $userId   = Auth::userId();
+        $isAdmin  = Auth::isPlatformAdmin();
+        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+
+        // ── 1. Buscar estudo e validar permissão ───────────────────────────────────
+        $estudo = null;
+        try {
+            $where  = 'id = :id AND servidor_id = 1';
+            $params = [':id' => $id];
+            if ($tenantId) {
+                $where         .= ' AND tenant_id = :tid';
+                $params[':tid'] = $tenantId;
+            } elseif (!$bypassGlobal) {
+                $where .= ' AND 1=0';
+            }
+            $stmt = $pdo->prepare(
+                "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id
+                 FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
+            );
+            $stmt->execute($params);
+            $estudo = $stmt->fetch(\PDO::FETCH_ASSOC);
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::abrirVoxelDesktop] ' . $ex->getMessage());
+        }
+
+        if (!$estudo) {
+            $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
+            return;
+        }
+
+        $studyUid  = $estudo['study_instance_uid'] ?? '';
+        $orthancId = $estudo['orthanc_id']         ?? '';
+
+        if (empty($studyUid) && empty($orthancId)) {
+            $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
+            return;
+        }
+
+        $uidParaViewer = $studyUid ?: $orthancId;
+
+        // ── 2. Gerar token temporário (60 min) em pacs_viewer_tokens ──────────────
+        $token = $this->gerarToken();
+        try {
+            $pdo->prepare("
+                INSERT INTO pacs_viewer_tokens
+                    (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
+                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,:expires_at)
+            ")->execute([
+                ':token'      => $token,
+                ':estudo_id'  => $id,
+                ':study_uid'  => $uidParaViewer,
+                ':orthanc_id' => $orthancId ?: null,
+                ':tenant_id'  => $tenantId ?: null,
+                ':usuario_id' => $userId   ?: null,
+                ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
+                ':expires_at' => date('Y-m-d H:i:s', strtotime('+1 hour')),
+            ]);
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::abrirVoxelDesktop] token: ' . $ex->getMessage());
+        }
+
+        // ── 3. Montar URI voxel:// ──────────────────────────────────────────────────────
+        $serverUrl = rtrim(getenv('APP_URL') ?: 'https://server.voxelpacs.com.br', '/');
+        $voxelUri  = 'voxel://open?' . http_build_query([
+            'study'  => $uidParaViewer,
+            'token'  => $token,
+            'server' => $serverUrl,
+        ]);
+
+        // ── 4. Página intermediária ──────────────────────────────────────────────────────────────────
+        $nomePaciente = htmlspecialchars($estudo['patient_name'] ?? 'Paciente');
+        $downloadUrl  = '/desktop/download';
+        ?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOXEL PACS — Abrindo no VOXEL Desktop</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0d1117; color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            padding: 2.5rem 3rem; max-width: 520px; width: 90%; text-align: center;
+        }
+        .logo { margin-bottom: 1.25rem; }
+        .logo img { width: 64px; height: 64px; object-fit: contain; }
+        h1 { font-size: 1.3rem; margin-bottom: .5rem; color: #f0f6fc; }
+        .paciente { font-size: .85rem; color: #8b949e; margin-bottom: 1rem; }
+        p  { font-size: .92rem; color: #8b949e; line-height: 1.6; }
+        .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #30363d;
+                   border-top-color: #1a56db; border-radius: 50%; animation: spin .8s linear infinite;
+                   margin-bottom: 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .btn-primary {
+            display: inline-block; margin-top: 1.25rem; padding: .65rem 1.5rem;
+            background: #1a56db; color: #fff; border-radius: 8px;
+            text-decoration: none; font-weight: 600; font-size: .88rem;
+        }
+        .btn-secondary {
+            display: inline-block; margin-top: .75rem; padding: .55rem 1.2rem;
+            background: transparent; color: #8b949e; border: 1px solid #30363d; border-radius: 8px;
+            text-decoration: none; font-size: .82rem;
+        }
+        #fallback { display: none; }
+        .token-info { font-size: .72rem; color: #484f58; margin-top: 1.5rem; }
+    </style>
+</head>
+<body>
+    <!-- Estado 1: tentando abrir o VOXEL Desktop -->
+    <div class="card" id="tentando">
+        <div class="logo"><img src="/assets/img/logo-voxel-pacs.png" alt="VOXEL Desktop"></div>
+        <div class="spinner"></div>
+        <h1>Abrindo no VOXEL Desktop…</h1>
+        <p class="paciente">Paciente: <?= $nomePaciente ?></p>
+        <p>Aguarde enquanto o VOXEL Desktop é iniciado.<br>O estudo será aberto automaticamente.</p>
+        <p class="token-info">Token válido por 60 minutos</p>
+    </div>
+    <!-- Estado 2: VOXEL Desktop não detectado -->
+    <div class="card" id="fallback">
+        <div class="logo"><img src="/assets/img/logo-voxel-pacs.png" alt="VOXEL Desktop"></div>
+        <h1>VOXEL Desktop não encontrado</h1>
+        <p class="paciente">Paciente: <?= $nomePaciente ?></p>
+        <p>O VOXEL Desktop não está instalado neste computador.<br>Instale para abrir exames DICOM com um clique.</p>
+        <a class="btn-primary" href="<?= htmlspecialchars($downloadUrl) ?>" target="_blank">&#11015; Baixar VOXEL Desktop</a><br>
+        <a class="btn-secondary" href="/estudos/<?= $id ?>/abrir" target="_blank">Abrir no navegador (OHIF)</a>
+    </div>
+    <script>
+    (function () {
+        var uri = <?= json_encode($voxelUri) ?>;
+        var tentou = false;
+        // Tenta abrir o protocolo voxel://
+        function tentarAbrir() {
+            if (tentou) return;
+            tentou = true;
+            var iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+            var detectado = false;
+            var t = setTimeout(function () {
+                if (!detectado) mostrarFallback();
+                try { document.body.removeChild(iframe); } catch(e){}
+            }, 2500);
+            try {
+                iframe.src = uri;
+                // Se o protocolo estiver registrado, o browser não lança erro
+                // Consideramos sucesso após 800ms sem mostrar fallback
+                setTimeout(function () {
+                    detectado = true;
+                    clearTimeout(t);
+                    try { document.body.removeChild(iframe); } catch(e){}
+                    // Redireciona para a worklist após 4s
+                    setTimeout(function () { window.location.href = '/estudos'; }, 4000);
+                }, 800);
+            } catch (e) {
+                clearTimeout(t);
+                mostrarFallback();
+            }
+        }
+        function mostrarFallback() {
+            document.getElementById('tentando').style.display = 'none';
+            document.getElementById('fallback').style.display  = 'block';
+        }
+        tentarAbrir();
+    }());
+    </script>
+</body>
+</html>
+<?php
     }
 
     private function abrirDesktop(int $id, string $viewer): void
@@ -861,7 +1089,14 @@ class EstudosController extends Controller
             $tParam = $tenantId ? [$estudoId, $tenantId] : [$estudoId];
 
             $stmtCheck = $pdo->prepare(
-                "SELECT id, situacao, assumido_por FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
+                "SELECT id, situacao, assumido_por,
+                        study_instance_uid, accession_number,
+                        patient_name, patient_name_display, patient_id,
+                        patient_birth_date, patient_sex, patient_age,
+                        modalities, study_date, study_description,
+                        institution_name, num_series, num_instances,
+                        referring_physician_name, body_part_examined, orthanc_id
+                 FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
             );
             $stmtCheck->execute($tParam);
             $estudo = $stmtCheck->fetch(\PDO::FETCH_ASSOC);
@@ -892,6 +1127,44 @@ class EstudosController extends Controller
             )->execute([$nomeMedico, $userId, $estudoId]);
 
             \App\Core\Logger::info("[EstudosController::assumirEstudo] estudo_id={$estudoId} medico={$nomeMedico} user_id={$userId}");
+
+            // ── Notifica o VoxelCopilot sobre o evento estudo.assumido ──────────
+            try {
+                $svc = new \App\Services\CopilotWebhookService();
+                $svc->notificarEstudoAssumido(
+                    (int)($tenantId ?? 0),
+                    [
+                        'id'                       => $estudoId,
+                        'study_instance_uid'       => $estudo['study_instance_uid']       ?? '',
+                        'accession_number'         => $estudo['accession_number']         ?? '',
+                        'patient_name'             => $estudo['patient_name']             ?? '',
+                        'patient_name_display'     => $estudo['patient_name_display']     ?? $estudo['patient_name'] ?? '',
+                        'patient_id'               => $estudo['patient_id']               ?? '',
+                        'patient_birth_date'       => $estudo['patient_birth_date']       ?? '',
+                        'patient_sex'              => $estudo['patient_sex']              ?? '',
+                        'patient_age'              => $estudo['patient_age']              ?? '',
+                        'modalities'               => $estudo['modalities']               ?? '',
+                        'study_date'               => $estudo['study_date']               ?? '',
+                        'study_description'        => $estudo['study_description']        ?? '',
+                        'institution_name'         => $estudo['institution_name']         ?? '',
+                        'num_series'               => $estudo['num_series']               ?? null,
+                        'num_instances'            => $estudo['num_instances']            ?? null,
+                        'referring_physician_name' => $estudo['referring_physician_name'] ?? '',
+                        'body_part_examined'       => $estudo['body_part_examined']       ?? '',
+                        'orthanc_id'               => $estudo['orthanc_id']               ?? '',
+                        'prioridade'               => 'normal',
+                        'situacao'                 => 'a_laudar',
+                        'assumido_em'              => date('Y-m-d H:i:s'),
+                    ],
+                    [
+                        'id'   => $medico['id']   ?? $userId,
+                        'nome' => $nomeMedico,
+                        'crm'  => $medico['crm']  ?? '',
+                    ]
+                );
+            } catch (\Throwable $webhookEx) {
+                \App\Core\Logger::error('[EstudosController::assumirEstudo] Webhook Copilot falhou: ' . $webhookEx->getMessage());
+            }
 
             echo json_encode([
                 'ok'           => true,
@@ -966,6 +1239,62 @@ class EstudosController extends Controller
             'css'   => $css[$key],
             'key'   => $key,
         ];
+    }
+
+    // ── API: GET /api/pacs/estudo-copilot-status?estudo_id=X ───────────────────
+    // Retorna o status atual do laudo no Copilot para o painel de acompanhamento
+    public function apiEstudoCopilotStatus(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $estudoId = (int)($_GET['estudo_id'] ?? 0);
+        if (!$estudoId) {
+            echo json_encode(['ok' => false, 'erro' => 'estudo_id_obrigatorio']);
+            return;
+        }
+        try {
+            $db   = Database::getInstance();
+            $stmt = $db->prepare("
+                SELECT copilot_status, copilot_enviado_em, copilot_laudo_em, copilot_medico_nome
+                FROM bi_pacs_estudos WHERE id = :id LIMIT 1
+            ");
+            $stmt->execute(['id' => $estudoId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$row) {
+                echo json_encode(['ok' => false, 'erro' => 'estudo_nao_encontrado']);
+                return;
+            }
+            // Busca últimas 5 entradas do log de sincronização
+            $logs = [];
+            try {
+                $logStmt = $db->prepare("
+                    SELECT evento, direcao, status, http_status, created_at, erro_msg
+                    FROM bi_copilot_sync_log WHERE estudo_id = :eid
+                    ORDER BY created_at DESC LIMIT 5
+                ");
+                $logStmt->execute(['eid' => $estudoId]);
+                $logs = $logStmt->fetchAll(\PDO::FETCH_ASSOC);
+            } catch (\Throwable $e) { /* tabela pode não existir ainda */ }
+
+            echo json_encode([
+                'ok'             => true,
+                'copilot_status' => $row['copilot_status'] ?? 'nenhum',
+                'enviado_em'     => $row['copilot_enviado_em'],
+                'laudo_em'       => $row['copilot_laudo_em'],
+                'medico_nome'    => $row['copilot_medico_nome'],
+                'logs'           => $logs,
+                'timestamp'      => date('H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            echo json_encode(['ok' => false, 'erro' => $e->getMessage()]);
+        }
+    }
+
+    // ── PWA: página de instalação do app ────────────────────────────────────────
+    public function instalar(): void
+    {
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        $title = 'Instalar App — VOXEL PACS';
+        $this->view('estudos/instalar', compact('title'), 'pacs');
     }
 
     private function renderErroViewer(int $code, string $msg): void

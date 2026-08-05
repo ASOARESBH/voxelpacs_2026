@@ -184,14 +184,22 @@ $periodoLabel = [
 ][$filtros['periodo']] ?? '30 dias';
 ?>
 
-<!-- ═══════════════════════════════════════════════════════════ TABS -->
-<div class="pacs-tabs">
-    <a href="/agendamentos" class="pacs-tab"><i class="fa fa-calendar-days"></i> Agendamentos</a>
-    <a href="/estudos"      class="pacs-tab active"><i class="fa fa-list-check"></i> Estudos</a>
+<!-- ═══════════════════════════════════════════════════════════ HEADER WORKLIST -->
+<div class="wl-page-header">
+    <div class="wl-page-title">
+        <i class="fa fa-list-check"></i>
+        <span>Worklist de Estudos</span>
+    </div>
+    <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
+        <i class="fa fa-download"></i> Instalar App
+    </a>
+    <button type="button" id="btn-voxel-desktop" class="wl-desktop-btn" title="Baixar o VOXEL Desktop — visualizador oficial VOXEL PACS">
+        <i class="fa fa-desktop"></i> <span id="vd-label">VOXEL Desktop</span>
+    </button>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════ RESUMO -->
-<div class="wl-resumo">
+<!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
+<div class="wl-resumo" style="display:none;">
     <div class="wl-resumo-cards">
         <div class="wl-card" onclick="setPeriodo('hoje')" title="Hoje">
             <span class="wl-card-num"><?= number_format($resumo['hoje']) ?></span>
@@ -531,9 +539,16 @@ $periodoLabel = [
                         <i class="fa fa-hand-holding-medical"></i> Assumir
                     </button>
                     <?php elseif ($podeLaudar): ?>
-                    <button type="button" class="wl-btn-laudo" title="Módulo de laudo em breve" disabled>
+                    <?php if ($workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
+                    <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                       class="wl-btn-laudo" title="Abrir Workspace Laudo">
+                        <i class="fa fa-file-medical"></i> Laudo
+                    </a>
+                    <?php else: ?>
+                    <button type="button" class="wl-btn-laudo" title="Workspace Laudo não habilitado para este médico" disabled>
                         <i class="fa fa-file-medical"></i> Laudo
                     </button>
+                    <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
@@ -544,6 +559,9 @@ $periodoLabel = [
                         <div class="wl-viewer-menu">
                             <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
                                 <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
+                            </a>
+                            <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
+                                <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
                             </a>
                             <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
                                 <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
@@ -675,7 +693,7 @@ $periodoLabel = [
     padding:.05rem .35rem;font-size:.63rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
 
 /* ── Tabela ─────────────────────────────────────────────────────────────── */
-.wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 320px);border-radius:8px;
+.wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 230px);border-radius:8px;
     border:1px solid var(--pacs-border);margin-top:.4rem;}
 .wl-table{width:100%;border-collapse:collapse;font-size:.78rem;}
 .wl-table thead th{background:var(--pacs-surface-2, var(--pacs-surface));
@@ -817,7 +835,7 @@ $periodoLabel = [
 .wl-empty a{color:var(--pacs-primary);}
 
 /* ── Paginação ──────────────────────────────────────────────────────────── */
-.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.5rem 0;flex-wrap:wrap;}
+.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.25rem 0 .15rem;flex-wrap:wrap;}
 .wl-pag-info{font-size:.72rem;color:var(--pacs-text-muted);}
 .wl-pag-links{display:flex;gap:.2rem;margin:0 auto;}
 .wl-pag-btn{display:inline-flex;align-items:center;justify-content:center;
@@ -865,6 +883,13 @@ $periodoLabel = [
     transition:width .3s ease,background .3s;}
 /* checkbox desabilitado */
 .row-check:disabled{opacity:.3;cursor:not-allowed;}
+
+/* ── Worklist: elimina padding excessivo do container principal ─────────── */
+/* O #pacs-page tem padding:1.25rem global; na worklist queremos padding mínimo
+   para maximizar a área visível de estudos na tela do médico.              */
+#pacs-page{
+    padding:.5rem .75rem .25rem;
+}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
@@ -1041,6 +1066,12 @@ document.addEventListener('click', function(e) {
 // ── Download em Lote ─────────────────────────────────────────────────────
 function iniciarDownloadLote() {
     const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    // Captura o nome do primeiro paciente selecionado para nomear o ZIP
+    const primeiraLinha = document.querySelector('.row-check:checked');
+    const nomePaciente  = primeiraLinha
+        ? (primeiraLinha.closest('tr')?.querySelector('.wl-pac-nome')?.textContent?.trim() || 'PACIENTE')
+        : 'PACIENTE';
+    window._dlPaciente = nomePaciente;
     if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
     if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
     const btn  = document.getElementById('btn-download-lote');
@@ -1089,7 +1120,8 @@ function pollJob(jobId, logId, tentativa = 0) {
             lbl.innerHTML = '<i class="fa fa-check"></i> Pronto! Iniciando download...';
             bar.style.background = '#22c55e';
             setTimeout(() => {
-                window.location.href = '/api/download-lote/baixar?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId);
+                const patient = encodeURIComponent(window._dlPaciente || 'PACIENTE');
+                window.location.href = '/api/download-lote/baixar-inteligente?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId) + '&patient=' + patient;
                 setTimeout(resetDownloadUI, 3000);
             }, 600);
         } else if (data.state === 'Failure') {
@@ -1112,4 +1144,73 @@ function resetDownloadUI() {
     if (prog) prog.style.display = 'none';
     if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
 }
+
+// ── Botão VOXEL Desktop ─────────────────────────────────────────────────────
+(function () {
+    const btn   = document.getElementById('btn-voxel-desktop');
+    const label = document.getElementById('vd-label');
+    if (!btn) return;
+
+    // Detecta se o VOXEL Desktop está instalado tentando abrir o protocolo voxel://
+    // e verificando se a aba permanece visível (heurística padrão de mercado)
+    function detectarInstalado(cb) {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        let respondeu = false;
+        const t = setTimeout(function () {
+            if (!respondeu) cb(false);
+            document.body.removeChild(iframe);
+        }, 800);
+        try {
+            iframe.src = 'voxel://ping';
+            // Se o protocolo estiver registrado, o navegador não vai lançar erro
+            // Consideramos instalado após 300ms sem erro
+            setTimeout(function () {
+                respondeu = true;
+                clearTimeout(t);
+                cb(true);
+                document.body.removeChild(iframe);
+            }, 300);
+        } catch (e) {
+            respondeu = true;
+            clearTimeout(t);
+            cb(false);
+            document.body.removeChild(iframe);
+        }
+    }
+
+    // Verifica se já foi detectado nesta sessão (sessionStorage)
+    const cached = sessionStorage.getItem('voxel_desktop_instalado');
+    if (cached === '1') {
+        btn.classList.add('vd-instalado');
+        label.textContent = 'VOXEL Desktop Instalado';
+        btn.title = 'Abrir VOXEL Desktop';
+    } else if (cached !== '0') {
+        // Primeira visita: tenta detectar silenciosamente
+        detectarInstalado(function (instalado) {
+            sessionStorage.setItem('voxel_desktop_instalado', instalado ? '1' : '0');
+            if (instalado) {
+                btn.classList.add('vd-instalado');
+                label.textContent = 'VOXEL Desktop Instalado';
+                btn.title = 'Abrir VOXEL Desktop';
+            }
+        });
+    }
+
+    btn.addEventListener('click', function () {
+        const instalado = sessionStorage.getItem('voxel_desktop_instalado') === '1';
+        if (instalado) {
+            // Abre o VOXEL Desktop sem estudo específico
+            window.location.href = 'voxel://open';
+        } else {
+            // Detecta OS e faz download do instalador
+            const ua = navigator.userAgent || '';
+            let platform = 'windows';
+            if (/Mac/i.test(ua))   platform = 'mac';
+            if (/Linux/i.test(ua) && !/Android/i.test(ua)) platform = 'linux';
+            window.location.href = '/desktop/download?platform=' + platform;
+        }
+    });
+}());
 </script>
