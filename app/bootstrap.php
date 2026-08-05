@@ -42,6 +42,15 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 // Carrega o autoloader customizado (não depende do composer no servidor)
 require_once APP_PATH . '/autoload.php';
 
+// Carrega o autoloader do Composer (bibliotecas de terceiros — PhpSpreadsheet,
+// PHPWord etc.). Guardado por file_exists(): em qualquer ambiente onde
+// `composer install` ainda não tenha sido rodado, o app continua funcionando
+// normalmente (as classes App\* não dependem disto), só as libs de terceiros
+// ficam indisponíveis até o vendor/ ser provisionado.
+if (file_exists(BASE_PATH . '/vendor/autoload.php')) {
+    require_once BASE_PATH . '/vendor/autoload.php';
+}
+
 // Funções globais (ex: t() para tradução — ver app/helpers.php)
 require_once APP_PATH . '/helpers.php';
 
