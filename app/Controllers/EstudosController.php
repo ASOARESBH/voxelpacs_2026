@@ -352,24 +352,26 @@ class EstudosController extends Controller
         // Regra de visibilidade:
         //   - Médico logado (usuario_id = Auth::userId() em bi_medicos): vê APENAS o próprio nome
         //   - Admin/analista/viewer: vê todos os médicos ativos do tenant
-        $medicos          = []; // array de ['id'=>int, 'nome'=>string]
-        $medicoLogadoId   = null;  // id em bi_medicos do usuário logado (se for médico)
-        $medicoLogadoNome = null;  // nome do médico logado
-        $isMedicoLogado   = false; // flag: usuário logado é um médico cadastrado
+        $medicos                  = []; // array de ['id'=>int, 'nome'=>string]
+        $medicoLogadoId           = null;  // id em bi_medicos do usuário logado (se for médico)
+        $medicoLogadoNome         = null;  // nome do médico logado
+        $isMedicoLogado           = false; // flag: usuário logado é um médico cadastrado
+        $workspaceLaudoHabilitado = false; // flag: médico tem Workspace Laudo habilitado
         try {
             if ($tenantId) {
                 $userId = Auth::userId();
                 // Verifica se o usuário logado é um médico cadastrado neste tenant
                 if ($userId) {
                     $stmtMe = $pdo->prepare(
-                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
+                        "SELECT id, nome, workspace_laudo_habilitado FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
                     );
                     $stmtMe->execute([(int)$tenantId, (int)$userId]);
                     $meRow = $stmtMe->fetch(\PDO::FETCH_ASSOC);
                     if ($meRow) {
-                        $isMedicoLogado   = true;
-                        $medicoLogadoId   = (int)$meRow['id'];
-                        $medicoLogadoNome = $meRow['nome'];
+                        $isMedicoLogado              = true;
+                        $medicoLogadoId              = (int)$meRow['id'];
+                        $medicoLogadoNome            = $meRow['nome'];
+                        $workspaceLaudoHabilitado    = !empty($meRow['workspace_laudo_habilitado']);
                     }
                 }
                 // Todos os perfis vêem todos os médicos ativos do tenant.
@@ -489,7 +491,7 @@ class EstudosController extends Controller
         $this->view('estudos/index', compact(
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado',
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
             'modsAtivas'
         ), 'pacs');
     }

@@ -488,7 +488,62 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════
-         SEÇÃO 5 — TOKEN COPILOT (somente edição)
+         SEÇÃO 5 — WORKSPACE LAUDO VOXEL (somente edição)
+    ══════════════════════════════════════════════════════════════════ -->
+    <?php if ($isEdit): ?>
+    <?php
+    $workspaceHabilitado = !empty($medico['workspace_laudo_habilitado']);
+    ?>
+    <div class="medico-section" id="workspaceLaudoSection">
+        <div class="medico-section-header">
+            <i class="fa fa-file-waveform" style="color:#0ea5e9;"></i>
+            <span style="color:#0ea5e9;">Workspace Laudo VOXEL</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+            <!-- Toggle switch -->
+            <label class="wl-toggle-wrap" style="display:flex;align-items:center;gap:.75rem;cursor:pointer;user-select:none;">
+                <div class="wl-toggle" id="workspaceLaudoToggle"
+                     data-medico-id="<?= (int)($medicoId ?? 0) ?>"
+                     data-ativo="<?= $workspaceHabilitado ? '1' : '0' ?>"
+                     style="position:relative;width:52px;height:28px;border-radius:14px;
+                            background:<?= $workspaceHabilitado ? '#0ea5e9' : '#cbd5e1' ?>;
+                            transition:background .25s;cursor:pointer;"
+                     onclick="toggleWorkspaceLaudo(this)">
+                    <span style="position:absolute;top:3px;left:<?= $workspaceHabilitado ? '27px' : '3px' ?>;
+                                 width:22px;height:22px;border-radius:50%;background:#fff;
+                                 box-shadow:0 1px 4px rgba(0,0,0,.2);transition:left .25s;
+                                 display:block;" id="workspaceLaudoThumb"></span>
+                </div>
+                <span style="font-size:.9rem;font-weight:600;color:<?= $workspaceHabilitado ? '#0ea5e9' : 'var(--pacs-text-muted)' ?>;"
+                      id="workspaceLaudoLabel">
+                    <?= $workspaceHabilitado ? 'Habilitado' : 'Desabilitado' ?>
+                </span>
+            </label>
+            <!-- Status badge -->
+            <?php if ($workspaceHabilitado): ?>
+            <span style="background:rgba(14,165,233,.12);color:#0ea5e9;border:1px solid rgba(14,165,233,.3);
+                         border-radius:20px;padding:.2rem .75rem;font-size:.78rem;font-weight:600;">
+                <i class="fa fa-circle-check me-1"></i> Ativo — médico pode laudar no Workspace VOXEL
+            </span>
+            <?php else: ?>
+            <span style="background:rgba(100,116,139,.1);color:#64748b;border:1px solid rgba(100,116,139,.25);
+                         border-radius:20px;padding:.2rem .75rem;font-size:.78rem;font-weight:600;">
+                <i class="fa fa-circle-xmark me-1"></i> Inativo — botão Laudo oculto na worklist
+            </span>
+            <?php endif; ?>
+        </div>
+        <p style="margin-top:.75rem;font-size:.82rem;color:var(--pacs-text-muted);">
+            <i class="fa fa-circle-info me-1"></i>
+            Ao <strong>habilitar</strong>, o médico terá acesso ao Laudário VOXEL diretamente da worklist
+            e o Token Copilot será mantido ativo. Ao <strong>desabilitar</strong>, o botão Laudo some da
+            worklist e o Token Copilot é revogado automaticamente.
+        </p>
+        <div id="workspaceLaudoFeedback" style="display:none;margin-top:.5rem;"></div>
+    </div>
+    <?php endif; ?>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         SEÇÃO 6 — TOKEN COPILOT (somente edição)
     ══════════════════════════════════════════════════════════════════ -->
     <?php if ($isEdit): ?>
     <div class="medico-section">
@@ -863,4 +918,53 @@ document.getElementById('medicoNome')?.addEventListener('input', function () {
     const erroEl = document.getElementById('erroNome');
     if (erroEl) erroEl.style.display = 'none';
 });
+
+// ─── Toggle Workspace Laudo VOXEL ─────────────────────────────────────────────
+function toggleWorkspaceLaudo(el) {
+    const medicoId  = el.dataset.medicoId;
+    const ativoAtual = el.dataset.ativo === '1';
+    const novoEstado = !ativoAtual;
+    const thumb      = document.getElementById('workspaceLaudoThumb');
+    const label      = document.getElementById('workspaceLaudoLabel');
+    const feedback   = document.getElementById('workspaceLaudoFeedback');
+
+    // Feedback visual imediato
+    el.style.background   = novoEstado ? '#0ea5e9' : '#cbd5e1';
+    thumb.style.left      = novoEstado ? '27px' : '3px';
+    label.textContent     = novoEstado ? 'Habilitado' : 'Desabilitado';
+    label.style.color     = novoEstado ? '#0ea5e9' : 'var(--pacs-text-muted)';
+    el.dataset.ativo      = novoEstado ? '1' : '0';
+
+    fetch(`/api/medicos/${medicoId}/workspace-laudo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ habilitar: novoEstado })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg || 'Erro desconhecido');
+        const cor = novoEstado ? '#0ea5e9' : '#64748b';
+        const ico = novoEstado ? 'fa-circle-check' : 'fa-circle-xmark';
+        feedback.style.display = 'block';
+        feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(0,0,0,.08);
+            border:1px solid ${cor};color:${cor};font-size:.82rem;">
+            <i class="fa ${ico} me-1"></i>${data.msg}
+        </div>`;
+        setTimeout(() => { feedback.style.display = 'none'; }, 4000);
+    })
+    .catch(err => {
+        // Reverte em caso de erro
+        el.style.background   = ativoAtual ? '#0ea5e9' : '#cbd5e1';
+        thumb.style.left      = ativoAtual ? '27px' : '3px';
+        label.textContent     = ativoAtual ? 'Habilitado' : 'Desabilitado';
+        label.style.color     = ativoAtual ? '#0ea5e9' : 'var(--pacs-text-muted)';
+        el.dataset.ativo      = ativoAtual ? '1' : '0';
+        feedback.style.display = 'block';
+        feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(224,82,82,.1);
+            border:1px solid #e05252;color:#e05252;font-size:.82rem;">
+            <i class="fa fa-triangle-exclamation me-1"></i>Erro: ${err.message}
+        </div>`;
+        setTimeout(() => { feedback.style.display = 'none'; }, 5000);
+    });
+}
 </script>

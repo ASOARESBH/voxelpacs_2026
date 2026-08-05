@@ -539,9 +539,16 @@ $periodoLabel = [
                         <i class="fa fa-hand-holding-medical"></i> Assumir
                     </button>
                     <?php elseif ($podeLaudar): ?>
-                    <button type="button" class="wl-btn-laudo" title="Módulo de laudo em breve" disabled>
+                    <?php if ($workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
+                    <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                       class="wl-btn-laudo" title="Abrir Workspace Laudo">
+                        <i class="fa fa-file-medical"></i> Laudo
+                    </a>
+                    <?php else: ?>
+                    <button type="button" class="wl-btn-laudo" title="Workspace Laudo não habilitado para este médico" disabled>
                         <i class="fa fa-file-medical"></i> Laudo
                     </button>
+                    <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>

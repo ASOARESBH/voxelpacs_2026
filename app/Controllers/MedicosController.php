@@ -524,6 +524,102 @@ class MedicosController extends Controller
         ]);
     }
 
+    // =========================================================================
+    // API — Toggle Workspace Laudo VOXEL
+    // POST /api/medicos/{id}/workspace-laudo
+    // Body: { "habilitar": true|false }
+    // =========================================================================
+    public function toggleWorkspaceLaudo(int $id): void
+    {
+        $tenantId = $this->tenantId();
+        $medico   = $this->service->buscarPorId($id, $tenantId);
+        if (!$medico) {
+            $this->json(['ok' => false, 'msg' => 'Médico não encontrado.'], 404);
+            return;
+        }
+        $body      = json_decode(file_get_contents('php://input'), true) ?? [];
+        $habilitar = !empty($body['habilitar']);
+        try {
+            $pdo = Database::getInstance();
+            // 1. Atualiza o campo workspace_laudo_habilitado em bi_medicos
+            $pdo->prepare("
+                UPDATE bi_medicos
+                SET workspace_laudo_habilitado = :hab, updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tid
+            ")->execute(['hab' => $habilitar ? 1 : 0, 'id' => $id, 'tid' => $tenantId]);
+
+            // 2. Se desabilitando: revoga o token Copilot (status = revogado)
+            if (!$habilitar) {
+                $pdo->prepare("
+                    UPDATE bi_copilot_medico_tokens
+                    SET status = 'revogado', updated_at = NOW()
+                    WHERE medico_id = :mid AND tenant_id = :tid AND status != 'revogado'
+                ")->execute(['mid' => $id, 'tid' => $tenantId]);
+                Logger::info('[MedicosController::toggleWorkspaceLaudo] Workspace desabilitado — token revogado', [
+                    'medico_id' => $id, 'tenant_id' => $tenantId,
+                ]);
+                $this->json(['ok' => true, 'ativo' => false, 'msg' => 'Workspace Laudo desabilitado. Token Copilot revogado.']);
+                return;
+            }
+
+            // 3. Se habilitando: verifica se já existe token ativo
+            $tkStmt = $pdo->prepare("
+                SELECT id, token_integracao, status
+                FROM bi_copilot_medico_tokens
+                WHERE medico_id = :mid AND tenant_id = :tid
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $tkStmt->execute(['mid' => $id, 'tid' => $tenantId]);
+            $token = $tkStmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($token && $token['status'] === 'ativo') {
+                // Token ativo existente — apenas habilita o workspace
+                $this->json([
+                    'ok'    => true,
+                    'ativo' => true,
+                    'msg'   => 'Workspace Laudo habilitado. Token Copilot já ativo.',
+                    'token' => $token['token_integracao'],
+                ]);
+                return;
+            }
+
+            // 4. Token revogado ou inexistente: gera novo token
+            $novoToken = 'CPLT-' . strtoupper(bin2hex(random_bytes(8)));
+            if ($token) {
+                // Reativa o token existente com novo valor
+                $pdo->prepare("
+                    UPDATE bi_copilot_medico_tokens
+                    SET token_integracao = :tk, status = 'ativo', updated_at = NOW()
+                    WHERE id = :rid
+                ")->execute(['tk' => $novoToken, 'rid' => $token['id']]);
+            } else {
+                // Busca unidade_id do tenant
+                $unStmt = $pdo->prepare("SELECT id FROM bi_copilot_unidades WHERE tenant_id = :tid LIMIT 1");
+                $unStmt->execute(['tid' => $tenantId]);
+                $unidadeId = (int) ($unStmt->fetchColumn() ?: 0);
+                $pdo->prepare("
+                    INSERT INTO bi_copilot_medico_tokens
+                        (medico_id, tenant_id, unidade_id, token_integracao, status, created_at, updated_at)
+                    VALUES (:mid, :tid, :uid, :tk, 'ativo', NOW(), NOW())
+                ")->execute(['mid' => $id, 'tid' => $tenantId, 'uid' => $unidadeId, 'tk' => $novoToken]);
+            }
+            Logger::info('[MedicosController::toggleWorkspaceLaudo] Workspace habilitado — novo token gerado', [
+                'medico_id' => $id, 'tenant_id' => $tenantId,
+            ]);
+            $this->json([
+                'ok'    => true,
+                'ativo' => true,
+                'msg'   => 'Workspace Laudo habilitado. Novo token Copilot gerado.',
+                'token' => $novoToken,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::error('[MedicosController::toggleWorkspaceLaudo] Exceção', [
+                'medico_id' => $id, 'erro' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Erro interno ao alterar Workspace Laudo.'], 500);
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Registra ou atualiza a unidade no VoxelCopilot via API.
     // Chamado ao gerar/regenerar token para garantir que cop_pacs_unidades
