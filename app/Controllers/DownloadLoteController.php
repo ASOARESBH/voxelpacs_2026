@@ -458,7 +458,7 @@ class DownloadLoteController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // ENDPOINT 4: Download Inteligente — ZIP com launcher + DICOMDIR + Leia-me
-    // GET /api/download-lote/baixar-inteligente?job_id=xxx&log_id=yyy&patient=Nome
+    // GET /api/download-lote/baixar-inteligente?job_id=xxx&log_id=yyy&patient=Nome&suffix=opcional
     //
     // Novo fluxo (item 17 da especificação VOXEL Desktop):
     //  1. Baixa o ZIP gerado pelo Orthanc para arquivo temporário
@@ -467,12 +467,28 @@ class DownloadLoteController extends Controller
     //     ├── DICOMDIR         (gerado pelo Orthanc, já está no ZIP original)
     //     └── Leia-me.pdf      (instruções de uso)
     //  3. Serve o ZIP enriquecido com nome amigável (ex: 31192_GUSTAVO.zip)
+    //
+    // Modos de uso pelo frontend (ver app/Views/estudos/index.php):
+    //  - Agrupado: 1 chamada de iniciar() com todos os IDs selecionados → 1 job →
+    //    1 zip aqui, com pasta por estudo dentro (o que o Orthanc já gera para
+    //    múltiplos Resources num único archive job).
+    //  - Individual (padrão): N chamadas de iniciar() com 1 ID cada → N jobs →
+    //    N chamadas a este endpoint, cada uma reaproveitando o mesmo código —
+    //    o zip resultante já sai no formato "1 estudo só" porque o job só tinha
+    //    1 Resource. Não há branch de código separado para os dois modos.
+    //  - `suffix` (opcional): usado só pelo modo individual, para evitar que dois
+    //    estudos do mesmo paciente gerem o mesmo nome de arquivo (o frontend manda
+    //    o ID VOXEL do estudo, já único). Sem `suffix` o nome final é idêntico ao
+    //    comportamento histórico (modo agrupado e o caso de sempre existiu de
+    //    selecionar 1 único estudo).
     // ─────────────────────────────────────────────────────────────────────────
     public function baixarInteligente(): void
     {
         $jobId = trim($_GET['job_id'] ?? '');
         $nomePaciente = preg_replace('/[^A-Za-z0-9_\-]/', '_', strtoupper(trim($_GET['patient'] ?? 'PACIENTE')));
         $nomePaciente = substr($nomePaciente, 0, 30);
+        $sufixo = preg_replace('/[^A-Za-z0-9_\-]/', '', trim($_GET['suffix'] ?? ''));
+        $sufixo = substr($sufixo, 0, 20);
 
         try {
             $userId   = Auth::userId();
@@ -532,7 +548,7 @@ class DownloadLoteController extends Controller
             if (!class_exists('ZipArchive')) {
                 // Fallback: servir o ZIP original sem modificações
                 Logger::error('[DownloadLote::baixarInteligente] ZipArchive não disponível, usando ZIP original');
-                $filename = date('Ymd_Hi') . '_' . $nomePaciente . '.zip';
+                $filename = date('Ymd_Hi') . '_' . $nomePaciente . ($sufixo !== '' ? '_' . $sufixo : '') . '.zip';
                 header('Content-Type: application/zip');
                 header('Content-Disposition: attachment; filename="' . $filename . '"');
                 header('Cache-Control: no-store');
@@ -581,7 +597,7 @@ class DownloadLoteController extends Controller
             $zip->close();
 
             // ── 4. Servir o ZIP enriquecido ──────────────────────────────────────
-            $filename = date('Ymd') . '_' . $nomePaciente . '.zip';
+            $filename = date('Ymd') . '_' . $nomePaciente . ($sufixo !== '' ? '_' . $sufixo : '') . '.zip';
             $filesize = filesize($tmpFinal);
 
             header('Content-Type: application/zip');

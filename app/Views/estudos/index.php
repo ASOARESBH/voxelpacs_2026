@@ -593,6 +593,10 @@ $periodoLabel = [
         <button type="button" id="btn-download-lote" class="wl-btn-download" onclick="iniciarDownloadLote()">
             <i class="fa fa-download"></i> Download DICOM
         </button>
+        <label class="wl-chk-agrupar" title="<?= htmlspecialchars(t('download_lote.agrupar_tooltip')) ?>">
+            <input type="checkbox" id="chk-agrupar-zip">
+            <?= htmlspecialchars(t('download_lote.agrupar_label')) ?>
+        </label>
         <button type="button" class="wl-btn-limpar-sel" onclick="limparSelecao()">
             <i class="fa fa-xmark"></i> Limpar
         </button>
@@ -877,6 +881,10 @@ $periodoLabel = [
     color:var(--pacs-text-muted);padding:.3rem .65rem;font-size:.75rem;cursor:pointer;
     transition:border-color .15s,color .15s;}
 .wl-btn-limpar-sel:hover{border-color:var(--pacs-text-muted);color:var(--pacs-text-primary);}
+.wl-chk-agrupar{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--pacs-text-muted);
+    cursor:pointer;user-select:none;}
+.wl-chk-agrupar input{cursor:pointer;margin:0;}
+.wl-chk-agrupar:hover{color:var(--pacs-text-primary);}
 .wl-dl-progress{margin-top:.4rem;}
 .wl-dl-prog-label{font-size:.75rem;color:var(--pacs-text-muted);margin-bottom:.3rem;}
 .wl-dl-prog-bar-wrap{background:var(--pacs-bg);border-radius:4px;height:6px;overflow:hidden;}
@@ -897,6 +905,10 @@ $periodoLabel = [
 <script>
 // Variáveis injetadas pelo PHP
 window._workspaceLaudoHabilitado = <?= $workspaceLaudoHabilitado ? 'true' : 'false' ?>;
+const I18N_DL = {
+    baixandoIndividual: <?= json_encode(t('download_lote.baixando_individual')) ?>,
+    erroParcial:        <?= json_encode(t('download_lote.erro_parcial')) ?>,
+};
 
 function toggleModalidade(mod) {
     const container = document.getElementById('modalidadesInputs');
@@ -990,6 +1002,8 @@ function limparSelecao() {
     document.querySelectorAll('.row-check').forEach(c => { c.checked = false; c.disabled = false; });
     const checkAll = document.getElementById('checkAll');
     if (checkAll) checkAll.checked = false;
+    const chkAgrupar = document.getElementById('chk-agrupar-zip');
+    if (chkAgrupar) chkAgrupar.checked = false;
     atualizarBarraSel();
 }
 // Listener nos checkboxes de linha
@@ -1077,14 +1091,36 @@ document.addEventListener('click', function(e) {
 });
 
 // ── Download em Lote ─────────────────────────────────────────────────────
+// Dois modos, ambos reaproveitando os mesmos 3 endpoints do backend
+// (iniciar → status → baixar-inteligente), que já são genéricos por job:
+//  - Agrupado: 1 chamada de iniciar() com todos os IDs → 1 job → 1 zip.
+//  - Individual (padrão): N chamadas de iniciar() com 1 ID cada → N jobs →
+//    N zips, cada um disparado como download separado no navegador.
+function coletarNomesPorId(ids) {
+    const nomes = {};
+    ids.forEach(id => {
+        const row = document.querySelector('.row-check[value="' + id + '"]');
+        nomes[id] = (row?.closest('tr')?.querySelector('.wl-pac-nome')?.textContent?.trim()) || 'PACIENTE';
+    });
+    return nomes;
+}
 function iniciarDownloadLote() {
     const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
-    // Captura o nome do primeiro paciente selecionado para nomear o ZIP
-    const primeiraLinha = document.querySelector('.row-check:checked');
-    const nomePaciente  = primeiraLinha
-        ? (primeiraLinha.closest('tr')?.querySelector('.wl-pac-nome')?.textContent?.trim() || 'PACIENTE')
-        : 'PACIENTE';
-    window._dlPaciente = nomePaciente;
+    if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
+    if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
+    const nomes   = coletarNomesPorId(ids);
+    const agrupar = document.getElementById('chk-agrupar-zip')?.checked || false;
+    // 1 único estudo: agrupado ou não dá exatamente no mesmo zip (sem pasta
+    // extra), então sempre usa o caminho "grupo" (que aqui processa 1 item só).
+    if (agrupar || ids.length === 1) {
+        baixarComoGrupo(ids, nomes);
+    } else {
+        baixarIndividualmente(ids, nomes);
+    }
+}
+// ── Modo Agrupado (comportamento histórico, inalterado) ─────────────────
+function baixarComoGrupo(ids, nomes) {
+    window._dlPaciente = nomes[ids[0]] || 'PACIENTE';
     if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
     if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
     const btn  = document.getElementById('btn-download-lote');
@@ -1148,6 +1184,90 @@ function pollJob(jobId, logId, tentativa = 0) {
         resetDownloadUI();
         alert('Erro no download: ' + err.message);
     });
+}
+// ── Modo Individual (novo padrão) ────────────────────────────────────────
+// Roda o ciclo iniciar→poll→baixar uma vez por estudo, sequencialmente (não
+// em paralelo) para não disparar o bloqueio de "múltiplos downloads
+// automáticos" do Chrome/Edge. Falha em 1 estudo não interrompe os demais.
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function pollJobPromise(jobId, logId, onProgress) {
+    const MAX_TENTATIVAS = 120; // ~2 min
+    return new Promise((resolve, reject) => {
+        (function tick(tentativa) {
+            if (tentativa > MAX_TENTATIVAS) {
+                reject(new Error('Timeout: o Orthanc demorou demais para gerar o arquivo.'));
+                return;
+            }
+            fetch('/api/download-lote/status?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId), {
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) throw new Error(data.msg || 'Erro no polling');
+                if (typeof onProgress === 'function') onProgress(data.progress || 0);
+                if (data.state === 'Success') resolve();
+                else if (data.state === 'Failure') throw new Error('O Orthanc falhou ao gerar o archive.');
+                else setTimeout(() => tick(tentativa + 1), 1000);
+            })
+            .catch(reject);
+        })(0);
+    });
+}
+function dispararDownloadIndividual(jobId, logId, nomePaciente, estudoId) {
+    const patient = encodeURIComponent(nomePaciente || 'PACIENTE');
+    const url = '/api/download-lote/baixar-inteligente?job_id=' + encodeURIComponent(jobId) +
+        '&log_id=' + encodeURIComponent(logId) + '&patient=' + patient + '&suffix=' + encodeURIComponent(estudoId);
+    const a = document.createElement('a');
+    a.href = url;
+    a.rel  = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+async function baixarIndividualmente(ids, nomes) {
+    const btn  = document.getElementById('btn-download-lote');
+    const prog = document.getElementById('wl-dl-progress');
+    const bar  = document.getElementById('wl-dl-prog-bar');
+    const lbl  = document.getElementById('wl-dl-prog-label');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Iniciando...';
+    prog.style.display = 'block';
+    bar.style.background = '';
+    const erros = [];
+    for (let i = 0; i < ids.length; i++) {
+        const id   = ids[i];
+        const nome = nomes[id] || 'PACIENTE';
+        const rotulo = I18N_DL.baixandoIndividual.replace('{atual}', i + 1).replace('{total}', ids.length);
+        const base = Math.round((i / ids.length) * 90);
+        lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + rotulo;
+        bar.style.width = base + '%';
+        try {
+            const iniciado = await fetch('/api/download-lote/iniciar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                body: JSON.stringify({estudo_ids: [id]})
+            }).then(r => r.json());
+            if (!iniciado.ok) throw new Error(iniciado.msg || 'Erro ao iniciar job');
+            await pollJobPromise(iniciado.job_id, iniciado.log_id, pct => {
+                bar.style.width = (base + Math.round((pct / 100) * (90 / ids.length))) + '%';
+            });
+            dispararDownloadIndividual(iniciado.job_id, iniciado.log_id, nome, id);
+            if (i < ids.length - 1) await sleep(700); // evita bloqueio de downloads múltiplos do navegador
+        } catch (err) {
+            erros.push({ id, nome, motivo: err.message });
+        }
+    }
+    bar.style.width = '100%';
+    if (erros.length > 0) {
+        bar.style.background = '#ef4444';
+        const msg = I18N_DL.erroParcial.replace('{n}', erros.length).replace('{total}', ids.length);
+        lbl.innerHTML = '<i class="fa fa-triangle-exclamation"></i> ' + msg;
+        alert(msg + '\n' + erros.map(e => '- ' + e.nome + ': ' + e.motivo).join('\n'));
+    } else {
+        bar.style.background = '#22c55e';
+        lbl.innerHTML = '<i class="fa fa-check"></i> Concluído!';
+    }
+    setTimeout(resetDownloadUI, erros.length ? 4000 : 2000);
 }
 function resetDownloadUI() {
     const btn  = document.getElementById('btn-download-lote');

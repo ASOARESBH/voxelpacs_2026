@@ -143,6 +143,12 @@ return [
     'download_lote.pronto'           => 'Ready! Starting download...',
     'download_lote.erro_limite'      => 'Maximum of 5 studies per download.',
     'download_lote.erro_sem_orthanc' => 'Study has no Orthanc ID — cannot download.',
+
+    // Individual vs. grouped download (2026-08-06)
+    'download_lote.agrupar_label'      => 'Group into a single ZIP',
+    'download_lote.agrupar_tooltip'    => 'When checked, generates 1 single ZIP with all selected studies. Unchecked (default), generates 1 separate ZIP per study.',
+    'download_lote.baixando_individual'=> 'Downloading study {atual} of {total}...',
+    'download_lote.erro_parcial'       => 'Failed to download {n} of {total} studies. The others downloaded normally.',
     'download_lote.erro_timeout'     => 'Timeout: Orthanc took too long to generate the archive.',
 
     // Worklist de Estudos — Coluna Modalidades multi-seleção (2026-07-27)

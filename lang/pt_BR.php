@@ -144,6 +144,12 @@ return [
     'download_lote.pronto'           => 'Pronto! Iniciando download...',
     'download_lote.erro_limite'      => 'Máximo de 5 estudos por download.',
     'download_lote.erro_sem_orthanc' => 'Estudo sem ID Orthanc — não é possível baixar.',
+
+    // Download individual vs. agrupado (2026-08-06)
+    'download_lote.agrupar_label'      => 'Agrupar em um único ZIP',
+    'download_lote.agrupar_tooltip'    => 'Quando marcado, gera 1 único ZIP com todos os estudos selecionados. Desmarcado (padrão), gera 1 ZIP separado por estudo.',
+    'download_lote.baixando_individual'=> 'Baixando estudo {atual} de {total}...',
+    'download_lote.erro_parcial'       => 'Falha ao baixar {n} de {total} estudo(s). Os demais foram baixados normalmente.',
     'download_lote.erro_timeout'     => 'Timeout: o Orthanc demorou demais para gerar o arquivo.',
 
     // Worklist de Estudos — Coluna Modalidades multi-seleção (2026-07-27)

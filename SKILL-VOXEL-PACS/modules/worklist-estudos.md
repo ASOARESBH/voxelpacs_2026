@@ -61,5 +61,27 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 - `bi_pacs_estudos` só é corrigida retroativamente para estudos já importados no **próximo clique manual** de "Sincronizar Estudos" (o UPDATE dinâmico já reescreve todas as colunas, incluindo `modalities`, para estudos existentes) — não há backfill automático/migration.
 - Lista de modalidades dos filtros do topo (`CR, CT, CTG, DO...`) é hardcoded em `app/Views/estudos/index.php:188`, não vem do banco nem de `bi_pacs_estudos.modalities` — pode ficar desatualizada se o Orthanc trouxer uma modalidade fora dessa lista (o filtro simplesmente não teria botão para ela, mas a coluna "M" mostraria normalmente).
 
+## Download DICOM em lote — modo Individual (padrão) vs Agrupado (opcional) (2026-08-06)
+
+**Arquivos**: `app/Controllers/DownloadLoteController.php` (backend), `app/Views/estudos/index.php` (barra de seleção + JS, seção "Download em Lote"), rotas em `routes/web.php:37-40`.
+
+**Endpoints (não confundir com "1 endpoint = 1 modo" — os 4 são genéricos por job, os 2 modos vivem só no frontend)**:
+- `POST /api/download-lote/iniciar` — recebe `{estudo_ids: [...]}` (1 a 5), valida tenant/permissão por `institution_name`, cria **1 job de archive no Orthanc** (`POST /tools/create-archive`, todos os IDs recebidos na mesma chamada), grava auditoria em `bi_download_lote_log`.
+- `GET /api/download-lote/status?job_id=` — polling do job Orthanc.
+- `GET /api/download-lote/baixar` — proxy de streaming "cru" do zip do Orthanc (sem bat/leia-me).
+- `GET /api/download-lote/baixar-inteligente?job_id=&log_id=&patient=&suffix=` — baixa o zip do job, reabre com `ZipArchive` e adiciona `Abrir Exame.bat`/`Abrir Exame.exe` + `Leia-me.txt`/`Leia-me.pdf` únicos **daquele job**, serve como `{Ymd}_{PATIENT}[_{suffix}].zip`.
+
+**Achado-chave**: `iniciar()`/`baixarInteligente()` já eram atômicos por job desde a implementação original — cada chamada produz exatamente 1 job Orthanc + 1 zip enriquecido, não importa se o job tem 1 ou 5 estudos dentro. Por isso os dois modos abaixo **não precisaram de nenhum parâmetro `modo=` no backend nem de lógica de empacotamento duplicada** — é só uma questão de quantas vezes o frontend chama o mesmo fluxo:
+
+- **Agrupado** (`app/Views/estudos/index.php`, função `baixarComoGrupo()`): 1 chamada de `iniciar()` com todos os IDs selecionados → 1 job → 1 zip com pasta por estudo (é o Orthanc quem gera essa estrutura ao receber múltiplos `Resources` no mesmo archive) + 1 bat/leia-me compartilhado. **Código idêntico ao que já existia antes de 2026-08-06** — só foi extraído para uma função nomeada, sem alterar lógica, exatamente para não arriscar regressão nesse caminho (é o que estava em produção).
+- **Individual** (`baixarIndividualmente()`, novo padrão): itera os IDs selecionados **sequencialmente** (não `Promise.all` — evita o bloqueio de "múltiplos downloads automáticos" do Chrome/Edge), chamando `iniciar()` com **1 ID por vez**. Cada job resultante já sai no formato "1 estudo só" (mesmo `baixarInteligente()`, só que com 1 `Resource` no job). Cada download é disparado via `<a>` temporário (não `window.location.href`, que só é usado no modo agrupado). Falha num estudo (Orthanc, permissão) é capturada por iteração e não aborta os demais — toast agregado no final com a lista de falhas.
+- **Desambiguador `suffix`**: como o modo individual pode baixar 2 estudos do mesmo paciente na mesma seleção (mesmo nome de arquivo base `{Ymd}_{PATIENT}.zip`), o frontend manda `&suffix=<id VOXEL do estudo>` (já único, sem round-trip extra ao banco) e o backend anexa `_{suffix}` antes de `.zip`. Sem esse parâmetro, o nome fica idêntico ao histórico — usado assim pelo modo agrupado e por qualquer chamador antigo.
+- **Caso de borda "1 estudo com Agrupar marcado"**: `iniciarDownloadLote()` força o caminho `baixarComoGrupo` sempre que `ids.length === 1`, independente do checkbox — os dois modos convergem no mesmo job/zip único, sem pasta extra.
+- **Checkbox "Agrupar em um único ZIP"** (`#chk-agrupar-zip`, desmarcado por padrão): não persiste entre sessões, reseta em `limparSelecao()`. Textos em `lang/{pt_BR,en,es}.php` sob o namespace `download_lote.*` (`agrupar_label`, `agrupar_tooltip`, `baixando_individual`, `erro_parcial`).
+
+**Achados pendentes (não corrigidos, fora do escopo desta tarefa)**:
+- `lang/es.php` tinha (e ainda tem, nas chaves pré-existentes `pronto`/`erro_limite`/`erro_timeout` do mesmo namespace `download_lote.*`) escapes unicode corrompidos — ex.: `'u00a1Listo!...'` deveria ser `'¡Listo!...'` (faltou o `\` do escape numa edição anterior). Nunca foi percebido porque a JS não usa essas chaves.
+- As chaves `download_lote.titulo/selecione/preparando/processando/pronto/erro_limite/erro_sem_orthanc/erro_timeout` existem nos 3 idiomas desde 2026-07-25 mas **nunca são lidas pela JS** (que tem strings PT-BR hardcoded nos `alert()`/labels de progresso). Retrofit dessas strings fica para uma tarefa futura de i18n dedicada a essa tela — não fazia parte do pedido de "Agrupar vs Individual".
+
 ## Última análise
-2026-07-12
+2026-08-06
