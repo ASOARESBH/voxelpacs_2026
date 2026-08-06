@@ -540,15 +540,14 @@ $periodoLabel = [
                         <i class="fa fa-hand-holding-medical"></i> Assumir
                     </button>
                     <?php elseif ($podeLaudar): ?>
-                    <?php if ($workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
+                    <?php if (!$workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
+                    <!-- Laudário Interno: workspace desabilitado = botão ativo -->
                     <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
-                       class="wl-btn-laudo" title="Abrir Workspace Laudo">
+                       class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
                         <i class="fa fa-file-medical"></i> Laudo
                     </a>
-                    <?php else: ?>
-                    <button type="button" class="wl-btn-laudo" title="Workspace Laudo não habilitado para este médico" disabled>
-                        <i class="fa fa-file-medical"></i> Laudo
-                    </button>
+                    <?php elseif ($workspaceLaudoHabilitado): ?>
+                    <!-- VOXEL Copilot ativo: botão oculto (lauda externamente) -->
                     <?php endif; ?>
                     <?php endif; ?>
 
@@ -1062,13 +1061,17 @@ document.addEventListener('click', function(e) {
             if (sitCell) { sitCell.className = 'sit-badge sit-a-laudar'; sitCell.textContent = 'A LAUDAR'; }
             // Substitui botão Assumir pelo botão Laudo correto
             // workspaceLaudoHabilitado é injetado pelo PHP na view
+            // Nova lógica: desabilitado = Laudário Interno (botão ativo)
+            //              habilitado  = VOXEL Copilot (botão oculto)
             const wlHabilitado = (typeof window._workspaceLaudoHabilitado !== 'undefined') ? window._workspaceLaudoHabilitado : false;
             const studyUid = btn.dataset.studyUid || '';
             let novoBotao;
-            if (wlHabilitado && studyUid) {
-                novoBotao = `<a href="/reports/${encodeURIComponent(studyUid)}" target="_blank" class="wl-btn-laudo" title="Abrir Workspace Laudo"><i class="fa fa-file-medical"></i> Laudo</a>`;
+            if (!wlHabilitado && studyUid) {
+                // Laudário Interno: exibe botão ativo
+                novoBotao = `<a href="/reports/${encodeURIComponent(studyUid)}" target="_blank" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
             } else {
-                novoBotao = '<button type="button" class="wl-btn-laudo" disabled title="Workspace Laudo não habilitado"><i class="fa fa-file-medical"></i> Laudo</button>';
+                // VOXEL Copilot ativo: não exibe botão (médico lauda externamente)
+                novoBotao = '';
             }
             btn.outerHTML = novoBotao;
             // Flash na linha

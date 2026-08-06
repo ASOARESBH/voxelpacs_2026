@@ -496,9 +496,35 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     ?>
     <div class="medico-section" id="workspaceLaudoSection">
         <div class="medico-section-header">
-            <i class="fa fa-file-waveform" style="color:#0ea5e9;"></i>
-            <span style="color:#0ea5e9;">Workspace Laudo VOXEL</span>
+            <i class="fa fa-robot" style="color:#7c3aed;"></i>
+            <span style="color:#7c3aed;">VOXEL Copilot — Modo de Laudário</span>
         </div>
+
+        <!-- Descrição do modo ativo -->
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+            <div style="flex:1;min-width:220px;padding:.75rem 1rem;
+                        background:<?= $workspaceHabilitado ? 'rgba(124,58,237,.1)' : 'rgba(14,165,233,.08)' ?>;
+                        border:1px solid <?= $workspaceHabilitado ? 'rgba(124,58,237,.35)' : 'rgba(14,165,233,.3)' ?>;
+                        border-radius:8px;">
+                <div style="font-size:.78rem;font-weight:700;color:<?= $workspaceHabilitado ? '#a78bfa' : '#38bdf8' ?>;margin-bottom:.3rem;">
+                    <?php if ($workspaceHabilitado): ?>
+                    <i class="fa fa-robot me-1"></i> MODO ATIVO: VOXEL Copilot
+                    <?php else: ?>
+                    <i class="fa fa-file-medical me-1"></i> MODO ATIVO: Laudário Interno VOXEL PACS
+                    <?php endif; ?>
+                </div>
+                <div style="font-size:.82rem;color:var(--pacs-text-muted);">
+                    <?php if ($workspaceHabilitado): ?>
+                    O médico lauda externamente em <strong style="color:#a78bfa;">demo.voxelpacs.com.br</strong>.
+                    O botão Laudo na worklist fica <strong>oculto</strong>.
+                    <?php else: ?>
+                    O médico lauda internamente em <strong style="color:#38bdf8;">/reports/</strong>.
+                    O botão Laudo na worklist fica <strong>ativo</strong>.
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
         <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
             <!-- Toggle switch -->
             <label class="wl-toggle-wrap" style="display:flex;align-items:center;gap:.75rem;cursor:pointer;user-select:none;">
@@ -506,7 +532,7 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                      data-medico-id="<?= (int)($medicoId ?? 0) ?>"
                      data-ativo="<?= $workspaceHabilitado ? '1' : '0' ?>"
                      style="position:relative;width:52px;height:28px;border-radius:14px;
-                            background:<?= $workspaceHabilitado ? '#0ea5e9' : '#cbd5e1' ?>;
+                            background:<?= $workspaceHabilitado ? '#7c3aed' : '#0ea5e9' ?>;
                             transition:background .25s;cursor:pointer;"
                      onclick="toggleWorkspaceLaudo(this)">
                     <span style="position:absolute;top:3px;left:<?= $workspaceHabilitado ? '27px' : '3px' ?>;
@@ -514,29 +540,34 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                                  box-shadow:0 1px 4px rgba(0,0,0,.2);transition:left .25s;
                                  display:block;" id="workspaceLaudoThumb"></span>
                 </div>
-                <span style="font-size:.9rem;font-weight:600;color:<?= $workspaceHabilitado ? '#0ea5e9' : 'var(--pacs-text-muted)' ?>;"
+                <span style="font-size:.9rem;font-weight:600;color:<?= $workspaceHabilitado ? '#a78bfa' : '#38bdf8' ?>;"
                       id="workspaceLaudoLabel">
-                    <?= $workspaceHabilitado ? 'Habilitado' : 'Desabilitado' ?>
+                    <?= $workspaceHabilitado ? 'VOXEL Copilot' : 'Laudário Interno' ?>
                 </span>
             </label>
             <!-- Status badge -->
             <?php if ($workspaceHabilitado): ?>
-            <span style="background:rgba(14,165,233,.12);color:#0ea5e9;border:1px solid rgba(14,165,233,.3);
+            <span style="background:rgba(124,58,237,.12);color:#a78bfa;border:1px solid rgba(124,58,237,.3);
                          border-radius:20px;padding:.2rem .75rem;font-size:.78rem;font-weight:600;">
-                <i class="fa fa-circle-check me-1"></i> Ativo — médico pode laudar no Workspace VOXEL
+                <i class="fa fa-robot me-1"></i> Copilot ativo — lauda em demo.voxelpacs.com.br
             </span>
             <?php else: ?>
-            <span style="background:rgba(100,116,139,.1);color:#64748b;border:1px solid rgba(100,116,139,.25);
+            <span style="background:rgba(14,165,233,.1);color:#38bdf8;border:1px solid rgba(14,165,233,.3);
                          border-radius:20px;padding:.2rem .75rem;font-size:.78rem;font-weight:600;">
-                <i class="fa fa-circle-xmark me-1"></i> Inativo — botão Laudo oculto na worklist
+                <i class="fa fa-file-medical me-1"></i> Laudário Interno ativo — botão Laudo visível na worklist
             </span>
             <?php endif; ?>
         </div>
+
         <p style="margin-top:.75rem;font-size:.82rem;color:var(--pacs-text-muted);">
             <i class="fa fa-circle-info me-1"></i>
-            Ao <strong>habilitar</strong>, o médico terá acesso ao Laudário VOXEL diretamente da worklist
-            e o Token Copilot será mantido ativo. Ao <strong>desabilitar</strong>, o botão Laudo some da
-            worklist e o Token Copilot é revogado automaticamente.
+            <strong>Habilitado (VOXEL Copilot):</strong> o médico lauda no sistema externo
+            <a href="https://demo.voxelpacs.com.br" target="_blank" style="color:#a78bfa;">demo.voxelpacs.com.br</a>.
+            O botão Laudo fica oculto na worklist e o Token Copilot permanece ativo.
+            &nbsp;|&nbsp;
+            <strong>Desabilitado (Laudário Interno):</strong> o médico lauda diretamente no
+            <a href="/reports/" target="_blank" style="color:#38bdf8;">Laudário VOXEL PACS</a>.
+            O botão Laudo fica ativo na worklist após assumir o estudo.
         </p>
         <div id="workspaceLaudoFeedback" style="display:none;margin-top:.5rem;"></div>
     </div>
@@ -929,10 +960,11 @@ function toggleWorkspaceLaudo(el) {
     const feedback   = document.getElementById('workspaceLaudoFeedback');
 
     // Feedback visual imediato
-    el.style.background   = novoEstado ? '#0ea5e9' : '#cbd5e1';
+    // novoEstado=true = VOXEL Copilot (roxo) | novoEstado=false = Laudário Interno (azul)
+    el.style.background   = novoEstado ? '#7c3aed' : '#0ea5e9';
     thumb.style.left      = novoEstado ? '27px' : '3px';
-    label.textContent     = novoEstado ? 'Habilitado' : 'Desabilitado';
-    label.style.color     = novoEstado ? '#0ea5e9' : 'var(--pacs-text-muted)';
+    label.textContent     = novoEstado ? 'VOXEL Copilot' : 'Laudário Interno';
+    label.style.color     = novoEstado ? '#a78bfa' : '#38bdf8';
     el.dataset.ativo      = novoEstado ? '1' : '0';
 
     fetch(`/api/medicos/${medicoId}/workspace-laudo`, {
@@ -943,21 +975,24 @@ function toggleWorkspaceLaudo(el) {
     .then(r => r.json())
     .then(data => {
         if (!data.ok) throw new Error(data.msg || 'Erro desconhecido');
-        const cor = novoEstado ? '#0ea5e9' : '#64748b';
-        const ico = novoEstado ? 'fa-circle-check' : 'fa-circle-xmark';
+        const cor = novoEstado ? '#a78bfa' : '#38bdf8';
+        const ico = novoEstado ? 'fa-robot' : 'fa-file-medical';
+        const msg = novoEstado
+            ? 'Modo VOXEL Copilot ativado. Botão Laudo oculto na worklist.'
+            : 'Laudário Interno ativado. Botão Laudo visível na worklist após assumir.';
         feedback.style.display = 'block';
         feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(0,0,0,.08);
             border:1px solid ${cor};color:${cor};font-size:.82rem;">
-            <i class="fa ${ico} me-1"></i>${data.msg}
+            <i class="fa ${ico} me-1"></i>${msg}
         </div>`;
-        setTimeout(() => { feedback.style.display = 'none'; }, 4000);
+        setTimeout(() => { feedback.style.display = 'none'; }, 5000);
     })
     .catch(err => {
         // Reverte em caso de erro
-        el.style.background   = ativoAtual ? '#0ea5e9' : '#cbd5e1';
+        el.style.background   = ativoAtual ? '#7c3aed' : '#0ea5e9';
         thumb.style.left      = ativoAtual ? '27px' : '3px';
-        label.textContent     = ativoAtual ? 'Habilitado' : 'Desabilitado';
-        label.style.color     = ativoAtual ? '#0ea5e9' : 'var(--pacs-text-muted)';
+        label.textContent     = ativoAtual ? 'VOXEL Copilot' : 'Laudário Interno';
+        label.style.color     = ativoAtual ? '#a78bfa' : '#38bdf8';
         el.dataset.ativo      = ativoAtual ? '1' : '0';
         feedback.style.display = 'block';
         feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(224,82,82,.1);
