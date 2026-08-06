@@ -1100,5 +1100,92 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
         }
     });
 
+    // ── Ciclo de vida do laudo ───────────────────────────────────────────────
+    var _laudoLiberado  = false;
+    var REPORT_ID_CICLO = <?= $reportId ?>;
+    var READONLY_CICLO  = <?= ($somenteLeitura ?? false) ? 'true' : 'false' ?>;
+
+    function atualizarStatusLaudo(situacao, useBeacon) {
+        if (!REPORT_ID_CICLO || READONLY_CICLO) return;
+        var payload = JSON.stringify({ report_id: REPORT_ID_CICLO, situacao: situacao });
+        if (useBeacon && navigator.sendBeacon) {
+            navigator.sendBeacon('/api/reports/status', new Blob([payload], { type: 'application/json' }));
+        } else {
+            fetch('/api/reports/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload
+            }).catch(function() {});
+        }
+    }
+
+    // Ao abrir: marca em_laudo
+    document.addEventListener('DOMContentLoaded', function() {
+        atualizarStatusLaudo('em_laudo', false);
+    });
+
+    // Ao fechar sem liberar: marca rascunho
+    window.addEventListener('beforeunload', function() {
+        if (!_laudoLiberado) {
+            atualizarStatusLaudo('rascunho', true);
+        }
+    });
+
+    // Bind botão Liberar
+    function bindBtnLiberar(btn) {
+        if (!btn) return;
+        btn.addEventListener('click', function() {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Liberando...';
+            var payload = { report_id: REPORT_ID_CICLO };
+            ['exame','tecnica','achados','conclusao','recomendacao'].forEach(function(s) {
+                var el = document.getElementById('editor-' + s);
+                if (el) payload['secao_' + s] = el.innerHTML;
+            });
+            fetch('/api/reports/liberar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    _laudoLiberado = true;
+                    showToast('Laudo liberado! Fechando...', 'success');
+                    setTimeout(function() { window.close(); }, 1500);
+                } else {
+                    showToast('Erro: ' + (data.msg || 'Tente novamente.'), 'danger');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
+                }
+            })
+            .catch(function() {
+                showToast('Erro de conexão.', 'danger');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        bindBtnLiberar(document.getElementById('btn-liberar'));
+    });
+
+    // Após assinar: substitui Assinar por Liberar
+    document.addEventListener('report:assinado', function() {
+        var btnSign = document.getElementById('btn-sign');
+        if (btnSign) {
+            var btnLib = document.createElement('button');
+            btnLib.type      = 'button';
+            btnLib.id        = 'btn-liberar';
+            btnLib.className = 'pacs-btn btn-pacs-success';
+            btnLib.title     = 'Liberar laudo e fechar';
+            btnLib.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
+            btnSign.replaceWith(btnLib);
+            bindBtnLiberar(btnLib);
+        }
+    });
+
+
 })();
 </script>
