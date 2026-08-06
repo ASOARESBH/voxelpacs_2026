@@ -6,9 +6,12 @@ use App\Core\TenantContext;
 use PDO;
 
 /**
- * Acesso a dados do módulo de Laudos. Concentra as queries que cruzam
- * bi_pacs_estudos + reports/report_versions/report_templates/report_autotext/report_signatures,
- * deixando o ReportService livre de SQL.
+ * Acesso a dados do módulo de Laudos.
+ * Schema de produção (2026-07-05_reports_module.sql):
+ *   reports.estudo_id       (FK → bi_pacs_estudos.id)
+ *   reports.usuario_id      (FK → bi_users.id)
+ *   reports.situacao        ENUM('rascunho','assinado','liberado')
+ *   reports.secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao
  */
 class ReportRepository {
     private PDO $pdo;
@@ -16,6 +19,8 @@ class ReportRepository {
     public function __construct() {
         $this->pdo = Database::getInstance();
     }
+
+    // ── bi_pacs_estudos ───────────────────────────────────────────────────────
 
     public function findEstudoById(int $id): ?object {
         $sql = "SELECT * FROM bi_pacs_estudos WHERE id = :id";
@@ -62,7 +67,6 @@ class ReportRepository {
         $stmt->execute(['uid' => $userId, 'id' => $estudoId, 'uid2' => $userId]);
         if ($stmt->rowCount() > 0) return true;
 
-        // rowCount 0: ou já está exatamente nesse estado (nada mudou), ou é de outro usuário.
         $estudo = $this->findEstudoById($estudoId);
         return $estudo && (int) $estudo->usuario_responsavel_id === $userId;
     }
@@ -85,75 +89,134 @@ class ReportRepository {
             ->execute(['situacao' => $situacao, 'id' => $estudoId]);
     }
 
+    // ── reports (schema de produção: estudo_id, situacao, secao_*) ───────────
+
     public function findReportById(int $id): ?object {
         $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE id = :id");
         $stmt->execute(['id' => $id]);
         return $stmt->fetch() ?: null;
     }
 
+    /**
+     * Busca o laudo pelo id do estudo (FK estudo_id).
+     */
     public function findReportByEstudoId(int $estudoId): ?object {
-        $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE bi_pacs_estudos_id = :id");
+        $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE estudo_id = :id LIMIT 1");
         $stmt->execute(['id' => $estudoId]);
         return $stmt->fetch() ?: null;
     }
 
+    /**
+     * Cria um novo laudo com seções vazias.
+     * Schema de produção: estudo_id, usuario_id, situacao, secao_*
+     */
     public function createReport(int $estudoId, ?int $tenantId, ?string $studyUid, int $medicoId, array $conteudo): object {
+        // Extrai seções do array de conteúdo (compatibilidade com ReportService)
+        $secoes = $conteudo['secoes'] ?? [];
         $stmt = $this->pdo->prepare("
-            INSERT INTO reports (tenant_id, bi_pacs_estudos_id, study_instance_uid, medico_id, status, conteudo, versao_atual)
-            VALUES (:tenant_id, :estudo_id, :study_uid, :medico_id, 'em_laudo', :conteudo, 1)
+            INSERT INTO reports
+                (tenant_id, estudo_id, study_instance_uid, usuario_id, situacao,
+                 secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao)
+            VALUES
+                (:tenant_id, :estudo_id, :study_uid, :usuario_id, 'rascunho',
+                 :secao_exame, :secao_tecnica, :secao_achados, :secao_conclusao, :secao_recomendacao)
         ");
         $stmt->execute([
-            'tenant_id'  => $tenantId,
-            'estudo_id'  => $estudoId,
-            'study_uid'  => $studyUid,
-            'medico_id'  => $medicoId,
-            'conteudo'   => json_encode($conteudo, JSON_UNESCAPED_UNICODE),
+            'tenant_id'         => $tenantId,
+            'estudo_id'         => $estudoId,
+            'study_uid'         => $studyUid,
+            'usuario_id'        => $medicoId,
+            'secao_exame'       => $secoes['exame']        ?? '',
+            'secao_tecnica'     => $secoes['tecnica']      ?? '',
+            'secao_achados'     => $secoes['achados']      ?? '',
+            'secao_conclusao'   => $secoes['conclusao']    ?? '',
+            'secao_recomendacao'=> $secoes['recomendacao'] ?? '',
         ]);
         return $this->findReportById((int) $this->pdo->lastInsertId());
     }
 
+    /**
+     * Atualiza o conteúdo do laudo.
+     * Converte do formato JSON (secoes array) para colunas separadas.
+     */
     public function atualizarConteudo(int $reportId, array $conteudo, ?string $status = null, ?int $templateId = null): void {
-        $sets = ['conteudo = :conteudo', 'versao_atual = versao_atual + 1'];
-        $params = ['conteudo' => json_encode($conteudo, JSON_UNESCAPED_UNICODE), 'id' => $reportId];
+        $secoes = $conteudo['secoes'] ?? $conteudo; // suporta ambos os formatos
+        $sets   = [
+            'secao_exame        = :secao_exame',
+            'secao_tecnica      = :secao_tecnica',
+            'secao_achados      = :secao_achados',
+            'secao_conclusao    = :secao_conclusao',
+            'secao_recomendacao = :secao_recomendacao',
+        ];
+        $params = [
+            'secao_exame'       => $secoes['exame']        ?? '',
+            'secao_tecnica'     => $secoes['tecnica']      ?? '',
+            'secao_achados'     => $secoes['achados']      ?? '',
+            'secao_conclusao'   => $secoes['conclusao']    ?? '',
+            'secao_recomendacao'=> $secoes['recomendacao'] ?? '',
+            'id'                => $reportId,
+        ];
 
-        if ($status !== null) { $sets[] = 'status = :status'; $params['status'] = $status; }
-        if ($templateId !== null) { $sets[] = 'template_id = :template_id'; $params['template_id'] = $templateId; }
+        if ($status !== null) {
+            // Mapeia status antigo para enum de produção
+            $statusMap = ['em_laudo' => 'rascunho', 'rascunho' => 'rascunho', 'assinado' => 'assinado', 'liberado' => 'liberado'];
+            $sets[]    = 'situacao = :situacao';
+            $params['situacao'] = $statusMap[$status] ?? 'rascunho';
+        }
+        if ($templateId !== null) {
+            $sets[]    = 'template_id = :template_id';
+            $params['template_id'] = $templateId;
+        }
 
         $this->pdo->prepare("UPDATE reports SET " . implode(', ', $sets) . " WHERE id = :id")->execute($params);
     }
 
     public function marcarAssinado(int $reportId, string $status): void {
         $col = $status === 'liberado' ? 'liberado_em' : 'assinado_em';
-        $this->pdo->prepare("UPDATE reports SET status = :status, {$col} = NOW() WHERE id = :id")
-            ->execute(['status' => $status, 'id' => $reportId]);
+        $uid = $status === 'liberado' ? 'liberado_por' : 'assinado_por';
+        $situacao = in_array($status, ['assinado', 'liberado']) ? $status : 'assinado';
+        $this->pdo->prepare("UPDATE reports SET situacao = :situacao, {$col} = NOW(), {$uid} = :uid WHERE id = :id")
+            ->execute(['situacao' => $situacao, 'uid' => \App\Core\Auth::userId(), 'id' => $reportId]);
     }
 
     public function proximaVersao(int $reportId): int {
-        $stmt = $this->pdo->prepare("SELECT versao_atual FROM reports WHERE id = :id");
+        $stmt = $this->pdo->prepare("SELECT COALESCE(MAX(versao), 0) FROM report_versions WHERE report_id = :id");
         $stmt->execute(['id' => $reportId]);
         return ((int) $stmt->fetchColumn()) + 1;
     }
 
     public function createVersion(int $reportId, array $conteudo, string $acao, int $userId, int $versaoNumero): void {
-        $this->pdo->prepare("
-            INSERT INTO report_versions (report_id, versao_numero, conteudo, acao, user_id)
-            VALUES (:report_id, :versao, :conteudo, :acao, :user_id)
-        ")->execute([
-            'report_id' => $reportId,
-            'versao'    => $versaoNumero,
-            'conteudo'  => json_encode($conteudo, JSON_UNESCAPED_UNICODE),
-            'acao'      => $acao,
-            'user_id'   => $userId,
-        ]);
+        $secoes = $conteudo['secoes'] ?? $conteudo;
+        // Tenta inserir no schema de produção (colunas separadas)
+        try {
+            $this->pdo->prepare("
+                INSERT INTO report_versions
+                    (report_id, versao, usuario_id, acao, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao)
+                VALUES
+                    (:report_id, :versao, :user_id, :acao, :se, :st, :sa, :sc, :sr)
+            ")->execute([
+                'report_id' => $reportId,
+                'versao'    => $versaoNumero,
+                'user_id'   => $userId,
+                'acao'      => $acao,
+                'se'        => $secoes['exame']        ?? '',
+                'st'        => $secoes['tecnica']      ?? '',
+                'sa'        => $secoes['achados']      ?? '',
+                'sc'        => $secoes['conclusao']    ?? '',
+                'sr'        => $secoes['recomendacao'] ?? '',
+            ]);
+        } catch (\PDOException $e) {
+            \App\Core\Logger::error('ReportRepository::createVersion falhou', ['error' => $e->getMessage()]);
+        }
     }
 
     public function listVersions(int $reportId): array {
         $stmt = $this->pdo->prepare("
-            SELECT rv.id, rv.versao_numero, rv.acao, rv.criado_em, u.name AS user_nome
+            SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome
             FROM report_versions rv
-            LEFT JOIN bi_users u ON u.id = rv.user_id
+            LEFT JOIN bi_users u ON u.id = rv.usuario_id
             WHERE rv.report_id = :report_id
-            ORDER BY rv.versao_numero DESC
+            ORDER BY rv.versao DESC
         ");
         $stmt->execute(['report_id' => $reportId]);
         return $stmt->fetchAll();
@@ -161,7 +224,7 @@ class ReportRepository {
 
     public function findVersion(int $versionId): ?object {
         $stmt = $this->pdo->prepare("SELECT * FROM report_versions WHERE id = :id");
-        $stmt->execute(['id' => $versionId]);
+        $stmt->execute(['id' => $id]);
         return $stmt->fetch() ?: null;
     }
 
@@ -214,15 +277,13 @@ class ReportRepository {
      */
     public function logAction(int $reportId, int $estudoId, int $tenantId, int $usuarioId, string $usuarioNome, string $acao, ?string $descricao = null): void
     {
-        $sql = "INSERT INTO report_logs (
-                    report_id, estudo_id, tenant_id, usuario_id, usuario_nome, acao, descricao, ip, user_agent
-                ) VALUES (
-                    :report_id, :estudo_id, :tenant_id, :usuario_id, :usuario_nome, :acao, :descricao, :ip, :ua
-                )";
-
         try {
-            $stmt = $this->pdo->prepare($sql);
-            $stmt->execute([
+            $this->pdo->prepare("
+                INSERT INTO report_logs
+                    (report_id, estudo_id, tenant_id, usuario_id, usuario_nome, acao, descricao, ip, user_agent)
+                VALUES
+                    (:report_id, :estudo_id, :tenant_id, :usuario_id, :usuario_nome, :acao, :descricao, :ip, :ua)
+            ")->execute([
                 ':report_id'    => $reportId,
                 ':estudo_id'    => $estudoId,
                 ':tenant_id'    => $tenantId,
@@ -236,10 +297,9 @@ class ReportRepository {
         } catch (\PDOException $e) {
             \App\Core\Logger::error('Erro ao registrar log de laudo', [
                 'report_id' => $reportId,
-                'acao' => $acao,
-                'error' => $e->getMessage()
+                'acao'      => $acao,
+                'error'     => $e->getMessage()
             ]);
-            // Não lança exceção para não travar o fluxo principal por erro de log
         }
     }
 }

@@ -535,6 +535,7 @@ $periodoLabel = [
                     <button type="button" class="wl-btn-assumir"
                             data-id="<?= $e['id'] ?>"
                             data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
+                            data-study-uid="<?= htmlspecialchars($e['study_instance_uid'] ?? '') ?>"
                             title="Assumir para laudo">
                         <i class="fa fa-hand-holding-medical"></i> Assumir
                     </button>
@@ -894,6 +895,9 @@ $periodoLabel = [
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
 <script>
+// Variáveis injetadas pelo PHP
+window._workspaceLaudoHabilitado = <?= $workspaceLaudoHabilitado ? 'true' : 'false' ?>;
+
 function toggleModalidade(mod) {
     const container = document.getElementById('modalidadesInputs');
     const existing  = container.querySelector('input[value="' + mod + '"]');
@@ -1042,8 +1046,17 @@ document.addEventListener('click', function(e) {
             // Atualiza badge de situação
             const sitCell = row ? row.querySelector('.sit-badge') : null;
             if (sitCell) { sitCell.className = 'sit-badge sit-a-laudar'; sitCell.textContent = 'A LAUDAR'; }
-            // Substitui botão
-            btn.outerHTML = '<button type="button" class="wl-btn-laudo" disabled title="Laudo em breve"><i class="fa fa-file-medical"></i> Laudo</button>';
+            // Substitui botão Assumir pelo botão Laudo correto
+            // workspaceLaudoHabilitado é injetado pelo PHP na view
+            const wlHabilitado = (typeof window._workspaceLaudoHabilitado !== 'undefined') ? window._workspaceLaudoHabilitado : false;
+            const studyUid = btn.dataset.studyUid || '';
+            let novoBotao;
+            if (wlHabilitado && studyUid) {
+                novoBotao = `<a href="/reports/${encodeURIComponent(studyUid)}" target="_blank" class="wl-btn-laudo" title="Abrir Workspace Laudo"><i class="fa fa-file-medical"></i> Laudo</a>`;
+            } else {
+                novoBotao = '<button type="button" class="wl-btn-laudo" disabled title="Workspace Laudo não habilitado"><i class="fa fa-file-medical"></i> Laudo</button>';
+            }
+            btn.outerHTML = novoBotao;
             // Flash na linha
             if (row) {
                 row.style.transition = 'background .4s';

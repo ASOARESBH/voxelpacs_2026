@@ -98,7 +98,9 @@ class ReportService {
 
         $report = $this->getOrCreateReport($estudo, $userId);
 
-        if (in_array($report->status, ['assinado', 'liberado'], true)) {
+        // Schema de produção usa 'situacao' (não 'status')
+        $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
+        if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
             $readonly = true;
         }
 
@@ -156,30 +158,32 @@ class ReportService {
         $report = $this->repo->findReportById($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
-        if (in_array($report->status, ['assinado', 'liberado'], true)) {
+        $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
+        if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
             return ['ok' => false, 'error' => 'report_assinado_somente_leitura'];
         }
 
         $userId = Auth::userId();
-        $conteudoAtual = json_decode($report->conteudo, true) ?: $this->conteudoVazio();
-        $conteudoAtual['secoes'] = array_merge($conteudoAtual['secoes'] ?? [], $secoes);
-        $conteudoAtual['meta']['ultima_edicao_por'] = $userId;
-        $conteudoAtual['meta']['ultima_edicao_em'] = date('Y-m-d H:i:s');
-        if ($templateId) $conteudoAtual['meta']['template_id'] = $templateId;
+        // Schema de produção: colunas separadas (sem JSON conteudo)
+        // Mantém compatibilidade: se vier array de secões, usa direto
+        $conteudoAtual = ['secoes' => $secoes];
 
         $novoStatus = $modo === 'auto' ? null : ($modo === 'rascunho' || $modo === 'salvar' ? 'rascunho' : null);
 
-        $this->repo->atualizarConteudo($reportId, $conteudoAtual, $novoStatus, $templateId);
-        $this->repo->marcarHeartbeat((int) $report->bi_pacs_estudos_id);
+        // estudo_id é o nome da FK no schema de produção
+        $estudoIdFK = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
 
-        if ($novoStatus === 'rascunho') {
-            $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'rascunho');
+        $this->repo->atualizarConteudo($reportId, $conteudoAtual, $novoStatus, $templateId);
+        if ($estudoIdFK) $this->repo->marcarHeartbeat($estudoIdFK);
+
+        if ($novoStatus === 'rascunho' && $estudoIdFK) {
+            $this->repo->atualizarSituacaoEstudo($estudoIdFK, 'rascunho');
 
             // ── Notifica o VoxelCopilot sobre o rascunho salvo ─────────────
             try {
                 $tenantId = Auth::tenantId();
                 $svc = new \App\Services\CopilotWebhookService();
-                $estudo = $this->repo->findEstudoById((int) $report->bi_pacs_estudos_id);
+                $estudo = $this->repo->findEstudoById($estudoIdFK);
                 if ($estudo && $tenantId) {
                     $svc->notificarEstudoAberto(
                         (int) $tenantId,
