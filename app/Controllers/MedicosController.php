@@ -544,7 +544,7 @@ class MedicosController extends Controller
             // 1. Atualiza o campo workspace_laudo_habilitado em bi_medicos
             $pdo->prepare("
                 UPDATE bi_medicos
-                SET workspace_laudo_habilitado = :hab, updated_at = NOW()
+                SET workspace_laudo_habilitado = :hab
                 WHERE id = :id AND tenant_id = :tid
             ")->execute(['hab' => $habilitar ? 1 : 0, 'id' => $id, 'tid' => $tenantId]);
 
