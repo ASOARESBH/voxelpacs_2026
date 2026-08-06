@@ -444,6 +444,96 @@ class ReportsController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // POST /api/reports/status
+    // Atualiza situacao do laudo: em_laudo (ao abrir) ou rascunho (ao fechar sem assinar)
+    // ══════════════════════════════════════════════════════════════════════════
+    public function atualizarStatus(): void
+    {
+        if (!Auth::check()) {
+            $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
+            return;
+        }
+        $input    = $this->getJsonInput();
+        $reportId = (int) ($input['report_id'] ?? 0);
+        $situacao = trim($input['situacao'] ?? '');
+        $allowed  = ['em_laudo', 'rascunho'];
+        if (!$reportId || !in_array($situacao, $allowed, true)) {
+            $this->json(['ok' => false, 'msg' => 'Parâmetros inválidos.'], 422);
+            return;
+        }
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id")
+                ->execute(['sit' => $situacao, 'id' => $reportId]);
+            // Espelha em bi_pacs_estudos
+            $pdo->prepare(
+                "UPDATE bi_pacs_estudos e
+                 JOIN reports r ON r.estudo_id = e.id
+                 SET e.situacao = :sit
+                 WHERE r.id = :rid"
+            )->execute(['sit' => $situacao, 'rid' => $reportId]);
+            Logger::info('ReportsController::atualizarStatus', [
+                'report_id' => $reportId, 'situacao' => $situacao, 'usuario' => Auth::userId(),
+            ]);
+            $this->json(['ok' => true, 'situacao' => $situacao]);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::atualizarStatus error', ['msg' => $e->getMessage()]);
+            $this->json(['ok' => false, 'msg' => 'Erro interno.'], 500);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // POST /api/reports/liberar
+    // Libera o laudo: muda para liberado + atualiza estudo + fecha tela
+    // ══════════════════════════════════════════════════════════════════════════
+    public function liberar(): void
+    {
+        if (!Auth::check()) {
+            $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
+            return;
+        }
+        $input    = $this->getJsonInput();
+        $reportId = (int) ($input['report_id'] ?? 0);
+        if (!$reportId) {
+            $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422);
+            return;
+        }
+        try {
+            $pdo   = \App\Core\Database::getInstance();
+            $agora = date('Y-m-d H:i:s');
+            // Salva conteúdo se enviado
+            $secoes = [
+                'exame'        => $input['secao_exame']        ?? null,
+                'tecnica'      => $input['secao_tecnica']      ?? null,
+                'achados'      => $input['secao_achados']      ?? null,
+                'conclusao'    => $input['secao_conclusao']    ?? null,
+                'recomendacao' => $input['secao_recomendacao'] ?? null,
+            ];
+            if (array_filter($secoes, fn($v) => $v !== null)) {
+                $this->reportRepo->atualizarConteudo($reportId, ['secoes' => $secoes]);
+            }
+            // Marca como liberado
+            $pdo->prepare(
+                "UPDATE reports SET situacao = 'liberado', liberado_em = :agora, liberado_por = :uid WHERE id = :id"
+            )->execute(['agora' => $agora, 'uid' => Auth::userId(), 'id' => $reportId]);
+            // Atualiza bi_pacs_estudos
+            $pdo->prepare(
+                "UPDATE bi_pacs_estudos e
+                 JOIN reports r ON r.estudo_id = e.id
+                 SET e.situacao = 'liberado', e.laudo_assinado_em = :agora
+                 WHERE r.id = :rid"
+            )->execute(['agora' => $agora, 'rid' => $reportId]);
+            Logger::info('ReportsController::liberar', [
+                'report_id' => $reportId, 'usuario' => Auth::userId(),
+            ]);
+            $this->json(['ok' => true, 'msg' => 'Laudo liberado com sucesso.']);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::liberar error', ['msg' => $e->getMessage()]);
+            $this->json(['ok' => false, 'msg' => 'Erro interno ao liberar laudo.'], 500);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // Helpers privados
     // ══════════════════════════════════════════════════════════════════════════
 

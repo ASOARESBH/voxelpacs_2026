@@ -5,6 +5,35 @@
 /** @var array|null $lockInfo */
 /** @var string $csrfToken */
 $pacienteNome = $estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente';
+$situacao     = $report->situacao ?? $report->status ?? 'rascunho';
+$reportId     = (int) $report->id;
+
+// ── SLA Médico: tempo desde que assumiu ─────────────────────────────────────
+$slaTexto  = '';
+$slaCor    = '#ef4444';
+$assumidoEm = $estudo->assumido_em ?? null;
+if ($assumidoEm) {
+    try {
+        $diff     = (new DateTime())->diff(new DateTime($assumidoEm));
+        $totalMin = ($diff->days * 1440) + ($diff->h * 60) + $diff->i;
+        if ($totalMin < 60) {
+            $slaTexto = $diff->i . 'min';
+            $slaCor   = '#22c55e';
+        } elseif ($totalMin < 240) {
+            $slaTexto = $diff->h . 'h ' . $diff->i . 'min';
+            $slaCor   = '#f59e0b';
+        } elseif ($totalMin < 1440) {
+            $slaTexto = $diff->h . 'h ' . $diff->i . 'min';
+            $slaCor   = '#f97316';
+        } else {
+            $slaTexto = $diff->days . 'd ' . $diff->h . 'h';
+            $slaCor   = '#ef4444';
+        }
+    } catch (\Throwable $t) {}
+}
+
+// ── Botão principal: Assinar ou Liberar ─────────────────────────────────────
+$jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -22,38 +51,76 @@ $pacienteNome = $estudo->patient_name_display ?? $estudo->patient_name ?? 'Pacie
 <body class="reports-body">
 
 <div id="reports-app"
-     data-report-id="<?= (int) $report->id ?>"
+     data-report-id="<?= $reportId ?>"
      data-estudo-id="<?= (int) $estudo->id ?>"
      data-study-uid="<?= htmlspecialchars($estudo->study_instance_uid ?? '') ?>"
      data-modalidade="<?= htmlspecialchars(explode('/', (string) ($estudo->modalities ?? ''))[0] ?? '') ?>"
      data-readonly="<?= $readonly ? '1' : '0' ?>"
-     data-status="<?= htmlspecialchars($report->status ?? '') ?>"
+     data-status="<?= htmlspecialchars($situacao) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">
 
     <!-- ═══════════════════════════════════════════════════════
          BARRA SUPERIOR
     ═══════════════════════════════════════════════════════ -->
     <header class="reports-topbar">
-        <a href="/estudos" class="pacs-btn" title="Voltar para a Worklist"><i class="fa fa-arrow-left"></i></a>
+        <!-- Voltar -->
+        <a href="/estudos" class="pacs-btn" id="btn-voltar" title="Voltar para a Worklist">
+            <i class="fa fa-arrow-left"></i>
+        </a>
 
+        <!-- Info do paciente + SLA -->
         <div class="reports-topbar-info">
             <strong><?= htmlspecialchars($pacienteNome) ?></strong>
             <span class="text-pacs-muted"><?= htmlspecialchars($estudo->study_description ?? '—') ?></span>
         </div>
 
+        <?php if ($slaTexto): ?>
+        <!-- SLA Médico em destaque vermelho (seta indicada pelo usuário) -->
+        <div class="reports-sla-badge" title="SLA Médico: tempo desde que assumiu o estudo">
+            <i class="fa fa-clock"></i>
+            <span id="sla-valor" style="color:<?= $slaCor ?>;"><?= htmlspecialchars($slaTexto) ?></span>
+            <span style="font-size:.65rem;color:var(--pacs-text-muted);">SLA Médico</span>
+        </div>
+        <?php endif; ?>
+
         <div class="reports-topbar-actions">
             <span id="autosave-status" class="autosave-status"></span>
 
             <?php if (!$readonly): ?>
-            <button type="button" class="pacs-btn" id="btn-template" title="Templates"><i class="fa fa-file-lines"></i> Template</button>
-            <button type="button" class="pacs-btn" id="btn-ai-generate" title="Gerar texto com IA (em breve)"><i class="fa fa-wand-magic-sparkles"></i> Gerar Texto</button>
-            <button type="button" class="pacs-btn" id="btn-save-draft" title="Salvar rascunho"><i class="fa fa-floppy-disk"></i> Salvar Rascunho</button>
-            <button type="button" class="pacs-btn btn-pacs-primary" id="btn-sign" title="Assinar (Ctrl+Enter)"><i class="fa fa-signature"></i> Assinar</button>
+            <button type="button" class="pacs-btn" id="btn-template" title="Templates">
+                <i class="fa fa-file-lines"></i> Template
+            </button>
+            <button type="button" class="pacs-btn" id="btn-ai-generate" title="Gerar texto com IA (em breve)">
+                <i class="fa fa-wand-magic-sparkles"></i> Gerar Texto
+            </button>
+            <button type="button" class="pacs-btn" id="btn-save-draft" title="Salvar rascunho (Ctrl+S)">
+                <i class="fa fa-floppy-disk"></i> Salvar Rascunho
+            </button>
+
+            <?php if ($jaAssinado): ?>
+            <!-- Laudo já assinado: mostra Liberar -->
+            <button type="button" class="pacs-btn btn-pacs-success" id="btn-liberar"
+                    title="Liberar laudo e fechar">
+                <i class="fa fa-paper-plane"></i> Liberar
+            </button>
+            <?php else: ?>
+            <!-- Laudo não assinado: mostra Assinar -->
+            <button type="button" class="pacs-btn btn-pacs-primary" id="btn-sign"
+                    title="Assinar laudo (Ctrl+Enter)">
+                <i class="fa fa-signature"></i> Assinar
+            </button>
+            <?php endif; ?>
             <?php endif; ?>
 
-            <button type="button" class="pacs-btn" id="btn-history" title="Histórico de versões"><i class="fa fa-clock-rotate-left"></i> Histórico</button>
-            <button type="button" class="pacs-btn" id="btn-view-pdf" title="Visualizar PDF"><i class="fa fa-file-pdf"></i> PDF</button>
-            <button type="button" class="pacs-btn" id="btn-print" title="Imprimir"><i class="fa fa-print"></i></button>
+            <button type="button" class="pacs-btn" id="btn-history" title="Histórico de versões">
+                <i class="fa fa-clock-rotate-left"></i> Histórico
+            </button>
+            <button type="button" class="pacs-btn" id="btn-view-pdf" title="Visualizar PDF">
+                <i class="fa fa-file-pdf"></i> PDF
+            </button>
+            <button type="button" class="pacs-btn" id="btn-print" title="Imprimir">
+                <i class="fa fa-print"></i>
+            </button>
         </div>
     </header>
 

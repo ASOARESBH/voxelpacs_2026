@@ -162,6 +162,12 @@ Router::get('/reports/template',           'ReportsController@template');
 // Assumir estudo (botão worklist, AJAX POST)
 Router::post('/reports/assumir',           'ReportsController@assumir');
 
+// Atualizar status do laudo (em_laudo, rascunho) — chamado ao abrir/fechar
+Router::post('/api/reports/status',        'ReportsController@atualizarStatus');
+
+// Liberar laudo — assina + fecha (botão Liberar)
+Router::post('/api/reports/liberar',       'ReportsController@liberar');
+
 // Buscar autotextos (AJAX)
 Router::get('/api/reports/autotext',       'ReportsController@autotextSearch');
 
