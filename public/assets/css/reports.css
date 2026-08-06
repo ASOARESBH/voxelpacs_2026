@@ -112,6 +112,61 @@ body.reports-body {
 .report-field-row { display: flex; gap: .75rem; }
 .report-uid { font-family: monospace; font-size: .68rem !important; }
 
+/* ── Sistema rp-* (sem tags DICOM, layout limpo) ──────────────────────────── */
+.rp-field {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    flex: 1;
+    min-width: 0;
+}
+.rp-field label {
+    font-size: .7rem;
+    font-weight: 600;
+    color: var(--pacs-text-muted, #8fa3bf);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rp-field label i {
+    opacity: .55;
+    font-size: .68rem;
+    flex-shrink: 0;
+}
+.rp-value {
+    font-size: .85rem;
+    font-weight: 500;
+    color: var(--pacs-text, #e2e8f0);
+    word-break: break-word;
+    line-height: 1.35;
+    min-height: 1.1rem;
+}
+.rp-value--destaque {
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--pacs-text, #e2e8f0);
+}
+.rp-value--green { color: #22c55e; font-weight: 600; }
+.rp-mono {
+    font-family: monospace;
+    font-size: .78rem;
+}
+.rp-row {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+.rp-row .rp-field {
+    flex: 1;
+    min-width: 60px;
+}
+
 .reports-card-actions { display: flex; flex-direction: column; gap: .5rem; }
 
 /* ── Editor ──────────────────────────────────────────────────────── */

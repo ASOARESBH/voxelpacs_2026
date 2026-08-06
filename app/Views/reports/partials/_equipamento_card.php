@@ -1,14 +1,29 @@
 <?php /** @var object $estudo */ ?>
-<div class="pacs-card reports-card">
+<div class="pacs-card reports-card" id="card-equipamento">
     <div class="pacs-card-header"><i class="fa fa-microchip"></i> Equipamento</div>
     <div class="pacs-card-body reports-card-body">
-        <div class="report-field"><span>Equipamento</span><strong><?= htmlspecialchars($estudo->station_name ?: '—') ?></strong></div>
-        <div class="report-field-row">
-            <div class="report-field"><span>Fabricante</span><strong><?= htmlspecialchars($estudo->manufacturer ?: '—') ?></strong></div>
-            <div class="report-field"><span>Modelo</span><strong><?= htmlspecialchars($estudo->manufacturer_model_name ?: '—') ?></strong></div>
+        <div class="rp-field">
+            <label><i class="fa fa-desktop"></i> Equipamento</label>
+            <span class="rp-value"><?= htmlspecialchars($estudo->station_name ?: '—') ?></span>
         </div>
-        <div class="report-field"><span>Protocolo</span><strong><?= htmlspecialchars($estudo->protocol_name ?: '—') ?></strong></div>
-        <div class="report-field"><span>Região Examinada</span><strong><?= htmlspecialchars($estudo->body_part_examined ?: '—') ?></strong></div>
+        <div class="rp-row">
+            <div class="rp-field">
+                <label><i class="fa fa-industry"></i> Fabricante</label>
+                <span class="rp-value"><?= htmlspecialchars($estudo->manufacturer ?: '—') ?></span>
+            </div>
+            <div class="rp-field">
+                <label><i class="fa fa-tag"></i> Modelo</label>
+                <span class="rp-value"><?= htmlspecialchars($estudo->manufacturer_model_name ?: '—') ?></span>
+            </div>
+        </div>
+        <div class="rp-field">
+            <label><i class="fa fa-list-check"></i> Protocolo</label>
+            <span class="rp-value"><?= htmlspecialchars($estudo->protocol_name ?: '—') ?></span>
+        </div>
+        <div class="rp-field">
+            <label><i class="fa fa-person"></i> Região Examinada</label>
+            <span class="rp-value"><?= htmlspecialchars($estudo->body_part_examined ?: '—') ?></span>
+        </div>
     </div>
 </div>
 
