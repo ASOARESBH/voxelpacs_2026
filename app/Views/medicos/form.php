@@ -9,6 +9,11 @@ $unidadesMarcadas = $unidadesMarcadas ?? [];
 $erros            = $erros ?? [];
 $estados          = \App\Core\Estados::all();
 
+// Aba inicial (só relevante em modo edição, onde a tela usa abas) — aceita
+// ?aba=dados|copilot|mascaras, caindo em 'dados' para qualquer valor inválido/ausente.
+$abasValidas = ['dados', 'copilot', 'mascaras'];
+$abaAtiva    = in_array($_GET['aba'] ?? '', $abasValidas, true) ? $_GET['aba'] : 'dados';
+
 // Helper para preencher campos com valor do banco ou do POST anterior
 $val = function (string $campo) use ($medico): string {
     if (!$medico) return '';
@@ -177,6 +182,80 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     font-size: .82rem;
     background: var(--pacs-card-bg, #1e2330);
 }
+
+/* ── Abas (Dados do Médico / Copilot do Laudo / Máscaras) ────────────────── */
+.medico-tabs-bar {
+    background: var(--pacs-card-bg, #1e2330);
+    border-bottom: 1px solid var(--pacs-border, #2d3244);
+    padding: 0 .75rem;
+}
+.medico-tabs {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+.medico-tab-item { flex-shrink: 0; }
+.medico-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    white-space: nowrap;
+    padding: .85rem 1rem;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--pacs-text-muted, #8892a4);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+.medico-tab-btn:hover { color: var(--pacs-text, #e2e8f0); }
+.medico-tab-btn.active {
+    color: var(--pacs-primary, #1a56db);
+    border-bottom-color: var(--pacs-primary, #1a56db);
+}
+.medico-tab-badge {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e05252;
+    flex-shrink: 0;
+}
+
+/* Estado vazio — aba Máscaras */
+.medico-mascaras-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3.5rem 1.5rem;
+    color: var(--pacs-text-muted, #8892a4);
+}
+.medico-mascaras-empty i {
+    font-size: 2.25rem;
+    color: var(--pacs-border, #3a3f4b);
+    margin-bottom: 1rem;
+}
+.medico-mascaras-empty h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--pacs-text, #e2e8f0);
+    margin: 0 0 .4rem;
+}
+.medico-mascaras-empty p {
+    font-size: .85rem;
+    max-width: 380px;
+    margin: 0;
+}
 </style>
 
 <!-- ── Cabeçalho da página ─────────────────────────────────────────────── -->
@@ -211,6 +290,42 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 <!-- ── Formulário principal ───────────────────────────────────────────── -->
 <form method="POST" action="<?= $action ?>" id="formMedico" novalidate>
 <div class="medico-form-card">
+
+<?php if ($isEdit): ?>
+    <!-- ══════════════════════════════════════════════════════════════════
+         ABAS — Dados do Médico / Copilot do Laudo / Máscaras
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="medico-tabs-bar">
+        <ul class="medico-tabs" id="medicoTabs" role="tablist">
+            <li class="medico-tab-item" role="presentation">
+                <button class="medico-tab-btn <?= $abaAtiva === 'dados' ? 'active' : '' ?>" id="tab-dados"
+                        data-bs-toggle="tab" data-bs-target="#aba-dados" type="button"
+                        role="tab" aria-controls="aba-dados">
+                    <i class="fa fa-id-card"></i> <?= htmlspecialchars(t('medicos.form.aba_dados')) ?>
+                    <span class="medico-tab-badge" id="badge-tab-dados" style="display:none;"></span>
+                </button>
+            </li>
+            <li class="medico-tab-item" role="presentation">
+                <button class="medico-tab-btn <?= $abaAtiva === 'copilot' ? 'active' : '' ?>" id="tab-copilot"
+                        data-bs-toggle="tab" data-bs-target="#aba-copilot" type="button"
+                        role="tab" aria-controls="aba-copilot">
+                    <i class="fa fa-robot"></i> <?= htmlspecialchars(t('medicos.form.aba_copilot')) ?>
+                    <span class="medico-tab-badge" id="badge-tab-copilot" style="display:none;"></span>
+                </button>
+            </li>
+            <li class="medico-tab-item" role="presentation">
+                <button class="medico-tab-btn <?= $abaAtiva === 'mascaras' ? 'active' : '' ?>" id="tab-mascaras"
+                        data-bs-toggle="tab" data-bs-target="#aba-mascaras" type="button"
+                        role="tab" aria-controls="aba-mascaras">
+                    <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('medicos.form.aba_mascaras')) ?>
+                    <span class="medico-tab-badge" id="badge-tab-mascaras" style="display:none;"></span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="tab-content" id="medicoTabsContent">
+    <div class="tab-pane fade<?= $abaAtiva === 'dados' ? ' show active' : '' ?>" id="aba-dados" role="tabpanel">
+<?php endif; ?>
 
     <!-- ══════════════════════════════════════════════════════════════════
          SEÇÃO 1 — DADOS PESSOAIS
@@ -487,6 +602,12 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
         <?php endif; ?>
     </div>
 
+<?php if ($isEdit): ?>
+    </div><!-- fecha #aba-dados -->
+
+    <div class="tab-pane fade<?= $abaAtiva === 'copilot' ? ' show active' : '' ?>" id="aba-copilot" role="tabpanel">
+<?php endif; ?>
+
     <!-- ══════════════════════════════════════════════════════════════════
          SEÇÃO 5 — WORKSPACE LAUDO VOXEL (somente edição)
     ══════════════════════════════════════════════════════════════════ -->
@@ -707,6 +828,23 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     </div>
     <?php endif; ?>
 
+<?php if ($isEdit): ?>
+    </div><!-- fecha #aba-copilot -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         ABA — MÁSCARAS (placeholder — sem funcionalidade ainda)
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade<?= $abaAtiva === 'mascaras' ? ' show active' : '' ?>" id="aba-mascaras" role="tabpanel">
+        <div class="medico-mascaras-empty">
+            <i class="fa fa-layer-group"></i>
+            <h3><?= htmlspecialchars(t('medicos.form.mascaras_vazio_titulo')) ?></h3>
+            <p><?= htmlspecialchars(t('medicos.form.mascaras_vazio_texto')) ?></p>
+        </div>
+    </div><!-- fecha #aba-mascaras -->
+
+    </div><!-- fecha .tab-content -->
+<?php endif; ?>
+
     <!-- ══════════════════════════════════════════════════════════════════
          RODAPÉ — BOTÕES
     ══════════════════════════════════════════════════════════════════ -->
@@ -926,6 +1064,30 @@ function mostrarFeedbackCopilot(tipo, msg) {
     </div>`;
 }
 
+// ─── Abas: mostra automaticamente a aba que contém um campo com erro ──────
+// Garante que nenhum erro de validação fique escondido numa aba não ativa
+// (tela só tem abas em modo edição — em /medicos/create os campos estão
+// soltos na página e esta função simplesmente não encontra .tab-pane).
+function ativarAbaComErro(campoInvalido) {
+    const pane = campoInvalido.closest('.tab-pane');
+    if (!pane) return;
+    const btn = document.querySelector('.medico-tab-btn[data-bs-target="#' + pane.id + '"]');
+    if (!btn) return;
+    if (window.bootstrap && bootstrap.Tab) {
+        bootstrap.Tab.getOrCreateInstance(btn).show();
+    } else {
+        btn.click();
+    }
+    const badge = btn.querySelector('.medico-tab-badge');
+    if (badge) badge.style.display = 'inline-block';
+}
+// Ao carregar a página: se o servidor devolveu algum campo com .is-invalid
+// (após redirect de erro de validação), troca para a aba correspondente.
+document.addEventListener('DOMContentLoaded', function () {
+    const campoInvalido = document.querySelector('.tab-pane .is-invalid');
+    if (campoInvalido) ativarAbaComErro(campoInvalido);
+});
+
 // ─── Loading no botão ao submeter ─────────────────────────────────────────
 document.getElementById('formMedico')?.addEventListener('submit', function (e) {
     const btn  = document.getElementById('btnSalvar');
@@ -934,6 +1096,7 @@ document.getElementById('formMedico')?.addEventListener('submit', function (e) {
         e.preventDefault();
         const input = document.getElementById('medicoNome');
         input.classList.add('is-invalid');
+        ativarAbaComErro(input);
         input.focus();
         const erroEl = document.getElementById('erroNome');
         if (erroEl) erroEl.style.display = 'block';

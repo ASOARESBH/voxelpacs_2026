@@ -118,6 +118,14 @@ return [
     'medicos.form.campo_estado'      => 'State',
     'medicos.form.cep_buscando'        => 'Looking up address...',
     'medicos.form.cep_nao_encontrado'  => 'ZIP code not found.',
+
+    // Doctor edit screen tabs (2026-08-06)
+    'medicos.form.aba_dados'            => 'Doctor Details',
+    'medicos.form.aba_copilot'          => 'Report Copilot',
+    'medicos.form.aba_mascaras'         => 'Templates',
+    'medicos.form.mascaras_vazio_titulo'=> 'No templates imported yet',
+    'medicos.form.mascaras_vazio_texto' => 'Coming soon: import this doctor\'s report templates.',
+
     'medicos.index.coluna_usuario'   => 'Linked account',
     'medicos.index.sem_vinculo'      => 'Not linked',
     'medicos.index.aviso_sem_vinculo'=> 'This doctor cannot be targeted by SLA Rules until linked to a user account',

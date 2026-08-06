@@ -120,6 +120,14 @@ return [
     'medicos.form.campo_estado'      => 'Estado',
     'medicos.form.cep_buscando'        => 'Buscando endereço...',
     'medicos.form.cep_nao_encontrado'  => 'CEP não encontrado.',
+
+    // Abas da tela de edição de médico (2026-08-06)
+    'medicos.form.aba_dados'            => 'Dados do Médico',
+    'medicos.form.aba_copilot'          => 'Copilot do Laudo',
+    'medicos.form.aba_mascaras'         => 'Máscaras',
+    'medicos.form.mascaras_vazio_titulo'=> 'Nenhuma máscara importada ainda',
+    'medicos.form.mascaras_vazio_texto' => 'Em breve: importação de máscaras de laudo deste médico.',
+
     'medicos.index.coluna_usuario'   => 'Conta vinculada',
     'medicos.index.sem_vinculo'      => 'Sem vínculo',
     'medicos.index.aviso_sem_vinculo'=> 'Este médico não pode ser alvo de Regras de SLA até ser vinculado a uma conta de usuário',

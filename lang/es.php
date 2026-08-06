@@ -118,6 +118,14 @@ return [
     'medicos.form.campo_estado'      => 'Estado',
     'medicos.form.cep_buscando'        => 'Buscando dirección...',
     'medicos.form.cep_nao_encontrado'  => 'Código postal no encontrado.',
+
+    // Pestañas de la pantalla de edición de médico (2026-08-06)
+    'medicos.form.aba_dados'            => 'Datos del Médico',
+    'medicos.form.aba_copilot'          => 'Copilot del Informe',
+    'medicos.form.aba_mascaras'         => 'Plantillas',
+    'medicos.form.mascaras_vazio_titulo'=> 'Ninguna plantilla importada todavía',
+    'medicos.form.mascaras_vazio_texto' => 'Próximamente: importación de plantillas de informe de este médico.',
+
     'medicos.index.coluna_usuario'   => 'Cuenta vinculada',
     'medicos.index.sem_vinculo'      => 'Sin vínculo',
     'medicos.index.aviso_sem_vinculo'=> 'Este médico no puede ser objetivo de Reglas de SLA hasta vincularse a una cuenta de usuario',
