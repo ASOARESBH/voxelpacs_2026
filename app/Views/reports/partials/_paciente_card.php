@@ -27,6 +27,27 @@ $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_displa
             <span class="rp-value rp-value--destaque"><?= htmlspecialchars($nomeDisplay) ?></span>
         </div>
 
+        <!-- Bloco visual Sexo + Idade em destaque -->
+        <div class="rp-sexo-idade">
+            <?php
+            $sexoRaw = strtoupper($estudo->patient_sex ?? '');
+            if ($sexoRaw === 'M'):
+            ?>
+            <span class="rp-sexo-icon rp-sexo-masc" title="Masculino">
+                <i class="fa fa-mars"></i>
+            </span>
+            <?php elseif ($sexoRaw === 'F'): ?>
+            <span class="rp-sexo-icon rp-sexo-fem" title="Feminino">
+                <i class="fa fa-venus"></i>
+            </span>
+            <?php else: ?>
+            <span class="rp-sexo-icon rp-sexo-outro" title="Não informado">
+                <i class="fa fa-circle-question"></i>
+            </span>
+            <?php endif; ?>
+            <span class="rp-idade-destaque"><?= htmlspecialchars($idade) ?></span>
+        </div>
+
         <div class="rp-field">
             <label><i class="fa fa-hashtag"></i> ID / Prontuário</label>
             <span class="rp-value rp-mono"><?= htmlspecialchars($estudo->patient_id ?? '—') ?></span>
@@ -38,14 +59,9 @@ $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_displa
                 <span class="rp-value"><?= htmlspecialchars($nascimento) ?></span>
             </div>
             <div class="rp-field">
-                <label><i class="fa fa-hourglass-half"></i> Idade</label>
-                <span class="rp-value"><?= htmlspecialchars($idade) ?></span>
+                <label><i class="fa fa-venus-mars"></i> Sexo</label>
+                <span class="rp-value" style="color:<?= $corSexo ?>;"><?= htmlspecialchars($sexo) ?></span>
             </div>
-        </div>
-
-        <div class="rp-field">
-            <label><i class="fa fa-venus-mars"></i> Sexo</label>
-            <span class="rp-value" style="color:<?= $corSexo ?>;"><?= htmlspecialchars($sexo) ?></span>
         </div>
 
     </div>
