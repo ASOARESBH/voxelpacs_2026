@@ -69,7 +69,8 @@ Router::post('/medicos',               'MedicosController@store');
 Router::get('/medicos/{id}/edit',      'MedicosController@edit');
 Router::post('/medicos/{id}/update',   'MedicosController@update');
 Router::post('/medicos/{id}/toggle',   'MedicosController@toggleStatus');
-Router::post('/api/medicos/{id}/copilot-token', 'MedicosController@copilotToken');
+Router::post('/api/medicos/{id}/copilot-token',    'MedicosController@copilotToken');
+Router::post('/api/medicos/{id}/workspace-laudo', 'MedicosController@toggleWorkspaceLaudo');
 
 Router::get('/unidades',               'UnidadesController@index');
 Router::get('/unidades/create',        'UnidadesController@create');
