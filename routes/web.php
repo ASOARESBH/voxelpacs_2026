@@ -106,6 +106,14 @@ Router::post('/sla-regras/{id}/update',        'SlaRegrasController@update');
 Router::post('/sla-regras/{id}/toggle',        'SlaRegrasController@toggleStatus');
 
 // ============================================================
+// RELATÓRIOS — somente leitura, camada própria (não usa EstudosController)
+// ============================================================
+Router::get('/relatorios/exames',              'RelatorioEstudosController@index');
+Router::get('/relatorios/exames/exportar',     'RelatorioEstudosController@exportar');
+Router::get('/relatorios/sla-medicos',         'RelatorioSlaController@index');
+Router::get('/relatorios/sla-medicos/exportar','RelatorioSlaController@exportar');
+
+// ============================================================
 // SISTEMA
 // ============================================================
 Router::get('/usuarios',               'UsuariosController@index');

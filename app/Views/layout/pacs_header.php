@@ -117,6 +117,25 @@
                 <?php endif; ?>
             </div>
 
+            <!-- RELATÓRIOS -->
+            <div class="sidebar-section-title"><?= htmlspecialchars(t('relatorios.menu.secao')) ?></div>
+
+            <a href="#" class="nav-link has-submenu <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios') ? 'open' : '' ?>"
+               onclick="toggleSubmenu(this, 'sub-rel'); return false;">
+                <i class="fa fa-chart-column"></i>
+                <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.titulo')) ?></span>
+            </a>
+            <div class="sidebar-submenu <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios') ? 'show' : '' ?>" id="sub-rel">
+                <a href="/relatorios/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/exames') ? 'active' : '' ?>">
+                    <i class="fa fa-file-medical"></i>
+                    <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.exames')) ?></span>
+                </a>
+                <a href="/relatorios/sla-medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/sla-medicos') ? 'active' : '' ?>">
+                    <i class="fa fa-gauge-high"></i>
+                    <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.sla_medicos')) ?></span>
+                </a>
+            </div>
+
             <!-- SISTEMA -->
             <div class="sidebar-section-title">Sistema</div>
 
