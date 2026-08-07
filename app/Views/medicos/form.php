@@ -156,6 +156,75 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     height: 13px;
 }
 
+/* ── Navegação por abas ─────────────────────────────────────────────────────────────────── */
+.medico-tabs-nav {
+    display: flex;
+    gap: .25rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 2px solid var(--pacs-border, #2d3244);
+    padding-bottom: 0;
+}
+.medico-tab-btn {
+    padding: .55rem 1.1rem;
+    font-size: .82rem;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    color: var(--pacs-text-muted, #8892a4);
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    transition: color .15s, border-color .15s;
+}
+.medico-tab-btn:hover { color: var(--pacs-text, #e2e8f0); }
+.medico-tab-btn.active {
+    color: var(--pacs-primary, #1a56db);
+    border-bottom-color: var(--pacs-primary, #1a56db);
+    background: rgba(26,86,219,.06);
+}
+
+/* ── Card de máscara ─────────────────────────────────────────────────────────────────── */
+.mascara-card {
+    background: var(--pacs-card-bg, #1e2330);
+    border: 1px solid var(--pacs-border, #2d3244);
+    border-radius: 8px;
+    padding: .85rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    margin-bottom: .5rem;
+}
+.mascara-card:hover { border-color: var(--pacs-primary, #1a56db); background: rgba(26,86,219,.04); }
+.mascara-card-icon { font-size: 1.1rem; color: var(--pacs-primary, #1a56db); flex-shrink: 0; }
+.mascara-card-info { flex: 1; min-width: 0; }
+.mascara-card-nome { font-size: .88rem; font-weight: 600; color: var(--pacs-text, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mascara-card-meta { font-size: .72rem; color: var(--pacs-text-muted, #8892a4); margin-top: .15rem; }
+.mascara-card-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+.mascara-badge { display: inline-flex; align-items: center; gap: .25rem; padding: .15rem .5rem; border-radius: 4px; font-size: .68rem; font-weight: 600; }
+.mascara-badge-modal { background: rgba(26,86,219,.15); color: #60a5fa; }
+.mascara-badge-shared { background: rgba(34,197,94,.12); color: #4ade80; }
+.mascara-badge-auto { background: rgba(168,85,247,.12); color: #c084fc; }
+
+/* ── Editor de máscara (modal) ─────────────────────────────────────────────────────────────────── */
+.mascara-editor-section { margin-bottom: .75rem; }
+.mascara-editor-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--pacs-text-muted, #8892a4); margin-bottom: .3rem; display: block; }
+.mascara-editor-body {
+    min-height: 80px;
+    padding: .5rem .75rem;
+    background: var(--pacs-input-bg, #252b3b);
+    border: 1px solid var(--pacs-border, #3a3f4b);
+    border-radius: 6px;
+    color: var(--pacs-text, #e2e8f0);
+    font-size: .875rem;
+    outline: none;
+    line-height: 1.6;
+}
+.mascara-editor-body:focus { border-color: var(--pacs-primary, #1a56db); box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+.mascara-editor-body[data-placeholder]:empty::before { content: attr(data-placeholder); color: var(--pacs-text-muted, #6b7280); pointer-events: none; }
+
 /* Copilot card */
 .copilot-card {
     background: rgba(99,102,241,.06);
@@ -284,6 +353,21 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
             <li><?= htmlspecialchars($erro) ?></li>
         <?php endforeach; ?>
     </ul>
+</div>
+<?php endif; ?>
+
+<!-- ── Navegação por abas ───────────────────────────────────────────── -->
+<?php if ($isEdit): ?>
+<div class="medico-tabs-nav" id="medicoTabsNav">
+    <button type="button" class="medico-tab-btn active" data-tab="dados">
+        <i class="fa fa-id-card me-1"></i> Dados do Médico
+    </button>
+    <button type="button" class="medico-tab-btn" data-tab="copilot">
+        <i class="fa fa-robot me-1"></i> Copilot do Laudo
+    </button>
+    <button type="button" class="medico-tab-btn" data-tab="mascaras">
+        <i class="fa fa-layer-group me-1"></i> Máscaras
+    </button>
 </div>
 <?php endif; ?>
 
@@ -861,6 +945,190 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 </div>
 </form>
 
+<?php if ($isEdit): ?>
+<!-- ── ABA MÁSCARAS ─────────────────────────────────────────────────────────────────── -->
+<div id="tab-mascaras" style="display:none;">
+    <div class="medico-form-card">
+        <div class="medico-section">
+            <div class="medico-section-header" style="justify-content:space-between;">
+                <span><i class="fa fa-layer-group"></i> Máscaras de Laudo</span>
+                <div style="display:flex;gap:.5rem;">
+                    <button type="button" class="pacs-btn" onclick="abrirImportarMascara()" title="Importar DOCX">
+                        <i class="fa fa-file-import me-1"></i> Importar DOCX
+                    </button>
+                    <button type="button" class="btn-pacs-primary" onclick="abrirNovaMascara()">
+                        <i class="fa fa-plus me-1"></i> Nova Máscara
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+                <input type="text" id="mascaraBusca" class="medico-input" style="max-width:280px;"
+                       placeholder="Buscar por nome ou descrição..." oninput="filtrarMascaras()">
+                <select id="mascaraFiltroModal" class="medico-select" style="max-width:160px;" onchange="filtrarMascaras()">
+                    <option value="">Todas as modalidades</option>
+                    <option value="CR">CR — Radiografia</option>
+                    <option value="CT">CT — Tomografia</option>
+                    <option value="MR">MR — Ressonância</option>
+                    <option value="US">US — Ultrassom</option>
+                    <option value="DX">DX — Digital</option>
+                    <option value="MG">MG — Mamografia</option>
+                    <option value="NM">NM — Nuclear</option>
+                    <option value="PT">PT — PET-CT</option>
+                    <option value="OT">OT — Outros</option>
+                </select>
+                <label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--pacs-text-muted);cursor:pointer;">
+                    <input type="checkbox" id="mascaraFiltroMeus" onchange="filtrarMascaras()" style="accent-color:#1a56db;">
+                    Somente minhas
+                </label>
+            </div>
+
+            <!-- Lista de máscaras -->
+            <div id="mascarasLista">
+                <div style="text-align:center;padding:2rem;color:var(--pacs-text-muted);">
+                    <i class="fa fa-layer-group fa-2x mb-2" style="opacity:.3;"></i>
+                    <p class="mb-0">Carregando máscaras...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="medico-form-footer">
+            <a href="/medicos" class="btn-pacs-outline">
+                <i class="fa fa-arrow-left me-1"></i> Cancelar
+            </a>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- ── MODAL EDITOR DE MÁSCARA ─────────────────────────────────────────────────────────────────── -->
+<div id="modalMascara" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);overflow-y:auto;">
+    <div style="max-width:860px;margin:2rem auto;background:var(--pacs-card-bg,#1e2330);border:1px solid var(--pacs-border,#2d3244);border-radius:12px;overflow:hidden;">
+        <!-- Header do modal -->
+        <div style="padding:1rem 1.5rem;border-bottom:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <h5 style="margin:0;font-size:1rem;font-weight:700;" id="modalMascaraTitulo">Nova Máscara</h5>
+                <p style="margin:0;font-size:.75rem;color:var(--pacs-text-muted);">Criar máscara de laudo personalizada</p>
+            </div>
+            <button type="button" onclick="fecharModalMascara()" style="background:transparent;border:none;color:var(--pacs-text-muted);font-size:1.2rem;cursor:pointer;"><i class="fa fa-xmark"></i></button>
+        </div>
+        <!-- Body do modal -->
+        <div style="padding:1.5rem;">
+            <input type="hidden" id="mascaraEditId" value="">
+
+            <!-- Configurações -->
+            <div style="background:rgba(26,86,219,.05);border:1px solid rgba(26,86,219,.2);border-radius:8px;padding:1.1rem;margin-bottom:1.25rem;">
+                <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pacs-primary,#1a56db);margin-bottom:.9rem;">
+                    <i class="fa fa-gear me-1"></i> Configurações
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 180px;gap:.9rem;margin-bottom:.9rem;">
+                    <div>
+                        <label class="medico-label">Nome do Template <span class="req">*</span></label>
+                        <input type="text" id="mascaraNome" class="medico-input" placeholder="Ex: TC Tórax com Contraste — Padrão" maxlength="255">
+                    </div>
+                    <div>
+                        <label class="medico-label">Modalidade <span class="req">*</span></label>
+                        <select id="mascaraModalidade" class="medico-select">
+                            <option value="">Selecione...</option>
+                            <option value="CR">CR — Radiografia</option>
+                            <option value="CT">CT — Tomografia</option>
+                            <option value="MR">MR — Ressonância</option>
+                            <option value="US">US — Ultrassom</option>
+                            <option value="DX">DX — Digital</option>
+                            <option value="MG">MG — Mamografia</option>
+                            <option value="NM">NM — Nuclear</option>
+                            <option value="PT">PT — PET-CT</option>
+                            <option value="OT">OT — Outros</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-bottom:.9rem;">
+                    <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.83rem;">
+                        <input type="checkbox" id="mascaraCompartilhar" style="accent-color:#1a56db;width:15px;height:15px;">
+                        <span>Compartilhar com outros médicos da clínica</span>
+                    </label>
+                </div>
+                <div>
+                    <label class="medico-label" style="color:#a78bfa;">
+                        <i class="fa fa-tag me-1"></i> TAG DICOM Study Description
+                        <span style="font-size:.65rem;font-weight:400;margin-left:.4rem;opacity:.7;">(0008,1030)</span>
+                    </label>
+                    <input type="text" id="mascaraStudyDesc" class="medico-input"
+                           placeholder="Ex: CT ABDOMEN E PELVE C/CONTRASTE"
+                           maxlength="255"
+                           style="text-transform:uppercase;">
+                    <span class="medico-hint" style="color:#a78bfa;">
+                        Quando um laudo for aberto com este valor na TAG DICOM, este template será sugerido automaticamente.
+                        Deixe em branco para não vincular.
+                    </span>
+                </div>
+            </div>
+
+            <!-- Editor de conteúdo -->
+            <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pacs-text-muted);margin-bottom:.9rem;">
+                <i class="fa fa-file-medical me-1"></i> Conteúdo do Laudo
+            </div>
+
+            <div class="mascara-editor-section">
+                <span class="mascara-editor-label">Exame</span>
+                <div class="mascara-editor-body" id="mEd-exame" contenteditable="true"
+                     data-placeholder="Descreva o exame realizado..."></div>
+            </div>
+            <div class="mascara-editor-section">
+                <span class="mascara-editor-label">Técnica</span>
+                <div class="mascara-editor-body" id="mEd-tecnica" contenteditable="true"
+                     data-placeholder="Descreva a técnica utilizada..."></div>
+            </div>
+            <div class="mascara-editor-section">
+                <span class="mascara-editor-label">Achados</span>
+                <div class="mascara-editor-body" id="mEd-achados" contenteditable="true"
+                     data-placeholder="Descreva os achados do exame..."></div>
+            </div>
+            <div class="mascara-editor-section">
+                <span class="mascara-editor-label">Conclusão</span>
+                <div class="mascara-editor-body" id="mEd-conclusao" contenteditable="true"
+                     data-placeholder="Conclusão do laudo..."></div>
+            </div>
+            <div class="mascara-editor-section">
+                <span class="mascara-editor-label">Recomendação</span>
+                <div class="mascara-editor-body" id="mEd-recomendacao" contenteditable="true"
+                     data-placeholder="Recomendações ao clínico..."></div>
+            </div>
+        </div>
+        <!-- Footer do modal -->
+        <div style="padding:1rem 1.5rem;border-top:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:flex-end;gap:.75rem;">
+            <button type="button" class="btn-pacs-outline" onclick="fecharModalMascara()">Cancelar</button>
+            <button type="button" class="btn-pacs-primary" onclick="salvarMascara()" id="btnSalvarMascara">
+                <i class="fa fa-floppy-disk me-1"></i> Salvar Máscara
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL IMPORTAR DOCX ─────────────────────────────────────────────────────────────────── -->
+<div id="modalImportar" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);">
+    <div style="max-width:520px;margin:4rem auto;background:var(--pacs-card-bg,#1e2330);border:1px solid var(--pacs-border,#2d3244);border-radius:12px;overflow:hidden;">
+        <div style="padding:1rem 1.5rem;border-bottom:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:space-between;align-items:center;">
+            <h5 style="margin:0;font-size:1rem;font-weight:700;"><i class="fa fa-file-import me-2"></i> Importar Máscaras (DOCX)</h5>
+            <button type="button" onclick="fecharModalImportar()" style="background:transparent;border:none;color:var(--pacs-text-muted);font-size:1.2rem;cursor:pointer;"><i class="fa fa-xmark"></i></button>
+        </div>
+        <div style="padding:1.5rem;">
+            <p style="font-size:.85rem;color:var(--pacs-text-muted);margin-bottom:1rem;">
+                Selecione um arquivo <strong>.docx</strong> com máscaras de laudo. Cada título (Heading) será importado como uma nova máscara.
+            </p>
+            <input type="file" id="importarArquivo" accept=".docx" class="medico-input" style="height:auto;padding:.5rem;">
+            <div id="importarStatus" style="margin-top:.75rem;font-size:.82rem;"></div>
+        </div>
+        <div style="padding:1rem 1.5rem;border-top:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:flex-end;gap:.75rem;">
+            <button type="button" class="btn-pacs-outline" onclick="fecharModalImportar()">Cancelar</button>
+            <button type="button" class="btn-pacs-primary" onclick="executarImportar()" id="btnExecutarImportar">
+                <i class="fa fa-upload me-1"></i> Importar
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ─── Máscara de telefone ───────────────────────────────────────────────────
 function mascaraTelefone(input) {
@@ -1164,5 +1432,242 @@ function toggleWorkspaceLaudo(el) {
         </div>`;
         setTimeout(() => { feedback.style.display = 'none'; }, 5000);
     });
+}
+
+// ─── MÓDULO DE MÁSCARAS ─────────────────────────────────────────────────────
+const MEDICO_ID_MASCARAS = <?= (int) $medicoId ?>;
+let _mascarasAll = [];
+
+// Controle de abas
+document.addEventListener('DOMContentLoaded', function() {
+    const tabBtns = document.querySelectorAll('.medico-tab-btn');
+    if (!tabBtns.length) return;
+
+    tabBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tab = btn.dataset.tab;
+            // Mostrar/ocultar conteúdo
+            document.getElementById('formMedico').style.display = (tab === 'dados') ? '' : 'none';
+            const tabMascaras = document.getElementById('tab-mascaras');
+            if (tabMascaras) tabMascaras.style.display = (tab === 'mascaras') ? '' : 'none';
+            // Seções Copilot e Workspace dentro do form
+            const secCopilot = document.getElementById('secaoCopilot');
+            if (secCopilot) secCopilot.style.display = (tab === 'copilot') ? '' : 'none';
+            if (tab === 'mascaras') carregarMascaras();
+        });
+    });
+
+    // Verificar se URL tem ?tab=mascaras
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('tab') === 'mascaras') {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-tab="mascaras"]')?.classList.add('active');
+        document.getElementById('formMedico').style.display = 'none';
+        const tm = document.getElementById('tab-mascaras');
+        if (tm) { tm.style.display = ''; carregarMascaras(); }
+    }
+});
+
+function carregarMascaras() {
+    if (!MEDICO_ID_MASCARAS) return;
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates')
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg);
+        _mascarasAll = data.templates || [];
+        renderizarMascaras(_mascarasAll);
+    })
+    .catch(err => {
+        document.getElementById('mascarasLista').innerHTML =
+            '<div style="color:#e05252;padding:1rem;"><i class="fa fa-triangle-exclamation me-1"></i>' + err.message + '</div>';
+    });
+}
+
+function renderizarMascaras(lista) {
+    const el = document.getElementById('mascarasLista');
+    if (!lista.length) {
+        el.innerHTML = `<div style="text-align:center;padding:2.5rem;color:var(--pacs-text-muted);">
+            <i class="fa fa-layer-group fa-2x mb-3" style="opacity:.25;"></i>
+            <p class="mb-1" style="font-size:.9rem;">Nenhuma máscara cadastrada ainda</p>
+            <p class="mb-0" style="font-size:.78rem;">Clique em <strong>Nova Máscara</strong> para criar ou <strong>Importar DOCX</strong> para importar.</p>
+        </div>`;
+        return;
+    }
+    el.innerHTML = lista.map(t => {
+        const isMeu = t.medico_id == MEDICO_ID_MASCARAS;
+        const badges = [
+            t.modalidade ? `<span class="mascara-badge mascara-badge-modal">${escHtml(t.modalidade)}</span>` : '',
+            t.compartilhar == 1 ? '<span class="mascara-badge mascara-badge-shared"><i class="fa fa-share-nodes"></i> Compartilhado</span>' : '',
+            t.study_description_tag ? '<span class="mascara-badge mascara-badge-auto"><i class="fa fa-tag"></i> Auto</span>' : '',
+        ].filter(Boolean).join(' ');
+        const meta = [
+            t.study_description_tag ? t.study_description_tag : null,
+            t.uso_count > 0 ? t.uso_count + 'x usado' : null,
+            !isMeu && t.medico_nome ? 'de ' + escHtml(t.medico_nome) : null,
+        ].filter(Boolean).join(' · ');
+        const acoes = isMeu ? `
+            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;" onclick="editarMascara(${t.id})" title="Editar">
+                <i class="fa fa-pen"></i>
+            </button>
+            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;color:#e05252;" onclick="excluirMascara(${t.id})" title="Excluir">
+                <i class="fa fa-trash"></i>
+            </button>` : '';
+        return `<div class="mascara-card">
+            <div class="mascara-card-icon"><i class="fa fa-file-medical"></i></div>
+            <div class="mascara-card-info">
+                <div class="mascara-card-nome">${escHtml(t.nome)}</div>
+                <div class="mascara-card-meta">${badges} ${meta ? '· ' + meta : ''}</div>
+            </div>
+            <div class="mascara-card-actions">${acoes}</div>
+        </div>`;
+    }).join('');
+}
+
+function filtrarMascaras() {
+    const q     = (document.getElementById('mascaraBusca')?.value || '').toLowerCase();
+    const modal = document.getElementById('mascaraFiltroModal')?.value || '';
+    const meus  = document.getElementById('mascaraFiltroMeus')?.checked;
+    let lista = _mascarasAll.filter(t => {
+        if (q && !t.nome.toLowerCase().includes(q) && !(t.study_description_tag || '').toLowerCase().includes(q)) return false;
+        if (modal && t.modalidade !== modal) return false;
+        if (meus && t.medico_id != MEDICO_ID_MASCARAS) return false;
+        return true;
+    });
+    renderizarMascaras(lista);
+}
+
+function abrirNovaMascara() {
+    document.getElementById('mascaraEditId').value = '';
+    document.getElementById('mascaraNome').value = '';
+    document.getElementById('mascaraModalidade').value = '';
+    document.getElementById('mascaraCompartilhar').checked = false;
+    document.getElementById('mascaraStudyDesc').value = '';
+    ['exame','tecnica','achados','conclusao','recomendacao'].forEach(s => {
+        const el = document.getElementById('mEd-' + s);
+        if (el) el.innerHTML = '';
+    });
+    document.getElementById('modalMascaraTitulo').textContent = 'Nova Máscara';
+    document.getElementById('modalMascara').style.display = 'block';
+    document.getElementById('mascaraNome').focus();
+}
+
+function editarMascara(id) {
+    const t = _mascarasAll.find(x => x.id == id);
+    if (!t) return;
+    document.getElementById('mascaraEditId').value = t.id;
+    document.getElementById('mascaraNome').value = t.nome || '';
+    document.getElementById('mascaraModalidade').value = t.modalidade || '';
+    document.getElementById('mascaraCompartilhar').checked = t.compartilhar == 1;
+    document.getElementById('mascaraStudyDesc').value = t.study_description_tag || '';
+    ['exame','tecnica','achados','conclusao','recomendacao'].forEach(s => {
+        const el = document.getElementById('mEd-' + s);
+        if (el) el.innerHTML = t['secao_' + s] || '';
+    });
+    document.getElementById('modalMascaraTitulo').textContent = 'Editar Máscara';
+    document.getElementById('modalMascara').style.display = 'block';
+}
+
+function fecharModalMascara() {
+    document.getElementById('modalMascara').style.display = 'none';
+}
+
+function salvarMascara() {
+    const nome = document.getElementById('mascaraNome').value.trim();
+    if (!nome) { alert('Informe o nome do template.'); return; }
+    const btn = document.getElementById('btnSalvarMascara');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Salvando...';
+    const payload = {
+        id:                   parseInt(document.getElementById('mascaraEditId').value) || 0,
+        nome:                 nome,
+        modalidade:           document.getElementById('mascaraModalidade').value,
+        compartilhar:         document.getElementById('mascaraCompartilhar').checked ? 1 : 0,
+        study_description_tag: document.getElementById('mascaraStudyDesc').value.trim().toUpperCase(),
+        secao_exame:          document.getElementById('mEd-exame')?.innerHTML || '',
+        secao_tecnica:        document.getElementById('mEd-tecnica')?.innerHTML || '',
+        secao_achados:        document.getElementById('mEd-achados')?.innerHTML || '',
+        secao_conclusao:      document.getElementById('mEd-conclusao')?.innerHTML || '',
+        secao_recomendacao:   document.getElementById('mEd-recomendacao')?.innerHTML || '',
+    };
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-floppy-disk me-1"></i> Salvar Máscara';
+        if (data.ok) {
+            fecharModalMascara();
+            carregarMascaras();
+        } else {
+            alert('Erro: ' + (data.msg || 'Tente novamente.'));
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-floppy-disk me-1"></i> Salvar Máscara';
+        alert('Erro de conexão.');
+    });
+}
+
+function excluirMascara(id) {
+    if (!confirm('Excluir esta máscara? Esta ação não pode ser desfeita.')) return;
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/' + id, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) carregarMascaras();
+        else alert('Erro: ' + (data.msg || 'Tente novamente.'));
+    })
+    .catch(() => alert('Erro de conexão.'));
+}
+
+function abrirImportarMascara() {
+    document.getElementById('importarArquivo').value = '';
+    document.getElementById('importarStatus').innerHTML = '';
+    document.getElementById('modalImportar').style.display = 'block';
+}
+
+function fecharModalImportar() {
+    document.getElementById('modalImportar').style.display = 'none';
+}
+
+function executarImportar() {
+    const arquivo = document.getElementById('importarArquivo').files[0];
+    if (!arquivo) { alert('Selecione um arquivo .docx'); return; }
+    const btn = document.getElementById('btnExecutarImportar');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Importando...';
+    const status = document.getElementById('importarStatus');
+    status.innerHTML = '<span style="color:#f59e0b;">Processando arquivo...</span>';
+    const formData = new FormData();
+    formData.append('arquivo', arquivo);
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/importar', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-upload me-1"></i> Importar';
+        if (data.ok) {
+            status.innerHTML = '<span style="color:#22c55e;"><i class="fa fa-circle-check me-1"></i>' + data.msg + '</span>';
+            setTimeout(() => { fecharModalImportar(); carregarMascaras(); }, 1500);
+        } else {
+            status.innerHTML = '<span style="color:#e05252;"><i class="fa fa-triangle-exclamation me-1"></i>' + (data.msg || 'Erro ao importar.') + '</span>';
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-upload me-1"></i> Importar';
+        status.innerHTML = '<span style="color:#e05252;">Erro de conexão.</span>';
+    });
+}
+
+function escHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>

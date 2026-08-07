@@ -81,6 +81,15 @@ class ReportsController extends Controller
             }
         }
 
+        // Buscar medico_id do usuário logado (para auto-carregar template)
+        $medicoIdLogado = 0;
+        try {
+            $pdo  = \App\Core\Database::getInstance();
+            $stmt = $pdo->prepare("SELECT id FROM bi_medicos WHERE usuario_id = :uid AND tenant_id = :tid LIMIT 1");
+            $stmt->execute(['uid' => Auth::userId(), 'tid' => \App\Core\TenantContext::id()]);
+            $medicoIdLogado = (int) ($stmt->fetchColumn() ?: 0);
+        } catch (\Throwable $ex) {}
+
         $this->view('reports/show', [
             'estudo'            => $estudo,
             'report'            => $report,
@@ -89,6 +98,7 @@ class ReportsController extends Controller
             'exames_anteriores' => $examesAnteriores,
             'csrfToken'         => $this->csrfToken(),
             'page_title'        => 'Laudo — ' . ($estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente'),
+            'medicoIdLogado'    => $medicoIdLogado,
         ], 'reports');
     }
 

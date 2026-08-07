@@ -740,6 +740,9 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     const CSRF         = '<?= $csrfToken ?>';
     const READONLY     = <?= $somenteLeitura ? 'true' : 'false' ?>;
     const AUTOSAVE_SEC = 30;
+    const MEDICO_ID    = <?= (int) ($medicoIdLogado ?? 0) ?>;
+    const STUDY_DESC   = '<?= htmlspecialchars(strtoupper($e['study_description'] ?? ''), ENT_QUOTES) ?>';
+    const MODALIDADE   = '<?= htmlspecialchars(explode('\\', $e['modalities'] ?? '')[0] ?? '', ENT_QUOTES) ?>';
 
     // ── Estado ──────────────────────────────────────────────────────────
     let timerSec    = 0;
@@ -882,40 +885,106 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     }
 
     // ── Templates ────────────────────────────────────────────────────────
-    window.openTemplatesModal = function() {
-        new bootstrap.Modal(document.getElementById('templatesModal')).show();
-    };
-
-    window.applyTemplate = function(tplId) {
-        fetch('/reports/template?id=' + tplId)
-        .then(r => r.json())
-        .then(function(data) {
-            if (!data.ok) { showToast('Erro ao carregar template.', 'danger'); return; }
-            const t = data.template;
-            setEditorContent('exame',        t.secao_exame        || '');
-            setEditorContent('tecnica',      t.secao_tecnica      || '');
-            setEditorContent('achados',      t.secao_achados      || '');
-            setEditorContent('conclusao',    t.secao_conclusao    || '');
-            setEditorContent('recomendacao', t.secao_recomendacao || '');
-            bootstrap.Modal.getInstance(document.getElementById('templatesModal')).hide();
-            showToast('Template "' + t.nome + '" aplicado!', 'success');
-            initChecklist();
-        });
-    };
-
-    // Filtro de modalidade nos templates
+    // ── Templates / Máscaras ─────────────────────────────────────────────────
+    // Auto-carregamento por Study Description ao abrir o laudo
     document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('.tpl-filter').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.tpl-filter').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                const mod = btn.dataset.mod;
-                document.querySelectorAll('.tpl-item').forEach(function(item) {
-                    item.style.display = (!mod || item.dataset.mod === mod) ? '' : 'none';
-                });
-            });
-        });
+        if (!READONLY && STUDY_DESC && MEDICO_ID) {
+            setTimeout(function() { autoCarregarTemplate(); }, 800);
+        }
     });
+
+    function autoCarregarTemplate() {
+        var url = '/api/templates/auto?study_description=' + encodeURIComponent(STUDY_DESC)
+                + '&medico_id=' + MEDICO_ID;
+        fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.ok && data.template) {
+                var t = data.template;
+                var temConteudo = ['exame','tecnica','achados','conclusao','recomendacao']
+                    .some(function(s) {
+                        var el = document.getElementById('editor-' + s);
+                        return el && el.innerText.trim().length > 3;
+                    });
+                if (!temConteudo) {
+                    aplicarTemplate(t);
+                    showToast('Mascara "' + t.nome + '" carregada automaticamente.', 'success');
+                }
+            }
+        })
+        .catch(function() {});
+    }
+
+    function aplicarTemplate(t) {
+        setEditorContent('exame',        t.secao_exame        || '');
+        setEditorContent('tecnica',      t.secao_tecnica      || '');
+        setEditorContent('achados',      t.secao_achados      || '');
+        setEditorContent('conclusao',    t.secao_conclusao    || '');
+        setEditorContent('recomendacao', t.secao_recomendacao || '');
+        initChecklist();
+    }
+
+    window.openTemplatesModal = function() {
+        var panel = document.getElementById('mascarasBuscaPanel');
+        if (!panel) { criarPainelMascaras(); return; }
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') buscarMascaras('');
+    };
+
+    function criarPainelMascaras() {
+        var html = '<div id="mascarasBuscaPanel" style="position:fixed;top:60px;right:1rem;z-index:9000;width:380px;max-height:70vh;overflow-y:auto;background:var(--pacs-card-bg,#1e2330);border:1px solid var(--pacs-border,#2d3244);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);">'
+            + '<div style="padding:.85rem 1rem;border-bottom:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:space-between;align-items:center;">'
+            + '<span style="font-size:.88rem;font-weight:700;"><i class=\"fa fa-layer-group me-1\"></i> Mascaras</span>'
+            + '<button onclick="document.getElementById('mascarasBuscaPanel').style.display='none'" style="background:transparent;border:none;color:var(--pacs-text-muted);cursor:pointer;"><i class=\"fa fa-xmark\"></i></button>'
+            + '</div>'
+            + '<div style="padding:.75rem;">'
+            + '<input type="text" id="mascarasBuscaInput" placeholder="Buscar mascara..." oninput="buscarMascaras(this.value)"'
+            + ' style="width:100%;padding:.4rem .7rem;background:var(--pacs-input-bg,#252b3b);border:1px solid var(--pacs-border,#3a3f4b);border-radius:5px;color:var(--pacs-text,#e2e8f0);font-size:.82rem;outline:none;">'
+            + '</div>'
+            + '<div id="mascarasBuscaResultados" style="padding:0 .75rem .75rem;"></div>'
+            + '</div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+        buscarMascaras('');
+    }
+
+    function buscarMascaras(q) {
+        var url = '/api/templates/buscar?medico_id=' + MEDICO_ID
+                + '&modalidade=' + encodeURIComponent(MODALIDADE)
+                + '&q=' + encodeURIComponent(q);
+        fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var el = document.getElementById('mascarasBuscaResultados');
+            if (!el) return;
+            if (!data.ok || !data.templates.length) {
+                el.innerHTML = '<p style="font-size:.78rem;color:var(--pacs-text-muted);text-align:center;padding:.75rem;">Nenhuma mascara encontrada.</p>';
+                return;
+            }
+            el.innerHTML = data.templates.map(function(t) {
+                var badge = t.modalidade ? '<span style="background:rgba(26,86,219,.2);color:#60a5fa;padding:.1rem .4rem;border-radius:3px;font-size:.68rem;">' + escHtml(t.modalidade) + '</span> ' : '';
+                var tagBadge = t.study_description_tag ? '<span style="color:#c084fc;font-size:.68rem;"><i class=\"fa fa-tag\"></i> ' + escHtml(t.study_description_tag) + '</span>' : '';
+                return '<div onclick="aplicarTemplatePorId(' + t.id + ')" style="cursor:pointer;padding:.6rem .75rem;border-radius:6px;margin-bottom:.35rem;background:rgba(26,86,219,.06);border:1px solid rgba(26,86,219,.15);">'
+                    + '<div style="font-size:.83rem;font-weight:600;">' + escHtml(t.nome) + '</div>'
+                    + '<div style="font-size:.7rem;color:var(--pacs-text-muted);margin-top:.15rem;">' + badge + tagBadge + '</div>'
+                    + '</div>';
+            }).join('');
+        })
+        .catch(function() {});
+    }
+
+    function aplicarTemplatePorId(id) {
+        fetch('/reports/template?id=' + id)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) { showToast('Erro ao carregar mascara.', 'danger'); return; }
+            aplicarTemplate(data.template);
+            var panel = document.getElementById('mascarasBuscaPanel');
+            if (panel) panel.style.display = 'none';
+            showToast('Mascara "' + data.template.nome + '" aplicada!', 'success');
+        });
+    }
+
+    window.applyTemplate = aplicarTemplatePorId;
 
     function setEditorContent(section, html) {
         const el = document.getElementById('editor-' + section);

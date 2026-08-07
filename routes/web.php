@@ -72,6 +72,14 @@ Router::post('/medicos/{id}/toggle',   'MedicosController@toggleStatus');
 Router::post('/api/medicos/{id}/copilot-token',    'MedicosController@copilotToken');
 Router::post('/api/medicos/{id}/workspace-laudo', 'MedicosController@toggleWorkspaceLaudo');
 
+// ── Templates / Máscaras de Laudo ──────────────────────────────────────────
+Router::get('/api/medicos/{medicoId}/templates',           'TemplatesController@listar');
+Router::post('/api/medicos/{medicoId}/templates',          'TemplatesController@salvar');
+Router::post('/api/medicos/{medicoId}/templates/importar', 'TemplatesController@importar');
+Router::delete('/api/medicos/{medicoId}/templates/{id}',   'TemplatesController@excluir');
+Router::get('/api/templates/buscar',                       'TemplatesController@buscar');
+Router::get('/api/templates/auto',                         'TemplatesController@autoCarregar');
+
 Router::get('/unidades',               'UnidadesController@index');
 Router::get('/unidades/create',        'UnidadesController@create');
 Router::post('/unidades',              'UnidadesController@store');
