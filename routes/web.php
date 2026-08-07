@@ -76,7 +76,7 @@ Router::post('/api/medicos/{id}/workspace-laudo', 'MedicosController@toggleWorks
 Router::get('/api/medicos/{medicoId}/templates',           'TemplatesController@listar');
 Router::post('/api/medicos/{medicoId}/templates',          'TemplatesController@salvar');
 Router::post('/api/medicos/{medicoId}/templates/importar', 'TemplatesController@importar');
-Router::delete('/api/medicos/{medicoId}/templates/{id}',   'TemplatesController@excluir');
+Router::post('/api/medicos/{medicoId}/templates/{id}/excluir', 'TemplatesController@excluir');
 Router::get('/api/templates/buscar',                       'TemplatesController@buscar');
 Router::get('/api/templates/auto',                         'TemplatesController@autoCarregar');
 

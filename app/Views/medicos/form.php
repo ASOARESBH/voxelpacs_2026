@@ -1616,7 +1616,7 @@ function salvarMascara() {
 
 function excluirMascara(id) {
     if (!confirm('Excluir esta máscara? Esta ação não pode ser desfeita.')) return;
-    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/' + id, { method: 'DELETE' })
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/' + id + '/excluir', { method: 'POST' })
     .then(r => r.json())
     .then(data => {
         if (data.ok) carregarMascaras();
