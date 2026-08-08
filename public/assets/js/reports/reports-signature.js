@@ -1,12 +1,16 @@
 /**
  * VOXEL PACS — Reports / Assinatura
- * Modal de senha + CRM → POST /reports/sign. Ctrl+Enter abre o modal.
+ * Autenticação 100% por sessão (sem senha/CRM manual — decisão de negócio, ver
+ * diagnostics/pendencias-conhecidas.md). Modal é só confirmação, com dois modos
+ * de finalização → POST /reports/sign. Ctrl+Enter abre o modal.
  */
 window.VoxelReports = window.VoxelReports || {};
 
 window.VoxelReports.signature = (function () {
+    const editor = window.VoxelReports.editor;
     let config = null;
     let modal = null;
+    let enviando = false;
 
     function mostrarErro(msg) {
         const el = document.getElementById('assinatura-erro');
@@ -20,36 +24,51 @@ window.VoxelReports.signature = (function () {
         if (el) el.style.display = 'none';
     }
 
+    /** Item 2 — não abre o modal se todas as seções do laudo estiverem vazias. */
+    function laudoEstaVazio() {
+        const secoes = editor.extractSecoes();
+        return Object.values(secoes).every((html) => {
+            const texto = String(html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+            return texto === '';
+        });
+    }
+
     function open() {
+        if (laudoEstaVazio()) {
+            alert('Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.');
+            return;
+        }
         limparErro();
-        document.getElementById('assinatura-senha').value = '';
         modal.show();
     }
 
-    function confirmar() {
-        const senha = document.getElementById('assinatura-senha').value;
-        const crm = document.getElementById('assinatura-crm').value.trim();
+    function confirmar(modo) {
+        if (enviando) return;
         limparErro();
-
-        if (!senha) { mostrarErro('Informe sua senha para assinar.'); return; }
+        enviando = true;
 
         // Garante que o conteúdo atual está salvo antes de assinar.
         window.VoxelReports.autosave.save('rascunho').finally(() => {
             fetch('/reports/sign', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
-                body: JSON.stringify({ report_id: config.reportId, senha, crm }),
+                body: JSON.stringify({ report_id: config.reportId, modo }),
             })
                 .then((r) => r.json())
                 .then((data) => {
+                    enviando = false;
                     if (!data.ok) {
-                        mostrarErro(data.error === 'senha_invalida' ? 'Senha incorreta.' : 'Não foi possível assinar o laudo.');
+                        mostrarErro(data.msg || 'Não foi possível assinar o laudo.');
                         return;
                     }
                     modal.hide();
+                    if (modo === 'fechar') {
+                        window.location.href = '/estudos';
+                        return;
+                    }
                     window.location.reload();
                 })
-                .catch(() => mostrarErro('Falha de comunicação ao assinar o laudo.'));
+                .catch(() => { enviando = false; mostrarErro('Falha de comunicação ao assinar o laudo.'); });
         });
     }
 
@@ -64,8 +83,11 @@ window.VoxelReports.signature = (function () {
         const btnSign = document.getElementById('btn-sign');
         if (btnSign) btnSign.addEventListener('click', open);
 
-        const btnConfirmar = document.getElementById('btn-confirmar-assinatura');
-        if (btnConfirmar) btnConfirmar.addEventListener('click', confirmar);
+        const btnSomente = document.getElementById('btn-assinar-somente');
+        if (btnSomente) btnSomente.addEventListener('click', () => confirmar('somente'));
+
+        const btnFechar = document.getElementById('btn-assinar-fechar');
+        if (btnFechar) btnFechar.addEventListener('click', () => confirmar('fechar'));
 
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {

@@ -766,7 +766,62 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     <?php endif; ?>
 
     <!-- ══════════════════════════════════════════════════════════════════
-         SEÇÃO 6 — TOKEN COPILOT (somente edição)
+         SEÇÃO 6 — PERMISSÕES DE WORKLIST (somente edição)
+    ══════════════════════════════════════════════════════════════════ -->
+    <?php if ($isEdit): ?>
+    <?php
+    $verMedicoLaudo = !empty($medico['ver_medico_laudo']);
+    ?>
+    <div class="medico-section" id="permissoesWorklist">
+        <div class="medico-section-header">
+            <i class="fa fa-shield-halved" style="color:#0ea5e9;"></i>
+            <span style="color:#0ea5e9;">Permissões de Worklist</span>
+        </div>
+        <p style="font-size:.82rem;color:var(--pacs-text-muted);margin-bottom:1rem;">
+            <i class="fa fa-circle-info me-1"></i>
+            Controle o que este médico pode visualizar na coluna <strong>Médico</strong> da Gestão de Exames.
+            Por padrão, cada médico vê apenas o próprio nome quando é o responsável pelo laudo.
+        </p>
+        <!-- Permissão: ver_medico_laudo -->
+        <div style="display:flex;align-items:flex-start;gap:1rem;padding:.85rem 1rem;
+                    background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);
+                    border-radius:8px;margin-bottom:.75rem;">
+            <div style="flex:1;">
+                <div style="font-size:.88rem;font-weight:700;color:var(--pacs-text);margin-bottom:.2rem;">
+                    <i class="fa fa-eye me-1" style="color:#0ea5e9;"></i>
+                    Ver médico responsável de outros laudos
+                </div>
+                <div style="font-size:.78rem;color:var(--pacs-text-muted);">
+                    Quando habilitado, este médico pode ver o nome do médico responsável
+                    pelo laudo de <em>outros</em> médicos na coluna <strong>Médico</strong> da worklist.
+                    Quando desabilitado, vê apenas o próprio nome (quando é o responsável).
+                </div>
+            </div>
+            <label class="wl-toggle-wrap" style="display:flex;align-items:center;gap:.6rem;cursor:pointer;user-select:none;flex-shrink:0;">
+                <div class="wl-toggle" id="verMedicoLaudoToggle"
+                     data-medico-id="<?= (int)($medicoId ?? 0) ?>"
+                     data-ativo="<?= $verMedicoLaudo ? '1' : '0' ?>"
+                     style="position:relative;width:44px;height:24px;border-radius:12px;
+                            background:<?= $verMedicoLaudo ? '#0ea5e9' : '#374151' ?>;
+                            transition:background .25s;cursor:pointer;"
+                     onclick="toggleVerMedicoLaudo(this)">
+                    <span style="position:absolute;top:2px;left:<?= $verMedicoLaudo ? '22px' : '2px' ?>;
+                                 width:20px;height:20px;border-radius:50%;background:#fff;
+                                 box-shadow:0 1px 4px rgba(0,0,0,.2);transition:left .25s;
+                                 display:block;" id="verMedicoLaudoThumb"></span>
+                </div>
+                <span style="font-size:.82rem;font-weight:600;color:<?= $verMedicoLaudo ? '#0ea5e9' : 'var(--pacs-text-muted)' ?>;"
+                      id="verMedicoLaudoLabel">
+                    <?= $verMedicoLaudo ? 'Habilitado' : 'Desabilitado' ?>
+                </span>
+            </label>
+        </div>
+        <div id="verMedicoLaudoFeedback" style="display:none;margin-top:.5rem;"></div>
+    </div>
+    <?php endif; ?>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         SEÇÃO 7 — TOKEN COPILOT (somente edição)
     ══════════════════════════════════════════════════════════════════ -->
     <?php if ($isEdit): ?>
     <div class="medico-section">
@@ -1509,6 +1564,55 @@ function toggleWorkspaceLaudo(el) {
     });
 }
 
+// --- PERMISSOES DE WORKLIST: toggleVerMedicoLaudo ----------------------------
+function toggleVerMedicoLaudo(el) {
+    const medicoId   = el.dataset.medicoId;
+    const ativoAtual = el.dataset.ativo === '1';
+    const novoEstado = !ativoAtual;
+    const thumb      = document.getElementById('verMedicoLaudoThumb');
+    const label      = document.getElementById('verMedicoLaudoLabel');
+    const feedback   = document.getElementById('verMedicoLaudoFeedback');
+    // Feedback visual imediato
+    el.style.background = novoEstado ? '#0ea5e9' : '#374151';
+    thumb.style.left    = novoEstado ? '22px' : '2px';
+    label.textContent   = novoEstado ? 'Habilitado' : 'Desabilitado';
+    label.style.color   = novoEstado ? '#0ea5e9' : 'var(--pacs-text-muted)';
+    el.dataset.ativo    = novoEstado ? '1' : '0';
+    fetch(`/api/medicos/${medicoId}/permissao-ver-medico-laudo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ habilitar: novoEstado })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg || 'Erro desconhecido');
+        const cor = novoEstado ? '#0ea5e9' : '#6b7280';
+        const ico = novoEstado ? 'fa-eye' : 'fa-eye-slash';
+        const msg = novoEstado
+            ? 'Permissao habilitada. Este medico pode ver o nome de outros medicos na worklist.'
+            : 'Permissao desabilitada. Este medico ve apenas o proprio nome.';
+        feedback.style.display = 'block';
+        feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(0,0,0,.08);
+            border:1px solid ${cor};color:${cor};font-size:.82rem;">
+            <i class="fa ${ico} me-1"></i>${msg}
+        </div>`;
+        setTimeout(() => { feedback.style.display = 'none'; }, 5000);
+    })
+    .catch(err => {
+        // Reverte em caso de erro
+        el.style.background = ativoAtual ? '#0ea5e9' : '#374151';
+        thumb.style.left    = ativoAtual ? '22px' : '2px';
+        label.textContent   = ativoAtual ? 'Habilitado' : 'Desabilitado';
+        label.style.color   = ativoAtual ? '#0ea5e9' : 'var(--pacs-text-muted)';
+        el.dataset.ativo    = ativoAtual ? '1' : '0';
+        feedback.style.display = 'block';
+        feedback.innerHTML = `<div style="padding:.5rem .9rem;border-radius:6px;background:rgba(224,82,82,.1);
+            border:1px solid #e05252;color:#e05252;font-size:.82rem;">
+            <i class="fa fa-triangle-exclamation me-1"></i>Erro: ${err.message}
+        </div>`;
+        setTimeout(() => { feedback.style.display = 'none'; }, 5000);
+    });
+}
 // ─── MÓDULO DE MÁSCARAS ─────────────────────────────────────────────────────
 const MEDICO_ID_MASCARAS = <?= (int) $medicoId ?>;
 let _mascarasAll = [];

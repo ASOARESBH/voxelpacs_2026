@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Core\Auth;
 use App\Services\DesktopViewerService;
 use App\Services\InstitutionResolverService;
+use App\Services\PedidoMedicoService;
 
 /**
  * VOXEL PACS — EstudosController
@@ -43,6 +44,17 @@ class EstudosController extends Controller
     ];
 
     public function index(): void
+    {
+        $this->renderWorklist(false);
+    }
+
+    /** Worklist administrativa: mesmos filtros e estudos, sem abrir/laudar. */
+    public function gestao(): void
+    {
+        $this->renderWorklist(true);
+    }
+
+    private function renderWorklist(bool $modoGestao): void
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
@@ -312,8 +324,15 @@ class EstudosController extends Controller
                     e.atualizado_em,
                     COALESCE(e.recebido_em, e.importado_em) AS recebido_em,
                     COALESCE(e.body_part_examined, '')          AS body_part_examined,
-                    COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc
+                    COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
+                    p.id                                         AS pedido_id,
+                    p.nome_original                               AS pedido_nome_original,
+                    p.mime_type                                   AS pedido_mime_type,
+                    p.tamanho_bytes                               AS pedido_tamanho_bytes,
+                    p.caminho_arquivo                             AS pedido_caminho_arquivo
                 FROM bi_pacs_estudos e
+                LEFT JOIN bi_pacs_estudos_pedidos p
+                       ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
                 {$limitClause}
@@ -357,13 +376,18 @@ class EstudosController extends Controller
         $medicoLogadoNome         = null;  // nome do médico logado
         $isMedicoLogado           = false; // flag: usuário logado é um médico cadastrado
         $workspaceLaudoHabilitado = false; // flag: médico tem Workspace Laudo habilitado
+        // Permissão de visibilidade da coluna Médico:
+        //   - false (padrão): médico vê apenas o próprio nome quando é o responsável
+        //   - true: médico vê o nome de qualquer médico responsável (permissão especial)
+        //   - Admin/não-médico: sempre vê (sem restrição)
+        $podeVerMedicoLaudo       = false;
         try {
             if ($tenantId) {
                 $userId = Auth::userId();
                 // Verifica se o usuário logado é um médico cadastrado neste tenant
                 if ($userId) {
                     $stmtMe = $pdo->prepare(
-                        "SELECT id, nome, workspace_laudo_habilitado FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
+                        "SELECT id, nome, workspace_laudo_habilitado, COALESCE(ver_medico_laudo, 0) AS ver_medico_laudo FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1"
                     );
                     $stmtMe->execute([(int)$tenantId, (int)$userId]);
                     $meRow = $stmtMe->fetch(\PDO::FETCH_ASSOC);
@@ -372,6 +396,8 @@ class EstudosController extends Controller
                         $medicoLogadoId              = (int)$meRow['id'];
                         $medicoLogadoNome            = $meRow['nome'];
                         $workspaceLaudoHabilitado    = !empty($meRow['workspace_laudo_habilitado']);
+                        // Permissão especial: ver nome de outros médicos na coluna Médico
+                        $podeVerMedicoLaudo          = !empty($meRow['ver_medico_laudo']);
                     }
                 }
                 // Todos os perfis vêem todos os médicos ativos do tenant.
@@ -484,6 +510,10 @@ class EstudosController extends Controller
             $ultimaSinc = $s->fetchColumn() ?: '';
         } catch (\Throwable $ex) {}
 
+        $urlWorklist          = $modoGestao ? '/gestao-exames' : '/estudos';
+        $podeGerenciarPedido  = (new PedidoMedicoService())->podeGerenciar($tenantId, $bypassGlobal);
+        $csrfToken             = $this->csrfToken();
+
         // Impede que o browser (BFCache) sirva esta página do cache ao navegar
         // de volta — garante que filtros sempre reflitam a URL atual.
         header('Cache-Control: no-store, no-cache, must-revalidate');
@@ -492,7 +522,8 @@ class EstudosController extends Controller
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
             'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
-            'modsAtivas'
+            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
+            'medicoLogadoNome','podeVerMedicoLaudo'
         ), 'pacs');
     }
 

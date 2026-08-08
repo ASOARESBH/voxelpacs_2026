@@ -69,6 +69,13 @@
                 <span class="sidebar-label">Agendamentos</span>
             </a>
 
+            <?php if (empty($isMedicoLogado)): ?>
+            <a href="/gestao-exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/gestao-exames') ? 'active' : '' ?>">
+                <i class="fa fa-clipboard-list"></i>
+                <span class="sidebar-label"><?= htmlspecialchars(t('gestao_exames.menu.titulo')) ?></span>
+            </a>
+            <?php endif; ?>
+
             <!-- PACS -->
             <div class="sidebar-section-title">PACS</div>
 
@@ -218,7 +225,7 @@
             <script>
             (function() {
                 function atualizarBadgesTopbar() {
-                    fetch('/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    fetch('/api/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(function(r) { return r.ok ? r.json() : null; })
                     .then(function(d) {
                         if (!d) return;

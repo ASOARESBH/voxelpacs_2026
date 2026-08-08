@@ -186,6 +186,15 @@ body.reports-body {
     color: var(--pacs-text, #e2e8f0);
 }
 .rp-value--green { color: #22c55e; font-weight: 600; }
+.rp-muted { color: var(--pacs-text-muted, #8fa3bf); }
+.pedido-report-badge { display:inline-flex; align-items:center; gap:.25rem; background:rgba(16,185,129,.12);
+    color:#34d399; border:1px solid rgba(16,185,129,.28); border-radius:4px; padding:.15rem .4rem;
+    font-size:.7rem; font-weight:700; white-space:nowrap; }
+.pedido-report-name { display:block; margin-top:.25rem; font-size:.78rem; word-break:break-word; }
+.pedido-report-name small { color:var(--pacs-text-muted, #8fa3bf); font-size:.68rem; }
+.pedido-report-link { display:inline-flex; align-items:center; gap:.25rem; margin-top:.3rem; color:#60a5fa;
+    font-size:.72rem; text-decoration:none; }
+.pedido-report-link:hover { text-decoration:underline; }
 .rp-mono {
     font-family: monospace;
     font-size: .78rem;

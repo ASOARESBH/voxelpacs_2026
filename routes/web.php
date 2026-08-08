@@ -22,6 +22,7 @@ Router::get('/dashboard', 'DashboardController@index');
 // WORKLIST — Estudos PACS (página principal)
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
+Router::get('/gestao-exames',           'EstudosController@gestao');
 Router::get('/estudos/instalar',       'EstudosController@instalar');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
 Router::get('/estudos/{id}/abrir-radiant',      'EstudosController@abrirRadiant');
@@ -30,6 +31,13 @@ Router::get('/estudos/{id}/abrir-voxel',        'EstudosController@abrirVoxelDes
 Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
 Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
+
+// ============================================================
+// GESTÃO DE EXAMES — Pedido médico privado por estudo
+// ============================================================
+Router::post('/api/gestao-exames/estudos/{id}/pedido',         'GestaoExamesController@anexar');
+Router::post('/api/gestao-exames/estudos/{id}/pedido/remover',  'GestaoExamesController@remover');
+Router::get('/api/gestao-exames/pedidos/{id}/arquivo',         'GestaoExamesController@arquivo');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
@@ -71,6 +79,7 @@ Router::post('/medicos/{id}/update',   'MedicosController@update');
 Router::post('/medicos/{id}/toggle',   'MedicosController@toggleStatus');
 Router::post('/api/medicos/{id}/copilot-token',    'MedicosController@copilotToken');
 Router::post('/api/medicos/{id}/workspace-laudo', 'MedicosController@toggleWorkspaceLaudo');
+Router::post('/api/medicos/{id}/permissao-ver-medico-laudo', 'MedicosController@toggleVerMedicoLaudo');
 
 // ── Templates / Máscaras de Laudo ──────────────────────────────────────────
 Router::get('/api/medicos/{medicoId}/templates',           'TemplatesController@listar');

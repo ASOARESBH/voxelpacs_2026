@@ -747,4 +747,52 @@ class MedicosController extends Controller
             ]);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // PERMISSÃO: ver_medico_laudo
+    // POST /api/medicos/{id}/permissao-ver-medico-laudo
+    // Habilita/desabilita a permissão de visualizar o nome de outros médicos
+    // na coluna "Médico" da Gestão de Exames / Worklist.
+    // Preparado para futuras features de controle granular de visibilidade.
+    // -------------------------------------------------------------------------
+    public function toggleVerMedicoLaudo(int $id): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!Auth::check()) {
+            $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
+            return;
+        }
+        $tenantId = $this->tenantId();
+        $medico   = $this->service->buscarPorId($id, $tenantId);
+        if (!$medico) {
+            $this->json(['ok' => false, 'msg' => 'Médico não encontrado.'], 404);
+            return;
+        }
+        $body      = json_decode(file_get_contents('php://input'), true) ?? [];
+        $habilitar = !empty($body['habilitar']);
+        try {
+            $pdo = Database::getInstance();
+            $pdo->prepare("
+                UPDATE bi_medicos
+                SET ver_medico_laudo = :hab
+                WHERE id = :id AND tenant_id = :tid
+            ")->execute(['hab' => $habilitar ? 1 : 0, 'id' => $id, 'tid' => $tenantId]);
+            Logger::info('[MedicosController::toggleVerMedicoLaudo] Permissão atualizada', [
+                'medico_id' => $id,
+                'tenant_id' => $tenantId,
+                'habilitar' => $habilitar,
+            ]);
+            $msg = $habilitar
+                ? 'Permissão habilitada. Este médico pode ver o nome de outros médicos na worklist.'
+                : 'Permissão desabilitada. Este médico verá apenas o próprio nome.';
+            $this->json(['ok' => true, 'ativo' => $habilitar, 'msg' => $msg]);
+        } catch (\Throwable $e) {
+            Logger::error('[MedicosController::toggleVerMedicoLaudo] Erro', [
+                'medico_id' => $id,
+                'tenant_id' => $tenantId,
+                'erro'      => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Erro interno ao atualizar permissão.'], 500);
+        }
+    }
 }
