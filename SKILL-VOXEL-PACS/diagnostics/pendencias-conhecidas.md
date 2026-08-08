@@ -83,5 +83,19 @@
 
 **Prioridade sugerida**: alta — é uma falha de isolamento multi-tenant real num endpoint de dado clínico.
 
+## ✅ Resolvido — `save()`/`sign()` liam CSRF do corpo e não do header, e id/seções com chaves erradas
+
+**Status**: corrigido em 2026-08-08, durante "Ajustes no fluxo de assinatura de laudo" (ver `modules/assinatura-medico.md`).
+
+**O que era**: `ReportsController::save()`/`::sign()` faziam `validarCsrf($input['csrf'] ?? '')` — mas `reports-autosave.js` e `reports-signature.js` mandam o token **só** no header `X-CSRF-Token`, nunca no corpo JSON. Nenhum código em `app/` lia esse header. `hash_equals($_SESSION['csrf_token'], '')` sempre falha contra uma sessão real, então **todo POST para `/reports/save` e `/reports/sign` retornava 403 incondicionalmente** — um bug anterior e mais fundamental que todos os outros já corrigidos nesta sessão (P0 nomes de método, `Auth::verifyPassword`, trava de re-assinatura), que ficava mascarado atrás da mesma mensagem genérica de erro. Os dois métodos também liam `$input['id']` (frontend manda `report_id`), e `save()` lia seções soltas (`secao_exame` etc.) em vez do objeto único `secoes` que o frontend realmente envia — ou seja, mesmo passando no CSRF, `save()` gravaria seções sempre vazias.
+
+**Como foi encontrado**: ao reler `reports-signature.js`/`reports-autosave.js` de verdade (não `reports/index.php`, que é código morto) durante a tarefa de simplificar o modal de assinatura — o contraste entre o payload real enviado e o que o Controller lia ficou visível linha a linha.
+
+**Correção aplicada**: `ReportsController::save()`/`::sign()` agora leem `$input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''`, `$input['report_id'] ?? $input['id'] ?? 0`, e `save()` lê `$input['secoes'] ?? [chaves soltas de fallback]`.
+
+**Validação**: `php -l` limpo; sem banco disponível neste ambiente — não validado ponta a ponta com requisição HTTP real (precisa de navegador/servidor rodando).
+
+---
+
 ## Última análise
 2026-08-08

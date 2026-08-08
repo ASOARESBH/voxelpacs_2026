@@ -63,5 +63,34 @@ Durante esta tarefa, três problemas pré-existentes e não relacionados foram d
 
 **Não validado** (sem banco de dados disponível neste ambiente, confirmado por tentativa real de conexão recusada): fluxo completo de assinatura ponta a ponta com dado real, upload/desenho reais via navegador, e — mais importante — se `report_signatures` no banco real bate com o schema que `ReportRepository::createSignature()` espera (ver pendência acima). Recomendo fortemente validar isso antes de considerar a funcionalidade pronta para produção.
 
+## Ajustes no fluxo de assinatura de laudo (2026-08-08, sessão seguinte)
+
+### Decisão de negócio — senha/CRM removidos do modal "Assinar Laudo" (não é bug, não reverter)
+
+**Se você é um agente futuro e está pensando em "corrigir" a ausência de senha/CRM no modal de assinatura de laudo: não faça isso.** Foi uma decisão deliberada do Andre, não um esquecimento.
+
+- `app/Views/reports/partials/_modal_assinatura.php` não tem mais campos de CRM nem Senha — é só uma confirmação com dois botões.
+- `public/assets/js/reports/reports-signature.js` não coleta nem envia senha/CRM.
+- `ReportService::assinar(int $reportId, string $modo): array` — os parâmetros `$senha`/`$crm` foram removidos da assinatura. A chamada a `Auth::verifyPassword()` foi removida de dentro de `assinar()` — **o método em si continua existindo em `Auth.php`** (também usado, hoje só potencialmente, por outros fluxos futuros de reautenticação; confirmado por grep que `assinar()` era seu único chamador real em todo `app/`, `login()` usa `password_verify()` direto).
+- CRM é resolvido automaticamente do médico logado (`MedicoRepository::findByUsuarioId()` → `$medico['crm']`), nunca mais digitado manualmente.
+- **Justificativa (Andre)**: autenticação passa a ser 100% baseada em sessão. Risco de estação de trabalho compartilhada considerado baixo e conscientemente aceito, dado o uso majoritariamente remoto/teleradiologia da plataforma.
+- **Compensação de auditoria**: confirmado que `AuditLogger::log('report.assinar', ...)` já grava `user_id` (via `Auth::user()?->id`, `app/Core/Audit/AuditLogger.php:24`) — nenhuma mudança de código foi necessária para reforçar a rastreabilidade, já existia.
+
+### Dois modos de finalização — "Somente Assinar" vs. "Assinar e Fechar"
+
+`ReportService::assinar()` ganhou o parâmetro `$modo` (`'somente'`|`'fechar'`), condicionando o que já era incondicional:
+- **Somente Assinar** (`modo=somente`): `reports.situacao` → `assinado`; `bi_pacs_estudos.situacao` → `assinado` (antes ia direto para `liberado`, sem essa distinção). Permanece na tela, laudo vira somente-leitura.
+- **Assinar e Fechar** (`modo=fechar`): igual ao acima, mais `bi_pacs_estudos.situacao` → `liberado`, webhook `CopilotWebhookService::notificarLaudoLiberado()` disparado (antes disparava sempre — agora só quando o estudo de fato é liberado, já que o nome do método é literal), e o frontend navega para `/estudos` (worklist).
+
+Confirmado que essa distinção **não exige nenhuma mudança nos contadores da worklist** — `EstudosController::contadores()` já faz `GROUP BY situacao` e conta `assinado`/`liberado` como buckets independentes desde antes desta tarefa.
+
+### Bloqueio de laudo vazio (novo erro `laudo_vazio`)
+
+Cliente (`reports-signature.js`, antes de abrir o modal) e servidor (`ReportService::assinar()`, logo após a trava de re-assinatura) checam se **todas** as 5 seções (exame/técnica/achados/conclusão/recomendação), sem HTML/whitespace, estão vazias — decisão confirmada com o usuário (bloqueia só se todas vazias, não apenas Conclusão). Mensagem: "Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar."
+
+### Achados corrigidos na mesma tarefa (fora do pedido original, mas bloqueavam validar tudo acima)
+
+Ver `PENDENCIAS_CONHECIDAS.md`/`diagnostics/pendencias-conhecidas.md` — resumo: `ReportsController::save()`/`::sign()` liam CSRF só do corpo JSON (`$input['csrf']`) e nunca do header `X-CSRF-Token` (único lugar que os dois JS reais mandam o token), e liam o id do laudo como `id` em vez de `report_id` (chave real enviada pelo frontend) — ambos faziam `/reports/save` e `/reports/sign` falharem **sempre** com 403, independente de qualquer outra correção desta sessão. `save()` também lia `secao_exame`/`secao_tecnica`/etc soltos, enquanto o frontend manda um único objeto aninhado `secoes`. Todos corrigidos nesta tarefa, aprovado explicitamente pelo usuário.
+
 ## Última análise
 2026-08-08

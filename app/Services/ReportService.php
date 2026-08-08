@@ -216,13 +216,11 @@ class ReportService {
     }
 
     /**
-     * POST /reports/sign — exige reautenticação por senha.
+     * POST /reports/sign — autenticação 100% por sessão (decisão de negócio: sem
+     * reautenticação por senha neste fluxo, ver diagnostics/pendencias-conhecidas.md).
+     * $modo: 'somente' → situação vai só até 'assinado'; 'fechar' → avança até 'liberado'.
      */
-    public function assinar(int $reportId, string $senha, ?string $crm): array {
-        if (!Auth::verifyPassword($senha)) {
-            return ['ok' => false, 'error' => 'senha_invalida'];
-        }
-
+    public function assinar(int $reportId, string $modo): array {
         $report = $this->repo->findReportById($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
@@ -233,11 +231,28 @@ class ReportService {
             return ['ok' => false, 'error' => 'report_ja_assinado'];
         }
 
+        // Bloqueia assinar laudo sem nenhum conteúdo em nenhuma seção — espelha a
+        // mesma checagem já feita no cliente antes de abrir o modal.
+        $conteudoDecodificado = json_decode($report->conteudo, true);
+        $secoesAtuais = $conteudoDecodificado['secoes'] ?? [];
+        $temConteudo = false;
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+            if (trim(strip_tags($secoesAtuais[$chave] ?? '')) !== '') {
+                $temConteudo = true;
+                break;
+            }
+        }
+        if (!$temConteudo) {
+            return ['ok' => false, 'error' => 'laudo_vazio'];
+        }
+
         $userId   = Auth::userId();
         $tenantId = Auth::tenantId();
 
-        // 4(a) — assinatura visual ativa do médico logado. Decisão confirmada:
-        // bloquear (não assinar sem representação visual) se não houver nenhuma cadastrada.
+        // 4(a) — assinatura visual ativa + CRM do médico logado, resolvidos
+        // automaticamente (sem input manual). Decisão confirmada: bloquear
+        // (não assinar sem representação visual) se não houver nenhuma cadastrada.
+        $medico = null;
         $assinaturaAtiva = null;
         if ($tenantId) {
             $medico = (new MedicoRepository())->findByUsuarioId($userId, $tenantId);
@@ -248,6 +263,7 @@ class ReportService {
         if (!$assinaturaAtiva) {
             return ['ok' => false, 'error' => 'medico_sem_assinatura_ativa'];
         }
+        $crm = $medico['crm'] ?? null;
 
         $estudo = $this->repo->findEstudoById((int) $report->bi_pacs_estudos_id);
         $user = Auth::user();
@@ -259,7 +275,7 @@ class ReportService {
             'tenant_id' => $report->tenant_id,
             'medico_id' => $userId,
             'crm' => $crm,
-            'conteudo' => json_decode($report->conteudo, true),
+            'conteudo' => $conteudoDecodificado,
             'assinado_em' => $assinadoEm,
         ], JSON_UNESCAPED_UNICODE);
         $hash = hash('sha256', $payload);
@@ -275,35 +291,45 @@ class ReportService {
         $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
         $this->repo->salvarAssinaturaVisual($reportId, $hash, $crm, $assinaturaAtiva['tipo'], $caminhoCongelado);
 
-        // Nesta entrega, assinar já progride para liberado (sem etapa manual de aprovação).
+        // Item 4 — "Somente Assinar" pára em 'assinado'; "Assinar e Fechar" avança
+        // até 'liberado' e finaliza o estudo (mesmas duas chamadas de sempre,
+        // agora condicionadas ao modo em vez de sempre executarem as duas).
         $this->repo->marcarAssinado($reportId, 'assinado');
-        $this->repo->marcarAssinado($reportId, 'liberado');
-        $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'liberado');
-
-        $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
-        $this->repo->createVersion($reportId, json_decode($report->conteudo, true), 'assinado', $userId, $versaoNumero);
-
-        AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash]);
-
-        // ── Notifica o VoxelCopilot sobre o laudo assinado/liberado ────────
-        try {
-            $tenantId = Auth::tenantId();
-            $svc = new \App\Services\CopilotWebhookService();
-            if ($tenantId) {
-                $svc->notificarLaudoLiberado(
-                    (int) $tenantId,
-                    (array) $estudo,
-                    ['id' => $userId, 'nome' => $user->nome ?? $user->name ?? '', 'crm' => $crm ?? ''],
-                    ['texto' => null, 'assinado_em' => $assinadoEm, 'hash' => $hash]
-                );
-            }
-        } catch (\Throwable $e) {
-            \App\Core\Logger::error('[ReportService::assinar] Webhook Copilot liberado falhou: ' . $e->getMessage());
+        if ($modo === 'fechar') {
+            $this->repo->marcarAssinado($reportId, 'liberado');
+            $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'liberado');
+        } else {
+            $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'assinado');
         }
 
+        $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
+        $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+
+        AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
+
+        // ── Notifica o VoxelCopilot sobre o laudo liberado (só quando o estudo
+        // de fato é finalizado — "Somente Assinar" não dispara este webhook,
+        // já que o estudo continua em 'assinado', não 'liberado') ───────────
+        if ($modo === 'fechar') {
+            try {
+                $svc = new \App\Services\CopilotWebhookService();
+                if ($tenantId) {
+                    $svc->notificarLaudoLiberado(
+                        (int) $tenantId,
+                        (array) $estudo,
+                        ['id' => $userId, 'nome' => $user->nome ?? $user->name ?? '', 'crm' => $crm ?? ''],
+                        ['texto' => null, 'assinado_em' => $assinadoEm, 'hash' => $hash]
+                    );
+                }
+            } catch (\Throwable $e) {
+                \App\Core\Logger::error('[ReportService::assinar] Webhook Copilot liberado falhou: ' . $e->getMessage());
+            }
+        }
+
+        $situacaoFinal = $modo === 'fechar' ? 'liberado' : 'assinado';
         return [
             'ok' => true,
-            'situacao' => 'liberado',
+            'situacao' => $situacaoFinal,
             'assinado_em' => $assinadoEm,
             'hash' => $hash,
             'pdf_url' => '/reports/' . rawurlencode((string) $estudo->study_instance_uid) . '/pdf',

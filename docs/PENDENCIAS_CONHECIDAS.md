@@ -31,6 +31,11 @@ Chamam endpoints (`/reports/templates`, `/reports/autotext`, `/reports/history/r
 - **2026-08-08** — `ReportsController::save()`/`::sign()` chamavam métodos inexistentes em `ReportService` (`saveReport()`/`signReport()` — os reais são `salvar()`/`assinar()`, nomes e assinaturas diferentes). Causava `\Error` fatal em toda tentativa de salvar/assinar laudo.
 - **2026-08-08** — `Auth::verifyPassword()` não existia — regressão (existiu no commit `ab12376`, foi perdida no commit seguinte, não relacionado). Sem isso, `ReportService::assinar()` falhava incondicionalmente na primeira linha, mesmo com o item acima já corrigido.
 - **2026-08-08** — `ReportService::assinar()` não impedia re-assinatura de um laudo já assinado (diferente de `salvar()`, que já tinha essa trava). Corrigido junto com a integração da aba Assinatura do médico.
+- **2026-08-08** — `ReportsController::save()`/`::sign()` liam CSRF só de `$input['csrf']` (corpo JSON) e nunca do header `X-CSRF-Token` — único lugar onde os dois JS reais (`reports-autosave.js`, `reports-signature.js`) de fato mandam o token. Resultado: **todo POST para `/reports/save` e `/reports/sign` retornava 403 "Token inválido" incondicionalmente**, mascarando por trás de um erro genérico qualquer teste dos itens acima. Os dois métodos também liam o id do laudo como `id` em vez de `report_id` (chave real enviada pelo frontend), e `save()` lia seções soltas (`secao_exame`, `secao_tecnica`...) em vez do objeto único `secoes` que o frontend manda. Descoberto e corrigido durante os "Ajustes no fluxo de assinatura de laudo" (ver `modules/assinatura-medico.md`).
+
+## Decisão de negócio registrada (não é pendência — não "corrigir" de volta)
+
+- **2026-08-08** — Modal "Assinar Laudo" não tem mais campos de CRM/Senha; assinatura passou a ser 100% autenticada por sessão (decisão consciente do Andre, risco de estação compartilhada aceito para o cenário de teleradiologia remota). Detalhe completo em `modules/assinatura-medico.md` (skill) — se algum código futuro reintroduzir um campo de senha aqui, é regressão da decisão, não correção.
 
 ## Última análise
 2026-08-08

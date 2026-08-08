@@ -115,8 +115,11 @@ class ReportsController extends Controller
 
         $input = $this->getJsonInput();
 
-        // CSRF
-        if (!$this->validarCsrf($input['csrf'] ?? '')) {
+        // CSRF: reports-autosave.js manda o token só no header X-CSRF-Token, nunca
+        // no corpo — sem o fallback de header aqui, validarCsrf('') falhava sempre
+        // (ver diagnostics/pendencias-conhecidas.md).
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) {
             $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403);
             return;
         }
@@ -125,7 +128,7 @@ class ReportsController extends Controller
             // ReportService::salvar() é posicional (reportId, secoes, modo, templateId),
             // não aceita array único — ver diagnostics/pendencias-conhecidas.md (P0 2026-08-08).
             $modo   = ($input['is_manual'] ?? false) ? 'salvar' : 'auto';
-            $secoes = [
+            $secoes = $input['secoes'] ?? [
                 'exame'        => $input['secao_exame']        ?? '',
                 'tecnica'      => $input['secao_tecnica']      ?? '',
                 'achados'      => $input['secao_achados']      ?? '',
@@ -133,7 +136,8 @@ class ReportsController extends Controller
                 'recomendacao' => $input['secao_recomendacao'] ?? '',
             ];
 
-            $resultado = $this->reportService->salvar((int) ($input['id'] ?? 0), $secoes, $modo);
+            // reports-autosave.js manda report_id, não id.
+            $resultado = $this->reportService->salvar((int) ($input['report_id'] ?? $input['id'] ?? 0), $secoes, $modo);
 
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
@@ -150,7 +154,8 @@ class ReportsController extends Controller
 
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/sign
-    // Assina o laudo com senha
+    // Assina o laudo — autenticação 100% por sessão, sem senha/CRM manual
+    // (decisão de negócio; ver diagnostics/pendencias-conhecidas.md).
     // ══════════════════════════════════════════════════════════════════════════
     public function sign(): void
     {
@@ -161,33 +166,33 @@ class ReportsController extends Controller
 
         $input = $this->getJsonInput();
 
-        if (!$this->validarCsrf($input['csrf'] ?? '')) {
+        // Mesmo fallback de header aplicado em save() — ver comentário lá.
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) {
             $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403);
             return;
         }
 
+        // reports-signature.js manda report_id, não id.
+        $reportId = (int) ($input['report_id'] ?? $input['id'] ?? 0);
+        $modo     = ($input['modo'] ?? 'somente') === 'fechar' ? 'fechar' : 'somente';
+
         try {
-            // ReportService::assinar() é posicional (reportId, senha, crm),
-            // não aceita array único — ver diagnostics/pendencias-conhecidas.md (P0 2026-08-08).
-            $resultado = $this->reportService->assinar(
-                (int) ($input['id'] ?? 0),
-                (string) ($input['senha'] ?? ''),
-                $input['crm'] ?? null
-            );
+            $resultado = $this->reportService->assinar($reportId, $modo);
 
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
-                    'senha_invalida'             => 'Senha incorreta.',
-                    'report_nao_encontrado'      => 'Laudo não encontrado.',
-                    'report_ja_assinado'         => 'Este laudo já foi assinado e não pode ser assinado novamente.',
-                    'medico_sem_assinatura_ativa'=> 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
+                    'report_nao_encontrado'       => 'Laudo não encontrado.',
+                    'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
+                    'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
+                    'medico_sem_assinatura_ativa' => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
                     default                        => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;
             }
 
-            $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.']);
+            $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.', 'situacao' => $resultado['situacao']]);
         } catch (\Exception $e) {
             Logger::error('ReportsController::sign error', ['msg' => $e->getMessage()]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
