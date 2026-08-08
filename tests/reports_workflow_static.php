@@ -24,6 +24,8 @@ $templates = $read('public/assets/js/reports/reports-templates.js');
 $history = $read('public/assets/js/reports/reports-history.js');
 $autotext = $read('public/assets/js/reports/reports-autotext.js');
 $main = $read('public/assets/js/reports/reports-main.js');
+$editorJs = $read('public/assets/js/reports/reports-editor.js');
+$viewCore = $read('app/Core/View.php');
 $pdf = $read('app/Views/reports/pdf.php');
 $header = $read('app/Views/layout/reports_header.php');
 $migration = $read('database/migrations/2026-08-08_reports_workflow_prerequisites.sql');
@@ -67,6 +69,9 @@ $expect(str_contains($repository, 'findVersion(int $versionId)'), 'findVersion n
 $expect(str_contains($repository, "execute(['id' => \$versionId])"), 'findVersion usa parâmetro incorreto.');
 
 $expect(str_contains($editor, 'property_exists($report, $campo)'), 'Editor não lê colunas secao_* com fallback.');
+$expect(str_contains($editorJs, 'normalizarTitulo') && str_contains($editorJs, 'node.textContent'), 'Editor ainda depende somente de data-secao para extrair conteúdo.');
+$expect(str_contains($editorJs, 'marcadoresEncontrados'), 'Editor não possui diagnóstico de marcadores ausentes.');
+$expect(str_contains($viewCore, "ASSET_VERSION = '2.1.1'"), 'Assets do Reports não tiveram cache-bust após a correção.');
 $expect(str_contains($editor, '$reportSituacao'), 'Editor não usa situacao/status compatível.');
 $expect(str_contains($autosave, 'savingPromise'), 'Autosave não aguarda requisição concorrente.');
 $expect(str_contains($autosave, 'body: JSON.stringify({ report_id: config.reportId, secoes, modo })'), 'Autosave não envia modo e seções.');

@@ -253,6 +253,12 @@ class ReportService {
         // mesmo conteúdo que o editor e o PDF exibem, nunca somente o JSON.
         $secoesAtuais = $this->extrairSecoesDoReport($report);
         if (!$this->secoesTemConteudo($secoesAtuais)) {
+            Logger::warning('[ReportService::assinar] laudo vazio após leitura do report', [
+                'report_id' => $reportId,
+                'tenant_id' => $report->tenant_id ?? null,
+                'section_lengths' => $this->tamanhosSecoes($secoesAtuais),
+                'has_json_conteudo' => isset($report->conteudo) && is_string($report->conteudo) && trim($report->conteudo) !== '',
+            ]);
             return ['ok' => false, 'error' => 'laudo_vazio'];
         }
         $conteudoDecodificado = ['secoes' => $secoesAtuais];
@@ -472,6 +478,16 @@ class ReportService {
             if (trim($texto) !== '') return true;
         }
         return false;
+    }
+
+    /** Retorna somente tamanhos para diagnóstico; nunca registra texto clínico. */
+    private function tamanhosSecoes(array $secoes): array {
+        $tamanhos = [];
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+            $texto = html_entity_decode((string) ($secoes[$chave] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $tamanhos[$chave] = mb_strlen(strip_tags($texto), 'UTF-8');
+        }
+        return $tamanhos;
     }
 
     private function lockExpirado(?string $heartbeat): bool {

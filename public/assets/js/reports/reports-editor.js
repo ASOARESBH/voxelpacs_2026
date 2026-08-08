@@ -60,21 +60,59 @@ window.VoxelReports.editor = (function () {
         quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
     }
 
-    /** Extrai o conteúdo atual do editor de volta para {exame, tecnica, achados, conclusao, recomendacao} */
+    function normalizarTitulo(texto) {
+        return String(texto || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function secaoPorTitulo(texto) {
+        const titulo = normalizarTitulo(texto);
+        return Object.keys(TITULOS).find((chave) => normalizarTitulo(TITULOS[chave]) === titulo) || null;
+    }
+
+    /** Extrai o conteúdo atual do editor de volta para {exame, tecnica, achados, conclusao, recomendacao}. */
     function extractSecoes() {
         const secoes = { exame: '', tecnica: '', achados: '', conclusao: '', recomendacao: '' };
         let atual = null;
+        let marcadoresEncontrados = 0;
+        const nodes = Array.from(quill?.root?.children || []);
 
-        Array.from(quill.root.childNodes).forEach((node) => {
-            if (node.nodeType !== 1) return;
-            if (node.tagName === 'H4' && node.dataset && node.dataset.secao) {
-                atual = node.dataset.secao;
+        nodes.forEach((node) => {
+            if (!node || node.nodeType !== 1) return;
+
+            // Caminho ideal: o marcador foi preservado pelo Clipboard do Quill.
+            // Fallback obrigatório: alguns builds removem atributos data-* ao
+            // hidratar HTML; nesse caso o título visual H4 continua confiável.
+            const marcado = node.dataset && node.dataset.secao;
+            const porTitulo = node.tagName === 'H4' ? secaoPorTitulo(node.textContent) : null;
+            const proximaSecao = marcado && Object.prototype.hasOwnProperty.call(secoes, marcado)
+                ? marcado
+                : porTitulo;
+
+            if (proximaSecao) {
+                atual = proximaSecao;
+                marcadoresEncontrados += 1;
                 return;
             }
-            if (atual && secoes.hasOwnProperty(atual)) {
+
+            if (atual && Object.prototype.hasOwnProperty.call(secoes, atual)) {
                 secoes[atual] += node.outerHTML || '';
             }
         });
+
+        // Diagnóstico sem registrar conteúdo clínico: permite identificar no
+        // console quando o editor tem texto, mas não recebeu nenhum marcador.
+        const temTextoVisivel = String(quill?.root?.textContent || '').trim() !== '';
+        if (temTextoVisivel && marcadoresEncontrados === 0) {
+            console.warn('[VOXEL Reports] editor sem marcadores de seção', {
+                childTags: nodes.map((node) => node.tagName),
+                editorChars: String(quill.root.textContent || '').length,
+            });
+        }
 
         return secoes;
     }

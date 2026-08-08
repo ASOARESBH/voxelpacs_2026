@@ -53,3 +53,12 @@ O log posterior mostrou que o banco publicado também não possuía `report_auto
 O endpoint `ReportsController::autotextSearch()` agora executa `SHOW COLUMNS FROM report_autotext` uma única vez e escolhe a consulta por uma lista de colunas reconhecidas: `gatilho/conteudo`, `gatilho/texto_sugerido`, `nome/conteudo` ou `chave/texto`. A query só inclui filtros `ativo`, `tenant_id`, `usuario_id` e `modalidade` quando as respectivas colunas existem. O retorno é sempre normalizado para `{ id, gatilho, titulo, texto_sugerido, conteudo }`, que é o contrato consumido pelo autocomplete.
 
 Com isso, o schema HostGator que possui `nome`, `modalidade` e `conteudo` deixa de tentar selecionar `texto_sugerido`, os warnings esperados deixam de ser emitidos e um schema realmente desconhecido gera apenas um log de erro único, sem bloquear o editor ou a assinatura.
+
+
+## Causa raiz definitiva do alerta de laudo vazio — 2026-08-08
+
+A investigação da ramificação completa mostrou que o alerta exibido no navegador é disparado antes da abertura da modal e antes de qualquer chamada a `/reports/sign`. `reports-signature.js` chama `editor.extractSecoes()`, enquanto a implementação anterior reconhecia uma seção somente quando o Quill preservava o atributo `data-secao` no elemento `H4`. O editor renderizava os títulos e o texto visualmente, mas o Clipboard do Quill podia remover esse atributo durante a hidratação; nesse cenário, `extractSecoes()` retornava cinco strings vazias, o autosave enviava `secoes` vazias e a assinatura bloqueava corretamente esse payload vazio.
+
+A correção mantém o caminho por `data-secao` quando ele existir e adiciona um fallback por título visual normalizado (`Exame`, `Técnica`, `Achados`, `Conclusão` e `Recomendação`). O teste `tests/reports_editor_extraction.js` reproduz o cenário sem atributos `data-secao` e confirma que as cinco seções são reconstruídas sem registrar conteúdo clínico no console.
+
+Também foi incrementado `ASSET_VERSION` de `2.1.0` para `2.1.1`. Sem essa alteração, o servidor poderia continuar entregando `reports-editor.js` antigo por cache mesmo depois de sincronizar a branch. O backend passou a registrar somente os tamanhos das seções em `save` e `assinar` quando o payload chega vazio, permitindo distinguir perda no navegador de conteúdo ausente no banco sem expor o texto do paciente nos logs.

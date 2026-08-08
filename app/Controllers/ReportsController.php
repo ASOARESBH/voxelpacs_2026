@@ -143,9 +143,17 @@ class ReportsController extends Controller
             ];
 
             // reports-autosave.js manda report_id, não id.
-            $resultado = $this->reportService->salvar(
-                (int) ($input['report_id'] ?? $input['id'] ?? 0), $secoes, $modo, $templateId
-            );
+            $reportId = (int) ($input['report_id'] ?? $input['id'] ?? 0);
+            $sectionLengths = [];
+            foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
+                $sectionLengths[$section] = mb_strlen(strip_tags((string) ($secoes[$section] ?? '')), 'UTF-8');
+            }
+            if (array_sum($sectionLengths) === 0) {
+                Logger::warning('ReportsController::save payload sem conteúdo', [
+                    'report_id' => $reportId, 'modo' => $modo, 'section_lengths' => $sectionLengths,
+                ]);
+            }
+            $resultado = $this->reportService->salvar($reportId, $secoes, $modo, $templateId);
 
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
