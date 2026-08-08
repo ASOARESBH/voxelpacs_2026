@@ -197,20 +197,52 @@
             </span>
 
             <!-- Badges de status (contadores) -->
-            <div class="topbar-badges d-none d-lg-flex">
-                <span class="topbar-badge" style="background:var(--info-bg);color:var(--info);" title="Estudos Novos">
-                    <span class="badge-count" id="cnt-novo">—</span> NOVO
+            <div class="topbar-badges d-none d-lg-flex" id="topbar-badges-wrap">
+                <span class="topbar-badge" style="background:#fff7ed;color:#ea580c;" title="Estudos aguardando laudo">
+                    <span class="badge-count" id="cnt-a-laudar">0</span> A LAUDAR
                 </span>
-                <span class="topbar-badge" style="background:var(--success-bg);color:var(--success);" title="Estudos Abertos">
-                    <span class="badge-count" id="cnt-aberto">—</span> ABERTO
+                <span class="topbar-badge" style="background:#eff6ff;color:#2563eb;" title="Laudos em andamento">
+                    <span class="badge-count" id="cnt-em-laudo">0</span> EM LAUDO
                 </span>
-                <span class="topbar-badge" style="background:#f5f3ff;color:#7c3aed;" title="Rascunhos">
-                    <span class="badge-count" id="cnt-rascunho">—</span> RASCUNHO
+                <span class="topbar-badge" style="background:#f5f3ff;color:#7c3aed;" title="Laudos em rascunho">
+                    <span class="badge-count" id="cnt-rascunho">0</span> RASCUNHO
                 </span>
-                <span class="topbar-badge" style="background:#f0fdfa;color:#0d9488;" title="Assinados">
-                    <span class="badge-count" id="cnt-assinado">—</span> ASSINADO
+                <span class="topbar-badge" style="background:#f0fdfa;color:#0d9488;" title="Laudos assinados">
+                    <span class="badge-count" id="cnt-assinado">0</span> ASSINADO
+                </span>
+                <span class="topbar-badge" style="background:#fdf4ff;color:#a21caf;" title="Laudos em Peer Review">
+                    <span class="badge-count" id="cnt-peer-review">0</span> PEER REVIEW
                 </span>
             </div>
+
+            <script>
+            (function() {
+                function atualizarBadgesTopbar() {
+                    fetch('/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(function(d) {
+                        if (!d) return;
+                        var m = {
+                            'cnt-a-laudar':   (d.a_laudar   || 0),
+                            'cnt-em-laudo':   (d.em_laudo   || 0),
+                            'cnt-rascunho':   (d.rascunho   || 0),
+                            'cnt-assinado':   ((d.assinado  || 0) + (d.liberado || 0)),
+                            'cnt-peer-review':(d.peer_review || 0),
+                        };
+                        Object.keys(m).forEach(function(id) {
+                            var el = document.getElementById(id);
+                            if (el) el.textContent = m[id];
+                        });
+                    })
+                    .catch(function() {});
+                }
+                // Carregar imediatamente e a cada 60 segundos
+                document.addEventListener('DOMContentLoaded', atualizarBadgesTopbar);
+                setInterval(atualizarBadgesTopbar, 60000);
+                // Expor para atualização manual após ações (assumir, assinar, liberar)
+                window.atualizarBadgesTopbar = atualizarBadgesTopbar;
+            })();
+            </script>
 
             <!-- Usuário logado -->
             <div class="d-flex align-items-center gap-2 ms-auto">
