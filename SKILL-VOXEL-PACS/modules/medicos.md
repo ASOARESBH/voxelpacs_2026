@@ -1,5 +1,7 @@
 # Módulo — Médicos (Cadastros → Médicos)
 
+> ⚠️ **Antes de mexer nas abas desta tela**: ler `modules/editar-medico.md` — incidente de 2026-08-08 onde um segundo sistema de tab-switching foi criado do zero por engano (feature de Máscaras), duplicando a barra de abas e escondendo o conteúdo de Copilot/Máscaras. O mecanismo de abas já existente é Bootstrap 5 (`data-bs-toggle="tab"`), não recriar.
+
 ## Propósito
 CRUD de médicos do tenant (`/medicos`) — cadastro, edição, vinculação a conta de usuário/unidades DICOM, e configuração do VOXEL Copilot (modo de laudário externo + token de integração). É a **implementação de referência de CRUD do projeto**: Controller fino, sem SQL/regra de negócio, delegando tudo a Service/Repository — padrão a copiar para outros módulos que ainda fazem PDO direto no Controller (ex. `EstudosController`, ver `modules/worklist-estudos.md`).
 

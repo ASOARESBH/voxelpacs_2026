@@ -156,34 +156,6 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     height: 13px;
 }
 
-/* ── Navegação por abas ─────────────────────────────────────────────────────────────────── */
-.medico-tabs-nav {
-    display: flex;
-    gap: .25rem;
-    margin-bottom: 1.25rem;
-    border-bottom: 2px solid var(--pacs-border, #2d3244);
-    padding-bottom: 0;
-}
-.medico-tab-btn {
-    padding: .55rem 1.1rem;
-    font-size: .82rem;
-    font-weight: 600;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    color: var(--pacs-text-muted, #8892a4);
-    cursor: pointer;
-    border-radius: 6px 6px 0 0;
-    transition: color .15s, border-color .15s;
-}
-.medico-tab-btn:hover { color: var(--pacs-text, #e2e8f0); }
-.medico-tab-btn.active {
-    color: var(--pacs-primary, #1a56db);
-    border-bottom-color: var(--pacs-primary, #1a56db);
-    background: rgba(26,86,219,.06);
-}
-
 /* ── Card de máscara ─────────────────────────────────────────────────────────────────── */
 .mascara-card {
     background: var(--pacs-card-bg, #1e2330);
@@ -353,21 +325,6 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
             <li><?= htmlspecialchars($erro) ?></li>
         <?php endforeach; ?>
     </ul>
-</div>
-<?php endif; ?>
-
-<!-- ── Navegação por abas ───────────────────────────────────────────── -->
-<?php if ($isEdit): ?>
-<div class="medico-tabs-nav" id="medicoTabsNav">
-    <button type="button" class="medico-tab-btn active" data-tab="dados">
-        <i class="fa fa-id-card me-1"></i> Dados do Médico
-    </button>
-    <button type="button" class="medico-tab-btn" data-tab="copilot">
-        <i class="fa fa-robot me-1"></i> Copilot do Laudo
-    </button>
-    <button type="button" class="medico-tab-btn" data-tab="mascaras">
-        <i class="fa fa-layer-group me-1"></i> Máscaras
-    </button>
 </div>
 <?php endif; ?>
 
@@ -916,39 +873,11 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     </div><!-- fecha #aba-copilot -->
 
     <!-- ══════════════════════════════════════════════════════════════════
-         ABA — MÁSCARAS (placeholder — sem funcionalidade ainda)
+         ABA — MÁSCARAS (CRUD completo — reconectado aqui após o bug de
+         duplicação de abas; conteúdo vinha renderizando fora do form e
+         nunca ficava visível, ver modules/editar-medico.md)
     ══════════════════════════════════════════════════════════════════ -->
     <div class="tab-pane fade<?= $abaAtiva === 'mascaras' ? ' show active' : '' ?>" id="aba-mascaras" role="tabpanel">
-        <div class="medico-mascaras-empty">
-            <i class="fa fa-layer-group"></i>
-            <h3><?= htmlspecialchars(t('medicos.form.mascaras_vazio_titulo')) ?></h3>
-            <p><?= htmlspecialchars(t('medicos.form.mascaras_vazio_texto')) ?></p>
-        </div>
-    </div><!-- fecha #aba-mascaras -->
-
-    </div><!-- fecha .tab-content -->
-<?php endif; ?>
-
-    <!-- ══════════════════════════════════════════════════════════════════
-         RODAPÉ — BOTÕES
-    ══════════════════════════════════════════════════════════════════ -->
-    <div class="medico-form-footer">
-        <a href="/medicos" class="btn-pacs-outline">
-            <i class="fa fa-arrow-left me-1"></i> Cancelar
-        </a>
-        <button type="submit" class="btn-pacs-primary" id="btnSalvar">
-            <i class="fa fa-floppy-disk me-1"></i>
-            <?= $isEdit ? 'Salvar Alterações' : 'Cadastrar Médico' ?>
-        </button>
-    </div>
-
-</div>
-</form>
-
-<?php if ($isEdit): ?>
-<!-- ── ABA MÁSCARAS ─────────────────────────────────────────────────────────────────── -->
-<div id="tab-mascaras" style="display:none;">
-    <div class="medico-form-card">
         <div class="medico-section">
             <div class="medico-section-header" style="justify-content:space-between;">
                 <span><i class="fa fa-layer-group"></i> Máscaras de Laudo</span>
@@ -992,15 +921,26 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                 </div>
             </div>
         </div>
+    </div><!-- fecha #aba-mascaras -->
 
-        <div class="medico-form-footer">
-            <a href="/medicos" class="btn-pacs-outline">
-                <i class="fa fa-arrow-left me-1"></i> Cancelar
-            </a>
-        </div>
-    </div>
-</div>
+    </div><!-- fecha .tab-content -->
 <?php endif; ?>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         RODAPÉ — BOTÕES
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="medico-form-footer">
+        <a href="/medicos" class="btn-pacs-outline">
+            <i class="fa fa-arrow-left me-1"></i> Cancelar
+        </a>
+        <button type="submit" class="btn-pacs-primary" id="btnSalvar">
+            <i class="fa fa-floppy-disk me-1"></i>
+            <?= $isEdit ? 'Salvar Alterações' : 'Cadastrar Médico' ?>
+        </button>
+    </div>
+
+</div>
+</form>
 
 <!-- ── MODAL EDITOR DE MÁSCARA ─────────────────────────────────────────────────────────────────── -->
 <div id="modalMascara" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);overflow-y:auto;">
@@ -1438,36 +1378,11 @@ function toggleWorkspaceLaudo(el) {
 const MEDICO_ID_MASCARAS = <?= (int) $medicoId ?>;
 let _mascarasAll = [];
 
-// Controle de abas
-document.addEventListener('DOMContentLoaded', function() {
-    const tabBtns = document.querySelectorAll('.medico-tab-btn');
-    if (!tabBtns.length) return;
-
-    tabBtns.forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            tabBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const tab = btn.dataset.tab;
-            // Mostrar/ocultar conteúdo
-            document.getElementById('formMedico').style.display = (tab === 'dados') ? '' : 'none';
-            const tabMascaras = document.getElementById('tab-mascaras');
-            if (tabMascaras) tabMascaras.style.display = (tab === 'mascaras') ? '' : 'none';
-            // Seções Copilot e Workspace dentro do form
-            const secCopilot = document.getElementById('secaoCopilot');
-            if (secCopilot) secCopilot.style.display = (tab === 'copilot') ? '' : 'none';
-            if (tab === 'mascaras') carregarMascaras();
-        });
-    });
-
-    // Verificar se URL tem ?tab=mascaras
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('tab') === 'mascaras') {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        document.querySelector('[data-tab="mascaras"]')?.classList.add('active');
-        document.getElementById('formMedico').style.display = 'none';
-        const tm = document.getElementById('tab-mascaras');
-        if (tm) { tm.style.display = ''; carregarMascaras(); }
-    }
+// Carrega a lista quando a aba "Máscaras" (Bootstrap tabs) é aberta — em vez
+// de recarregar toda vez, evita chamada redundante se o médico só olhar e
+// voltar pra outra aba sem nunca abrir Máscaras.
+document.getElementById('tab-mascaras')?.addEventListener('shown.bs.tab', function () {
+    carregarMascaras();
 });
 
 function carregarMascaras() {
