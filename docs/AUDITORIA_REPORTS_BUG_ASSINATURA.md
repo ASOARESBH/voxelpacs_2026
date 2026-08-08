@@ -44,3 +44,12 @@ Foi criada `database/migrations/2026-08-08_reports_workflow_prerequisites.sql`. 
 ### Verificações
 
 Foram executados lint PHP nos Controllers, Services, Repositories, views, rotas, migration e testes; `node --check` em todos os módulos JavaScript do Reports; contrato estático de rotas, CSRF, tenant, templates, conteúdo, save→sign, assinatura atômica, Liberar e PDF; e `git diff --check`. Todos passaram. A validação ponta a ponta contra o banco real e a câmera/navegador autenticado continuam dependentes do deploy da migration e da execução no servidor do usuário.
+
+
+## Correção do autotexto — 2026-08-08
+
+O log posterior mostrou que o banco publicado também não possuía `report_autotext.texto_sugerido`. O fallback anterior ainda tentava quatro SELECTs contra schemas incompatíveis e registrava um warning para cada tentativa, embora essa divergência fosse esperada entre as migrations históricas.
+
+O endpoint `ReportsController::autotextSearch()` agora executa `SHOW COLUMNS FROM report_autotext` uma única vez e escolhe a consulta por uma lista de colunas reconhecidas: `gatilho/conteudo`, `gatilho/texto_sugerido`, `nome/conteudo` ou `chave/texto`. A query só inclui filtros `ativo`, `tenant_id`, `usuario_id` e `modalidade` quando as respectivas colunas existem. O retorno é sempre normalizado para `{ id, gatilho, titulo, texto_sugerido, conteudo }`, que é o contrato consumido pelo autocomplete.
+
+Com isso, o schema HostGator que possui `nome`, `modalidade` e `conteudo` deixa de tentar selecionar `texto_sugerido`, os warnings esperados deixam de ser emitidos e um schema realmente desconhecido gera apenas um log de erro único, sem bloquear o editor ou a assinatura.

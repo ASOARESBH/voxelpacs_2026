@@ -582,63 +582,71 @@ class ReportsController extends Controller
         $tenantId = Auth::tenantId();
         $userId = Auth::userId();
         $like = '%' . $q . '%';
-        $items = null;
+        $items = [];
 
         try {
             $pdo = \App\Core\Database::getInstance();
-            $queries = [
-                [
-                    "SELECT id, gatilho, gatilho AS titulo, texto_sugerido AS conteudo, modalidade
-                     FROM report_autotext
-                     WHERE ativo = 1
-                       AND (tenant_id IS NULL OR tenant_id = :tid)
-                       AND (usuario_id IS NULL OR usuario_id = :uid)
-                       AND (gatilho LIKE :q OR :empty = '')
-                       AND (modalidade IS NULL OR modalidade = :modalidade)
-                     ORDER BY id DESC LIMIT 50",
-                    [':tid' => $tenantId, ':uid' => $userId, ':q' => $like, ':empty' => $q, ':modalidade' => $modalidade],
-                ],
-                [
-                    "SELECT id, gatilho, gatilho AS titulo, texto_sugerido AS conteudo, modalidade
-                     FROM report_autotext
-                     WHERE ativo = 1
-                       AND (tenant_id IS NULL OR tenant_id = :tid)
-                       AND (gatilho LIKE :q OR :empty = '')
-                       AND (modalidade IS NULL OR modalidade = :modalidade)
-                     ORDER BY id DESC LIMIT 50",
-                    [':tid' => $tenantId, ':q' => $like, ':empty' => $q, ':modalidade' => $modalidade],
-                ],
-                [
-                    "SELECT id, gatilho, titulo, conteudo, modalidade
-                     FROM report_autotext
-                     WHERE ativo = 1
-                       AND (tenant_id IS NULL OR tenant_id = :tid)
-                       AND (gatilho LIKE :q OR titulo LIKE :q2 OR :empty = '')
-                       AND (modalidade IS NULL OR modalidade = :modalidade)
-                     ORDER BY id DESC LIMIT 50",
-                    [':tid' => $tenantId, ':q' => $like, ':q2' => $like, ':empty' => $q, ':modalidade' => $modalidade],
-                ],
-                [
-                    "SELECT id, chave AS gatilho, chave AS titulo, texto AS conteudo
-                     FROM report_autotext
-                     WHERE tenant_id = :tid AND (chave LIKE :q OR :empty = '')
-                     ORDER BY id DESC LIMIT 50",
-                    [':tid' => $tenantId, ':q' => $like, ':empty' => $q],
-                ],
-            ];
-            foreach ($queries as [$sql, $params]) {
-                try {
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute($params);
-                    $items = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-                    break;
-                } catch (\PDOException $queryError) {
-                    Logger::warning('ReportsController::autotextSearch tentando schema alternativo', [
-                        'error' => $queryError->getMessage(),
-                    ]);
-                }
+            // Descobre o schema uma única vez. Assim, bancos com a versão
+            // HostGator (`nome/conteudo`) não geram warnings por tentativas
+            // contra colunas de outra versão (`texto_sugerido`/`gatilho`).
+            $columns = [];
+            foreach ($pdo->query('SHOW COLUMNS FROM report_autotext')->fetchAll(\PDO::FETCH_ASSOC) as $column) {
+                $field = strtolower((string) ($column['Field'] ?? $column['field'] ?? ''));
+                if ($field !== '') $columns[$field] = true;
             }
-            if ($items === null) throw new \RuntimeException('Nenhum schema de autotexto compatível.');
+            $has = static fn (string $name): bool => isset($columns[$name]);
+
+            if (!$has('id')) throw new \RuntimeException('Tabela report_autotext sem coluna id.');
+
+            if ($has('gatilho') && $has('conteudo')) {
+                $triggerColumn = 'gatilho';
+                $titleColumn = $has('titulo') ? 'titulo' : 'gatilho';
+                $contentColumn = 'conteudo';
+            } elseif ($has('gatilho') && $has('texto_sugerido')) {
+                $triggerColumn = 'gatilho';
+                $titleColumn = $has('titulo') ? 'titulo' : 'gatilho';
+                $contentColumn = 'texto_sugerido';
+            } elseif ($has('nome') && $has('conteudo')) {
+                // Schema pendente do HostGator: nome/modalidade/conteudo.
+                $triggerColumn = 'nome';
+                $titleColumn = 'nome';
+                $contentColumn = 'conteudo';
+            } elseif ($has('chave') && $has('texto')) {
+                $triggerColumn = 'chave';
+                $titleColumn = 'chave';
+                $contentColumn = 'texto';
+            } else {
+                throw new \RuntimeException('Schema report_autotext sem colunas de conteúdo reconhecidas.');
+            }
+
+            $where = [];
+            $params = [];
+            if ($has('ativo')) $where[] = 'ativo = 1';
+            if ($has('tenant_id')) {
+                $where[] = '(tenant_id IS NULL OR tenant_id = :tenant_id)';
+                $params[':tenant_id'] = $tenantId;
+            }
+            if ($has('usuario_id')) {
+                $where[] = '(usuario_id IS NULL OR usuario_id = :usuario_id)';
+                $params[':usuario_id'] = $userId;
+            }
+            if ($has('modalidade') && $modalidade !== '') {
+                $where[] = '(modalidade IS NULL OR modalidade = :modalidade)';
+                $params[':modalidade'] = $modalidade;
+            }
+            if ($q !== '') {
+                $where[] = "({$triggerColumn} LIKE :query_trigger OR {$titleColumn} LIKE :query_title)";
+                $params[':query_trigger'] = $like;
+                $params[':query_title'] = $like;
+            }
+
+            $sql = "SELECT id, {$triggerColumn} AS gatilho, {$titleColumn} AS titulo, {$contentColumn} AS conteudo"
+                 . " FROM report_autotext"
+                 . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+                 . ' ORDER BY id DESC LIMIT 50';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $items = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::autotextSearch error', [
                 'msg' => $e->getMessage(), 'tenant_id' => $tenantId,

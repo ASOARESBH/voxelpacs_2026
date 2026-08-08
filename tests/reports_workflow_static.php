@@ -50,6 +50,10 @@ $expect(substr_count($controller, 'validarCsrf') >= 5, 'Endpoints de escrita do 
 $expect(str_contains($controller, 'AND r.tenant_id = :tenant_id'), 'Atualização de situação não contém filtro tenant.');
 $expect(str_contains($controller, 'public function aiGenerate'), 'Controller não expõe aiGenerate.');
 $expect(str_contains($controller, 'normalizarTemplate'), 'Controller não normaliza templates entre schemas.');
+$expect(str_contains($controller, "SHOW COLUMNS FROM report_autotext"), 'Autotexto não detecta o schema real antes da consulta.');
+$expect(str_contains($controller, 'contentColumn') && str_contains($controller, 'texto_sugerido'), 'Autotexto não possui fallback de coluna de conteúdo.');
+$expect(str_contains($controller, 'Schema report_autotext sem colunas de conteúdo reconhecidas'), 'Autotexto não registra schema desconhecido.');
+$expect(!str_contains($controller, 'ReportsController::autotextSearch tentando schema alternativo'), 'Autotexto ainda registra warnings por tentativas SQL esperadas.');
 
 $expect(str_contains($service, 'extrairSecoesDoReport'), 'Service não centraliza extração de seções.');
 $expect(str_contains($service, 'secoesTemConteudo'), 'Service não possui validação de conteúdo real.');
