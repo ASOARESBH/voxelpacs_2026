@@ -717,6 +717,8 @@ $periodoLabel = [
                     </div>
                     <input type="file" id="pedidoFile" name="pedido" class="visually-hidden"
                            accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,application/pdf,image/*">
+                    <input type="file" id="pedidoCameraFile" class="visually-hidden"
+                           accept="image/*" capture="environment" aria-label="<?= htmlspecialchars(t('pedido_medico.acao.camera')) ?>">
                     <div id="pedidoArquivoSelecionado" class="pedido-arquivo-selecionado" style="display:none;"></div>
                     <div id="pedidoErro" class="alert alert-danger py-2 small" style="display:none;"></div>
                 </div>
@@ -1229,6 +1231,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const modal       = new bootstrap.Modal(modalEl);
     const form        = document.getElementById('pedidoForm');
     const fileInput   = document.getElementById('pedidoFile');
+    const cameraInput = document.getElementById('pedidoCameraFile');
     const importarBtn  = document.getElementById('btnPedidoImportar');
     const cameraBtn    = document.getElementById('btnPedidoCamera');
     const salvarBtn    = document.getElementById('btnPedidoSalvar');
@@ -1239,6 +1242,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const erroEl       = document.getElementById('pedidoErro');
     const csrf         = form.querySelector('input[name="csrf"]');
     let estudoAtualId  = 0;
+    let cameraFile     = null;
 
     const I18N_PEDIDO = {
         tamanho: <?= json_encode(t('pedido_medico.js.tamanho')) ?>,
@@ -1294,6 +1298,8 @@ document.addEventListener('DOMContentLoaded', function () {
             form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(estudoAtualId) + '/pedido';
             pacienteEl.textContent = button.dataset.paciente || '—';
             fileInput.value = '';
+            if (cameraInput) cameraInput.value = '';
+            cameraFile = null;
             fileInput.removeAttribute('capture');
             selecionadoEl.textContent = '';
             selecionadoEl.style.display = 'none';
@@ -1305,16 +1311,27 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     importarBtn.addEventListener('click', function () {
+        cameraFile = null;
+        if (cameraInput) cameraInput.value = '';
         fileInput.removeAttribute('capture');
         fileInput.click();
     });
 
     cameraBtn.addEventListener('click', function () {
-        fileInput.setAttribute('capture', 'environment');
-        fileInput.click();
+        cameraFile = null;
+        fileInput.value = '';
+        if (!cameraInput) {
+            fileInput.setAttribute('capture', 'environment');
+            fileInput.click();
+            return;
+        }
+        cameraInput.value = '';
+        cameraInput.click();
     });
 
     fileInput.addEventListener('change', function () {
+        cameraFile = null;
+        if (cameraInput) cameraInput.value = '';
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
             salvarBtn.disabled = true;
@@ -1327,10 +1344,23 @@ document.addEventListener('DOMContentLoaded', function () {
         limparErro();
     });
 
+    if (cameraInput) {
+        cameraInput.addEventListener('change', function () {
+            const file = cameraInput.files && cameraInput.files[0];
+            if (!file) return;
+            cameraFile = file;
+            fileInput.value = '';
+            selecionadoEl.textContent = I18N_PEDIDO.selecionado + ': ' + file.name + ' (' + formatarTamanho(file.size) + ')';
+            selecionadoEl.style.display = 'flex';
+            salvarBtn.disabled = false;
+            limparErro();
+        });
+    }
+
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
         limparErro();
-        if (!fileInput.files || !fileInput.files.length) {
+        if ((!fileInput.files || !fileInput.files.length) && !cameraFile) {
             mostrarErro(I18N_PEDIDO.nenhumArquivo);
             return;
         }
@@ -1339,10 +1369,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const textoOriginal = salvarBtn.innerHTML;
         salvarBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + <?= json_encode(t('pedido_medico.js.salvando')) ?>;
         try {
+            const body = new FormData(form);
+            if (cameraFile) {
+                body.set('pedido', cameraFile, cameraFile.name || 'pedido-camera.jpg');
+            }
             const response = await fetch(form.action, {
                 method: 'POST',
                 headers: {'X-Requested-With': 'XMLHttpRequest'},
-                body: new FormData(form)
+                body: body
             });
             const data = await response.json();
             if (!response.ok || !data.ok) throw new Error(data.msg || I18N_PEDIDO.comunicacao);

@@ -39,7 +39,10 @@ $expect(str_contains($controller, 'LEFT JOIN bi_pacs_estudos_pedidos') , 'Join d
 $expect(str_contains($controller, "public function gestao(): void") , 'Ação gestao() ausente no Controller de Estudos.');
 $expect(str_contains($view, "t('pedido_medico.coluna')") , 'Coluna PEDIDO não está internacionalizada.');
 $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi renderizada.');
-$expect(str_contains($view, "setAttribute('capture', 'environment')") , 'Fluxo de câmera não está configurado.');
+$expect(str_contains($view, "setAttribute('capture', 'environment')"), 'Fallback de câmera não está configurado.');
+$expect(str_contains($view, 'id="pedidoCameraFile"') && str_contains($view, 'accept="image/*" capture="environment"'), 'Input nativo exclusivo de câmera ausente.');
+$expect(str_contains($view, 'cameraInput.click()'), 'Botão Câmera não aciona o input exclusivo.');
+$expect(str_contains($view, "body.set('pedido', cameraFile"), 'Foto capturada não é anexada ao campo pedido.');
 $expect(str_contains($view, 'new FormData(form)') , 'Upload multipart não está implementado.');
 $expect(str_contains($view, '<?php if ($modoGestao): ?>'), 'Branch administrativa ausente.');
 

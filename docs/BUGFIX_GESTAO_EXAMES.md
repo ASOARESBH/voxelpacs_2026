@@ -15,3 +15,9 @@ O par de tags aninhado foi removido. O callback da modal permanece condicionado 
 ## Validação
 
 A correção foi validada com lint PHP, teste de contrato da Gestão de Exames, teste de MIME/path privado e extração do JavaScript efetivamente emitido pela view seguida de `node --check`. O teste de contrato também impede o retorno de tags `<script>` aninhadas e da URL incorreta de contadores.
+
+## Ajuste posterior — captura pela câmera
+
+O botão **Câmera** agora utiliza um input exclusivo com `accept="image/*"` e `capture="environment"`. Isso evita que a lista mista de PDF e imagens seja interpretada pelo navegador móvel apenas como importação de arquivo. A foto selecionada é mantida em memória como `File` e inserida no `FormData` com `body.set('pedido', cameraFile, ...)`, preservando o endpoint e a validação de MIME existentes. O botão **Importar arquivo** continua usando o input geral para PDF e imagens.
+
+Em iOS e Android, o navegador ainda pode solicitar autorização de câmera ou exibir um menu do próprio sistema conforme a política do dispositivo. A página precisa estar em HTTPS, como ocorre no ambiente publicado, e o usuário precisa permitir o acesso quando solicitado.
