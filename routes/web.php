@@ -80,6 +80,15 @@ Router::post('/api/medicos/{medicoId}/templates/{id}/excluir', 'TemplatesControl
 Router::get('/api/templates/buscar',                       'TemplatesController@buscar');
 Router::get('/api/templates/auto',                         'TemplatesController@autoCarregar');
 
+// ── Assinatura do Médico (aba "Assinatura" em /medicos/{id}/edit) ──────────
+// Router só suporta get()/post() — nunca DELETE/PUT (ver diagnostics/pendencias-conhecidas.md).
+Router::get('/medicos/{id}/assinatura/listar',          'MedicoAssinaturaController@listar');
+Router::post('/medicos/{id}/assinatura/imagem/upload',  'MedicoAssinaturaController@uploadImagem');
+Router::post('/medicos/{id}/assinatura/livre/salvar',   'MedicoAssinaturaController@salvarLivre');
+Router::get('/medicos/{id}/assinatura/{tipo}/preview',  'MedicoAssinaturaController@preview');
+Router::post('/medicos/{id}/assinatura/{tipo}/ativar',  'MedicoAssinaturaController@ativar');
+Router::post('/medicos/{id}/assinatura/{tipo}/desativar','MedicoAssinaturaController@desativar');
+
 Router::get('/unidades',               'UnidadesController@index');
 Router::get('/unidades/create',        'UnidadesController@create');
 Router::post('/unidades',              'UnidadesController@store');

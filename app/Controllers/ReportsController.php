@@ -122,19 +122,26 @@ class ReportsController extends Controller
         }
 
         try {
-            $sucesso = $this->reportService->saveReport([
-                'id'                 => (int) ($input['id'] ?? 0),
-                'estudo_id'          => (int) ($input['estudo_id'] ?? 0),
-                'secao_exame'        => $input['secao_exame'] ?? null,
-                'secao_tecnica'      => $input['secao_tecnica'] ?? null,
-                'secao_achados'      => $input['secao_achados'] ?? null,
-                'secao_conclusao'    => $input['secao_conclusao'] ?? null,
-                'secao_recomendacao' => $input['secao_recomendacao'] ?? null,
-                'tempo_decorrido'    => (int) ($input['tempo_decorrido'] ?? 0),
-                'is_manual'          => (bool) ($input['is_manual'] ?? false),
-            ]);
+            // ReportService::salvar() é posicional (reportId, secoes, modo, templateId),
+            // não aceita array único — ver diagnostics/pendencias-conhecidas.md (P0 2026-08-08).
+            $modo   = ($input['is_manual'] ?? false) ? 'salvar' : 'auto';
+            $secoes = [
+                'exame'        => $input['secao_exame']        ?? '',
+                'tecnica'      => $input['secao_tecnica']      ?? '',
+                'achados'      => $input['secao_achados']      ?? '',
+                'conclusao'    => $input['secao_conclusao']    ?? '',
+                'recomendacao' => $input['secao_recomendacao'] ?? '',
+            ];
 
-            $this->json(['ok' => $sucesso, 'saved_at' => date('H:i:s')]);
+            $resultado = $this->reportService->salvar((int) ($input['id'] ?? 0), $secoes, $modo);
+
+            $msg = match ($resultado['error'] ?? null) {
+                'report_nao_encontrado'           => 'Laudo não encontrado.',
+                'report_assinado_somente_leitura' => 'Este laudo já foi assinado e não pode mais ser editado.',
+                default                            => null, // sucesso — sem erro
+            };
+
+            $this->json(['ok' => $resultado['ok'], 'saved_at' => date('H:i:s'), 'msg' => $msg]);
         } catch (\Exception $e) {
             Logger::error('ReportsController::save error', ['msg' => $e->getMessage()]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
@@ -160,16 +167,23 @@ class ReportsController extends Controller
         }
 
         try {
-            $this->reportService->signReport([
-                'id'                 => (int) ($input['id'] ?? 0),
-                'estudo_id'          => (int) ($input['estudo_id'] ?? 0),
-                'secao_exame'        => $input['secao_exame'] ?? null,
-                'secao_tecnica'      => $input['secao_tecnica'] ?? null,
-                'secao_achados'      => $input['secao_achados'] ?? null,
-                'secao_conclusao'    => $input['secao_conclusao'] ?? null,
-                'secao_recomendacao' => $input['secao_recomendacao'] ?? null,
-                'senha'              => $input['senha'] ?? '',
-            ]);
+            // ReportService::assinar() é posicional (reportId, senha, crm),
+            // não aceita array único — ver diagnostics/pendencias-conhecidas.md (P0 2026-08-08).
+            $resultado = $this->reportService->assinar(
+                (int) ($input['id'] ?? 0),
+                (string) ($input['senha'] ?? ''),
+                $input['crm'] ?? null
+            );
+
+            if (!$resultado['ok']) {
+                $msg = match ($resultado['error'] ?? null) {
+                    'senha_invalida'         => 'Senha incorreta.',
+                    'report_nao_encontrado'  => 'Laudo não encontrado.',
+                    default                   => 'Erro ao assinar.', // rede de segurança — não deveria ocorrer, os 2 códigos acima cobrem os retornos reais do método
+                };
+                $this->json(['ok' => false, 'msg' => $msg], 422);
+                return;
+            }
 
             $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.']);
         } catch (\Exception $e) {

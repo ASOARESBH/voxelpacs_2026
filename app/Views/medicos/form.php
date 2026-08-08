@@ -11,7 +11,7 @@ $estados          = \App\Core\Estados::all();
 
 // Aba inicial (só relevante em modo edição, onde a tela usa abas) — aceita
 // ?aba=dados|copilot|mascaras, caindo em 'dados' para qualquer valor inválido/ausente.
-$abasValidas = ['dados', 'copilot', 'mascaras'];
+$abasValidas = ['dados', 'copilot', 'mascaras', 'assinatura'];
 $abaAtiva    = in_array($_GET['aba'] ?? '', $abasValidas, true) ? $_GET['aba'] : 'dados';
 
 // Helper para preencher campos com valor do banco ou do POST anterior
@@ -297,6 +297,28 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     max-width: 380px;
     margin: 0;
 }
+
+/* ── Aba Assinatura ───────────────────────────────────────────────────── */
+.ass-bloco-conteudo { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; align-items: start; }
+@media (max-width: 720px) { .ass-bloco-conteudo { grid-template-columns: 1fr; } }
+.ass-preview {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .5rem; height: 140px; border: 1px dashed var(--pacs-border, #3a3f4b); border-radius: 8px;
+    background: #fff; color: #9ca3af; font-size: .75rem; overflow: hidden; padding: .5rem;
+}
+.ass-preview i { font-size: 1.5rem; color: var(--pacs-border, #3a3f4b); }
+.ass-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ass-controles { display: flex; flex-direction: column; gap: .5rem; }
+.ass-botoes { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .25rem; }
+.ass-canvas { background: #fff; border: 1px solid var(--pacs-border, #3a3f4b); border-radius: 6px; cursor: crosshair; touch-action: none; max-width: 100%; }
+.ass-badge-ativa {
+    display: inline-flex; align-items: center; gap: .3rem; background: rgba(34,197,94,.12); color: #22c55e;
+    border: 1px solid rgba(34,197,94,.3); border-radius: 20px; padding: .15rem .65rem; font-size: .72rem; font-weight: 600;
+}
+.ass-badge-em-breve {
+    display: inline-flex; margin-left: .6rem; background: rgba(148,163,184,.15); color: #94a3b8;
+    border-radius: 20px; padding: .1rem .6rem; font-size: .68rem; font-weight: 600; text-transform: none; letter-spacing: 0;
+}
 </style>
 
 <!-- ── Cabeçalho da página ─────────────────────────────────────────────── -->
@@ -360,6 +382,14 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                         role="tab" aria-controls="aba-mascaras">
                     <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('medicos.form.aba_mascaras')) ?>
                     <span class="medico-tab-badge" id="badge-tab-mascaras" style="display:none;"></span>
+                </button>
+            </li>
+            <li class="medico-tab-item" role="presentation">
+                <button class="medico-tab-btn <?= $abaAtiva === 'assinatura' ? 'active' : '' ?>" id="tab-assinatura"
+                        data-bs-toggle="tab" data-bs-target="#aba-assinatura" type="button"
+                        role="tab" aria-controls="aba-assinatura">
+                    <i class="fa fa-signature"></i> <?= htmlspecialchars(t('medicos.form.aba_assinatura')) ?>
+                    <span class="medico-tab-badge" id="badge-tab-assinatura" style="display:none;"></span>
                 </button>
             </li>
         </ul>
@@ -923,6 +953,95 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
         </div>
     </div><!-- fecha #aba-mascaras -->
 
+    <!-- ══════════════════════════════════════════════════════════════════
+         ABA — ASSINATURA (imagem / livre / certificado provisionado)
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade<?= $abaAtiva === 'assinatura' ? ' show active' : '' ?>" id="aba-assinatura" role="tabpanel">
+        <div id="assinaturaFeedback" style="display:none;margin-bottom:1rem;"></div>
+
+        <!-- Bloco 1 — Imagem -->
+        <div class="medico-section">
+            <div class="medico-section-header" style="justify-content:space-between;">
+                <span><i class="fa fa-image"></i> <?= htmlspecialchars(t('medicos.form.assinatura_bloco_imagem')) ?></span>
+                <span id="assStatusImagem"></span>
+            </div>
+            <div class="ass-bloco-conteudo">
+                <div class="ass-preview" id="assPreviewImagem">
+                    <i class="fa fa-signature"></i>
+                    <span><?= htmlspecialchars(t('medicos.form.assinatura_sem_preview')) ?></span>
+                </div>
+                <div class="ass-controles">
+                    <label class="medico-label"><?= htmlspecialchars(t('medicos.form.assinatura_upload_label')) ?></label>
+                    <input type="file" id="assinaturaImagemInput" class="medico-input" accept=".jpg,.jpeg,image/jpeg">
+                    <span class="medico-hint"><?= htmlspecialchars(t('medicos.form.assinatura_upload_hint')) ?></span>
+                    <div class="ass-botoes">
+                        <button type="button" class="btn-pacs-primary" onclick="uploadAssinaturaImagem()" id="btnUploadImagem">
+                            <i class="fa fa-upload me-1"></i> <?= htmlspecialchars(t('medicos.form.assinatura_enviar')) ?>
+                        </button>
+                        <button type="button" class="btn-pacs-outline" onclick="ativarAssinatura('imagem')" id="btnAtivarImagem" style="display:none;">
+                            <?= htmlspecialchars(t('medicos.form.assinatura_ativar')) ?>
+                        </button>
+                        <button type="button" class="btn-pacs-outline" onclick="desativarAssinatura('imagem')" id="btnDesativarImagem" style="display:none;">
+                            <?= htmlspecialchars(t('medicos.form.assinatura_desativar')) ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloco 2 — Livre (canvas) -->
+        <div class="medico-section">
+            <div class="medico-section-header" style="justify-content:space-between;">
+                <span><i class="fa fa-pen-nib"></i> <?= htmlspecialchars(t('medicos.form.assinatura_bloco_livre')) ?></span>
+                <span id="assStatusLivre"></span>
+            </div>
+            <div class="ass-bloco-conteudo">
+                <div class="ass-preview" id="assPreviewLivre">
+                    <i class="fa fa-signature"></i>
+                    <span><?= htmlspecialchars(t('medicos.form.assinatura_sem_preview')) ?></span>
+                </div>
+                <div class="ass-controles">
+                    <label class="medico-label"><?= htmlspecialchars(t('medicos.form.assinatura_desenhar_label')) ?></label>
+                    <canvas id="assinaturaCanvas" class="ass-canvas" width="360" height="140"></canvas>
+                    <div class="ass-botoes">
+                        <button type="button" class="btn-pacs-outline" onclick="limparCanvasAssinatura()">
+                            <i class="fa fa-eraser me-1"></i> <?= htmlspecialchars(t('medicos.form.assinatura_limpar')) ?>
+                        </button>
+                        <button type="button" class="btn-pacs-primary" onclick="salvarAssinaturaLivre()" id="btnSalvarLivre">
+                            <i class="fa fa-floppy-disk me-1"></i> <?= htmlspecialchars(t('medicos.form.assinatura_salvar')) ?>
+                        </button>
+                        <button type="button" class="btn-pacs-outline" onclick="ativarAssinatura('livre')" id="btnAtivarLivre" style="display:none;">
+                            <?= htmlspecialchars(t('medicos.form.assinatura_ativar')) ?>
+                        </button>
+                        <button type="button" class="btn-pacs-outline" onclick="desativarAssinatura('livre')" id="btnDesativarLivre" style="display:none;">
+                            <?= htmlspecialchars(t('medicos.form.assinatura_desativar')) ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloco 3 — Certificado digital (provisionado, não funcional) -->
+        <div class="medico-section">
+            <div class="medico-section-header">
+                <i class="fa fa-certificate"></i> <?= htmlspecialchars(t('medicos.form.assinatura_bloco_certificado')) ?>
+                <span class="ass-badge-em-breve"><?= htmlspecialchars(t('medicos.form.assinatura_em_breve')) ?></span>
+            </div>
+            <p class="medico-hint" style="margin-bottom:1rem;"><?= htmlspecialchars(t('medicos.form.assinatura_certificado_texto')) ?></p>
+            <div class="ass-controles">
+                <label class="medico-label"><?= htmlspecialchars(t('medicos.form.assinatura_certificado_provedor')) ?></label>
+                <select class="medico-select" disabled>
+                    <option><?= htmlspecialchars(t('medicos.form.assinatura_certificado_provedor')) ?></option>
+                    <option>CFM</option>
+                    <option>certSign</option>
+                </select>
+                <div class="ass-botoes">
+                    <button type="button" class="btn-pacs-outline" disabled><?= htmlspecialchars(t('medicos.form.assinatura_ativar')) ?></button>
+                </div>
+            </div>
+        </div>
+    </div><!-- fecha #aba-assinatura -->
+
     </div><!-- fecha .tab-content -->
 <?php endif; ?>
 
@@ -1069,7 +1188,23 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     </div>
 </div>
 
+<?php if ($isEdit): ?>
+<!-- signature_pad — versão FIXADA (nunca @latest), CDN jsdelivr -->
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<?php endif; ?>
+
 <script>
+const I18N_ASSINATURA = {
+    ativa:            <?= json_encode(t('medicos.form.assinatura_ativa')) ?>,
+    selecioneArquivo: <?= json_encode(t('medicos.form.assinatura_selecione_arquivo')) ?>,
+    enviando:         <?= json_encode(t('medicos.form.assinatura_enviando')) ?>,
+    enviar:           <?= json_encode(t('medicos.form.assinatura_enviar')) ?>,
+    desenheAntes:     <?= json_encode(t('medicos.form.assinatura_desenhe_antes')) ?>,
+    salvando:         <?= json_encode(t('medicos.form.assinatura_salvando')) ?>,
+    salvar:           <?= json_encode(t('medicos.form.assinatura_salvar')) ?>,
+    erroConexao:      <?= json_encode(t('medicos.form.assinatura_erro_conexao')) ?>,
+};
+
 // ─── Máscara de telefone ───────────────────────────────────────────────────
 function mascaraTelefone(input) {
     let v = input.value.replace(/\D/g, '').slice(0, 11);
@@ -1584,5 +1719,158 @@ function executarImportar() {
 
 function escHtml(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── MÓDULO DE ASSINATURA ───────────────────────────────────────────────────
+const MEDICO_ID_ASSINATURA = <?= (int) $medicoId ?>;
+let _assinaturaPad = null;
+let _assinaturaCarregada = false;
+
+// Carrega o estado dos blocos só quando a aba é aberta pela 1ª vez (evita
+// fetch + init de canvas se o usuário nunca visitar essa aba) — mesmo
+// padrão de shown.bs.tab já usado pra Máscaras.
+document.getElementById('tab-assinatura')?.addEventListener('shown.bs.tab', function () {
+    if (!_assinaturaCarregada) {
+        _assinaturaCarregada = true;
+        initCanvasAssinatura();
+    }
+    carregarAssinaturas();
+});
+
+function initCanvasAssinatura() {
+    const canvas = document.getElementById('assinaturaCanvas');
+    if (!canvas || typeof SignaturePad === 'undefined') return;
+    // Fundo transparente — respeitado pelo toDataURL('image/png') mais abaixo.
+    _assinaturaPad = new SignaturePad(canvas, { backgroundColor: 'rgba(0,0,0,0)' });
+}
+
+function limparCanvasAssinatura() {
+    _assinaturaPad?.clear();
+}
+
+function carregarAssinaturas() {
+    if (!MEDICO_ID_ASSINATURA) return;
+    fetch('/medicos/' + MEDICO_ID_ASSINATURA + '/assinatura/listar')
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) throw new Error(data.msg || 'Erro ao carregar.');
+        renderizarBlocoAssinatura('imagem', data.blocos.imagem);
+        renderizarBlocoAssinatura('livre', data.blocos.livre);
+    })
+    .catch(err => mostrarFeedbackAssinatura('erro', err.message));
+}
+
+function renderizarBlocoAssinatura(tipo, estado) {
+    const preview = document.getElementById(tipo === 'imagem' ? 'assPreviewImagem' : 'assPreviewLivre');
+    const status  = document.getElementById(tipo === 'imagem' ? 'assStatusImagem' : 'assStatusLivre');
+    const btnAtivar    = document.getElementById(tipo === 'imagem' ? 'btnAtivarImagem' : 'btnAtivarLivre');
+    const btnDesativar = document.getElementById(tipo === 'imagem' ? 'btnDesativarImagem' : 'btnDesativarLivre');
+
+    if (estado.existe && preview) {
+        preview.innerHTML = '<img src="' + estado.preview_url + '?t=' + Date.now() + '" alt="Assinatura">';
+    }
+
+    if (status) {
+        status.innerHTML = estado.ativa
+            ? '<span class="ass-badge-ativa"><i class="fa fa-circle-check"></i> ' + I18N_ASSINATURA.ativa + '</span>'
+            : '';
+    }
+    if (btnAtivar)    btnAtivar.style.display    = (estado.existe && !estado.ativa) ? '' : 'none';
+    if (btnDesativar) btnDesativar.style.display = estado.ativa ? '' : 'none';
+}
+
+function uploadAssinaturaImagem() {
+    const input = document.getElementById('assinaturaImagemInput');
+    const arquivo = input.files[0];
+    if (!arquivo) { mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.selecioneArquivo); return; }
+
+    const btn = document.getElementById('btnUploadImagem');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> ' + I18N_ASSINATURA.enviando;
+
+    const formData = new FormData();
+    formData.append('arquivo', arquivo);
+    fetch('/medicos/' + MEDICO_ID_ASSINATURA + '/assinatura/imagem/upload', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-upload me-1"></i> ' + I18N_ASSINATURA.enviar;
+        if (data.ok) {
+            input.value = '';
+            mostrarFeedbackAssinatura('sucesso', data.msg);
+            carregarAssinaturas();
+        } else {
+            mostrarFeedbackAssinatura('erro', data.msg);
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-upload me-1"></i> ' + I18N_ASSINATURA.enviar;
+        mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.erroConexao);
+    });
+}
+
+function salvarAssinaturaLivre() {
+    if (!_assinaturaPad || _assinaturaPad.isEmpty()) {
+        mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.desenheAntes);
+        return;
+    }
+    const btn = document.getElementById('btnSalvarLivre');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> ' + I18N_ASSINATURA.salvando;
+
+    fetch('/medicos/' + MEDICO_ID_ASSINATURA + '/assinatura/livre/salvar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ png: _assinaturaPad.toDataURL('image/png') })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-floppy-disk me-1"></i> ' + I18N_ASSINATURA.salvar;
+        if (data.ok) {
+            limparCanvasAssinatura();
+            mostrarFeedbackAssinatura('sucesso', data.msg);
+            carregarAssinaturas();
+        } else {
+            mostrarFeedbackAssinatura('erro', data.msg);
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-floppy-disk me-1"></i> ' + I18N_ASSINATURA.salvar;
+        mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.erroConexao);
+    });
+}
+
+function ativarAssinatura(tipo) {
+    fetch('/medicos/' + MEDICO_ID_ASSINATURA + '/assinatura/' + tipo + '/ativar', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        mostrarFeedbackAssinatura(data.ok ? 'sucesso' : 'erro', data.msg);
+        if (data.ok) carregarAssinaturas();
+    })
+    .catch(() => mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.erroConexao));
+}
+
+function desativarAssinatura(tipo) {
+    fetch('/medicos/' + MEDICO_ID_ASSINATURA + '/assinatura/' + tipo + '/desativar', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        mostrarFeedbackAssinatura(data.ok ? 'sucesso' : 'erro', data.msg);
+        if (data.ok) carregarAssinaturas();
+    })
+    .catch(() => mostrarFeedbackAssinatura('erro', I18N_ASSINATURA.erroConexao));
+}
+
+function mostrarFeedbackAssinatura(tipo, msg) {
+    const fb = document.getElementById('assinaturaFeedback');
+    if (!fb) return;
+    const cor = tipo === 'sucesso' ? '#22c55e' : '#e05252';
+    const ico = tipo === 'sucesso' ? 'fa-circle-check' : 'fa-triangle-exclamation';
+    fb.style.display = 'block';
+    fb.innerHTML = '<div style="padding:.6rem .9rem;border-radius:6px;background:rgba(0,0,0,.2);border:1px solid ' + cor + ';color:' + cor + ';font-size:.82rem;">'
+        + '<i class="fa ' + ico + ' me-1"></i>' + escHtml(msg) + '</div>';
+    setTimeout(() => { fb.style.display = 'none'; }, 4000);
 }
 </script>
