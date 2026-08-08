@@ -177,9 +177,11 @@ class ReportsController extends Controller
 
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
-                    'senha_invalida'         => 'Senha incorreta.',
-                    'report_nao_encontrado'  => 'Laudo não encontrado.',
-                    default                   => 'Erro ao assinar.', // rede de segurança — não deveria ocorrer, os 2 códigos acima cobrem os retornos reais do método
+                    'senha_invalida'             => 'Senha incorreta.',
+                    'report_nao_encontrado'      => 'Laudo não encontrado.',
+                    'report_ja_assinado'         => 'Este laudo já foi assinado e não pode ser assinado novamente.',
+                    'medico_sem_assinatura_ativa'=> 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
+                    default                        => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;
@@ -293,6 +295,44 @@ class ReportsController extends Controller
             Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
             http_response_code(500);
             echo 'Erro ao gerar PDF.';
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GET /reports/assinatura-imagem?report_id=X
+    // Proxy autenticado da assinatura visual CONGELADA deste laudo (ver
+    // ReportService::congelarAssinaturaVisual) — arquivo fica fora de public/,
+    // nunca exposto direto. Diferente de pdf() acima, esta rota nova CONFERE
+    // tenant_id explicitamente (pdf() não confere — achado registrado em
+    // diagnostics/pendencias-conhecidas.md, fora do escopo desta tarefa corrigir).
+    // ══════════════════════════════════════════════════════════════════════════
+    public function assinaturaImagem(): void
+    {
+        if (!Auth::check()) { http_response_code(401); return; }
+        $reportId = (int) ($_GET['report_id'] ?? 0);
+        $tenantId = Auth::tenantId();
+        if (!$reportId || !$tenantId) { http_response_code(404); return; }
+
+        try {
+            $pdo  = \App\Core\Database::getInstance();
+            $stmt = $pdo->prepare(
+                "SELECT assinatura_tipo, assinatura_caminho_arquivo FROM reports WHERE id = :id AND tenant_id = :tenant_id LIMIT 1"
+            );
+            $stmt->execute(['id' => $reportId, 'tenant_id' => $tenantId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$row || empty($row['assinatura_caminho_arquivo'])) { http_response_code(404); return; }
+
+            $caminho = BASE_PATH . '/storage/uploads/assinaturas_laudos/' . $row['assinatura_caminho_arquivo'];
+            if (!is_file($caminho)) { http_response_code(404); return; }
+
+            $mime = $row['assinatura_tipo'] === 'imagem' ? 'image/jpeg' : 'image/png';
+            header("Content-Type: {$mime}");
+            header('Cache-Control: private, no-store');
+            readfile($caminho);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::assinaturaImagem error', ['msg' => $e->getMessage()]);
+            http_response_code(500);
         }
     }
 

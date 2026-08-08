@@ -2,17 +2,13 @@
 
 > Diferente de `diagnostics/*.md` (checklists a rodar), este arquivo é uma lista viva de bugs/débitos **encontrados durante alguma tarefa mas deliberadamente não corrigidos naquele momento** — para não se perder e não precisar redescobrir do zero numa sessão futura. Cada entrada: o que é, onde, como foi encontrado, por que não foi corrigido ainda, e prioridade sugerida.
 
-## `ReportService::assinar()` não impede re-assinatura de laudo já assinado
+## ✅ Resolvido — `ReportService::assinar()` não impedia re-assinatura de laudo já assinado
 
-**Onde**: `app/Services/ReportService.php:219-278`, método `assinar()`.
+**Status**: corrigido em 2026-08-08, junto com a integração da aba Assinatura do médico (ver `modules/assinatura-medico.md`, item 4b).
 
-**O quê**: ao contrário de `salvar()` (que checa `if (in_array($reportSituacao, ['assinado','liberado'], true)) return ['ok'=>false,'error'=>'report_assinado_somente_leitura'];` antes de qualquer escrita), `assinar()` **não tem checagem equivalente** — depois de validar a senha e achar o `report`, vai direto pra `createSignature()`/`marcarAssinado()` sem checar `$report->situacao`. Na prática: chamar `POST /reports/sign` numa segunda vez sobre o mesmo laudo (já `assinado`/`liberado`) cria uma **segunda linha em `report_signatures`** e sobrescreve `assinado_em`/`assinado_por` em `reports` com os dados da nova chamada — a assinatura original fica "perdida" (ainda existe na tabela `report_signatures`, mas deixa de ser a que aparece no laudo).
+**O que era**: ao contrário de `salvar()` (que checa `if (in_array($reportSituacao, ['assinado','liberado'], true)) return ['ok'=>false,'error'=>'report_assinado_somente_leitura'];` antes de qualquer escrita), `assinar()` não tinha checagem equivalente — chamar `POST /reports/sign` numa segunda vez sobre o mesmo laudo criava uma segunda linha em `report_signatures` e sobrescrevia os dados da assinatura original.
 
-**Como foi encontrado**: durante o P0 de 2026-08-08 (correção do bug `saveReport()`/`signReport()` inexistentes, ver entrada abaixo) — ao ler o corpo completo de `assinar()` pra mapear todos os códigos de erro possíveis, percebi a ausência da guarda que `salvar()` tem.
-
-**Por que não corrigido agora**: fora do escopo do P0 (que era estritamente corrigir a chamada quebrada Controller→Service, sem mexer em regra de negócio nova). Adicionar uma guarda de "já assinado" é uma mudança de comportamento (precisa decidir a mensagem certa, se bloqueia sempre ou só sem uma flag de "re-assinar deliberadamente", etc.) — merece sua própria aprovação.
-
-**Prioridade sugerida**: média — não é um crash nem perda de dado (a assinatura antiga continua em `report_signatures`), mas é uma inconsistência de integridade que pode confundir auditoria/compliance (qual assinatura é "a válida" de um laudo liberado). Recomendo tratar como tarefa própria antes de qualquer feature que dependa de "a assinatura de um laudo ser imutável" (ex.: a futura aba Assinatura do médico, se vier a gerar comprovantes/hash referenciando *a* assinatura do laudo).
+**Correção aplicada**: `ReportService::assinar()` agora checa `$report->situacao` logo após achar o report (mesmo padrão de `salvar()`) e retorna `['ok'=>false,'error'=>'report_ja_assinado']` antes de tocar em qualquer escrita, se já estiver `assinado`/`liberado`. `ReportsController::sign()` mapeia esse código pra "Este laudo já foi assinado e não pode ser assinado novamente."
 
 ---
 
@@ -43,6 +39,49 @@
 **Correção aplicada**: `app/Controllers/ReportsController.php`, métodos `save()`/`sign()` — troca cirúrgica das chamadas para os nomes/assinaturas reais, com mapeamento de mensagem legível para os 4 códigos de erro possíveis (`report_nao_encontrado`, `report_assinado_somente_leitura` em `salvar()`; `senha_invalida`, `report_nao_encontrado` em `assinar()`). Nenhuma mudança em `ReportService`/`ReportRepository`. Contrato de resposta JSON (`ok`, `saved_at`, `msg`) preservado — frontend não precisou mudar.
 
 **Validação**: sem acesso a banco de dados neste ambiente (produção inacessível; banco local `voxel_pacs_test` referenciado em `.env` não está rodando neste sandbox — confirmado por tentativa real de conexão, recusada). Validado via reflection + execução real dos métodos corrigidos: confirmado que `ReportService::salvar()`/`::assinar()` existem com as assinaturas esperadas, que os nomes antigos (`saveReport`/`signReport`) de fato nunca existiram, e que a chamada agora lança `\RuntimeException` (subtipo de `\Exception`, capturável) em vez de `\Error` fatal quando o banco está inacessível — prova de que a classe exata do bug original (crash não capturado) está eliminada. **Não validado**: persistência real no banco, teste de navegador ao vivo, e o caso específico `report_assinado_somente_leitura` com um laudo real já assinado — requer ambiente com banco ativo.
+
+## ✅ Resolvido — `Auth::verifyPassword()` não existia (regressão, não "nunca existiu")
+
+**Status**: corrigido em 2026-08-08.
+
+**O que era**: `ReportService::assinar()` chama `Auth::verifyPassword($senha)` como primeira linha executável — método que **não existia** em `App\Core\Auth`, causando `\Error: Call to undefined method` incondicional, em qualquer ambiente, com ou sem banco. Isso significa que **mesmo depois do P0 do save/sign (Controller→Service) estar corrigido, "Assinar" continuava 100% quebrado** — o P0 anterior era necessário mas não suficiente.
+
+**Rastreado via `git log -S "verifyPassword"`, não é "nunca existiu"**: o método foi **adicionado** no commit `ab12376` ("Módulo Reports — Implementação Completa", que inclusive relata teste real: "Assinatura: senha errada → 401; senha correta → hash SHA-256... liberado"), e **removido** no commit seguinte, `b20630f` ("Módulo Estudos v4" — assunto completamente não relacionado, provavelmente sobrescreveu `Auth.php` a partir de uma base desatualizada).
+
+**Correção aplicada**: `Auth::verifyPassword(string $senha): bool` restaurado — busca fresco em `bi_users` pelo `Auth::userId()` atual (a sessão nunca guarda a senha, `login()` já faz `unset()` dela por segurança) e usa `password_verify()`, mesmo padrão já usado em `login()`.
+
+**Validação**: sem banco disponível neste ambiente — confirmado via reflection que o método existe, que sem usuário logado retorna `false` sem tentar banco, e que com usuário logado (sem banco) lança `\RuntimeException` capturável, não mais `\Error` fatal. **Não validado**: reautenticação real com senha correta/incorreta contra um usuário de verdade — requer banco ativo.
+
+---
+
+## `report_signatures` tem 3 definições de schema conflitantes entre migrations
+
+**Onde**: `database/migrations/2026-07-04_bi_reports_module.sql`, `2026-07-05_reports_module.sql`, `2026-07-25_migrations_pendentes_hostgator.sql` — todas fazem `CREATE TABLE IF NOT EXISTS report_signatures` com colunas diferentes:
+- `07-04`: `id, report_id, user_id, nome_medico, crm, data, hora, hash, ip, criado_em` — bate com o que `ReportRepository::createSignature()` espera hoje.
+- `07-05`: `id, report_id, usuario_id, usuario_nome, crm, hash, conteudo_hash, ip, user_agent, created_at` — nomes de coluna diferentes, incompatível com o código atual.
+- `07-25`: conceito totalmente diferente — 1 linha por médico (não por assinatura de laudo), `UNIQUE(usuario_id, tenant_id)`, coluna `assinatura` (TEXT/base64) — parece uma tentativa anterior e nunca finalizada do que virou `bi_medico_assinaturas` nesta tarefa.
+
+**Por que isso importa**: como `CREATE TABLE IF NOT EXISTS` é idempotente, **qual das 3 está de fato viva no banco real depende só de qual rodou primeiro** — não há como saber sem acesso direto ao banco (`DESCRIBE report_signatures;`). Se não for a versão `07-04`, `ReportRepository::createSignature()` falha com erro de coluna desconhecida (capturável como `\Exception` desde o P0, mas ainda impede a assinatura de funcionar de verdade).
+
+**Como foi encontrado**: durante a integração da aba Assinatura do médico (2026-08-08), ao decidir onde congelar qual assinatura visual foi usada em cada laudo — evitado deliberadamente: as colunas novas (`assinatura_tipo`/`assinatura_caminho_arquivo`) foram adicionadas em `reports` (schema único, sem conflito), não em `report_signatures`. Ver `modules/assinatura-medico.md`.
+
+**Por que não corrigido agora**: requer decidir qual das 3 definições é a real (só possível com acesso ao banco de produção/homologação) antes de escrever uma migration corretiva — não dá pra resolver às cegas.
+
+**Prioridade sugerida**: alta — bloqueia confirmar que "Assinar" funciona de ponta a ponta mesmo depois de todas as correções desta sessão (P0 save/sign + `Auth::verifyPassword` + trava de re-assinatura). Recomendo rodar `DESCRIBE report_signatures;` em produção como primeiro passo.
+
+---
+
+## `ReportsController::pdf()` não confere `tenant_id` do laudo
+
+**Onde**: `app/Controllers/ReportsController.php`, método `pdf()` (rota `GET /reports/pdf?report_id=X`).
+
+**O quê**: a query busca o laudo só por `WHERE r.id = :id` — `$tenantId = Auth::tenantId();` é obtido mas nunca usado em nenhum WHERE ou checagem posterior. Qualquer usuário autenticado (de qualquer tenant) pode ver o PDF de qualquer laudo só sabendo/adivinhando o `report_id` na URL.
+
+**Como foi encontrado**: durante a integração da aba Assinatura (2026-08-08), ao adicionar a nova rota `GET /reports/assinatura-imagem` — essa rota nova **confere tenant_id corretamente** (não repete o gap), o que tornou o contraste com `pdf()` visível durante a revisão.
+
+**Por que não corrigido agora**: fora do escopo da tarefa (aba Assinatura) — `pdf()` é código antigo, não tocado por esta tarefa além da leitura, e uma correção aqui merece validação própria (checar se afeta outros usos do endpoint).
+
+**Prioridade sugerida**: alta — é uma falha de isolamento multi-tenant real num endpoint de dado clínico.
 
 ## Última análise
 2026-08-08

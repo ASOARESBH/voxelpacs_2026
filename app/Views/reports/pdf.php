@@ -135,6 +135,11 @@ $download = $download ?? false;
     <!-- Assinatura -->
     <div class="pdf-signature">
         <div class="pdf-sig-info">
+            <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
+            <img src="/reports/assinatura-imagem?report_id=<?= (int) ($r['id'] ?? 0) ?>"
+                 alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
+                 style="max-width:220px;max-height:70px;display:block;margin-bottom:.35rem;">
+            <?php endif; ?>
             <strong><?= htmlspecialchars($r['medico_nome'] ?? '—', ENT_QUOTES) ?></strong>
             <span>CRM: <?= htmlspecialchars($r['medico_crm'] ?? '—', ENT_QUOTES) ?></span><br>
             <span>Assinado em: <?= $r['assinado_em'] ? date('d/m/Y H:i', strtotime($r['assinado_em'])) : 'Não assinado' ?></span>

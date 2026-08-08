@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Core\Audit\AuditLogger;
 use App\Core\Auth;
+use App\Core\Logger;
 use App\Core\TenantContext;
+use App\Repositories\MedicoRepository;
 use App\Repositories\ReportRepository;
 
 /**
@@ -224,9 +226,31 @@ class ReportService {
         $report = $this->repo->findReportById($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
+        // 4(b) — trava de re-assinatura, mesmo padrão que salvar() já usa
+        // (gap registrado em diagnostics/pendencias-conhecidas.md, resolvido aqui).
+        $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
+        if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
+            return ['ok' => false, 'error' => 'report_ja_assinado'];
+        }
+
+        $userId   = Auth::userId();
+        $tenantId = Auth::tenantId();
+
+        // 4(a) — assinatura visual ativa do médico logado. Decisão confirmada:
+        // bloquear (não assinar sem representação visual) se não houver nenhuma cadastrada.
+        $assinaturaAtiva = null;
+        if ($tenantId) {
+            $medico = (new MedicoRepository())->findByUsuarioId($userId, $tenantId);
+            if ($medico) {
+                $assinaturaAtiva = (new MedicoAssinaturaService())->buscarAtiva((int) $medico['id'], $tenantId);
+            }
+        }
+        if (!$assinaturaAtiva) {
+            return ['ok' => false, 'error' => 'medico_sem_assinatura_ativa'];
+        }
+
         $estudo = $this->repo->findEstudoById((int) $report->bi_pacs_estudos_id);
         $user = Auth::user();
-        $userId = Auth::userId();
         $assinadoEm = date('Y-m-d H:i:s');
 
         $payload = json_encode([
@@ -240,7 +264,16 @@ class ReportService {
         ], JSON_UNESCAPED_UNICODE);
         $hash = hash('sha256', $payload);
 
+        // Congela uma cópia do arquivo da assinatura visual pra ESTE laudo —
+        // se o médico trocar a assinatura ativa depois, laudos já assinados
+        // continuam mostrando a que foi usada de fato no momento (não uma
+        // referência mutável ao perfil do médico). Falha aqui não bloqueia a
+        // assinatura (mesmo padrão não-bloqueante do webhook Copilot abaixo)
+        // — hash/nome/CRM continuam sendo o registro legal principal.
+        $caminhoCongelado = $this->congelarAssinaturaVisual($reportId, $tenantId, $assinaturaAtiva);
+
         $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
+        $this->repo->salvarAssinaturaVisual($reportId, $hash, $crm, $assinaturaAtiva['tipo'], $caminhoCongelado);
 
         // Nesta entrega, assinar já progride para liberado (sem etapa manual de aprovação).
         $this->repo->marcarAssinado($reportId, 'assinado');
@@ -275,6 +308,33 @@ class ReportService {
             'hash' => $hash,
             'pdf_url' => '/reports/' . rawurlencode((string) $estudo->study_instance_uid) . '/pdf',
         ];
+    }
+
+    /**
+     * Copia o arquivo da assinatura visual ativa do médico para uma pasta
+     * dedicada por laudo (storage/uploads/assinaturas_laudos/{tenant}/{report}.ext)
+     * — congela o que foi usado neste laudo especificamente, desacoplado do
+     * arquivo "atual" em bi_medico_assinaturas (que o médico pode substituir
+     * depois). Retorna o caminho relativo salvo, ou null se falhar (não bloqueia
+     * a assinatura — ver comentário em assinar()).
+     */
+    private function congelarAssinaturaVisual(int $reportId, int $tenantId, array $assinaturaAtiva): ?string {
+        try {
+            $assinaturaSvc = new MedicoAssinaturaService();
+            $origem = $assinaturaSvc->caminhoAbsoluto($assinaturaAtiva['caminho_arquivo']);
+            if (!is_file($origem)) return null;
+
+            $ext = pathinfo($origem, PATHINFO_EXTENSION) ?: 'bin';
+            $dir = BASE_PATH . "/storage/uploads/assinaturas_laudos/{$tenantId}";
+            if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) return null;
+
+            $destinoRelativo = "{$tenantId}/{$reportId}.{$ext}";
+            $destinoAbsoluto = BASE_PATH . "/storage/uploads/assinaturas_laudos/{$destinoRelativo}";
+            return copy($origem, $destinoAbsoluto) ? $destinoRelativo : null;
+        } catch (\Throwable $e) {
+            Logger::error('[ReportService::congelarAssinaturaVisual] ' . $e->getMessage(), ['report_id' => $reportId]);
+            return null;
+        }
     }
 
     public function listTemplates(string $modalidade): array {

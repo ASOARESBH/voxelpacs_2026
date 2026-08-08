@@ -102,6 +102,26 @@ class MedicoRepository
         }
     }
 
+    /**
+     * Resolve o registro bi_medicos vinculado a uma conta de usuário (Auth::userId()).
+     * Usado por ReportService::assinar() pra achar "qual médico é o usuário logado"
+     * antes de buscar a assinatura visual ativa dele.
+     */
+    public function findByUsuarioId(int $usuarioId, int $tenantId): ?array
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT * FROM bi_medicos WHERE usuario_id = :usuario_id AND tenant_id = :tenant_id AND ativo = 1 LIMIT 1"
+            );
+            $stmt->execute(['usuario_id' => $usuarioId, 'tenant_id' => $tenantId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            return $row ?: null;
+        } catch (\Throwable $e) {
+            Logger::error('[MedicoRepository::findByUsuarioId] ' . $e->getMessage(), ['usuario_id' => $usuarioId, 'tenant_id' => $tenantId]);
+            return null;
+        }
+    }
+
     /** Verifica se já existe médico com o mesmo CRM+UF no tenant (prevenção de duplicata). */
     public function existeCrm(string $crm, string $crmUf, int $tenantId, int $excluirId = 0): bool
     {

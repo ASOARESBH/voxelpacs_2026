@@ -179,6 +179,21 @@ class ReportRepository {
             ->execute(['situacao' => $situacao, 'uid' => \App\Core\Auth::userId(), 'id' => $reportId]);
     }
 
+    /**
+     * Grava o hash + a assinatura visual congelada (tipo + cópia do arquivo)
+     * usada nesta assinatura específica. `assinatura_hash`/`assinatura_crm`
+     * já existiam no schema de `reports` mas nunca eram populados por código
+     * nenhum antes desta tarefa — reports/pdf.php já lia `$r['assinatura_hash']`
+     * esperando isso (ver modules/assinatura-medico.md).
+     */
+    public function salvarAssinaturaVisual(int $reportId, string $hash, ?string $crm, ?string $tipo, ?string $caminhoArquivo): void {
+        $this->pdo->prepare(
+            "UPDATE reports SET assinatura_hash = :hash, assinatura_crm = :crm, assinatura_tipo = :tipo, assinatura_caminho_arquivo = :caminho WHERE id = :id"
+        )->execute([
+            'hash' => $hash, 'crm' => $crm, 'tipo' => $tipo, 'caminho' => $caminhoArquivo, 'id' => $reportId,
+        ]);
+    }
+
     public function proximaVersao(int $reportId): int {
         $stmt = $this->pdo->prepare("SELECT COALESCE(MAX(versao), 0) FROM report_versions WHERE report_id = :id");
         $stmt->execute(['id' => $reportId]);

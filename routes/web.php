@@ -180,6 +180,7 @@ Router::get('/reports/history',            'ReportsController@history');
 
 // Visualizar / baixar PDF
 Router::get('/reports/pdf',                'ReportsController@pdf');
+Router::get('/reports/assinatura-imagem',  'ReportsController@assinaturaImagem');
 
 // Carregar template (AJAX)
 Router::get('/reports/template',           'ReportsController@template');

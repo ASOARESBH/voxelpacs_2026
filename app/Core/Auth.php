@@ -98,4 +98,26 @@ class Auth {
     public static function setTenant(int $tenantId): void {
         $_SESSION['tenant_id'] = $tenantId;
     }
+
+    /**
+     * Reautentica o usuário logado por senha (ex.: ReportService::assinar()
+     * antes de assinar um laudo). $_SESSION['user'] nunca guarda a senha
+     * (login() já faz unset() dela por segurança), por isso busca fresco em
+     * bi_users pelo Auth::userId() atual — mesmo password_verify() de login().
+     *
+     * Regressão corrigida em 2026-08-08: existia (commit ab12376, "Módulo
+     * Reports"), foi perdida no commit seguinte (b20630f, "Módulo Estudos
+     * v4" — assunto não relacionado, sobrescreveu Auth.php por engano).
+     * Confirmado via `git log -S "verifyPassword"`. Ver
+     * diagnostics/pendencias-conhecidas.md.
+     */
+    public static function verifyPassword(string $senha): bool {
+        $userId = self::userId();
+        if (!$userId) return false;
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT password FROM bi_users WHERE id = :id AND status = 'ativo' LIMIT 1");
+        $stmt->execute(['id' => $userId]);
+        $row = $stmt->fetch();
+        return $row && password_verify($senha, $row->password);
+    }
 }
