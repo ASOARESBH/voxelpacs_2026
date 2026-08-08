@@ -1000,21 +1000,39 @@ class EstudosController extends Controller
         }
 
         try {
-            $stmt = $pdo->prepare(
+            $wBase = implode(' AND ', $where);
+            $stmt  = $pdo->prepare(
                 "SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total
-                 FROM bi_pacs_estudos WHERE " . implode(' AND ', $where) . " GROUP BY situacao"
+                 FROM bi_pacs_estudos WHERE {$wBase} GROUP BY situacao"
             );
             $stmt->execute($params);
-            $data = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0];
+
+            // Todas as situações possíveis
+            $data = [
+                'novo'        => 0,
+                'aberto'      => 0,
+                'a_laudar'    => 0,
+                'em_laudo'    => 0,
+                'rascunho'    => 0,
+                'assinado'    => 0,
+                'liberado'    => 0,
+                'peer_review' => 0,
+                'urgente'     => 0,
+            ];
             foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
-                if (isset($data[$r['situacao']])) $data[$r['situacao']] = (int)$r['total'];
+                if (isset($data[$r['situacao']])) {
+                    $data[$r['situacao']] = (int)$r['total'];
+                }
             }
-            $u = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE " . implode(' AND ', $where) . " AND prioridade IN ('urgente','critico')");
+
+            // Urgentes (prioridade)
+            $u = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$wBase} AND prioridade IN ('urgente','critico')");
             $u->execute($params);
             $data['urgente'] = (int)$u->fetchColumn();
+
             $this->json($data);
         } catch (\Throwable $ex) {
-            $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
+            $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
         }
     }
 

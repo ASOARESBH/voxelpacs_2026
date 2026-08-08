@@ -1074,6 +1074,8 @@ document.addEventListener('click', function(e) {
                 novoBotao = '';
             }
             btn.outerHTML = novoBotao;
+            // Atualizar badges da topbar
+            if (typeof window.atualizarBadgesTopbar === 'function') window.atualizarBadgesTopbar();
             // Flash na linha
             if (row) {
                 row.style.transition = 'background .4s';

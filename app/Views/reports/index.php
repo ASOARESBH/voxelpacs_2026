@@ -870,6 +870,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
             if (data.ok) {
                 bootstrap.Modal.getInstance(document.getElementById('signModal')).hide();
                 showToast('Laudo assinado com sucesso!', 'success');
+                if (typeof window.atualizarBadgesTopbar === 'function') window.atualizarBadgesTopbar();
                 setTimeout(function() { location.reload(); }, 1500);
             } else {
                 showSignError(data.msg || 'Erro ao assinar.');
