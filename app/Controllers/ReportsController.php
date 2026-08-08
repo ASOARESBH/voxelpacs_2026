@@ -53,6 +53,7 @@ class ReportsController extends Controller
 
         $estudo   = $data['estudo'];
         $report   = $data['report'];
+        $pedido   = $data['pedido'] ?? null;
         $readonly = $data['readonly'];
         $lockInfo = $data['lockInfo'];
 
@@ -93,6 +94,7 @@ class ReportsController extends Controller
         $this->view('reports/show', [
             'estudo'            => $estudo,
             'report'            => $report,
+            'pedido'            => $pedido,
             'readonly'          => $readonly,
             'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,

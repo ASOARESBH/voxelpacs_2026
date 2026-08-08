@@ -6,6 +6,7 @@
 
 /* ─── helpers de URL ─────────────────────────────────────────────────────── */
 function estudoUrl(array $filtros, int $pagina = 1): string {
+    global $urlWorklist;
     $p = array_merge($filtros, ['pagina' => $pagina]);
     unset($p['situacao_rapida']);
     // Separar modalidades[] (array) dos demais campos escalares
@@ -19,7 +20,7 @@ function estudoUrl(array $filtros, int $pagina = 1): string {
             $query .= ($query ? '&' : '') . 'modalidades%5B%5D=' . rawurlencode($mod);
         }
     }
-    return '/estudos?' . $query;
+    return ($urlWorklist ?? '/estudos') . '?' . $query;
 }
 
 /* ─── badge de prioridade DICOM (0040,1003) ─────────────────────────────── */
@@ -169,6 +170,10 @@ function sortLink(array $filtros, string $col, string $label): string {
 }
 
 /* ─── variáveis de controle ──────────────────────────────────────────────── */
+$urlWorklist         = $urlWorklist ?? '/estudos';
+$modoGestao          = !empty($modoGestao);
+$podeGerenciarPedido = !empty($podeGerenciarPedido);
+$csrfToken           = $csrfToken ?? '';
 $temFiltroAtivo = array_filter(
     array_diff_key($filtros, [
         'ordenar'=>1,'direcao'=>1,'pagina'=>1,'por_pagina'=>1,'periodo'=>1,
@@ -187,8 +192,9 @@ $periodoLabel = [
 <!-- ═══════════════════════════════════════════════════════════ HEADER WORKLIST -->
 <div class="wl-page-header">
     <div class="wl-page-title">
-        <i class="fa fa-list-check"></i>
-        <span>Worklist de Estudos</span>
+        <i class="fa <?= $modoGestao ? 'fa-clipboard-list' : 'fa-list-check' ?>"></i>
+        <span><?= htmlspecialchars($modoGestao ? t('gestao_exames.titulo') : 'Worklist de Estudos') ?></span>
+        <?php if ($modoGestao): ?><span class="wl-mode-badge"><?= htmlspecialchars(t('gestao_exames.badge')) ?></span><?php endif; ?>
     </div>
     <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
         <i class="fa fa-download"></i> Instalar App
@@ -235,7 +241,7 @@ $periodoLabel = [
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ FILTROS -->
-<form id="formFiltros" method="GET" action="/estudos" autocomplete="off">
+<form id="formFiltros" method="GET" action="<?= htmlspecialchars($urlWorklist) ?>" autocomplete="off">
 
 <!-- Linha 1: busca geral + período + ordenação + unidade + situação + ações -->
 <div class="wl-filters wl-filters-row1">
@@ -293,7 +299,7 @@ $periodoLabel = [
 
     <button type="submit" class="wl-btn-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
     <?php if ($temFiltroAtivo): ?>
-    <a href="/estudos" class="wl-btn-outline"><i class="fa fa-xmark"></i> Limpar</a>
+    <a href="<?= htmlspecialchars($urlWorklist) ?>" class="wl-btn-outline"><i class="fa fa-xmark"></i> Limpar</a>
     <?php endif; ?>
 </div>
 
@@ -389,6 +395,7 @@ $periodoLabel = [
             <th class="col-prioridade" title="Prioridade DICOM (0040,1003)">Prioridade</th>
             <th class="col-estudo">Estudo</th>
             <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
+            <th class="col-pedido"><?= htmlspecialchars(t('pedido_medico.coluna')) ?></th>
             <th class="col-sit"><?= sortLink($filtros,'situacao','Situação') ?></th>
             <th class="col-sla" title="SLA Padrão e SLA Médico"><i class="fa fa-clock"></i> SLA</th>
             <th class="col-acoes">Ações</th>
@@ -397,11 +404,11 @@ $periodoLabel = [
     <tbody>
     <?php if (empty($estudos)): ?>
         <tr>
-            <td colspan="11" class="wl-empty">
+                <td colspan="12" class="wl-empty">
                 <i class="fa fa-magnifying-glass"></i>
                 <div>Nenhum estudo encontrado<?= $temFiltroAtivo?' com os filtros aplicados':'' ?>.</div>
                 <?php if ($temFiltroAtivo): ?>
-                <a href="/estudos">Limpar filtros</a>
+                <a href="<?= htmlspecialchars($urlWorklist) ?>">Limpar filtros</a>
                 <?php endif; ?>
             </td>
         </tr>
@@ -444,7 +451,7 @@ $periodoLabel = [
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);
         ?>
-        <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" title="Duplo clique para abrir">
+        <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" <?= $modoGestao ? '' : 'title="Duplo clique para abrir"' ?>>
             <!-- Check -->
             <td class="col-check">
                 <input type="checkbox" class="row-check" value="<?= $e['id'] ?>">
@@ -501,6 +508,20 @@ $periodoLabel = [
                 <?php endif; ?>
             </td>
 
+            <!-- Pedido médico -->
+            <td class="col-pedido">
+                <?php if (!empty($e['pedido_id'])): ?>
+                    <span class="pedido-anexado-badge" title="<?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>">
+                        <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>
+                    </span>
+                    <a class="pedido-consultar-link" href="/api/gestao-exames/pedidos/<?= (int) $e['pedido_id'] ?>/arquivo" target="_blank" rel="noopener">
+                        <i class="fa fa-eye"></i> <?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>
+                    </a>
+                <?php else: ?>
+                    <span class="wl-muted"><?= htmlspecialchars(t('pedido_medico.status.nao_anexado')) ?></span>
+                <?php endif; ?>
+            </td>
+
             <!-- Situação -->
             <td class="col-sit">
                 <?= situacaoBadge($sit) ?>
@@ -531,50 +552,71 @@ $periodoLabel = [
             <!-- Ações -->
             <td class="col-acoes">
                 <div class="wl-acoes-wrap">
-                    <?php if ($podeAssumir): ?>
-                    <button type="button" class="wl-btn-assumir"
-                            data-id="<?= $e['id'] ?>"
-                            data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
-                            data-study-uid="<?= htmlspecialchars($e['study_instance_uid'] ?? '') ?>"
-                            title="Assumir para laudo">
-                        <i class="fa fa-hand-holding-medical"></i> Assumir
-                    </button>
-                    <?php elseif ($podeLaudar): ?>
-                    <?php if (!$workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
-                    <!-- Laudário Interno: workspace desabilitado = botão ativo -->
-                    <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
-                       class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
-                        <i class="fa fa-file-medical"></i> Laudo
-                    </a>
-                    <?php elseif ($workspaceLaudoHabilitado): ?>
-                    <!-- VOXEL Copilot ativo: botão oculto (lauda externamente) -->
-                    <?php endif; ?>
-                    <?php endif; ?>
-
-                    <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
-                    <div class="wl-viewer-wrap">
-                        <button type="button" class="wl-btn-abrir viewer-trigger" title="Abrir estudo">
-                            <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.55rem;"></i>
+                    <?php if ($modoGestao): ?>
+                        <?php if ($podeGerenciarPedido): ?>
+                        <button type="button" class="wl-btn-pedido pedido-trigger"
+                                data-id="<?= (int) $e['id'] ?>"
+                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-pedido-id="<?= (int) ($e['pedido_id'] ?? 0) ?>"
+                                data-pedido-nome="<?= htmlspecialchars($e['pedido_nome_original'] ?? '', ENT_QUOTES) ?>"
+                                data-pedido-mime="<?= htmlspecialchars($e['pedido_mime_type'] ?? '', ENT_QUOTES) ?>"
+                                data-pedido-tamanho="<?= (int) ($e['pedido_tamanho_bytes'] ?? 0) ?>"
+                                title="<?= htmlspecialchars(t('pedido_medico.acao.gerenciar')) ?>">
+                            <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?>
                         </button>
-                        <div class="wl-viewer-menu">
-                            <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
-                                <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
-                            </a>
-                            <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
-                                <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
-                            </a>
-                            <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
-                                <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
-                            </a>
-                            <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="wl-vm-item" target="_blank">
-                                <img src="/assets/img/icon-weasis.svg" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
-                            </a>
-                        </div>
-                    </div>
+                        <?php elseif (!empty($e['pedido_id'])): ?>
+                        <a class="pedido-consultar-link" href="/api/gestao-exames/pedidos/<?= (int) $e['pedido_id'] ?>/arquivo" target="_blank" rel="noopener">
+                            <i class="fa fa-eye"></i> <?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>
+                        </a>
+                        <?php else: ?>
+                        <span class="wl-muted">—</span>
+                        <?php endif; ?>
                     <?php else: ?>
-                    <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="Sem UID">
-                        <i class="fa fa-eye-slash"></i>
-                    </span>
+                        <?php if ($podeAssumir): ?>
+                        <button type="button" class="wl-btn-assumir"
+                                data-id="<?= $e['id'] ?>"
+                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
+                                data-study-uid="<?= htmlspecialchars($e['study_instance_uid'] ?? '') ?>"
+                                title="Assumir para laudo">
+                            <i class="fa fa-hand-holding-medical"></i> Assumir
+                        </button>
+                        <?php elseif ($podeLaudar): ?>
+                        <?php if (!$workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
+                        <!-- Laudário Interno: workspace desabilitado = botão ativo -->
+                        <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                           class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
+                            <i class="fa fa-file-medical"></i> Laudo
+                        </a>
+                        <?php elseif ($workspaceLaudoHabilitado): ?>
+                        <!-- VOXEL Copilot ativo: botão oculto (lauda externamente) -->
+                        <?php endif; ?>
+                        <?php endif; ?>
+
+                        <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
+                        <div class="wl-viewer-wrap">
+                            <button type="button" class="wl-btn-abrir viewer-trigger" title="Abrir estudo">
+                                <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.55rem;"></i>
+                            </button>
+                            <div class="wl-viewer-menu">
+                                <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
+                                    <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
+                                </a>
+                                <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
+                                    <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
+                                </a>
+                                <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
+                                    <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
+                                </a>
+                                <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="wl-vm-item" target="_blank">
+                                    <img src="/assets/img/icon-weasis.svg" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
+                                </a>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="Sem UID">
+                            <i class="fa fa-eye-slash"></i>
+                        </span>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </td>
@@ -638,6 +680,58 @@ $periodoLabel = [
     </div>
     <span class="wl-pag-info">Página <?= $currentPage ?> de <?= $totalPages ?></span>
     <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($modoGestao && $podeGerenciarPedido): ?>
+<!-- ═══════════════════════════════════════════════════════════ MODAL PEDIDO -->
+<div class="modal fade" id="pedidoModal" tabindex="-1" aria-labelledby="pedidoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content pedido-modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pedidoModalLabel">
+                    <i class="fa fa-paperclip me-2"></i><?= htmlspecialchars(t('pedido_medico.modal.titulo')) ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('pedido_medico.acao.fechar')) ?>"></button>
+            </div>
+            <form id="pedidoForm" enctype="multipart/form-data" method="post">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div class="pedido-estudo-context">
+                        <span class="pedido-estudo-label"><?= htmlspecialchars(t('pedido_medico.modal.estudo')) ?></span>
+                        <strong id="pedidoPacienteNome">—</strong>
+                    </div>
+                    <div id="pedidoAtual" class="pedido-atual" style="display:none;"></div>
+                    <p class="pedido-modal-help"><?= htmlspecialchars(t('pedido_medico.modal.instrucoes')) ?></p>
+                    <div class="pedido-file-options">
+                        <button type="button" class="pedido-file-option" id="btnPedidoImportar">
+                            <i class="fa fa-folder-open"></i>
+                            <span><?= htmlspecialchars(t('pedido_medico.acao.importar')) ?></span>
+                            <small><?= htmlspecialchars(t('pedido_medico.modal.importar_desc')) ?></small>
+                        </button>
+                        <button type="button" class="pedido-file-option" id="btnPedidoCamera">
+                            <i class="fa fa-camera"></i>
+                            <span><?= htmlspecialchars(t('pedido_medico.acao.camera')) ?></span>
+                            <small><?= htmlspecialchars(t('pedido_medico.modal.camera_desc')) ?></small>
+                        </button>
+                    </div>
+                    <input type="file" id="pedidoFile" name="pedido" class="visually-hidden"
+                           accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,application/pdf,image/*">
+                    <div id="pedidoArquivoSelecionado" class="pedido-arquivo-selecionado" style="display:none;"></div>
+                    <div id="pedidoErro" class="alert alert-danger py-2 small" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('pedido_medico.acao.cancelar')) ?></button>
+                    <button type="button" class="btn btn-outline-danger" id="btnPedidoRemover" style="display:none;">
+                        <i class="fa fa-trash"></i> <?= htmlspecialchars(t('pedido_medico.acao.remover')) ?>
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="btnPedidoSalvar" disabled>
+                        <i class="fa fa-cloud-arrow-up"></i> <?= htmlspecialchars(t('pedido_medico.acao.salvar')) ?>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -724,6 +818,7 @@ $periodoLabel = [
 .wl-prio-rotina{background:#3B82F6;color:#fff;}
 .wl-prio-ambulatorial{background:#22C55E;color:#fff;}
 .col-solicitante{width:150px;}
+.col-pedido{width:145px;min-width:120px;}
 .col-sit{width:100px;}
 .col-sla{width:88px;text-align:center;}
 .col-acoes{width:140px;text-align:center;}
@@ -794,9 +889,38 @@ $periodoLabel = [
 /* ── Solicitante ────────────────────────────────────────────────────────── */
 .wl-sol-tag{font-size:.7rem;color:var(--pacs-text-secondary);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:145px;}
+.pedido-anexado-badge{display:inline-flex;align-items:center;gap:.22rem;background:rgba(16,185,129,.12);
+    color:#047857;border:1px solid rgba(16,185,129,.25);border-radius:4px;padding:.12rem .35rem;
+    font-size:.64rem;font-weight:700;white-space:nowrap;}
+.pedido-consultar-link{display:inline-flex;align-items:center;gap:.22rem;margin-top:.15rem;color:var(--pacs-primary);
+    font-size:.65rem;text-decoration:none;white-space:nowrap;}
+.pedido-consultar-link:hover{text-decoration:underline;}
+.wl-mode-badge{display:inline-flex;align-items:center;background:rgba(14,165,233,.12);color:#0369a1;
+    border:1px solid rgba(14,165,233,.25);border-radius:999px;padding:.15rem .45rem;font-size:.63rem;
+    font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.pedido-modal-content{border:1px solid var(--pacs-border);border-radius:10px;overflow:hidden;}
+.pedido-estudo-context{display:flex;flex-direction:column;gap:.15rem;background:rgba(14,165,233,.08);
+    border:1px solid rgba(14,165,233,.18);border-radius:7px;padding:.65rem .75rem;margin-bottom:.75rem;}
+.pedido-estudo-label{font-size:.65rem;color:var(--pacs-text-muted);text-transform:uppercase;letter-spacing:.04em;}
+.pedido-estudo-context strong{font-size:.88rem;color:var(--pacs-text-primary);}
+.pedido-modal-help{font-size:.75rem;color:var(--pacs-text-secondary);margin-bottom:.75rem;}
+.pedido-file-options{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;}
+.pedido-file-option{display:flex;flex-direction:column;align-items:center;gap:.25rem;background:var(--pacs-surface);
+    color:var(--pacs-text-primary);border:1px solid var(--pacs-border);border-radius:8px;padding:.8rem .55rem;cursor:pointer;}
+.pedido-file-option:hover{border-color:var(--pacs-primary);background:rgba(14,165,233,.06);}
+.pedido-file-option i{font-size:1.15rem;color:var(--pacs-primary);}
+.pedido-file-option span{font-size:.78rem;font-weight:700;}
+.pedido-file-option small{font-size:.65rem;color:var(--pacs-text-muted);text-align:center;}
+.pedido-atual,.pedido-arquivo-selecionado{display:flex;align-items:center;gap:.45rem;border-radius:6px;padding:.5rem .6rem;font-size:.73rem;margin-bottom:.65rem;}
+.pedido-atual{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.22);color:#047857;}
+.pedido-arquivo-selecionado{background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.2);color:#0369a1;}
 
 /* ── Ações ──────────────────────────────────────────────────────────────── */
 .wl-acoes-wrap{display:flex;flex-direction:column;gap:.25rem;align-items:center;}
+.wl-btn-pedido{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:5px;
+    padding:.25rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;
+    gap:.25rem;white-space:nowrap;width:100%;justify-content:center;transition:opacity .15s,transform .1s;}
+.wl-btn-pedido:hover{opacity:.88;transform:scale(1.02);}
 .wl-btn-assumir{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;
     border:none;border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;
     cursor:pointer;display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;
@@ -864,7 +988,7 @@ $periodoLabel = [
 @media (max-width: 640px) {
     .wl-resumo{flex-direction:column;align-items:flex-start;}
     .wl-table-wrap{max-height:none;}
-    .col-unidade,.col-solicitante,.col-modalidades{display:none;}
+    .col-unidade,.col-solicitante,.col-modalidades,.col-pedido{display:none;}
 }
 /* ── Barra de Seleção / Download em Lote ─────────────────────────────── */
 .wl-sel-bar{background:var(--pacs-surface);border:1px solid var(--pacs-primary);border-radius:8px;
@@ -1010,13 +1134,15 @@ document.addEventListener('change', function(e) {
     if (e.target.classList.contains('row-check')) atualizarBarraSel();
 });
 
-// Duplo clique para abrir
+<?php if (!$modoGestao): ?>
+// Duplo clique para abrir apenas na Worklist médica.
 document.querySelectorAll('.wl-table tbody tr[data-id]').forEach(row => {
     row.addEventListener('dblclick', function(e) {
         if (e.target.closest('a,button,input')) return;
         window.open('/estudos/' + this.dataset.id + '/abrir', '_blank');
     });
 });
+<?php endif; ?>
 
 // ── Menu Abrir (dropdown) ────────────────────────────────────────────────
 (function () {
@@ -1094,6 +1220,166 @@ document.addEventListener('click', function(e) {
         btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
     });
 });
+
+<?php if ($modoGestao && $podeGerenciarPedido): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('pedidoModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+
+    const modal       = new bootstrap.Modal(modalEl);
+    const form        = document.getElementById('pedidoForm');
+    const fileInput   = document.getElementById('pedidoFile');
+    const importarBtn  = document.getElementById('btnPedidoImportar');
+    const cameraBtn    = document.getElementById('btnPedidoCamera');
+    const salvarBtn    = document.getElementById('btnPedidoSalvar');
+    const removerBtn   = document.getElementById('btnPedidoRemover');
+    const pacienteEl   = document.getElementById('pedidoPacienteNome');
+    const atualEl      = document.getElementById('pedidoAtual');
+    const selecionadoEl= document.getElementById('pedidoArquivoSelecionado');
+    const erroEl       = document.getElementById('pedidoErro');
+    const csrf         = form.querySelector('input[name="csrf"]');
+    let estudoAtualId  = 0;
+
+    const I18N_PEDIDO = {
+        tamanho: <?= json_encode(t('pedido_medico.js.tamanho')) ?>,
+        selecionado: <?= json_encode(t('pedido_medico.js.selecionado')) ?>,
+        nenhumArquivo: <?= json_encode(t('pedido_medico.erro.arquivo_ausente')) ?>,
+        removendo: <?= json_encode(t('pedido_medico.js.removendo')) ?>,
+        confirmeRemover: <?= json_encode(t('pedido_medico.confirmar.remover')) ?>,
+        comunicacao: <?= json_encode(t('pedido_medico.erro.comunicacao')) ?>,
+    };
+
+    function formatarTamanho(bytes) {
+        if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2).replace('.', ',') + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1).replace('.', ',') + ' KB';
+        return bytes + ' B';
+    }
+
+    function mostrarErro(msg) {
+        erroEl.textContent = msg || I18N_PEDIDO.comunicacao;
+        erroEl.style.display = 'block';
+    }
+
+    function limparErro() {
+        erroEl.textContent = '';
+        erroEl.style.display = 'none';
+    }
+
+    function mostrarPedidoAtual(button) {
+        atualEl.innerHTML = '';
+        if (!button.dataset.pedidoId || Number(button.dataset.pedidoId) <= 0) {
+            atualEl.style.display = 'none';
+            removerBtn.style.display = 'none';
+            return;
+        }
+
+        const icon = document.createElement('i');
+        icon.className = 'fa fa-circle-check';
+        const texto = document.createElement('span');
+        texto.textContent = button.dataset.pedidoNome + ' (' + formatarTamanho(Number(button.dataset.pedidoTamanho || 0)) + ')';
+        const link = document.createElement('a');
+        link.href = '/api/gestao-exames/pedidos/' + encodeURIComponent(button.dataset.pedidoId) + '/arquivo';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = <?= json_encode(t('pedido_medico.acao.consultar')) ?>;
+        atualEl.append(icon, texto, link);
+        atualEl.style.display = 'flex';
+        removerBtn.style.display = 'inline-flex';
+    }
+
+    document.querySelectorAll('.pedido-trigger').forEach(function (button) {
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            estudoAtualId = Number(button.dataset.id || 0);
+            form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(estudoAtualId) + '/pedido';
+            pacienteEl.textContent = button.dataset.paciente || '—';
+            fileInput.value = '';
+            fileInput.removeAttribute('capture');
+            selecionadoEl.textContent = '';
+            selecionadoEl.style.display = 'none';
+            salvarBtn.disabled = true;
+            limparErro();
+            mostrarPedidoAtual(button);
+            modal.show();
+        });
+    });
+
+    importarBtn.addEventListener('click', function () {
+        fileInput.removeAttribute('capture');
+        fileInput.click();
+    });
+
+    cameraBtn.addEventListener('click', function () {
+        fileInput.setAttribute('capture', 'environment');
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function () {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            salvarBtn.disabled = true;
+            selecionadoEl.style.display = 'none';
+            return;
+        }
+        selecionadoEl.textContent = I18N_PEDIDO.selecionado + ': ' + file.name + ' (' + formatarTamanho(file.size) + ')';
+        selecionadoEl.style.display = 'flex';
+        salvarBtn.disabled = false;
+        limparErro();
+    });
+
+    form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        limparErro();
+        if (!fileInput.files || !fileInput.files.length) {
+            mostrarErro(I18N_PEDIDO.nenhumArquivo);
+            return;
+        }
+
+        salvarBtn.disabled = true;
+        const textoOriginal = salvarBtn.innerHTML;
+        salvarBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + <?= json_encode(t('pedido_medico.js.salvando')) ?>;
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+                body: new FormData(form)
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.msg || I18N_PEDIDO.comunicacao);
+            modal.hide();
+            window.location.reload();
+        } catch (error) {
+            mostrarErro(error.message || I18N_PEDIDO.comunicacao);
+            salvarBtn.disabled = false;
+            salvarBtn.innerHTML = textoOriginal;
+        }
+    });
+
+    removerBtn.addEventListener('click', async function () {
+        if (!estudoAtualId || !window.confirm(I18N_PEDIDO.confirmeRemover)) return;
+        removerBtn.disabled = true;
+        const textoOriginal = removerBtn.innerHTML;
+        removerBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + I18N_PEDIDO.removendo;
+        try {
+            const response = await fetch('/api/gestao-exames/estudos/' + encodeURIComponent(estudoAtualId) + '/pedido/remover', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                body: JSON.stringify({csrf: csrf.value})
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.msg || I18N_PEDIDO.comunicacao);
+            modal.hide();
+            window.location.reload();
+        } catch (error) {
+            mostrarErro(error.message || I18N_PEDIDO.comunicacao);
+            removerBtn.disabled = false;
+            removerBtn.innerHTML = textoOriginal;
+        }
+    });
+});
+</script>
+<?php endif; ?>
 
 // ── Download em Lote ─────────────────────────────────────────────────────
 // Dois modos, ambos reaproveitando os mesmos 3 endpoints do backend
