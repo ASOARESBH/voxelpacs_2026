@@ -55,6 +55,10 @@ body.reports-body {
     white-space: nowrap;
     margin-right: .25rem;
 }
+.autosave-status.autosave-error {
+    color: #fca5a5;
+    font-weight: 600;
+}
 
 /* ── SLA Médico na topbar ──────────────────────────────────────────── */
 .reports-sla-badge {

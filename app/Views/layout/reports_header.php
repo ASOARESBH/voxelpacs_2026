@@ -96,20 +96,20 @@ $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
             <button type="button" class="pacs-btn" id="btn-save-draft" title="Salvar rascunho (Ctrl+S)">
                 <i class="fa fa-floppy-disk"></i> Salvar Rascunho
             </button>
+            <?php endif; ?>
 
-            <?php if ($jaAssinado): ?>
-            <!-- Laudo já assinado: mostra Liberar -->
+            <?php if ($situacao === 'assinado'): ?>
+            <!-- Laudo assinado, mas ainda não liberado: permite finalizar. -->
             <button type="button" class="pacs-btn btn-pacs-success" id="btn-liberar"
                     title="Liberar laudo e fechar">
                 <i class="fa fa-paper-plane"></i> Liberar
             </button>
-            <?php else: ?>
+            <?php elseif (!$readonly): ?>
             <!-- Laudo não assinado: mostra Assinar -->
             <button type="button" class="pacs-btn btn-pacs-primary" id="btn-sign"
                     title="Assinar laudo (Ctrl+Enter)">
                 <i class="fa fa-signature"></i> Assinar
             </button>
-            <?php endif; ?>
             <?php endif; ?>
 
             <?php if (!empty($pedido) && !empty($pedido['visualizar_url'])): ?>

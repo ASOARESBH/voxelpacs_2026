@@ -175,39 +175,27 @@ Router::get('/api/servidor-pacs/sync-robo', 'PacsSyncRoboController@executar');
 // ============================================================
 // REPORTS — Módulo de Laudos Médicos
 // ============================================================
-// Editor de laudo (GET /reports/{study_uid})
-Router::get('/reports/{study_uid}',        'ReportsController@show');
-
-// Salvar rascunho (autosave ou manual)
-Router::post('/reports/save',              'ReportsController@save');
-
-// Assinar laudo com senha
-Router::post('/reports/sign',              'ReportsController@sign');
-
-// Histórico de versões (AJAX)
+// Rotas estáticas vêm antes das rotas parametrizadas: o Router é first-match.
 Router::get('/reports/history',            'ReportsController@history');
-
-// Visualizar / baixar PDF
+Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
 Router::get('/reports/pdf',                'ReportsController@pdf');
 Router::get('/reports/assinatura-imagem',  'ReportsController@assinaturaImagem');
-
-// Carregar template (AJAX)
+Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
-
-// Assumir estudo (botão worklist, AJAX POST)
-Router::post('/reports/assumir',           'ReportsController@assumir');
-
-// Atualizar status do laudo (em_laudo, rascunho) — chamado ao abrir/fechar
-Router::post('/api/reports/status',        'ReportsController@atualizarStatus');
-
-// Liberar laudo — assina + fecha (botão Liberar)
-Router::post('/api/reports/liberar',       'ReportsController@liberar');
-
-// Buscar autotextos (AJAX)
+Router::get('/reports/autotext',           'ReportsController@autotextSearch');
 Router::get('/api/reports/autotext',       'ReportsController@autotextSearch');
-
-// Buscar report_id por estudo_id (usado pelo botão PDF na worklist)
+Router::post('/reports/ai-generate',       'ReportsController@aiGenerate');
+Router::post('/reports/save',              'ReportsController@save');
+Router::post('/reports/sign',              'ReportsController@sign');
+Router::post('/reports/assumir',           'ReportsController@assumir');
+Router::post('/api/reports/status',        'ReportsController@atualizarStatus');
+Router::post('/api/reports/liberar',       'ReportsController@liberar');
 Router::get('/api/reports/by-estudo',      'ReportsController@byEstudo');
+
+// Compatibilidade com o botão PDF antigo que usa /reports/{study_uid}/pdf.
+Router::get('/reports/{study_uid}/pdf',     'ReportsController@pdfByStudyUid');
+// Editor de laudo (GET /reports/{study_uid}) — deve ser o último GET dinâmico.
+Router::get('/reports/{study_uid}',         'ReportsController@show');
 
 // ============================================================
 // VIEWER — Abertura segura de exames via token temporário

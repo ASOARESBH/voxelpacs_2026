@@ -20,7 +20,7 @@ window.VoxelReports.main = (function () {
     }
 
     function wireTopButtons(config) {
-        const pdfUrl = `/reports/${encodeURIComponent(config.studyUid)}/pdf`;
+        const pdfUrl = `/reports/pdf?report_id=${encodeURIComponent(config.reportId)}`;
 
         const btnViewPdf = document.getElementById('btn-view-pdf');
         if (btnViewPdf) btnViewPdf.addEventListener('click', () => window.open(pdfUrl, '_blank'));
@@ -37,6 +37,32 @@ window.VoxelReports.main = (function () {
         const btnComparativos = document.getElementById('btn-comparativos');
         if (btnComparativos) btnComparativos.addEventListener('click', () => alert('Comparativos entre exames — em breve.'));
 
+        const btnLiberar = document.getElementById('btn-liberar');
+        if (btnLiberar) {
+            btnLiberar.addEventListener('click', () => {
+                if (!confirm('Liberar este laudo? Depois da liberação ele ficará pronto para impressão.')) return;
+                btnLiberar.disabled = true;
+                fetch('/api/reports/liberar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
+                    body: JSON.stringify({ report_id: config.reportId, csrf: config.csrf }),
+                })
+                    .then((r) => r.json())
+                    .then((data) => {
+                        if (!data.ok) {
+                            btnLiberar.disabled = false;
+                            alert(data.msg || 'Não foi possível liberar o laudo.');
+                            return;
+                        }
+                        window.location.href = '/estudos';
+                    })
+                    .catch(() => {
+                        btnLiberar.disabled = false;
+                        alert('Falha de comunicação ao liberar o laudo.');
+                    });
+            });
+        }
+
         const btnAiGenerate = document.getElementById('btn-ai-generate');
         if (btnAiGenerate) {
             btnAiGenerate.addEventListener('click', () => {
@@ -46,7 +72,7 @@ window.VoxelReports.main = (function () {
                     body: JSON.stringify({ report_id: config.reportId }),
                 })
                     .then((r) => r.json())
-                    .then((data) => alert(data.message || 'Recurso ainda não disponível.'))
+                    .then((data) => alert(data.message || data.msg || 'Recurso ainda não disponível.'))
                     .catch(() => alert('Recurso ainda não disponível.'));
             });
         }

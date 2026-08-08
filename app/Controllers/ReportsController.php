@@ -69,12 +69,14 @@ class ReportsController extends Controller
                      FROM bi_pacs_estudos e
                      WHERE e.patient_id = :pid
                        AND e.study_instance_uid != :uid
+                       AND e.tenant_id = :tenant_id
                      ORDER BY e.study_date DESC
                      LIMIT 10"
                 );
                 $stmt->execute([
                     ':pid' => $estudo->patient_id,
-                    ':uid' => $studyUid
+                    ':uid' => $studyUid,
+                    ':tenant_id' => (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id()),
                 ]);
                 $examesAnteriores = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             } catch (\Throwable $ex) {
@@ -127,9 +129,11 @@ class ReportsController extends Controller
         }
 
         try {
-            // ReportService::salvar() é posicional (reportId, secoes, modo, templateId),
-            // não aceita array único — ver diagnostics/pendencias-conhecidas.md (P0 2026-08-08).
-            $modo   = ($input['is_manual'] ?? false) ? 'salvar' : 'auto';
+            // O frontend envia modo=auto|salvar|rascunho; is_manual é legado.
+            $modo = (string) ($input['modo'] ?? (($input['is_manual'] ?? false) ? 'salvar' : 'auto'));
+            if (!in_array($modo, ['auto', 'salvar', 'rascunho'], true)) $modo = 'auto';
+            $templateId = isset($input['template_id']) && (int) $input['template_id'] > 0
+                ? (int) $input['template_id'] : null;
             $secoes = $input['secoes'] ?? [
                 'exame'        => $input['secao_exame']        ?? '',
                 'tecnica'      => $input['secao_tecnica']      ?? '',
@@ -139,7 +143,9 @@ class ReportsController extends Controller
             ];
 
             // reports-autosave.js manda report_id, não id.
-            $resultado = $this->reportService->salvar((int) ($input['report_id'] ?? $input['id'] ?? 0), $secoes, $modo);
+            $resultado = $this->reportService->salvar(
+                (int) ($input['report_id'] ?? $input['id'] ?? 0), $secoes, $modo, $templateId
+            );
 
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
@@ -147,9 +153,15 @@ class ReportsController extends Controller
                 default                            => null, // sucesso — sem erro
             };
 
-            $this->json(['ok' => $resultado['ok'], 'saved_at' => date('H:i:s'), 'msg' => $msg]);
-        } catch (\Exception $e) {
-            Logger::error('ReportsController::save error', ['msg' => $e->getMessage()]);
+            $this->json([
+                'ok' => $resultado['ok'],
+                'saved_at' => date('H:i:s'),
+                'situacao' => $resultado['situacao'] ?? null,
+                'versao_atual' => $resultado['versao_atual'] ?? null,
+                'msg' => $msg,
+            ], $resultado['ok'] ? 200 : 422);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::save error', ['msg' => $e->getMessage(), 'report_id' => $input['report_id'] ?? null]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
         }
     }
@@ -187,16 +199,18 @@ class ReportsController extends Controller
                     'report_nao_encontrado'       => 'Laudo não encontrado.',
                     'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
                     'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
-                    'medico_sem_assinatura_ativa' => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
-                    default                        => 'Erro ao assinar.',
+                    'medico_sem_assinatura_ativa'   => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
+                    'estudo_nao_encontrado'          => 'O estudo vinculado ao laudo não foi encontrado no tenant atual.',
+                    'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
+                    default                          => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;
             }
 
             $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.', 'situacao' => $resultado['situacao']]);
-        } catch (\Exception $e) {
-            Logger::error('ReportsController::sign error', ['msg' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::sign error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
         }
     }
@@ -219,21 +233,41 @@ class ReportsController extends Controller
         }
 
         try {
-            $pdo = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare(
-                "SELECT rv.id, rv.versao, rv.acao, rv.usuario_nome, rv.ip,
-                        DATE_FORMAT(rv.created_at, '%d/%m/%Y %H:%i:%s') AS data_fmt
-                 FROM report_versions rv
-                 WHERE rv.report_id = :rid
-                 ORDER BY rv.versao DESC"
-            );
-            $stmt->execute([':rid' => $reportId]);
-            $versoes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-            $this->json(['ok' => true, 'versoes' => $versoes]);
+            if (!$this->reportRepo->findReportById($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
+            $versoes = $this->reportRepo->listVersions($reportId);
+            $this->json(['ok' => true, 'versions' => $versoes]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::history error', ['msg' => $e->getMessage()]);
             $this->json(['ok' => false, 'msg' => 'Erro ao buscar histórico.'], 500);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // POST /reports/history/restore
+    // Restaura uma versão já pertencente ao tenant atual.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function restoreHistory(): void
+    {
+        if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        $input = $this->getJsonInput();
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
+
+        $reportId = (int) ($input['report_id'] ?? 0);
+        $versionId = (int) ($input['version_id'] ?? 0);
+        if (!$reportId || !$versionId) { $this->json(['ok' => false, 'msg' => 'Parâmetros inválidos.'], 422); return; }
+
+        try {
+            $resultado = $this->reportService->restoreVersion($reportId, $versionId);
+            $this->json($resultado, $resultado['ok'] ? 200 : 422);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::restoreHistory error', [
+                'report_id' => $reportId, 'version_id' => $versionId, 'msg' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Não foi possível restaurar a versão.'], 500);
         }
     }
 
@@ -260,16 +294,18 @@ class ReportsController extends Controller
                         e.study_date, e.study_time, e.study_description,
                         e.accession_number, e.modalities, e.institution_name,
                         e.referring_physician_name, e.num_instances, e.num_series,
-                        u.nome as medico_nome, u.crm as medico_crm,
+                        COALESCE(m.nome, u.name) AS medico_nome,
+                        m.crm AS medico_crm,
                         t.nome as tenant_nome
                  FROM reports r
-                 JOIN bi_pacs_estudos e ON e.id = r.estudo_id
-                 JOIN bi_users u ON u.id = r.usuario_id
+                 JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+                 LEFT JOIN bi_users u ON u.id = r.usuario_id
+                 LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
-                 WHERE r.id = :id
+                 WHERE r.id = :id AND r.tenant_id = :tenant_id
                  LIMIT 1"
             );
-            $stmt->execute([':id' => $reportId]);
+            $stmt->execute([':id' => $reportId, ':tenant_id' => $tenantId]);
             $data = $stmt->fetch(\PDO::FETCH_ASSOC);
 
             if (!$data) {
@@ -283,7 +319,7 @@ class ReportsController extends Controller
             $user = Auth::user();
             $this->reportRepo->logAction(
                 $reportId, (int)$data['estudo_id'], (int)$data['tenant_id'],
-                $userId, $user->nome ?? '', 'pdf',
+                $userId, $user->name ?? $user->nome ?? '', 'pdf',
                 $download ? 'Download PDF' : 'Visualização PDF'
             );
 
@@ -300,6 +336,27 @@ class ReportsController extends Controller
 
         } catch (\Throwable $e) {
             Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
+            http_response_code(500);
+            echo 'Erro ao gerar PDF.';
+        }
+    }
+
+    /** Compatibilidade para /reports/{study_uid}/pdf. */
+    public function pdfByStudyUid(string $studyUid): void
+    {
+        if (!Auth::check()) { $this->redirect('/login'); return; }
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $stmt = $pdo->prepare(
+                "SELECT id FROM reports WHERE study_instance_uid = :uid AND tenant_id = :tenant_id LIMIT 1"
+            );
+            $stmt->execute([':uid' => $studyUid, ':tenant_id' => Auth::tenantId()]);
+            $reportId = (int) ($stmt->fetchColumn() ?: 0);
+            if (!$reportId) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
+            $_GET['report_id'] = $reportId;
+            $this->pdf();
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::pdfByStudyUid error', ['uid' => $studyUid, 'msg' => $e->getMessage()]);
             http_response_code(500);
             echo 'Erro ao gerar PDF.';
         }
@@ -344,6 +401,52 @@ class ReportsController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // GET /reports/templates?modalidade=CT
+    // Lista templates do tenant no formato único usado pelo editor Quill.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function templates(): void
+    {
+        if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        $tenantId = Auth::tenantId();
+        $modalidade = trim((string) ($_GET['modalidade'] ?? ''));
+        $where = "WHERE ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
+        $params = ['tenant_id' => $tenantId];
+        if ($modalidade !== '') { $where .= " AND modalidade = :modalidade"; $params['modalidade'] = $modalidade; }
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $rows = null;
+            $queries = [
+                "SELECT id, nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao
+                 FROM report_templates {$where} ORDER BY nome ASC",
+                "SELECT id, nome, modalidade, conteudo
+                 FROM report_templates {$where} ORDER BY nome ASC",
+                "SELECT id, titulo AS nome, modalidade, conteudo
+                 FROM report_templates {$where} ORDER BY nome ASC",
+            ];
+            foreach ($queries as $sql) {
+                try {
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($params);
+                    $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                    break;
+                } catch (\PDOException $queryError) {
+                    Logger::warning('ReportsController::templates tentando schema alternativo', [
+                        'error' => $queryError->getMessage(),
+                    ]);
+                }
+            }
+            if ($rows === null) throw new \RuntimeException('Nenhum schema de templates compatível.');
+
+            $templates = array_map(fn(array $row): array => $this->normalizarTemplate($row), $rows);
+            $this->json(['ok' => true, 'templates' => $templates]);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::templates error', ['msg' => $e->getMessage(), 'tenant_id' => $tenantId]);
+            $this->json(['ok' => false, 'templates' => [], 'msg' => 'Erro ao listar templates.'], 500);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // GET /reports/template?id=X
     // Retorna o conteúdo de um template (AJAX)
     // ══════════════════════════════════════════════════════════════════════════
@@ -362,18 +465,28 @@ class ReportsController extends Controller
 
         try {
             $pdo = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM report_templates WHERE id = :id AND ativo = 1 LIMIT 1");
-            $stmt->execute([':id' => $templateId]);
+            $stmt = $pdo->prepare(
+                "SELECT * FROM report_templates
+                 WHERE id = :id AND ativo = 1
+                   AND (tenant_id IS NULL OR tenant_id = :tenant_id)
+                 LIMIT 1"
+            );
+            $stmt->execute([':id' => $templateId, ':tenant_id' => Auth::tenantId()]);
             $tpl = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($tpl) $tpl = $this->normalizarTemplate($tpl);
 
             if (!$tpl) {
                 $this->json(['ok' => false, 'msg' => 'Template não encontrado.'], 404);
                 return;
             }
 
-            // Incrementar contador de uso
-            $pdo->prepare("UPDATE report_templates SET uso_count = uso_count + 1 WHERE id = :id")
-                ->execute([':id' => $templateId]);
+            // Incrementar contador quando a coluna existir; schemas mínimos não a possuem.
+            try {
+                $pdo->prepare("UPDATE report_templates SET uso_count = uso_count + 1 WHERE id = :id")
+                    ->execute([':id' => $templateId]);
+            } catch (\PDOException $counterError) {
+                Logger::warning('ReportsController::template sem uso_count', ['error' => $counterError->getMessage()]);
+            }
 
             $this->json(['ok' => true, 'template' => $tpl]);
         } catch (\Throwable $e) {
@@ -393,7 +506,9 @@ class ReportsController extends Controller
             return;
         }
 
-        $input    = $this->getJsonInput();
+        $input = $this->getJsonInput();
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
         $estudoId = (int) ($input['estudo_id'] ?? 0);
         $userId   = Auth::userId();
         $user     = Auth::user();
@@ -412,8 +527,11 @@ class ReportsController extends Controller
             return;
         }
 
-        // Assumir o estudo
-        $this->estudosRepo->assumirEstudo($estudoId, $userId);
+        // Assumir o estudo; não abrir o report se o lock não foi persistido.
+        if (!$this->estudosRepo->assumirEstudo($estudoId, $userId)) {
+            $this->json(['ok' => false, 'msg' => 'Não foi possível assumir o estudo. Tente novamente.'], 409);
+            return;
+        }
 
         // Log de auditoria
         $this->reportRepo->logAction(
@@ -435,51 +553,110 @@ class ReportsController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // POST /reports/ai-generate
+    // Endpoint estável; a geração por IA ainda é um recurso futuro.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function aiGenerate(): void
+    {
+        if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        $input = $this->getJsonInput();
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
+        $resultado = $this->reportService->aiGenerate();
+        $this->json(['ok' => false, 'status' => $resultado['status'], 'message' => $resultado['message']], 501);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // GET /api/reports/autotext?q=torax
     // Retorna autotextos para o autocomplete
     // ══════════════════════════════════════════════════════════════════════════
     public function autotextSearch(): void
     {
         if (!Auth::check()) {
-            $this->json([], 401);
+            $this->json(['ok' => false, 'items' => []], 401);
             return;
         }
 
-        $q        = trim($_GET['q'] ?? '');
+        $q = trim((string) ($_GET['q'] ?? ''));
+        $modalidade = trim((string) ($_GET['modalidade'] ?? ''));
         $tenantId = Auth::tenantId();
-        $userId   = Auth::userId();
-
-        if (strlen($q) < 2) {
-            $this->json([]);
-            return;
-        }
+        $userId = Auth::userId();
+        $like = '%' . $q . '%';
+        $items = null;
 
         try {
             $pdo = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare(
-                "SELECT id, gatilho, titulo, conteudo
-                 FROM report_autotext
-                 WHERE ativo = 1
-                   AND (tenant_id IS NULL OR tenant_id = :tid)
-                   AND (usuario_id IS NULL OR usuario_id = :uid)
-                   AND (gatilho LIKE :q OR titulo LIKE :q2)
-                 ORDER BY uso_count DESC
-                 LIMIT 10"
-            );
-            $like = '%' . $q . '%';
-            $stmt->execute([
-                ':tid' => $tenantId,
-                ':uid' => $userId,
-                ':q'   => $like,
-                ':q2'  => $like
-            ]);
-            $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-            $this->json($results);
+            $queries = [
+                [
+                    "SELECT id, gatilho, gatilho AS titulo, texto_sugerido AS conteudo, modalidade
+                     FROM report_autotext
+                     WHERE ativo = 1
+                       AND (tenant_id IS NULL OR tenant_id = :tid)
+                       AND (usuario_id IS NULL OR usuario_id = :uid)
+                       AND (gatilho LIKE :q OR :empty = '')
+                       AND (modalidade IS NULL OR modalidade = :modalidade)
+                     ORDER BY id DESC LIMIT 50",
+                    [':tid' => $tenantId, ':uid' => $userId, ':q' => $like, ':empty' => $q, ':modalidade' => $modalidade],
+                ],
+                [
+                    "SELECT id, gatilho, gatilho AS titulo, texto_sugerido AS conteudo, modalidade
+                     FROM report_autotext
+                     WHERE ativo = 1
+                       AND (tenant_id IS NULL OR tenant_id = :tid)
+                       AND (gatilho LIKE :q OR :empty = '')
+                       AND (modalidade IS NULL OR modalidade = :modalidade)
+                     ORDER BY id DESC LIMIT 50",
+                    [':tid' => $tenantId, ':q' => $like, ':empty' => $q, ':modalidade' => $modalidade],
+                ],
+                [
+                    "SELECT id, gatilho, titulo, conteudo, modalidade
+                     FROM report_autotext
+                     WHERE ativo = 1
+                       AND (tenant_id IS NULL OR tenant_id = :tid)
+                       AND (gatilho LIKE :q OR titulo LIKE :q2 OR :empty = '')
+                       AND (modalidade IS NULL OR modalidade = :modalidade)
+                     ORDER BY id DESC LIMIT 50",
+                    [':tid' => $tenantId, ':q' => $like, ':q2' => $like, ':empty' => $q, ':modalidade' => $modalidade],
+                ],
+                [
+                    "SELECT id, chave AS gatilho, chave AS titulo, texto AS conteudo
+                     FROM report_autotext
+                     WHERE tenant_id = :tid AND (chave LIKE :q OR :empty = '')
+                     ORDER BY id DESC LIMIT 50",
+                    [':tid' => $tenantId, ':q' => $like, ':empty' => $q],
+                ],
+            ];
+            foreach ($queries as [$sql, $params]) {
+                try {
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($params);
+                    $items = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                    break;
+                } catch (\PDOException $queryError) {
+                    Logger::warning('ReportsController::autotextSearch tentando schema alternativo', [
+                        'error' => $queryError->getMessage(),
+                    ]);
+                }
+            }
+            if ($items === null) throw new \RuntimeException('Nenhum schema de autotexto compatível.');
         } catch (\Throwable $e) {
-            Logger::error('ReportsController::autotextSearch error', ['msg' => $e->getMessage()]);
-            $this->json([]);
+            Logger::error('ReportsController::autotextSearch error', [
+                'msg' => $e->getMessage(), 'tenant_id' => $tenantId,
+            ]);
+            $items = [];
         }
+
+        $items = array_map(static function (array $item): array {
+            $texto = (string) ($item['texto_sugerido'] ?? $item['conteudo'] ?? $item['texto'] ?? '');
+            return [
+                'id' => (int) ($item['id'] ?? 0),
+                'gatilho' => (string) ($item['gatilho'] ?? ''),
+                'titulo' => (string) ($item['titulo'] ?? $item['gatilho'] ?? ''),
+                'texto_sugerido' => $texto,
+                'conteudo' => $texto,
+            ];
+        }, $items);
+        $this->json(['ok' => true, 'items' => $items]);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -502,9 +679,9 @@ class ReportsController extends Controller
         try {
             $pdo  = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
-                "SELECT id FROM reports WHERE estudo_id = :eid ORDER BY id DESC LIMIT 1"
+                "SELECT id FROM reports WHERE estudo_id = :eid AND tenant_id = :tenant_id ORDER BY id DESC LIMIT 1"
             );
-            $stmt->execute([':eid' => $estudoId]);
+            $stmt->execute([':eid' => $estudoId, ':tenant_id' => Auth::tenantId()]);
             $id = $stmt->fetchColumn();
 
             $this->json(['report_id' => $id ?: null]);
@@ -525,8 +702,10 @@ class ReportsController extends Controller
             return;
         }
         $input    = $this->getJsonInput();
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
         $reportId = (int) ($input['report_id'] ?? 0);
-        $situacao = trim($input['situacao'] ?? '');
+        $situacao = trim((string) ($input['situacao'] ?? ''));
         $allowed  = ['em_laudo', 'rascunho'];
         if (!$reportId || !in_array($situacao, $allowed, true)) {
             $this->json(['ok' => false, 'msg' => 'Parâmetros inválidos.'], 422);
@@ -534,15 +713,19 @@ class ReportsController extends Controller
         }
         try {
             $pdo = \App\Core\Database::getInstance();
-            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id")
-                ->execute(['sit' => $situacao, 'id' => $reportId]);
+            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id AND tenant_id = :tenant_id")
+                ->execute(['sit' => $situacao, 'id' => $reportId, 'tenant_id' => Auth::tenantId()]);
+            if (!$this->reportRepo->findReportById($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             // Espelha em bi_pacs_estudos
             $pdo->prepare(
                 "UPDATE bi_pacs_estudos e
-                 JOIN reports r ON r.estudo_id = e.id
+                 JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
                  SET e.situacao = :sit
                  WHERE r.id = :rid"
-            )->execute(['sit' => $situacao, 'rid' => $reportId]);
+            )->execute(['sit' => $situacao, 'rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
             Logger::info('ReportsController::atualizarStatus', [
                 'report_id' => $reportId, 'situacao' => $situacao, 'usuario' => Auth::userId(),
             ]);
@@ -559,47 +742,69 @@ class ReportsController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     public function liberar(): void
     {
-        if (!Auth::check()) {
-            $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
-            return;
-        }
-        $input    = $this->getJsonInput();
+        if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        $input = $this->getJsonInput();
+        $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
+
         $reportId = (int) ($input['report_id'] ?? 0);
-        if (!$reportId) {
-            $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422);
-            return;
-        }
+        if (!$reportId) { $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422); return; }
+
         try {
-            $pdo   = \App\Core\Database::getInstance();
-            $agora = date('Y-m-d H:i:s');
-            // Salva conteúdo se enviado
-            $secoes = [
-                'exame'        => $input['secao_exame']        ?? null,
-                'tecnica'      => $input['secao_tecnica']      ?? null,
-                'achados'      => $input['secao_achados']      ?? null,
-                'conclusao'    => $input['secao_conclusao']    ?? null,
-                'recomendacao' => $input['secao_recomendacao'] ?? null,
-            ];
-            if (array_filter($secoes, fn($v) => $v !== null)) {
-                $this->reportRepo->atualizarConteudo($reportId, ['secoes' => $secoes]);
+            $report = $this->reportRepo->findReportById($reportId);
+            if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
+            $situacao = $report->situacao ?? $report->status ?? 'rascunho';
+
+            // Se ainda não foi assinado, usa a mesma validação de conteúdo,
+            // assinatura visual, hash e atualização de estudo do fluxo principal.
+            if ($situacao !== 'assinado') {
+                $secoes = $input['secoes'] ?? [
+                    'exame' => $input['secao_exame'] ?? '',
+                    'tecnica' => $input['secao_tecnica'] ?? '',
+                    'achados' => $input['secao_achados'] ?? '',
+                    'conclusao' => $input['secao_conclusao'] ?? '',
+                    'recomendacao' => $input['secao_recomendacao'] ?? '',
+                ];
+                if (array_filter($secoes, static fn($v) => $v !== null && $v !== '')) {
+                    $save = $this->reportService->salvar($reportId, $secoes, 'rascunho');
+                    if (!$save['ok']) { $this->json(['ok' => false, 'msg' => 'Não foi possível salvar o laudo antes de liberar.'], 422); return; }
+                }
+                $resultado = $this->reportService->assinar($reportId, 'fechar');
+                if (!$resultado['ok']) {
+                    $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
+                    return;
+                }
+                $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.', 'pdf_url' => $resultado['pdf_url'] ?? null]);
+                return;
             }
-            // Marca como liberado
+
+            // Laudo já assinado: liberar não cria uma segunda assinatura.
+            $pdo = \App\Core\Database::getInstance();
             $pdo->prepare(
-                "UPDATE reports SET situacao = 'liberado', liberado_em = :agora, liberado_por = :uid WHERE id = :id"
-            )->execute(['agora' => $agora, 'uid' => Auth::userId(), 'id' => $reportId]);
-            // Atualiza bi_pacs_estudos
-            $pdo->prepare(
-                "UPDATE bi_pacs_estudos e
-                 JOIN reports r ON r.estudo_id = e.id
-                 SET e.situacao = 'liberado', e.laudo_assinado_em = :agora
-                 WHERE r.id = :rid"
-            )->execute(['agora' => $agora, 'rid' => $reportId]);
-            Logger::info('ReportsController::liberar', [
-                'report_id' => $reportId, 'usuario' => Auth::userId(),
-            ]);
-            $this->json(['ok' => true, 'msg' => 'Laudo liberado com sucesso.']);
+                "UPDATE reports SET situacao = 'liberado', liberado_em = NOW(), liberado_por = :uid
+                 WHERE id = :id AND tenant_id = :tenant_id"
+            )->execute(['uid' => Auth::userId(), 'id' => $reportId, 'tenant_id' => Auth::tenantId()]);
+            try {
+                $pdo->prepare(
+                    "UPDATE bi_pacs_estudos e
+                     JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
+                     SET e.situacao = 'liberado', e.laudo_assinado_em = NOW()
+                     WHERE r.id = :rid"
+                )->execute(['rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
+            } catch (\PDOException $studyError) {
+                if (stripos($studyError->getMessage(), 'laudo_assinado_em') === false) throw $studyError;
+                Logger::warning('ReportsController::liberar sem laudo_assinado_em — migration pendente', ['error' => $studyError->getMessage()]);
+                $pdo->prepare(
+                    "UPDATE bi_pacs_estudos e
+                     JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
+                     SET e.situacao = 'liberado'
+                     WHERE r.id = :rid"
+                )->execute(['rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
+            }
+            Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
+            $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
         } catch (\Throwable $e) {
-            Logger::error('ReportsController::liberar error', ['msg' => $e->getMessage()]);
+            Logger::error('ReportsController::liberar error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => 'Erro interno ao liberar laudo.'], 500);
         }
     }
@@ -607,6 +812,39 @@ class ReportsController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     // Helpers privados
     // ══════════════════════════════════════════════════════════════════════════
+
+    private function normalizarTemplate(array $row): array
+    {
+        $secoesJson = [];
+        $conteudo = $row['conteudo'] ?? null;
+        if (is_string($conteudo) && trim($conteudo) !== '') {
+            $decoded = json_decode($conteudo, true);
+            if (is_array($decoded)) {
+                $secoesJson = is_array($decoded['secoes'] ?? null) ? $decoded['secoes'] : $decoded;
+            } else {
+                $secoesJson['exame'] = $conteudo;
+            }
+        }
+
+        $secoes = [];
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+            $campo = 'secao_' . $chave;
+            $valor = array_key_exists($campo, $row) && $row[$campo] !== null
+                ? (string) $row[$campo]
+                : (string) ($secoesJson[$chave] ?? '');
+            $secoes[$chave] = $valor;
+        }
+
+        $titulo = (string) ($row['nome'] ?? $row['titulo'] ?? ('Template #' . ($row['id'] ?? '')));
+        return [
+            'id' => (int) ($row['id'] ?? 0),
+            'titulo' => $titulo,
+            'nome' => $titulo,
+            'modalidade' => (string) ($row['modalidade'] ?? ''),
+            'conteudo' => json_encode(['secoes' => $secoes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'secoes' => $secoes,
+        ];
+    }
 
     private function getJsonInput(): array
     {

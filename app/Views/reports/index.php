@@ -1011,7 +1011,8 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     function fetchAutocomplete(q, editor) {
         fetch('/api/reports/autotext?q=' + encodeURIComponent(q))
         .then(r => r.json())
-        .then(function(items) {
+        .then(function(data) {
+            const items = Array.isArray(data) ? data : (data.items || []);
             if (!items.length) { hideAutocomplete(); return; }
             showAutocompleteDropdown(items, editor);
         })

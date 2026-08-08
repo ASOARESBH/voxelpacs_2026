@@ -11,6 +11,7 @@ window.VoxelReports.autosave = (function () {
     let lastPayload = null;
     let lastSavedAt = null;
     let saving = false;
+    let savingPromise = null;
 
     function statusEl() { return document.getElementById('autosave-status'); }
 
@@ -25,36 +26,61 @@ window.VoxelReports.autosave = (function () {
     }
 
     function save(modo) {
-        if (config.readonly || saving) return Promise.resolve(null);
+        if (!config || config.readonly) return Promise.resolve({ ok: false, msg: 'Editor em modo somente leitura.' });
+        if (saving) return savingPromise || Promise.resolve({ ok: false, msg: 'Salvamento em andamento.' });
 
         const secoes = editor.extractSecoes();
         const payload = JSON.stringify(secoes);
 
         // Autosave silencioso: não repete POST se nada mudou desde o último save.
-        if (modo === 'auto' && payload === lastPayload) return Promise.resolve(null);
+        if (modo === 'auto' && payload === lastPayload) return Promise.resolve({ ok: true, skipped: true });
 
         saving = true;
-        return fetch('/reports/save', {
+        const request = fetch('/reports/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
             body: JSON.stringify({ report_id: config.reportId, secoes, modo }),
         })
-            .then((r) => r.json())
+            .then((response) => response.json())
             .then((data) => {
-                saving = false;
                 if (data && data.ok) {
                     lastPayload = payload;
                     lastSavedAt = Date.now();
+                    const el = statusEl();
+                    if (el) el.classList.remove('autosave-error');
                     tickStatusText();
+                } else {
+                    const el = statusEl();
+                    if (el) {
+                        el.textContent = (data && data.msg) || 'Falha ao salvar';
+                        el.classList.add('autosave-error');
+                    }
                 }
-                return data;
+                return data || { ok: false, msg: 'Resposta inválida do servidor.' };
             })
-            .catch(() => { saving = false; return null; });
+            .catch((error) => {
+                const el = statusEl();
+                if (el) {
+                    el.textContent = 'Falha de comunicação ao salvar';
+                    el.classList.add('autosave-error');
+                }
+                return { ok: false, msg: error && error.message ? error.message : 'Falha de comunicação ao salvar' };
+            })
+            .finally(() => {
+                saving = false;
+                savingPromise = null;
+            });
+
+        savingPromise = request;
+        return request;
     }
 
     function init(cfg) {
         config = cfg;
         if (config.readonly) return;
+
+        const status = statusEl();
+        if (status) status.classList.remove('autosave-error');
 
         setInterval(() => save('auto'), 30000);
         setInterval(tickStatusText, 1000);

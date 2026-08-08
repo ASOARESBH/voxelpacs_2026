@@ -375,27 +375,46 @@ class EstudosRepository
      */
     public function assumirEstudo(int $estudoId, int $usuarioId): bool
     {
+        $params = [':usuario_id' => $usuarioId, ':usuario_id2' => $usuarioId, ':id' => $estudoId];
         try {
             $stmt = $this->pdo->prepare(
                 "UPDATE bi_pacs_estudos SET
                     situacao               = 'em_laudo',
                     assumido_por           = :usuario_id,
                     assumido_em            = NOW(),
-                    usuario_responsavel_id = :usuario_id2
+                    usuario_responsavel_id = :usuario_id2,
+                    data_inicio_laudo     = CURDATE(),
+                    hora_inicio_laudo     = CURTIME(),
+                    lock_heartbeat_em     = NOW()
                  WHERE id = :id AND COALESCE(situacao,'novo') IN ('novo','aberto')"
             );
-            return $stmt->execute([
-                ':usuario_id'  => $usuarioId,
-                ':usuario_id2' => $usuarioId,
-                ':id'          => $estudoId
+            return $stmt->execute($params);
+        } catch (\PDOException $ex) {
+            if (stripos($ex->getMessage(), 'data_inicio_laudo') === false
+                && stripos($ex->getMessage(), 'hora_inicio_laudo') === false
+                && stripos($ex->getMessage(), 'lock_heartbeat_em') === false) {
+                \App\Core\Logger::error('Erro ao assumir estudo', [
+                    'estudo_id' => $estudoId, 'usuario_id' => $usuarioId, 'error' => $ex->getMessage(),
+                ]);
+                return false;
+            }
+            \App\Core\Logger::warning('EstudosRepository::assumirEstudo usando colunas legadas', [
+                'estudo_id' => $estudoId, 'usuario_id' => $usuarioId, 'error' => $ex->getMessage(),
             ]);
-        } catch (\Throwable $ex) {
-            \App\Core\Logger::error('Erro ao assumir estudo', [
-                'estudo_id'  => $estudoId,
-                'usuario_id' => $usuarioId,
-                'error'      => $ex->getMessage()
-            ]);
-            return false;
+            try {
+                $stmt = $this->pdo->prepare(
+                    "UPDATE bi_pacs_estudos SET
+                        situacao = 'em_laudo', assumido_por = :usuario_id,
+                        assumido_em = NOW(), usuario_responsavel_id = :usuario_id2
+                     WHERE id = :id AND COALESCE(situacao,'novo') IN ('novo','aberto')"
+                );
+                return $stmt->execute($params);
+            } catch (\Throwable $legacyError) {
+                \App\Core\Logger::error('Erro ao assumir estudo no schema legado', [
+                    'estudo_id' => $estudoId, 'usuario_id' => $usuarioId, 'error' => $legacyError->getMessage(),
+                ]);
+                return false;
+            }
         }
     }
 

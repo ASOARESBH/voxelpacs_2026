@@ -1,8 +1,20 @@
 <?php
 /** @var object $report */
 /** @var bool $readonly */
-$conteudo = json_decode($report->conteudo, true) ?: [];
-$secoes   = $conteudo['secoes'] ?? [];
+$conteudo = [];
+if (isset($report->conteudo) && is_string($report->conteudo) && trim($report->conteudo) !== '') {
+    $conteudo = json_decode($report->conteudo, true) ?: [];
+}
+$secoesJson = is_array($conteudo['secoes'] ?? null) ? $conteudo['secoes'] : [];
+$secoes = [];
+foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+    $campo = 'secao_' . $chave;
+    $valorColuna = property_exists($report, $campo) ? ($report->{$campo} ?? null) : null;
+    $secoes[$chave] = ($valorColuna !== null && $valorColuna !== '')
+        ? (string) $valorColuna
+        : (string) ($secoesJson[$chave] ?? '');
+}
+$reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
 
 $secaoTitulos = [
     'exame'        => 'Exame',
@@ -50,7 +62,7 @@ $secaoTitulos = [
         <?php endforeach; ?>
     </div>
 
-    <?php if (in_array($report->status, ['assinado', 'liberado'], true)): ?>
+    <?php if (in_array($reportSituacao, ['assinado', 'liberado'], true)): ?>
         <div id="signature-block" class="reports-signature-block"></div>
     <?php endif; ?>
 </div>

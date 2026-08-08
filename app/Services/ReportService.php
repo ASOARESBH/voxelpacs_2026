@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Core\Audit\AuditLogger;
 use App\Core\Auth;
+use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Repositories\MedicoRepository;
@@ -226,7 +227,7 @@ class ReportService {
         return [
             'ok' => true,
             'versao_atual' => $versaoNumero,
-            'situacao' => $novoStatus ?? $report->status,
+            'situacao' => $novoStatus ?? ($report->situacao ?? $report->status ?? 'rascunho'),
             'atualizado_em' => date('Y-m-d H:i:s'),
         ];
     }
@@ -247,20 +248,14 @@ class ReportService {
             return ['ok' => false, 'error' => 'report_ja_assinado'];
         }
 
-        // Bloqueia assinar laudo sem nenhum conteúdo em nenhuma seção — espelha a
-        // mesma checagem já feita no cliente antes de abrir o modal.
-        $conteudoDecodificado = json_decode($report->conteudo, true);
-        $secoesAtuais = $conteudoDecodificado['secoes'] ?? [];
-        $temConteudo = false;
-        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
-            if (trim(strip_tags($secoesAtuais[$chave] ?? '')) !== '') {
-                $temConteudo = true;
-                break;
-            }
-        }
-        if (!$temConteudo) {
+        // O schema operacional guarda as cinco seções em colunas secao_*;
+        // versões legadas podem ter JSON em conteudo. A assinatura deve usar o
+        // mesmo conteúdo que o editor e o PDF exibem, nunca somente o JSON.
+        $secoesAtuais = $this->extrairSecoesDoReport($report);
+        if (!$this->secoesTemConteudo($secoesAtuais)) {
             return ['ok' => false, 'error' => 'laudo_vazio'];
         }
+        $conteudoDecodificado = ['secoes' => $secoesAtuais];
 
         $userId   = Auth::userId();
         $tenantId = Auth::tenantId();
@@ -281,7 +276,11 @@ class ReportService {
         }
         $crm = $medico['crm'] ?? null;
 
-        $estudo = $this->repo->findEstudoById((int) $report->bi_pacs_estudos_id);
+        $estudoId = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
+        $estudo = $estudoId ? $this->repo->findEstudoById($estudoId) : null;
+        if (!$estudo) {
+            return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+        }
         $user = Auth::user();
         $assinadoEm = date('Y-m-d H:i:s');
 
@@ -298,28 +297,38 @@ class ReportService {
 
         // Congela uma cópia do arquivo da assinatura visual pra ESTE laudo —
         // se o médico trocar a assinatura ativa depois, laudos já assinados
-        // continuam mostrando a que foi usada de fato no momento (não uma
-        // referência mutável ao perfil do médico). Falha aqui não bloqueia a
-        // assinatura (mesmo padrão não-bloqueante do webhook Copilot abaixo)
-        // — hash/nome/CRM continuam sendo o registro legal principal.
+        // continuam mostrando a que foi usada de fato no momento.
         $caminhoCongelado = $this->congelarAssinaturaVisual($reportId, $tenantId, $assinaturaAtiva);
 
-        $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
-        $this->repo->salvarAssinaturaVisual($reportId, $hash, $crm, $assinaturaAtiva['tipo'], $caminhoCongelado);
+        $pdo = Database::getInstance();
+        try {
+            $pdo->beginTransaction();
 
-        // Item 4 — "Somente Assinar" pára em 'assinado'; "Assinar e Fechar" avança
-        // até 'liberado' e finaliza o estudo (mesmas duas chamadas de sempre,
-        // agora condicionadas ao modo em vez de sempre executarem as duas).
-        $this->repo->marcarAssinado($reportId, 'assinado');
-        if ($modo === 'fechar') {
-            $this->repo->marcarAssinado($reportId, 'liberado');
-            $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'liberado');
-        } else {
-            $this->repo->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'assinado');
+            // O registro auxiliar possui schemas históricos; o Repository faz
+            // fallback sem impedir a persistência principal do laudo.
+            $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
+            $this->repo->salvarAssinaturaVisual($reportId, $hash, $crm, $assinaturaAtiva['tipo'], $caminhoCongelado);
+
+            // "Somente Assinar" para em assinado; "Assinar e Fechar" libera.
+            $this->repo->marcarAssinado($reportId, 'assinado');
+            if ($modo === 'fechar') {
+                $this->repo->marcarAssinado($reportId, 'liberado');
+                $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
+            } else {
+                $this->repo->atualizarSituacaoEstudo($estudoId, 'assinado');
+            }
+
+            $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
+            $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('[ReportService::assinar] Persistência atômica falhou', [
+                'report_id' => $reportId, 'estudo_id' => $estudoId, 'modo' => $modo,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => 'assinatura_persistencia_falhou'];
         }
-
-        $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
-        $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
 
         AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
 
@@ -348,7 +357,7 @@ class ReportService {
             'situacao' => $situacaoFinal,
             'assinado_em' => $assinadoEm,
             'hash' => $hash,
-            'pdf_url' => '/reports/' . rawurlencode((string) $estudo->study_instance_uid) . '/pdf',
+            'pdf_url' => '/reports/pdf?report_id=' . rawurlencode((string) $reportId),
         ];
     }
 
@@ -398,7 +407,19 @@ class ReportService {
         }
 
         $report = $this->repo->findReportById($reportId);
-        $conteudo = json_decode($version->conteudo, true);
+        if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        $conteudo = [];
+        if (isset($version->conteudo) && is_string($version->conteudo) && trim($version->conteudo) !== '') {
+            $decoded = json_decode($version->conteudo, true);
+            if (is_array($decoded)) $conteudo = $decoded;
+        }
+        if (!isset($conteudo['secoes']) || !is_array($conteudo['secoes'])) {
+            $conteudo = ['secoes' => []];
+            foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+                $campo = 'secao_' . $chave;
+                $conteudo['secoes'][$chave] = property_exists($version, $campo) ? (string) ($version->{$campo} ?? '') : '';
+            }
+        }
         $userId = Auth::userId();
 
         $this->repo->atualizarConteudo($reportId, $conteudo, 'rascunho');
@@ -420,6 +441,37 @@ class ReportService {
 
     public function registrarPdfGerado(int $reportId): void {
         AuditLogger::log('report.pdf_gerado', 'reports', $reportId);
+    }
+
+    /**
+     * Normaliza o conteúdo de um report de qualquer uma das duas gerações de
+     * schema existentes: colunas secao_* (produção) ou JSON conteudo.secoes.
+     */
+    private function extrairSecoesDoReport(object $report): array {
+        $json = [];
+        if (isset($report->conteudo) && is_string($report->conteudo) && trim($report->conteudo) !== '') {
+            $decoded = json_decode($report->conteudo, true);
+            if (is_array($decoded)) $json = is_array($decoded['secoes'] ?? null) ? $decoded['secoes'] : $decoded;
+        }
+
+        $secoes = [];
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+            $campo = 'secao_' . $chave;
+            $valorColuna = property_exists($report, $campo) ? ($report->{$campo} ?? null) : null;
+            $secoes[$chave] = ($valorColuna !== null && $valorColuna !== '')
+                ? (string) $valorColuna
+                : (string) ($json[$chave] ?? '');
+        }
+        return $secoes;
+    }
+
+    private function secoesTemConteudo(array $secoes): bool {
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+            $texto = html_entity_decode((string) ($secoes[$chave] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $texto = preg_replace('/\x{00A0}|\x{200B}/u', ' ', strip_tags($texto)) ?? '';
+            if (trim($texto) !== '') return true;
+        }
+        return false;
     }
 
     private function lockExpirado(?string $heartbeat): bool {

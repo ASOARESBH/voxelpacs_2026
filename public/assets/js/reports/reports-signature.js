@@ -47,29 +47,37 @@ window.VoxelReports.signature = (function () {
         limparErro();
         enviando = true;
 
-        // Garante que o conteúdo atual está salvo antes de assinar.
-        window.VoxelReports.autosave.save('rascunho').finally(() => {
-            fetch('/reports/sign', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
-                body: JSON.stringify({ report_id: config.reportId, modo }),
-            })
-                .then((r) => r.json())
-                .then((data) => {
+        // O conteúdo atual precisa estar persistido antes da assinatura. Não
+        // use finally(): ele chamava /reports/sign mesmo após SQL/CSRF falhar.
+        window.VoxelReports.autosave.save('rascunho')
+            .then((saveData) => {
+                if (!saveData || !saveData.ok) {
                     enviando = false;
-                    if (!data.ok) {
-                        mostrarErro(data.msg || 'Não foi possível assinar o laudo.');
-                        return;
-                    }
-                    modal.hide();
-                    if (modo === 'fechar') {
-                        window.location.href = '/estudos';
-                        return;
-                    }
-                    window.location.reload();
-                })
-                .catch(() => { enviando = false; mostrarErro('Falha de comunicação ao assinar o laudo.'); });
-        });
+                    mostrarErro((saveData && saveData.msg) || 'Não foi possível salvar o conteúdo antes de assinar.');
+                    return null;
+                }
+                return fetch('/reports/sign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
+                    body: JSON.stringify({ report_id: config.reportId, modo }),
+                });
+            })
+            .then((response) => response ? response.json() : null)
+            .then((data) => {
+                if (!data) return;
+                enviando = false;
+                if (!data.ok) {
+                    mostrarErro(data.msg || 'Não foi possível assinar o laudo.');
+                    return;
+                }
+                modal.hide();
+                if (modo === 'fechar') {
+                    window.location.href = '/estudos';
+                    return;
+                }
+                window.location.reload();
+            })
+            .catch(() => { enviando = false; mostrarErro('Falha de comunicação ao assinar o laudo.'); });
     }
 
     function init(cfg) {

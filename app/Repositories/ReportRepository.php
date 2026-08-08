@@ -2,6 +2,7 @@
 namespace App\Repositories;
 
 use App\Core\Database;
+use App\Core\Logger;
 use App\Core\TenantContext;
 use PDO;
 
@@ -54,17 +55,34 @@ class ReportRepository {
      * Retorna true se assumiu (ou já era o dono), false se pertence a outro usuário.
      */
     public function assumirEstudo(int $estudoId, int $userId): bool {
-        $stmt = $this->pdo->prepare("
-            UPDATE bi_pacs_estudos
-            SET situacao = 'em_laudo',
-                usuario_responsavel_id = :uid,
-                data_inicio_laudo = CURDATE(),
-                hora_inicio_laudo = CURTIME(),
-                lock_heartbeat_em = NOW()
-            WHERE id = :id
-              AND (usuario_responsavel_id IS NULL OR usuario_responsavel_id = :uid2 OR situacao IN ('novo','aberto','urgente'))
-        ");
-        $stmt->execute(['uid' => $userId, 'id' => $estudoId, 'uid2' => $userId]);
+        $params = ['uid' => $userId, 'id' => $estudoId, 'uid2' => $userId];
+        try {
+            $stmt = $this->pdo->prepare("
+                UPDATE bi_pacs_estudos
+                SET situacao = 'em_laudo',
+                    usuario_responsavel_id = :uid,
+                    data_inicio_laudo = CURDATE(),
+                    hora_inicio_laudo = CURTIME(),
+                    lock_heartbeat_em = NOW()
+                WHERE id = :id
+                  AND (usuario_responsavel_id IS NULL OR usuario_responsavel_id = :uid2 OR situacao IN ('novo','aberto','urgente'))
+            ");
+            $stmt->execute($params);
+        } catch (\PDOException $e) {
+            if (stripos($e->getMessage(), 'lock_heartbeat_em') === false) throw $e;
+            Logger::warning('ReportRepository::assumirEstudo sem heartbeat — migration pendente', [
+                'estudo_id' => $estudoId,
+                'error' => $e->getMessage(),
+            ]);
+            $stmt = $this->pdo->prepare("
+                UPDATE bi_pacs_estudos
+                SET situacao = 'em_laudo', usuario_responsavel_id = :uid,
+                    data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME()
+                WHERE id = :id
+                  AND (usuario_responsavel_id IS NULL OR usuario_responsavel_id = :uid2 OR situacao IN ('novo','aberto','urgente'))
+            ");
+            $stmt->execute($params);
+        }
         if ($stmt->rowCount() > 0) return true;
 
         $estudo = $this->findEstudoById($estudoId);
@@ -72,28 +90,69 @@ class ReportRepository {
     }
 
     public function reatribuirLock(int $estudoId, int $userId): void {
-        $this->pdo->prepare("
-            UPDATE bi_pacs_estudos
-            SET usuario_responsavel_id = :uid, data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME(), lock_heartbeat_em = NOW()
-            WHERE id = :id
-        ")->execute(['uid' => $userId, 'id' => $estudoId]);
+        try {
+            $this->pdo->prepare("
+                UPDATE bi_pacs_estudos
+                SET usuario_responsavel_id = :uid, data_inicio_laudo = CURDATE(),
+                    hora_inicio_laudo = CURTIME(), lock_heartbeat_em = NOW()
+                WHERE id = :id
+            ")->execute(['uid' => $userId, 'id' => $estudoId]);
+        } catch (\PDOException $e) {
+            if (stripos($e->getMessage(), 'lock_heartbeat_em') === false) throw $e;
+            Logger::warning('ReportRepository::reatribuirLock sem heartbeat — migration pendente', [
+                'estudo_id' => $estudoId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->pdo->prepare("
+                UPDATE bi_pacs_estudos
+                SET usuario_responsavel_id = :uid, data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME()
+                WHERE id = :id
+            ")->execute(['uid' => $userId, 'id' => $estudoId]);
+        }
     }
 
     public function marcarHeartbeat(int $estudoId): void {
-        $this->pdo->prepare("UPDATE bi_pacs_estudos SET lock_heartbeat_em = NOW() WHERE id = :id")
-            ->execute(['id' => $estudoId]);
+        try {
+            $this->pdo->prepare("UPDATE bi_pacs_estudos SET lock_heartbeat_em = NOW() WHERE id = :id")
+                ->execute(['id' => $estudoId]);
+        } catch (\PDOException $e) {
+            if (stripos($e->getMessage(), 'lock_heartbeat_em') === false) throw $e;
+            Logger::warning('ReportRepository::marcarHeartbeat ignorado — migration pendente', [
+                'estudo_id' => $estudoId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function atualizarSituacaoEstudo(int $estudoId, string $situacao): void {
-        $this->pdo->prepare("UPDATE bi_pacs_estudos SET situacao = :situacao WHERE id = :id")
-            ->execute(['situacao' => $situacao, 'id' => $estudoId]);
+        try {
+            $this->pdo->prepare(
+                "UPDATE bi_pacs_estudos
+                 SET situacao = :situacao,
+                     laudo_assinado_em = CASE WHEN :situacao_ts IN ('assinado','liberado') THEN NOW() ELSE laudo_assinado_em END
+                 WHERE id = :id"
+            )->execute(['situacao' => $situacao, 'situacao_ts' => $situacao, 'id' => $estudoId]);
+        } catch (\PDOException $e) {
+            if (stripos($e->getMessage(), 'laudo_assinado_em') === false) throw $e;
+            Logger::warning('ReportRepository::atualizarSituacaoEstudo sem laudo_assinado_em — migration pendente', [
+                'estudo_id' => $estudoId, 'situacao' => $situacao, 'error' => $e->getMessage(),
+            ]);
+            $this->pdo->prepare("UPDATE bi_pacs_estudos SET situacao = :situacao WHERE id = :id")
+                ->execute(['situacao' => $situacao, 'id' => $estudoId]);
+        }
     }
 
     // ── reports (schema de produção: estudo_id, situacao, secao_*) ───────────
 
     public function findReportById(int $id): ?object {
-        $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE id = :id");
-        $stmt->execute(['id' => $id]);
+        $sql = "SELECT * FROM reports WHERE id = :id";
+        $params = ['id' => $id];
+        if (TenantContext::isSet()) {
+            $sql .= " AND tenant_id = :tenant_id";
+            $params['tenant_id'] = TenantContext::id();
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         return $stmt->fetch() ?: null;
     }
 
@@ -101,8 +160,15 @@ class ReportRepository {
      * Busca o laudo pelo id do estudo (FK estudo_id).
      */
     public function findReportByEstudoId(int $estudoId): ?object {
-        $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE estudo_id = :id LIMIT 1");
-        $stmt->execute(['id' => $estudoId]);
+        $sql = "SELECT * FROM reports WHERE estudo_id = :id";
+        $params = ['id' => $estudoId];
+        if (TenantContext::isSet()) {
+            $sql .= " AND tenant_id = :tenant_id";
+            $params['tenant_id'] = TenantContext::id();
+        }
+        $sql .= " LIMIT 1";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         return $stmt->fetch() ?: null;
     }
 
@@ -187,17 +253,33 @@ class ReportRepository {
      * esperando isso (ver modules/assinatura-medico.md).
      */
     public function salvarAssinaturaVisual(int $reportId, string $hash, ?string $crm, ?string $tipo, ?string $caminhoArquivo): void {
-        $this->pdo->prepare(
-            "UPDATE reports SET assinatura_hash = :hash, assinatura_crm = :crm, assinatura_tipo = :tipo, assinatura_caminho_arquivo = :caminho WHERE id = :id"
-        )->execute([
-            'hash' => $hash, 'crm' => $crm, 'tipo' => $tipo, 'caminho' => $caminhoArquivo, 'id' => $reportId,
-        ]);
+        try {
+            $this->pdo->prepare(
+                "UPDATE reports SET assinatura_hash = :hash, assinatura_crm = :crm, assinatura_tipo = :tipo, assinatura_caminho_arquivo = :caminho WHERE id = :id"
+            )->execute([
+                'hash' => $hash, 'crm' => $crm, 'tipo' => $tipo, 'caminho' => $caminhoArquivo, 'id' => $reportId,
+            ]);
+        } catch (\PDOException $e) {
+            // A migration visual é complementar; não pode impedir a assinatura
+            // legal, que fica registrada em reports.situacao/assinado_em/hash.
+            Logger::warning('ReportRepository::salvarAssinaturaVisual ignorado — migration visual pendente', [
+                'report_id' => $reportId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function proximaVersao(int $reportId): int {
-        $stmt = $this->pdo->prepare("SELECT COALESCE(MAX(versao), 0) FROM report_versions WHERE report_id = :id");
-        $stmt->execute(['id' => $reportId]);
-        return ((int) $stmt->fetchColumn()) + 1;
+        try {
+            $stmt = $this->pdo->prepare("SELECT COALESCE(MAX(versao), 0) FROM report_versions WHERE report_id = :id");
+            $stmt->execute(['id' => $reportId]);
+            return ((int) $stmt->fetchColumn()) + 1;
+        } catch (\PDOException $e) {
+            if (stripos($e->getMessage(), 'versao') === false) throw $e;
+            $stmt = $this->pdo->prepare("SELECT COALESCE(MAX(versao_numero), 0) FROM report_versions WHERE report_id = :id");
+            $stmt->execute(['id' => $reportId]);
+            return ((int) $stmt->fetchColumn()) + 1;
+        }
     }
 
     public function createVersion(int $reportId, array $conteudo, string $acao, int $userId, int $versaoNumero): void {
@@ -221,40 +303,108 @@ class ReportRepository {
                 'sr'        => $secoes['recomendacao'] ?? '',
             ]);
         } catch (\PDOException $e) {
-            \App\Core\Logger::error('ReportRepository::createVersion falhou', ['error' => $e->getMessage()]);
+            try {
+                $this->pdo->prepare("
+                    INSERT INTO report_versions (report_id, versao_numero, conteudo, acao, user_id)
+                    VALUES (:report_id, :versao, :conteudo, :acao, :user_id)
+                ")->execute([
+                    'report_id' => $reportId,
+                    'versao' => $versaoNumero,
+                    'conteudo' => json_encode(['secoes' => $secoes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'acao' => $acao,
+                    'user_id' => $userId,
+                ]);
+            } catch (\PDOException $legacyError) {
+                \App\Core\Logger::error('ReportRepository::createVersion falhou nos schemas conhecidos', [
+                    'error' => $legacyError->getMessage(), 'report_id' => $reportId,
+                ]);
+            }
         }
     }
 
     public function listVersions(int $reportId): array {
-        $stmt = $this->pdo->prepare("
-            SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome
-            FROM report_versions rv
-            LEFT JOIN bi_users u ON u.id = rv.usuario_id
-            WHERE rv.report_id = :report_id
-            ORDER BY rv.versao DESC
-        ");
-        $stmt->execute(['report_id' => $reportId]);
-        return $stmt->fetchAll();
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome
+                FROM report_versions rv
+                LEFT JOIN bi_users u ON u.id = rv.usuario_id
+                WHERE rv.report_id = :report_id
+                ORDER BY rv.versao DESC
+            ");
+            $stmt->execute(['report_id' => $reportId]);
+            return $stmt->fetchAll();
+        } catch (\PDOException $e) {
+            $stmt = $this->pdo->prepare("
+                SELECT rv.id, rv.versao_numero, rv.acao, rv.criado_em,
+                       COALESCE(u.name, '') AS user_nome
+                FROM report_versions rv
+                LEFT JOIN bi_users u ON u.id = rv.user_id
+                WHERE rv.report_id = :report_id
+                ORDER BY rv.versao_numero DESC
+            ");
+            $stmt->execute(['report_id' => $reportId]);
+            return $stmt->fetchAll();
+        }
     }
 
     public function findVersion(int $versionId): ?object {
-        $stmt = $this->pdo->prepare("SELECT * FROM report_versions WHERE id = :id");
-        $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM report_versions WHERE id = :id");
+            $stmt->execute(['id' => $versionId]);
+            return $stmt->fetch() ?: null;
+        } catch (\PDOException $e) {
+            $stmt = $this->pdo->prepare("SELECT * FROM report_versions WHERE id = :id");
+            $stmt->execute(['id' => $versionId]);
+            return $stmt->fetch() ?: null;
+        }
     }
 
     public function createSignature(int $reportId, int $userId, string $nomeMedico, ?string $crm, string $hash, ?string $ip): void {
-        $this->pdo->prepare("
-            INSERT INTO report_signatures (report_id, user_id, nome_medico, crm, data, hora, hash, ip)
-            VALUES (:report_id, :user_id, :nome, :crm, CURDATE(), CURTIME(), :hash, :ip)
-        ")->execute([
-            'report_id' => $reportId,
-            'user_id'   => $userId,
-            'nome'      => $nomeMedico,
-            'crm'       => $crm,
-            'hash'      => $hash,
-            'ip'        => $ip,
-        ]);
+        try {
+            $this->pdo->prepare("
+                INSERT INTO report_signatures
+                    (report_id, usuario_id, usuario_nome, crm, hash, ip, user_agent, conteudo_hash)
+                VALUES (:report_id, :user_id, :nome, :crm, :hash, :ip, :ua, :conteudo_hash)
+            ")->execute([
+                'report_id'    => $reportId,
+                'user_id'      => $userId,
+                'nome'         => $nomeMedico,
+                'crm'          => $crm,
+                'hash'         => $hash,
+                'ip'           => $ip,
+                'ua'           => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'conteudo_hash'=> $hash,
+            ]);
+            return;
+        } catch (\PDOException $e) {
+            Logger::warning('ReportRepository::createSignature usando schema legado', [
+                'report_id' => $reportId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Compatibilidade com a definição antiga de 2026-07-04.
+        try {
+            $this->pdo->prepare("
+                INSERT INTO report_signatures (report_id, user_id, nome_medico, crm, data, hora, hash, ip)
+                VALUES (:report_id, :user_id, :nome, :crm, CURDATE(), CURTIME(), :hash, :ip)
+            ")->execute([
+                'report_id' => $reportId,
+                'user_id'   => $userId,
+                'nome'      => $nomeMedico,
+                'crm'       => $crm,
+                'hash'      => $hash,
+                'ip'        => $ip,
+            ]);
+        } catch (\PDOException $legacyError) {
+            // report_signatures possui três schemas históricos conflitantes.
+            // A assinatura principal já será persistida em reports; registrar o
+            // motivo permite corrigir a migration sem bloquear o médico agora.
+            Logger::error('ReportRepository::createSignature indisponível nos schemas conhecidos', [
+                'report_id' => $reportId,
+                'error' => $legacyError->getMessage(),
+            ]);
+        }
     }
 
     public function findSignatureByReportId(int $reportId): ?object {
