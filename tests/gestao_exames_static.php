@@ -28,8 +28,10 @@ $migration   = $read('database/migrations/2026-08-08_bi_pacs_estudos_pedidos.sql
 $report      = $read('app/Services/ReportService.php');
 $reportCard  = $read('app/Views/reports/partials/_exame_card.php');
 $permissions = $read('app/Core/Permission.php');
+$header      = $read('app/Views/layout/pacs_header.php');
 
 $expect(str_contains($routes, "Router::get('/gestao-exames'") , 'Rota da Gestão de Exames ausente.');
+$expect(str_contains($header, "fetch('/api/estudos/contadores'") && !str_contains($header, "fetch('/estudos/contadores'"), 'Sidebar chama rota inválida de contadores.');
 $expect(str_contains($routes, "GestaoExamesController@anexar") , 'Rota de anexação ausente.');
 $expect(str_contains($routes, "GestaoExamesController@remover") , 'Rota de remoção ausente.');
 $expect(str_contains($routes, "GestaoExamesController@arquivo") , 'Rota do proxy ausente.');
@@ -52,6 +54,8 @@ $expect(!str_contains($managementBranch, 'wl-btn-laudo'), 'Gestão expõe botão
 $expect(!str_contains($managementBranch, 'wl-btn-abrir'), 'Gestão expõe botão Abrir.');
 $expect(!str_contains($managementBranch, '/abrir'), 'Gestão expõe rota de abertura.');
 $expect(str_contains($view, '<?php if (!$modoGestao): ?>'), 'Duplo clique do viewer não está condicionado ao modo médico.');
+$expect(!str_contains($view, '<?php if ($modoGestao && $podeGerenciarPedido): ?>\n<script>'), 'Modal do pedido contém script aninhado dentro do bloco principal.');
+$expect(substr_count($view, '<script>') === 1 && substr_count($view, '</script>') === 1, 'Worklist possui quantidade inconsistente de tags script.');
 
 $expect(str_contains($migration, 'CREATE TABLE IF NOT EXISTS `bi_pacs_estudos_pedidos`'), 'Migration sem CREATE TABLE idempotente.');
 $expect(str_contains($migration, 'UNIQUE KEY `uq_pedido_tenant_estudo`'), 'Migration sem unicidade tenant/estudo.');

@@ -225,7 +225,7 @@
             <script>
             (function() {
                 function atualizarBadgesTopbar() {
-                    fetch('/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    fetch('/api/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(function(r) { return r.ok ? r.json() : null; })
                     .then(function(d) {
                         if (!d) return;

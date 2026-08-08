@@ -1222,7 +1222,6 @@ document.addEventListener('click', function(e) {
 });
 
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script>
 document.addEventListener('DOMContentLoaded', function () {
     const modalEl = document.getElementById('pedidoModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
@@ -1378,7 +1377,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 });
-</script>
 <?php endif; ?>
 
 // ── Download em Lote ─────────────────────────────────────────────────────
