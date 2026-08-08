@@ -148,6 +148,7 @@ return [
     'medicos.form.assinatura_ativar'           => 'Ativar',
     'medicos.form.assinatura_desativar'        => 'Desativar',
     'medicos.form.assinatura_ativa'            => 'Ativa',
+    'medicos.form.assinatura_inativa'          => 'Cadastrada, porém inativa — clique em Ativar para usar nos laudos',
     'medicos.form.assinatura_selecione_arquivo'=> 'Selecione um arquivo antes de enviar.',
     'medicos.form.assinatura_desenhe_antes'    => 'Desenhe a assinatura antes de salvar.',
     'medicos.form.assinatura_erro_conexao'     => 'Erro de conexão. Tente novamente.',

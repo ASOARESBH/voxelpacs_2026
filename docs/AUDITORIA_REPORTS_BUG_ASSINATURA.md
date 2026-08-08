@@ -62,3 +62,12 @@ A investigação da ramificação completa mostrou que o alerta exibido no naveg
 A correção mantém o caminho por `data-secao` quando ele existir e adiciona um fallback por título visual normalizado (`Exame`, `Técnica`, `Achados`, `Conclusão` e `Recomendação`). O teste `tests/reports_editor_extraction.js` reproduz o cenário sem atributos `data-secao` e confirma que as cinco seções são reconstruídas sem registrar conteúdo clínico no console.
 
 Também foi incrementado `ASSET_VERSION` de `2.1.0` para `2.1.1`. Sem essa alteração, o servidor poderia continuar entregando `reports-editor.js` antigo por cache mesmo depois de sincronizar a branch. O backend passou a registrar somente os tamanhos das seções em `save` e `assinar` quando o payload chega vazio, permitindo distinguir perda no navegador de conteúdo ausente no banco sem expor o texto do paciente nos logs.
+
+
+## Assinatura médica cadastrada, mas não reconhecida — 2026-08-08
+
+As evidências do banco mostram `bi_medicos.id = 2`, `tenant_id = 2`, `usuario_id = 3`, CRM preenchido e uma linha em `bi_medico_assinaturas` com `medico_id = 2`, `tenant_id = 2`, `tipo = imagem`, arquivo salvo e `ativa = 0`. Portanto, havia um arquivo cadastrado, mas não havia uma assinatura ativa autorizada para o fluxo de laudos.
+
+A rastreabilidade correta é: `Auth::userId()` → `MedicoRepository::findByUsuarioId(usuario_id, tenant_id)` → `MedicoAssinaturaService::buscarAtiva(medico_id, tenant_id)` → `MedicoAssinaturaRepository::findAtiva()`. Esta última consulta exige simultaneamente `medico_id`, `tenant_id` e `ativa = 1`. O comportamento é intencional: upload/salvamento cria a assinatura com `ativa = 0`; a aba Assinatura possui uma ação separada **Ativar**, e a regra de exclusividade impede trocar silenciosamente outro tipo ativo.
+
+O fluxo foi melhorado para distinguir `medico_nao_vinculado`, `medico_assinatura_inativa` e `medico_sem_assinatura_ativa`, registrar no log apenas IDs, tenant e estado (sem caminho ou conteúdo sensível) e mostrar no cadastro o badge “Cadastrada, porém inativa — clique em Ativar para usar nos laudos”. A correção não ativa automaticamente uma assinatura, preservando a regra de exclusividade jurídica do módulo.

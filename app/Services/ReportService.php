@@ -277,8 +277,29 @@ class ReportService {
                 $assinaturaAtiva = (new MedicoAssinaturaService())->buscarAtiva((int) $medico['id'], $tenantId);
             }
         }
+        if (!$medico) {
+            Logger::warning('[ReportService::assinar] usuário sem médico ativo vinculado', [
+                'report_id' => $reportId, 'usuario_id' => $userId, 'tenant_id' => $tenantId,
+            ]);
+            return ['ok' => false, 'error' => 'medico_nao_vinculado'];
+        }
         if (!$assinaturaAtiva) {
-            return ['ok' => false, 'error' => 'medico_sem_assinatura_ativa'];
+            $blocos = (new MedicoAssinaturaService())->listar((int) $medico['id'], (int) $tenantId);
+            $temCadastrada = false;
+            foreach ($blocos as $bloco) {
+                if (!empty($bloco['existe'])) {
+                    $temCadastrada = true;
+                    break;
+                }
+            }
+            Logger::warning('[ReportService::assinar] assinatura ativa não encontrada', [
+                'report_id' => $reportId,
+                'usuario_id' => $userId,
+                'tenant_id' => $tenantId,
+                'medico_id' => (int) $medico['id'],
+                'assinatura_cadastrada' => $temCadastrada,
+            ]);
+            return ['ok' => false, 'error' => $temCadastrada ? 'medico_assinatura_inativa' : 'medico_sem_assinatura_ativa'];
         }
         $crm = $medico['crm'] ?? null;
 

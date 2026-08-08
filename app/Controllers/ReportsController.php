@@ -208,6 +208,8 @@ class ReportsController extends Controller
                     'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
                     'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
                     'medico_sem_assinatura_ativa'   => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
+                    'medico_assinatura_inativa'       => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',
+                    'medico_nao_vinculado'            => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
                     'estudo_nao_encontrado'          => 'O estudo vinculado ao laudo não foi encontrado no tenant atual.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     default                          => 'Erro ao assinar.',

@@ -315,6 +315,10 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     display: inline-flex; align-items: center; gap: .3rem; background: rgba(34,197,94,.12); color: #22c55e;
     border: 1px solid rgba(34,197,94,.3); border-radius: 20px; padding: .15rem .65rem; font-size: .72rem; font-weight: 600;
 }
+.ass-badge-inativa {
+    display: inline-flex; align-items: center; gap: .3rem; background: rgba(245,158,11,.12); color: #f59e0b;
+    border: 1px solid rgba(245,158,11,.3); border-radius: 20px; padding: .15rem .65rem; font-size: .72rem; font-weight: 600;
+}
 .ass-badge-em-breve {
     display: inline-flex; margin-left: .6rem; background: rgba(148,163,184,.15); color: #94a3b8;
     border-radius: 20px; padding: .1rem .6rem; font-size: .68rem; font-weight: 600; text-transform: none; letter-spacing: 0;
@@ -1251,6 +1255,7 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 <script>
 const I18N_ASSINATURA = {
     ativa:            <?= json_encode(t('medicos.form.assinatura_ativa')) ?>,
+    inativa:          <?= json_encode(t('medicos.form.assinatura_inativa')) ?>,
     selecioneArquivo: <?= json_encode(t('medicos.form.assinatura_selecione_arquivo')) ?>,
     enviando:         <?= json_encode(t('medicos.form.assinatura_enviando')) ?>,
     enviar:           <?= json_encode(t('medicos.form.assinatura_enviar')) ?>,
@@ -1877,7 +1882,7 @@ function renderizarBlocoAssinatura(tipo, estado) {
     if (status) {
         status.innerHTML = estado.ativa
             ? '<span class="ass-badge-ativa"><i class="fa fa-circle-check"></i> ' + I18N_ASSINATURA.ativa + '</span>'
-            : '';
+            : (estado.existe ? '<span class="ass-badge-inativa"><i class="fa fa-circle-exclamation"></i> ' + I18N_ASSINATURA.inativa + '</span>' : '');
     }
     if (btnAtivar)    btnAtivar.style.display    = (estado.existe && !estado.ativa) ? '' : 'none';
     if (btnDesativar) btnDesativar.style.display = estado.ativa ? '' : 'none';

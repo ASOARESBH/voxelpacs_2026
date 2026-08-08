@@ -146,6 +146,7 @@ return [
     'medicos.form.assinatura_ativar'           => 'Activate',
     'medicos.form.assinatura_desativar'        => 'Deactivate',
     'medicos.form.assinatura_ativa'            => 'Active',
+    'medicos.form.assinatura_inativa'          => 'Registered but inactive — click Activate to use in reports',
     'medicos.form.assinatura_selecione_arquivo'=> 'Select a file before uploading.',
     'medicos.form.assinatura_desenhe_antes'    => 'Draw the signature before saving.',
     'medicos.form.assinatura_erro_conexao'     => 'Connection error. Please try again.',
