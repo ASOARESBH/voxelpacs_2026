@@ -984,20 +984,34 @@ class EstudosController extends Controller
 
     public function contadores(): void
     {
-        $pdo      = Database::getInstance();
-        $tenantId = Auth::tenantId();
-        $isAdmin  = Auth::isPlatformAdmin();
+        $pdo          = Database::getInstance();
+        $tenantId     = Auth::tenantId();
+        $isAdmin      = Auth::isPlatformAdmin();
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
-        $where    = ['1=1'];
-        $params   = [];
 
-        if ($tenantId) {
-            $where[]  = 'tenant_id = ?';
-            $params[] = $tenantId;
+        // ── Mesmo padrão de filtro multi-tenant da worklist ──────────────────────
+        // bi_pacs_estudos não tem tenant_id — é filtrado por institution_name
+        // via InstitutionResolverService (fonte única da verdade)
+        $where  = ['1=1'];
+        $params = [];
+
+        if ($tenantId && !$bypassGlobal) {
+            $institutionNames = \App\Services\InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+            if (!empty($institutionNames)) {
+                $ph       = implode(',', array_fill(0, count($institutionNames), '?'));
+                $where[]  = "institution_name IN ({$ph})";
+                foreach ($institutionNames as $n) { $params[] = $n; }
+            } else {
+                // Tenant sem institution_names vinculados — retorna zeros
+                $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+                return;
+            }
         } elseif (!$bypassGlobal) {
-            $this->json(['novo'=>0,'aberto'=>0,'em_laudo'=>0,'urgente'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0]);
+            // Sem tenant e sem bypass — não mostra nada
+            $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
             return;
         }
+        // bypassGlobal (superadmin fora de impersonation) = sem filtro de institution
 
         try {
             $wBase = implode(' AND ', $where);
@@ -1007,7 +1021,6 @@ class EstudosController extends Controller
             );
             $stmt->execute($params);
 
-            // Todas as situações possíveis
             $data = [
                 'novo'        => 0,
                 'aberto'      => 0,
@@ -1032,6 +1045,7 @@ class EstudosController extends Controller
 
             $this->json($data);
         } catch (\Throwable $ex) {
+            error_log('[EstudosController::contadores] ' . $ex->getMessage());
             $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
         }
     }
