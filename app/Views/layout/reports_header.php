@@ -112,6 +112,12 @@ $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
             <?php endif; ?>
             <?php endif; ?>
 
+            <?php if (!empty($pedido) && !empty($pedido['visualizar_url'])): ?>
+            <a href="<?= htmlspecialchars($pedido['visualizar_url']) ?>" class="pacs-btn" id="btn-pedido" target="_blank" rel="noopener"
+               title="<?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>">
+                <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?>
+            </a>
+            <?php endif; ?>
             <button type="button" class="pacs-btn" id="btn-history" title="Histórico de versões">
                 <i class="fa fa-clock-rotate-left"></i> Histórico
             </button>

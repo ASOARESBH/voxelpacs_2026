@@ -33,6 +33,7 @@ phpunit.result.cache
 # Manter a estrutura de diretórios vazios
 !/storage/logs/.gitkeep
 !/storage/uploads/.gitkeep
+!/storage/uploads/.htaccess
 !/storage/sessions/.gitkeep
 !/storage/cache/.gitkeep
 

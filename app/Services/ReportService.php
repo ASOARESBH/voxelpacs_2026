@@ -100,6 +100,21 @@ class ReportService {
 
         $report = $this->getOrCreateReport($estudo, $userId);
 
+        // O pedido pertence ao estudo, não ao texto do laudo. Carregamos seus
+        // metadados aqui para o médico consultar no report sem duplicar o arquivo.
+        $pedido = null;
+        try {
+            $tenantEstudo = (int) ($estudo->tenant_id ?? 0);
+            if ($tenantEstudo > 0) {
+                $pedido = (new PedidoMedicoService())->buscarPorEstudo((int) $estudo->id, $tenantEstudo);
+            }
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportService::carregarParaEdicao] Pedido não carregado', [
+                'estudo_id' => $estudo->id ?? null,
+                'error'     => $e->getMessage(),
+            ]);
+        }
+
         // Schema de produção usa 'situacao' (não 'status')
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
         if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
@@ -112,6 +127,7 @@ class ReportService {
             'ok' => true,
             'estudo' => $estudo,
             'report' => $report,
+            'pedido' => $pedido,
             'readonly' => $readonly,
             'lockInfo' => $lockInfo,
         ];

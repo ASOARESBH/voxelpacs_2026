@@ -94,6 +94,26 @@ $studyUidShort = strlen($estudo->study_instance_uid ?? '') > 28
             <span class="rp-value"><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($estudo->referring_physician_name ?? null) ?: '—') ?></span>
         </div>
 
+        <div class="rp-field rp-pedido-field">
+            <label><i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.coluna')) ?></label>
+            <?php if (!empty($pedido) && !empty($pedido['visualizar_url'])): ?>
+                <span class="rp-value">
+                    <span class="pedido-report-badge"><i class="fa fa-circle-check"></i> <?= htmlspecialchars(t('pedido_medico.status.anexado')) ?></span>
+                    <span class="pedido-report-name" title="<?= htmlspecialchars($pedido['nome_original'] ?? '') ?>">
+                        <?= htmlspecialchars($pedido['nome_original'] ?? '') ?>
+                        <?php if (!empty($pedido['tamanho_formatado'])): ?>
+                            <small>(<?= htmlspecialchars($pedido['tamanho_formatado']) ?>)</small>
+                        <?php endif; ?>
+                    </span>
+                    <a href="<?= htmlspecialchars($pedido['visualizar_url']) ?>" target="_blank" rel="noopener" class="pedido-report-link">
+                        <i class="fa fa-eye"></i> <?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>
+                    </a>
+                </span>
+            <?php else: ?>
+                <span class="rp-value rp-muted"><?= htmlspecialchars(t('pedido_medico.status.nao_anexado')) ?></span>
+            <?php endif; ?>
+        </div>
+
         <?php if (!empty($estudo->institution_name)): ?>
         <div class="rp-field">
             <label><i class="fa fa-hospital"></i> Instituição</label>
