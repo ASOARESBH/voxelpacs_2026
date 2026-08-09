@@ -26,6 +26,18 @@ A query busca o laudo só por `id`, sem checar tenant — qualquer usuário aute
 
 Chamam endpoints (`/reports/templates`, `/reports/autotext`, `/reports/history/restore`) que não batem exatamente com as rotas reais (`/reports/template`, `/api/reports/autotext`, sem rota de restore). Não investigado a fundo ainda — precisa mapear rota real vs. chamada real antes de corrigir.
 
+### Contadores da barra de badges do header (A LAUDAR/EM LAUDO/RASCUNHO/ASSINADO/PEER REVIEW) não são escopados por médico
+
+**Onde**: `EstudosController::contadores()` (`GET /api/estudos/contadores`), consumido por `app/Views/layout/pacs_header.php`.
+
+Filtra só por `tenant_id`/`institution_name` — nunca por médico responsável (`assumido_por`/`usuario_responsavel_id`). Um usuário perfil Médico vê os números do **negócio inteiro**, não "só os meus estudos". Achado durante a tarefa que passou a ocultar essa barra para não-médicos (2026-08-08) — não corrigido por não ser trivial: exigiria decidir a semântica de "estudos do médico" por status (nem todo status tem uma noção clara de "responsável"), fora do escopo daquela tarefa. Ver `modules/gestao-exames.md` (skill).
+
+### Link "Gestão de Exames" do menu só é ocultado corretamente para médico nas rotas que passam por `EstudosController`
+
+**Onde**: `app/Views/layout/pacs_header.php:72`, variável `$isMedicoLogado`.
+
+Só é calculada dentro de `EstudosController` (`index()`/`gestao()`) e passada para a view — em qualquer outra rota que renderize o mesmo layout `'pacs'` (`/reports/{uid}`, `/medicos`, `/relatorios/*`...) a variável fica indefinida, e `empty($isMedicoLogado)` assume `true` (mostra o link) por padrão, mesmo para um usuário médico. Achado por contraste durante a tarefa da barra de badges (2026-08-08, que usou um sinal diferente e mais confiável — `Auth::perfilAtual()` — justamente para não herdar essa mesma fragilidade). Não corrigido por estar fora do escopo pedido (só a barra de badges).
+
 ## Resolvidas (registro histórico)
 
 - **2026-08-08** — `ReportsController::save()`/`::sign()` chamavam métodos inexistentes em `ReportService` (`saveReport()`/`signReport()` — os reais são `salvar()`/`assinar()`, nomes e assinaturas diferentes). Causava `\Error` fatal em toda tentativa de salvar/assinar laudo.

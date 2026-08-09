@@ -29,7 +29,7 @@ class Auth {
 
         // Verifica tenants do usuário
         $stmt2 = $pdo->prepare("
-            SELECT ut.tenant_id, ut.role, t.nome, t.status
+            SELECT ut.tenant_id, ut.role, ut.perfil, t.nome, t.status
             FROM bi_user_tenants ut
             JOIN bi_tenants t ON t.id = ut.tenant_id
             WHERE ut.user_id = :uid AND ut.ativo = 1 AND t.status = 'ativo'
@@ -93,6 +93,27 @@ class Auth {
 
     public static function userTenants(): array {
         return $_SESSION['user_tenants'] ?? [];
+    }
+
+    /**
+     * Perfil (bi_user_tenants.perfil: admin/medico/secretaria/analista/viewer)
+     * do usuário logado no tenant atualmente ativo (Auth::tenantId()). Lido do
+     * cache de sessão gravado em login() — sem query nova por request, já que
+     * este helper é chamado a cada render do header (pacs_header.php).
+     *
+     * Retorna null se não houver tenant ativo (ex: superadmin fora de
+     * impersonação) ou se o tenant ativo não estiver em userTenants() (sessão
+     * antiga de antes desta coluna existir em cache — refaz login para atualizar).
+     */
+    public static function perfilAtual(): ?string {
+        $tenantId = self::tenantId();
+        if (!$tenantId) return null;
+        foreach (self::userTenants() as $ut) {
+            if ((int) ($ut->tenant_id ?? 0) === $tenantId) {
+                return $ut->perfil ?? null;
+            }
+        }
+        return null;
     }
 
     public static function setTenant(int $tenantId): void {

@@ -97,5 +97,29 @@
 
 ---
 
+## Contadores da barra de badges do header não são escopados por médico
+
+**Onde**: `EstudosController::contadores()` (`GET /api/estudos/contadores`), consumido por `app/Views/layout/pacs_header.php`.
+
+**O quê**: filtra só por `tenant_id`/`institution_name` — nunca por médico responsável. Perfil Médico vê os números do negócio inteiro, não só os próprios estudos.
+
+**Como foi encontrado**: durante a tarefa "Ocultar badges de status para não-médicos" (2026-08-08, item 1.4 da análise pedida explicitamente pelo usuário) — instrução explícita era reportar, não corrigir, a menos que fosse trivial. Não é: exigiria decidir semântica de "estudos do médico" por status.
+
+**Prioridade sugerida**: média — não é falha de segurança/isolamento (é só um número agregado, sem detalhe de paciente), mas é uma informação enganosa mostrada à pessoa errada.
+
+---
+
+## Link "Gestão de Exames" do menu só é ocultado para médico nas rotas que passam por `EstudosController`
+
+**Onde**: `app/Views/layout/pacs_header.php:72`, variável `$isMedicoLogado`.
+
+**O quê**: só é calculada em `EstudosController::index()`/`gestao()` e passada via `compact()` para a view. Em qualquer outra rota renderizando o mesmo layout `'pacs'` (`/reports/{uid}`, `/medicos`, `/relatorios/*`...), a variável nunca é definida — `empty($isMedicoLogado)` assume `true` (mostra o link) por padrão, mesmo para um médico.
+
+**Como foi encontrado**: por contraste, durante a implementação da barra de badges de status (`modules/gestao-exames.md`) — optei por `Auth::perfilAtual()` (lido de sessão, sem depender de nenhum Controller específico popular uma variável) exatamente para não herdar essa mesma fragilidade na feature nova.
+
+**Prioridade sugerida**: baixa — é uma inconsistência de UI (link aparece onde não devia), não uma falha de autorização (a rota `/gestao-exames` em si não tem controle de acesso adicional além do `TenantContext` normal).
+
+---
+
 ## Última análise
 2026-08-08

@@ -203,7 +203,11 @@
                 VOXEL PACS
             </span>
 
-            <!-- Badges de status (contadores) -->
+            <!-- Badges de status (contadores) — só para perfil Médico
+                 (bi_user_tenants.perfil, ver Auth::perfilAtual()). Para os demais
+                 perfis (Administrador/Secretaria/Analista/Visualizador) o bloco
+                 inteiro fica fora do DOM, não só oculto via CSS. -->
+            <?php if (\App\Core\Auth::perfilAtual() === 'medico'): ?>
             <div class="topbar-badges d-none d-lg-flex" id="topbar-badges-wrap">
                 <span class="topbar-badge" style="background:#fff7ed;color:#ea580c;" title="Estudos aguardando laudo">
                     <span class="badge-count" id="cnt-a-laudar">0</span> A LAUDAR
@@ -250,6 +254,7 @@
                 window.atualizarBadgesTopbar = atualizarBadgesTopbar;
             })();
             </script>
+            <?php endif; ?>
 
             <!-- Usuário logado -->
             <div class="d-flex align-items-center gap-2 ms-auto">
