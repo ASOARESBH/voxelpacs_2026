@@ -58,9 +58,10 @@ class EstudosController extends Controller
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
-        $isAdmin  = Auth::isPlatformAdmin();
+        $isAdmin  = Auth::isPlatformAdmin()
+                    || in_array(Auth::perfilAtual(), ['admin', 'administrador']);
         // Bypass total (vê todos os tenants) só para superadmin fora de impersonação.
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+        $bypassGlobal = Auth::isPlatformAdmin() && !Auth::isImpersonating();
 
         // ── Filtros ───────────────────────────────────────────────────────────────────────
         // Padrão: 30dias (não "hoje") para mostrar dados relevantes ao abrir o módulo
