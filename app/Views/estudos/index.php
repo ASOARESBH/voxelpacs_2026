@@ -1249,6 +1249,12 @@ document.addEventListener('click', function(e) {
             // Atualiza badge de situação
             const sitCell = row ? row.querySelector('.sit-badge') : null;
             if (sitCell) { sitCell.className = 'sit-badge sit-a-laudar'; sitCell.textContent = 'A LAUDAR'; }
+            // Atualiza célula MÉDICO com o nome retornado pela API
+            const medicoCell = row ? row.querySelector('.col-medico-laudo') : null;
+            if (medicoCell && data.assumido_por) {
+                const nomeEsc = data.assumido_por.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                medicoCell.innerHTML = '<div class="wl-medico-laudo" title="' + nomeEsc + '"><i class="fa fa-user-doctor wl-medico-laudo-icon"></i><span class="wl-medico-laudo-nome">' + nomeEsc + '</span></div>';
+            }
             // Substitui botão Assumir pelo botão Laudo correto
             // workspaceLaudoHabilitado é injetado pelo PHP na view
             // Nova lógica: desabilitado = Laudário Interno (botão ativo)

@@ -15,50 +15,20 @@
 -- individualmente por médico na tela de Cadastro de Médicos (Permissões).
 --
 -- Compatível com MySQL 5.7 / MariaDB / HostGator compartilhado.
--- Idempotente: usa IF NOT EXISTS onde suportado; caso contrário, usa
--- INFORMATION_SCHEMA para verificar antes de alterar.
+-- SEM INFORMATION_SCHEMA (bloqueado no HostGator compartilhado)
+-- Se a coluna já existir: erro #1060 "Duplicate column name" — pode IGNORAR.
+-- Se o índice já existir: erro #1061 "Duplicate key name" — pode IGNORAR.
 -- =============================================================================
 
--- 1) Adicionar coluna ver_medico_laudo em bi_medicos (idempotente)
-SET @col_exists = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME   = 'bi_medicos'
-      AND COLUMN_NAME  = 'ver_medico_laudo'
-);
+-- 1) Adicionar coluna ver_medico_laudo em bi_medicos
+ALTER TABLE `bi_medicos`
+    ADD COLUMN `ver_medico_laudo` TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT 'Permissao: 1=pode ver nome de outros medicos na worklist; 0=ve apenas o proprio'
+    AFTER `workspace_laudo_habilitado`;
 
-SET @sql = IF(
-    @col_exists = 0,
-    "ALTER TABLE `bi_medicos`
-        ADD COLUMN `ver_medico_laudo` TINYINT(1) NOT NULL DEFAULT 0
-        COMMENT 'Permissao: 1 = pode ver o nome do medico responsavel pelo laudo de outros medicos na worklist; 0 = ve apenas o proprio nome'
-        AFTER `workspace_laudo_habilitado`",
-    "SELECT 'ver_medico_laudo ja existe em bi_medicos'"
-);
-
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
--- 2) Adicionar índice para consultas de permissão (idempotente)
-SET @idx_exists = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME   = 'bi_medicos'
-      AND INDEX_NAME   = 'idx_ver_medico_laudo'
-);
-
-SET @sql2 = IF(
-    @idx_exists = 0,
-    "ALTER TABLE `bi_medicos` ADD INDEX `idx_ver_medico_laudo` (`tenant_id`, `ver_medico_laudo`)",
-    "SELECT 'idx_ver_medico_laudo ja existe'"
-);
-
-PREPARE stmt2 FROM @sql2;
-EXECUTE stmt2;
-DEALLOCATE PREPARE stmt2;
+-- 2) Adicionar índice para performance
+ALTER TABLE `bi_medicos`
+    ADD INDEX `idx_ver_medico_laudo` (`tenant_id`, `ver_medico_laudo`);
 
 -- =============================================================================
 -- VERIFICAÇÃO — execute após rodar a migration
