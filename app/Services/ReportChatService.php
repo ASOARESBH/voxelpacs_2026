@@ -2,8 +2,6 @@
 
 namespace App\Services;
 
-use App\Core\Auth;
-use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Mailer;
 use App\Repositories\ReportChatRepository;
@@ -14,11 +12,7 @@ use App\Repositories\ReportChatRepository;
  */
 class ReportChatService
 {
-    public const GROUP_ADMINISTRATIVO = 'administrativo';
-
-    private const GROUP_PROFILES = [
-        self::GROUP_ADMINISTRATIVO => ['admin', 'secretaria', 'analista'],
-    ];
+    private const GROUP_ADMINISTRATIVO = 'administrativo';
 
     private const SUBJECTS = [
         'erro_pedido' => 'Erro no pedido',
@@ -51,6 +45,28 @@ class ReportChatService
 
         $chat = $this->repo->findByReport($reportId, $tenantId);
         $messages = $chat ? $this->repo->listMessages((int) $chat['id'], $tenantId) : [];
+        $groups = $this->repo->listActiveGroups($tenantId);
+        $defaultGroup = $this->repo->findDefaultAdministrativeGroup($tenantId);
+
+        $selectedGroupId = (int) ($chat['destinatario_grupo_id'] ?? 0);
+        if ($selectedGroupId <= 0 && (($chat['destinatario_grupo'] ?? self::GROUP_ADMINISTRATIVO) === self::GROUP_ADMINISTRATIVO) && $defaultGroup) {
+            $selectedGroupId = (int) $defaultGroup['id'];
+        }
+        if ($selectedGroupId <= 0 && !$chat && $defaultGroup) {
+            $selectedGroupId = (int) $defaultGroup['id'];
+        }
+
+        $groupOptions = [];
+        foreach ($groups as $group) {
+            $groupOptions[] = [
+                'id' => (int) ($group['id'] ?? 0),
+                'codigo' => (string) ($group['id'] ?? ''),
+                'label' => (string) ($group['nome'] ?? 'Grupo'),
+                'descricao' => (string) ($group['descricao'] ?? ''),
+                'total_membros' => (int) ($group['total_membros'] ?? 0),
+                'padrao' => $defaultGroup && (int) $defaultGroup['id'] === (int) ($group['id'] ?? 0),
+            ];
+        }
 
         return [
             'report_id' => $reportId,
@@ -58,7 +74,9 @@ class ReportChatService
             'status' => $chat['status'] ?? 'sem_chat',
             'pendente' => ($chat['status'] ?? '') === 'pendente',
             'destinatario_tipo' => $chat['destinatario_tipo'] ?? 'grupo',
-            'destinatario_grupo' => $chat['destinatario_grupo'] ?? self::GROUP_ADMINISTRATIVO,
+            'destinatario_grupo' => $selectedGroupId > 0 ? (string) $selectedGroupId : '',
+            'destinatario_grupo_id' => $selectedGroupId > 0 ? $selectedGroupId : null,
+            'destinatario_grupo_nome' => (string) ($chat['destinatario_grupo'] ?? ($defaultGroup['nome'] ?? 'Administrativo')),
             'destinatario_user_id' => isset($chat['destinatario_user_id']) ? (int) $chat['destinatario_user_id'] : null,
             'assunto_codigo' => $chat['assunto_codigo'] ?? 'outro',
             'assunto' => $chat['assunto'] ?? '',
@@ -68,11 +86,7 @@ class ReportChatService
             'concluido_em' => $chat['concluido_em'] ?? null,
             'messages' => $messages,
             'subjects' => $this->subjects(),
-            'groups' => [[
-                'codigo' => self::GROUP_ADMINISTRATIVO,
-                'label' => 'Administrativo',
-                'perfis' => self::GROUP_PROFILES[self::GROUP_ADMINISTRATIVO],
-            ]],
+            'groups' => $groupOptions,
             'users' => $this->repo->listActiveUsers($tenantId, $currentUserId),
         ];
     }
@@ -98,13 +112,21 @@ class ReportChatService
         $tipo = (string) ($input['destinatario_tipo'] ?? 'grupo');
         if (!in_array($tipo, ['grupo', 'usuario'], true)) $tipo = 'grupo';
 
-        $grupo = null;
+        $group = null;
+        $destinatarioGrupoId = null;
+        $destinatarioGrupoNome = null;
         $destinatarioUserId = null;
         if ($tipo === 'grupo') {
-            $grupo = (string) ($input['destinatario_grupo'] ?? self::GROUP_ADMINISTRATIVO);
-            if (!isset(self::GROUP_PROFILES[$grupo])) {
-                return ['ok' => false, 'error' => 'destinatario_invalido'];
+            $destinatarioGrupoId = (int) ($input['destinatario_grupo'] ?? 0);
+            if ($destinatarioGrupoId <= 0) {
+                $group = $this->repo->findDefaultAdministrativeGroup($tenantId);
+                $destinatarioGrupoId = (int) ($group['id'] ?? 0);
+            } else {
+                $group = $this->repo->findActiveGroup($destinatarioGrupoId, $tenantId);
             }
+            if (!$group) return ['ok' => false, 'error' => 'destinatario_invalido'];
+            $destinatarioGrupoId = (int) $group['id'];
+            $destinatarioGrupoNome = (string) $group['nome'];
         } else {
             $destinatarioUserId = (int) ($input['destinatario_user_id'] ?? 0);
             if ($destinatarioUserId <= 0 || !$this->repo->findActiveUser($destinatarioUserId, $tenantId)) {
@@ -140,7 +162,8 @@ class ReportChatService
                 (int) $context['estudo_id'],
                 $tenantId,
                 $tipo,
-                $grupo,
+                $destinatarioGrupoNome,
+                $destinatarioGrupoId,
                 $destinatarioUserId,
                 $assuntoCodigo,
                 $assunto,
@@ -164,7 +187,7 @@ class ReportChatService
             $tenantId,
             $userId,
             $tipo,
-            $grupo,
+            $destinatarioGrupoId,
             $destinatarioUserId,
             $assunto,
             $corpo,
@@ -174,7 +197,7 @@ class ReportChatService
         Logger::info('[ReportChatService::send] interação registrada', [
             'report_id' => $reportId, 'chat_id' => $chatId, 'message_id' => $messageId,
             'tenant_id' => $tenantId, 'user_id' => $userId, 'destinatario_tipo' => $tipo,
-            'destinatario_grupo' => $grupo, 'destinatario_user_id' => $destinatarioUserId,
+            'destinatario_grupo_id' => $destinatarioGrupoId, 'destinatario_user_id' => $destinatarioUserId,
         ]);
 
         return ['ok' => true, 'chat_id' => $chatId, 'message_id' => $messageId, 'status' => 'pendente'];
@@ -218,7 +241,7 @@ class ReportChatService
 
     private function normalizarSituacaoRestaurada(string $situacao): string
     {
-        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente'];
+        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review'];
         return in_array($situacao, $permitidas, true) ? $situacao : 'em_laudo';
     }
 
@@ -227,7 +250,7 @@ class ReportChatService
         int $tenantId,
         int $authorId,
         string $tipo,
-        ?string $grupo,
+        ?int $destinatarioGrupoId,
         ?int $destinatarioUserId,
         string $assunto,
         string $corpo,
@@ -235,7 +258,7 @@ class ReportChatService
     ): void {
         $recipients = $tipo === 'usuario'
             ? array_filter([$this->repo->findActiveUser((int) $destinatarioUserId, $tenantId)])
-            : $this->repo->listUsersByProfiles($tenantId, self::GROUP_PROFILES[$grupo ?? self::GROUP_ADMINISTRATIVO]);
+            : $this->repo->listUsersByGroup((int) $destinatarioGrupoId, $tenantId);
 
         $baseUrl = rtrim((string) (getenv('APP_URL') ?: 'https://server.voxelpacs.com.br'), '/');
         $url = $baseUrl . '/reports/' . rawurlencode($studyUid);

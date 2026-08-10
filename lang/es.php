@@ -485,4 +485,5 @@ return [
     'report_chat.erro_migration'         => 'CHAT no disponible: ejecute la migración del módulo en la base de datos.',
     'report_chat.erro_generico'          => 'No se pudo procesar la interacción.',
     'report_chat.confirmar_conclusao'    => '¿Completar esta pendiente? El estudio volverá a su estado anterior.',
+    'report_chat.nenhum_grupo'           => 'No hay ningún grupo activo registrado',
 ];

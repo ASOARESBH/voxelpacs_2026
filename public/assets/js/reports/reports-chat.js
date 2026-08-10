@@ -105,7 +105,7 @@ window.VoxelReports.chat = (function () {
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             renderStatus(data.chat || {});
             setSelectValue('chatDestinatarioTipo', data.chat?.destinatario_tipo || 'grupo');
-            setSelectValue('chatDestinatarioGrupo', data.chat?.destinatario_grupo || 'administrativo');
+            setSelectValue('chatDestinatarioGrupo', data.chat?.destinatario_grupo_id || data.chat?.destinatario_grupo || '');
             setSelectValue('chatDestinatarioUsuario', data.chat?.destinatario_user_id || '');
             setSelectValue('chatAssuntoCodigo', data.chat?.assunto_codigo || 'outro');
             updateRecipientFields();
@@ -135,7 +135,7 @@ window.VoxelReports.chat = (function () {
             report_id: config.reportId,
             csrf: config.csrf,
             destinatario_tipo: document.getElementById('chatDestinatarioTipo')?.value || 'grupo',
-            destinatario_grupo: document.getElementById('chatDestinatarioGrupo')?.value || 'administrativo',
+            destinatario_grupo: document.getElementById('chatDestinatarioGrupo')?.value || '',
             destinatario_user_id: document.getElementById('chatDestinatarioUsuario')?.value || null,
             assunto_codigo: document.getElementById('chatAssuntoCodigo')?.value || 'outro',
             assunto: document.getElementById('chatAssunto')?.value || '',

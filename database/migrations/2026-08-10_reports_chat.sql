@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS `pacs_report_chats` (
     `estudo_id`             INT(11) UNSIGNED NOT NULL COMMENT 'FK lógica para bi_pacs_estudos.id',
     `status`                ENUM('pendente','concluido') NOT NULL DEFAULT 'pendente',
     `destinatario_tipo`     ENUM('grupo','usuario') NOT NULL DEFAULT 'grupo',
-    `destinatario_grupo`    VARCHAR(40) DEFAULT NULL COMMENT 'admin|secretaria|analista',
+    `destinatario_grupo`    VARCHAR(200) DEFAULT NULL COMMENT 'Nome do grupo no momento do envio',
+    `destinatario_grupo_id` INT(11) UNSIGNED DEFAULT NULL COMMENT 'FK lógica para bi_grupos.id',
     `destinatario_user_id`  INT(11) UNSIGNED DEFAULT NULL COMMENT 'bi_users.id no tenant',
     `assunto_codigo`        VARCHAR(40) NOT NULL DEFAULT 'outro',
     `assunto`               VARCHAR(180) NOT NULL,
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS `pacs_report_chats` (
     UNIQUE KEY `uq_pacs_chat_tenant_report` (`tenant_id`,`report_id`),
     KEY `idx_pacs_chat_estudo` (`tenant_id`,`estudo_id`),
     KEY `idx_pacs_chat_status` (`tenant_id`,`status`),
+    KEY `idx_pacs_chat_dest_group` (`tenant_id`,`destinatario_grupo_id`),
     KEY `idx_pacs_chat_dest_user` (`tenant_id`,`destinatario_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Conversa operacional contextual do laudo';

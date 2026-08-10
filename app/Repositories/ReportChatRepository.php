@@ -3,7 +3,6 @@
 namespace App\Repositories;
 
 use App\Core\Database;
-use App\Core\Logger;
 
 /**
  * Persistência do CHAT contextual de Reports.
@@ -60,6 +59,7 @@ class ReportChatRepository
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
+    /** Usuários ativos do tenant para o destinatário individual. */
     public function listActiveUsers(int $tenantId, int $excludeUserId = 0): array
     {
         $sql = 'SELECT u.id, u.name, u.email, ut.perfil
@@ -93,33 +93,70 @@ class ReportChatRepository
         return $row ?: null;
     }
 
-    public function listUsersByProfiles(int $tenantId, array $profiles, int $excludeUserId = 0): array
+    /** Lista os grupos organizacionais ativos do tenant, priorizando Administrativo. */
+    public function listActiveGroups(int $tenantId): array
     {
-        $profiles = array_values(array_filter(array_map('strval', $profiles)));
-        if (!$profiles) return [];
+        $stmt = $this->pdo->prepare(
+            'SELECT g.id, g.nome, g.descricao, g.ativo,
+                    (SELECT COUNT(*)
+                       FROM bi_grupo_usuarios gu
+                      WHERE gu.grupo_id = g.id AND gu.tenant_id = g.tenant_id) AS total_membros
+               FROM bi_grupos g
+              WHERE g.tenant_id = :tenant_id AND g.ativo = 1
+              ORDER BY CASE WHEN LOWER(TRIM(g.nome)) = "administrativo" THEN 0 ELSE 1 END,
+                       g.nome ASC'
+        );
+        $stmt->execute(['tenant_id' => $tenantId]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
 
-        $placeholders = [];
-        $params = ['tenant_id' => $tenantId];
-        foreach ($profiles as $index => $profile) {
-            $key = 'perfil_' . $index;
-            $placeholders[] = ':' . $key;
-            $params[$key] = $profile;
-        }
+    public function findActiveGroup(int $groupId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, tenant_id, nome, descricao, ativo
+               FROM bi_grupos
+              WHERE id = :group_id AND tenant_id = :tenant_id AND ativo = 1
+              LIMIT 1'
+        );
+        $stmt->execute(['group_id' => $groupId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
 
-        $sql = 'SELECT u.id, u.name, u.email, ut.perfil
-                  FROM bi_users u
-                  INNER JOIN bi_user_tenants ut
-                          ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
-                 WHERE ut.ativo = 1 AND u.status = "ativo"
-                   AND ut.perfil IN (' . implode(',', $placeholders) . ')';
-        if ($excludeUserId > 0) {
-            $sql .= ' AND u.id <> :exclude_user_id';
-            $params['exclude_user_id'] = $excludeUserId;
-        }
-        $sql .= ' ORDER BY u.name ASC';
+    public function findDefaultAdministrativeGroup(int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, tenant_id, nome, descricao, ativo
+               FROM bi_grupos
+              WHERE tenant_id = :tenant_id AND ativo = 1
+                AND LOWER(TRIM(nome)) = "administrativo"
+              ORDER BY id ASC
+              LIMIT 1'
+        );
+        $stmt->execute(['tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
+    /** Membros ativos de um grupo ativo, sempre com tenant no grupo e no pivot. */
+    public function listUsersByGroup(int $groupId, int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT u.id, u.name, u.email, ut.perfil
+               FROM bi_grupo_usuarios gu
+               INNER JOIN bi_grupos g
+                       ON g.id = gu.grupo_id AND g.tenant_id = gu.tenant_id
+               INNER JOIN bi_users u ON u.id = gu.usuario_id
+               INNER JOIN bi_user_tenants ut
+                       ON ut.user_id = u.id AND ut.tenant_id = gu.tenant_id
+              WHERE gu.grupo_id = :group_id
+                AND gu.tenant_id = :tenant_id
+                AND g.ativo = 1
+                AND ut.ativo = 1
+                AND u.status = "ativo"
+              ORDER BY u.name ASC'
+        );
+        $stmt->execute(['group_id' => $groupId, 'tenant_id' => $tenantId]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
@@ -129,6 +166,7 @@ class ReportChatRepository
         int $tenantId,
         string $destinatarioTipo,
         ?string $destinatarioGrupo,
+        ?int $destinatarioGrupoId,
         ?int $destinatarioUserId,
         string $assuntoCodigo,
         string $assunto,
@@ -142,6 +180,7 @@ class ReportChatRepository
                     SET status = "pendente",
                         destinatario_tipo = :destinatario_tipo,
                         destinatario_grupo = :destinatario_grupo,
+                        destinatario_grupo_id = :destinatario_grupo_id,
                         destinatario_user_id = :destinatario_user_id,
                         assunto_codigo = :assunto_codigo,
                         assunto = :assunto,
@@ -156,6 +195,7 @@ class ReportChatRepository
             $stmt->execute([
                 'destinatario_tipo' => $destinatarioTipo,
                 'destinatario_grupo' => $destinatarioGrupo,
+                'destinatario_grupo_id' => $destinatarioGrupoId,
                 'destinatario_user_id' => $destinatarioUserId,
                 'assunto_codigo' => $assuntoCodigo,
                 'assunto' => $assunto,
@@ -170,12 +210,12 @@ class ReportChatRepository
         $stmt = $this->pdo->prepare(
             'INSERT INTO pacs_report_chats
                 (tenant_id, report_id, estudo_id, status, destinatario_tipo,
-                 destinatario_grupo, destinatario_user_id, assunto_codigo, assunto,
-                 situacao_anterior, criado_por)
+                 destinatario_grupo, destinatario_grupo_id, destinatario_user_id,
+                 assunto_codigo, assunto, situacao_anterior, criado_por)
              VALUES
                 (:tenant_id, :report_id, :estudo_id, "pendente", :destinatario_tipo,
-                 :destinatario_grupo, :destinatario_user_id, :assunto_codigo, :assunto,
-                 :situacao_anterior, :criado_por)'
+                 :destinatario_grupo, :destinatario_grupo_id, :destinatario_user_id,
+                 :assunto_codigo, :assunto, :situacao_anterior, :criado_por)'
         );
         $stmt->execute([
             'tenant_id' => $tenantId,
@@ -183,6 +223,7 @@ class ReportChatRepository
             'estudo_id' => $estudoId,
             'destinatario_tipo' => $destinatarioTipo,
             'destinatario_grupo' => $destinatarioGrupo,
+            'destinatario_grupo_id' => $destinatarioGrupoId,
             'destinatario_user_id' => $destinatarioUserId,
             'assunto_codigo' => $assuntoCodigo,
             'assunto' => $assunto,

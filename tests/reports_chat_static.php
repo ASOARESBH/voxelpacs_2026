@@ -34,6 +34,7 @@ $js = source('public/assets/js/reports/reports-chat.js');
 $signature = source('public/assets/js/reports/reports-signature.js');
 $header = source('app/Views/layout/reports_header.php');
 $migration = source('database/migrations/2026-08-10_reports_chat.sql');
+$groupsMigration = source('database/migrations/2026-08-10_reports_chat_groups.sql');
 $design = source('docs/CHAT_REPORTS_DESIGN.md');
 
 mustContain($routes, "Router::get('/api/reports/chat'", 'Rota GET do CHAT ausente.');
@@ -50,15 +51,22 @@ mustContain($migration, "ENUM('pendente','concluido')", 'Estados do CHAT não es
 mustContain($migration, "'pendente'", 'Migration não prepara o estado pendente do estudo.');
 mustContain($migration, "'peer_review'", 'Migration remove peer_review do ENUM existente.');
 mustContain($migration, 'tenant_id', 'Migration do CHAT sem isolamento explícito por tenant.');
+mustContain($migration, 'destinatario_grupo_id', 'Migration base não congela o grupo real do CHAT.');
+mustContain($groupsMigration, 'destinatario_grupo_id', 'Migration complementar de grupos ausente.');
+mustContain($groupsMigration, 'INFORMATION_SCHEMA.COLUMNS', 'Migration complementar não é idempotente.');
 
 mustContain($repo, 'WHERE report_id = :report_id AND tenant_id = :tenant_id', 'Consulta de CHAT sem escopo report/tenant.');
-mustContain($repo, 'listUsersByProfiles', 'Repository não resolve destinatários por grupo.');
+mustContain($repo, 'listActiveGroups', 'Repository não lista grupos reais do tenant.');
+mustContain($repo, 'findDefaultAdministrativeGroup', 'Repository não resolve o grupo Administrativo cadastrado.');
+mustContain($repo, 'listUsersByGroup', 'Repository não resolve os membros do grupo real.');
 mustContain($repo, 'findActiveUser', 'Repository não valida usuário ativo do tenant.');
+mustContain($repo, 'bi_grupo_usuarios', 'Repository não consulta o pivot de membros do grupo.');
 mustContain($repo, 'status = "pendente"', 'Repository não consulta pendências abertas.');
 mustContain($repo, 'status = "concluido"', 'Repository não conclui a conversa.');
 
-mustContain($service, 'GROUP_ADMINISTRATIVO', 'Grupo Administrativo não definido no Service.');
-mustContain($service, "['admin', 'secretaria', 'analista']", 'Perfis do grupo Administrativo não definidos.');
+mustContain($service, 'findDefaultAdministrativeGroup', 'Service não seleciona Administrativo como grupo padrão.');
+mustContain($service, 'findActiveGroup', 'Service não valida o grupo recebido no tenant.');
+mustContain($service, 'listUsersByGroup', 'Service não notifica os membros do grupo real.');
 mustContain($service, 'Mailer::send', 'Notificação por e-mail ausente.');
 mustContain($service, 'updateStudySituation((int) $context[\'estudo_id\'], $tenantId, \'pendente\')', 'Envio não muda estudo para pendente.');
 mustContain($service, 'normalizarSituacaoRestaurada', 'Conclusão não restaura a situação anterior.');
@@ -77,6 +85,7 @@ mustContain($reportsController, 'atualizarStatus bloqueado por CHAT pendente', '
 mustContain($show, "_chat_card.php", 'CHAT não foi incluído no Report.');
 mustNotContain($show, "_equipamento_card.php", 'Quadrante Equipamento ainda está incluído no Report.');
 mustContain($view, 'chatDestinatarioTipo', 'Seletor de destinatário ausente.');
+mustContain($view, 'destinatario_grupo_id', 'View não expõe o vínculo do grupo real.');
 mustContain($view, 'chatDestinatarioGrupo', 'Seletor de grupo ausente.');
 mustContain($view, 'chatDestinatarioUsuario', 'Seletor de usuário ausente.');
 mustContain($view, 'chatAssuntoCodigo', 'Seletor de temas ausente.');

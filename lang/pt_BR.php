@@ -488,4 +488,5 @@ return [
     'report_chat.erro_migration'         => 'CHAT indisponível: execute a migration do módulo no banco.',
     'report_chat.erro_generico'          => 'Não foi possível processar a interação.',
     'report_chat.confirmar_conclusao'    => 'Concluir esta pendência? O estudo voltará à situação anterior.',
+    'report_chat.nenhum_grupo'           => 'Nenhum grupo ativo cadastrado',
 ];

@@ -6,11 +6,11 @@ Substituir o card Equipamento do Report por um painel de comunicação contextua
 
 ## Destinatários
 
-O modelo operacional do VOXEL PACS não possui tabela de grupos; os destinatários são os perfis de `bi_user_tenants.perfil`. O grupo padrão **Administrativo** é resolvido como `admin`, `secretaria` e `analista`, sempre com `ut.ativo = 1` e `u.status = 'ativo'`. A opção **Usuário específico** usa `bi_user_tenants.user_id` do tenant atual. Médicos e viewers continuam disponíveis como usuários individuais, mas não entram no grupo Administrativo por padrão.
+O módulo usa o cadastro real de grupos organizacionais `bi_grupos` e `bi_grupo_usuarios`. O grupo padrão **Administrativo** é localizado por `LOWER(TRIM(nome)) = 'administrativo'`, desde que pertença ao tenant atual e esteja ativo. Os destinatários são os membros ativos do grupo, validados simultaneamente pelo tenant do grupo, do pivot e de `bi_user_tenants`. A opção **Usuário específico** usa `bi_user_tenants.user_id` do tenant atual. Médicos e viewers continuam disponíveis como usuários individuais, mas só recebem por grupo quando estiverem efetivamente vinculados ao grupo cadastrado.
 
 ## Persistência
 
-`pacs_report_chats` contém uma linha por report/tenant, o estado da conversa, o destinatário, código e texto do assunto, o estado anterior do estudo e os dados de conclusão. `pacs_report_chat_mensagens` contém cada interação, autor, tenant, corpo e timestamp. O vínculo é feito por `tenant_id + report_id + estudo_id`; não há leitura cross-tenant.
+`pacs_report_chats` contém uma linha por report/tenant, o estado da conversa, o tipo de destinatário, o `destinatario_grupo_id` de `bi_grupos` e o nome congelado do grupo no momento do envio, o usuário individual quando aplicável, o código e texto do assunto, o estado anterior do estudo e os dados de conclusão. `pacs_report_chat_mensagens` contém cada interação, autor, tenant, corpo e timestamp. O vínculo é feito por `tenant_id + report_id + estudo_id`; não há leitura cross-tenant.
 
 O estado da conversa é `pendente` ou `concluido`. Ao enviar uma interação, a conversa é criada ou reaberta e o estudo recebe `situacao = 'pendente'`. O estado anterior é salvo para que a conclusão restaure o fluxo anterior de forma determinística. Ao concluir, o estudo retorna ao estado anterior permitido, preferindo `em_laudo` quando o valor anterior não for um estado editável.
 

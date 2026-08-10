@@ -8,7 +8,7 @@ $chatGroups = is_array($chat['groups'] ?? null) ? $chat['groups'] : [];
 $chatUsers = is_array($chat['users'] ?? null) ? $chat['users'] : [];
 $chatPending = ($chat['status'] ?? '') === 'pendente';
 $recipientType = $chat['destinatario_tipo'] ?? 'grupo';
-$recipientGroup = $chat['destinatario_grupo'] ?? 'administrativo';
+$recipientGroupId = (int) ($chat['destinatario_grupo_id'] ?? $chat['destinatario_grupo'] ?? 0);
 $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
 ?>
 <div class="pacs-card reports-card reports-chat-card" id="card-chat"
@@ -63,12 +63,14 @@ $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
                 <label for="chatDestinatarioGrupo"><?= htmlspecialchars(t('report_chat.destinatario')) ?></label>
                 <select id="chatDestinatarioGrupo" class="form-select form-select-sm">
                     <?php foreach ($chatGroups as $group): ?>
-                        <option value="<?= htmlspecialchars((string) ($group['codigo'] ?? '')) ?>" <?= ($group['codigo'] ?? '') === $recipientGroup ? 'selected' : '' ?>>
-                            <?= htmlspecialchars((string) ($group['label'] ?? 'Administrativo')) ?>
+                        <?php $groupId = (int) ($group['id'] ?? 0); ?>
+                        <option value="<?= $groupId ?>" <?= $groupId === $recipientGroupId ? 'selected' : '' ?>>
+                            <?= htmlspecialchars((string) ($group['label'] ?? 'Grupo')) ?>
+                            <?php if (isset($group['total_membros'])): ?> (<?= (int) $group['total_membros'] ?>)<?php endif; ?>
                         </option>
                     <?php endforeach; ?>
                     <?php if (!$chatGroups): ?>
-                        <option value="administrativo" selected><?= htmlspecialchars(t('report_chat.grupo_administrativo')) ?></option>
+                        <option value="" selected disabled><?= htmlspecialchars(t('report_chat.nenhum_grupo')) ?></option>
                     <?php endif; ?>
                 </select>
             </div>

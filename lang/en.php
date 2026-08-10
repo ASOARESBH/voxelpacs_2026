@@ -485,4 +485,5 @@ return [
     'report_chat.erro_migration'         => 'CHAT unavailable: run the module migration in the database.',
     'report_chat.erro_generico'          => 'The interaction could not be processed.',
     'report_chat.confirmar_conclusao'    => 'Complete this pending item? The study will return to its previous status.',
+    'report_chat.nenhum_grupo'           => 'No active group is registered',
 ];
