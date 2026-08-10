@@ -71,7 +71,7 @@ $expect(str_contains($repository, "execute(['id' => \$versionId])"), 'findVersio
 $expect(str_contains($editor, 'property_exists($report, $campo)'), 'Editor não lê colunas secao_* com fallback.');
 $expect(str_contains($editorJs, 'normalizarTitulo') && str_contains($editorJs, 'node.textContent'), 'Editor ainda depende somente de data-secao para extrair conteúdo.');
 $expect(str_contains($editorJs, 'marcadoresEncontrados'), 'Editor não possui diagnóstico de marcadores ausentes.');
-$expect(str_contains($viewCore, "ASSET_VERSION = '2.1.1'"), 'Assets do Reports não tiveram cache-bust após a correção.');
+$expect(str_contains($viewCore, "ASSET_VERSION = '2.1.2'"), 'Assets do Reports não tiveram cache-bust após a correção.');
 $expect(str_contains($editor, '$reportSituacao'), 'Editor não usa situacao/status compatível.');
 $expect(str_contains($autosave, 'savingPromise'), 'Autosave não aguarda requisição concorrente.');
 $expect(str_contains($autosave, 'body: JSON.stringify({ report_id: config.reportId, secoes, modo })'), 'Autosave não envia modo e seções.');
