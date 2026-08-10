@@ -199,6 +199,25 @@ class ReportService {
             return ['ok' => false, 'error' => 'report_assinado_somente_leitura'];
         }
 
+        // Guard contra perda de dado: extractSecoes() no navegador pode falhar
+        // (ver reports-editor.js e diagnostics/pendencias-conhecidas.md — bug
+        // de report_id=18, 2026-08-10, onde 3 autosaves seguidos zeraram um
+        // laudo que já tinha conteúdo real salvo). Nunca sobrescrever um
+        // report que já tem conteúdo com um payload totalmente vazio — só
+        // permite gravar vazio quando o report em si já estava vazio (caso
+        // legítimo: laudo novo, nada digitado ainda).
+        if (!$this->secoesTemConteudo($secoes)) {
+            $secoesAtuais = $this->extrairSecoesDoReport($report);
+            if ($this->secoesTemConteudo($secoesAtuais)) {
+                Logger::error('[ReportService::salvar] payload vazio recusado — report já tinha conteúdo salvo, nada foi sobrescrito', [
+                    'report_id' => $reportId,
+                    'modo' => $modo,
+                    'section_lengths_atual' => $this->tamanhosSecoes($secoesAtuais),
+                ]);
+                return ['ok' => false, 'error' => 'payload_vazio_ignorado'];
+            }
+        }
+
         $userId = Auth::userId();
         // Schema de produção: colunas separadas (sem JSON conteudo)
         // Mantém compatibilidade: se vier array de secões, usa direto

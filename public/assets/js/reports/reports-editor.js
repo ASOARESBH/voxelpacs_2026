@@ -60,13 +60,24 @@ window.VoxelReports.editor = (function () {
         quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
     }
 
+    // Qualquer n\u00edvel de heading conta como candidato a marcador \u2014 a toolbar
+    // (#editor-toolbar, select.ql-header) deixa o m\u00e9dico formatar um par\u00e1grafo
+    // como H1/H2/H3, n\u00e3o s\u00f3 H4; restringir a checagem a H4 deixava esses casos
+    // sempre cair como "conte\u00fado comum" mesmo quando o texto batia com um dos
+    // 5 t\u00edtulos can\u00f4nicos.
+    const HEADING_TAGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+
     function normalizarTitulo(texto) {
         return String(texto || '')
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
-            .replace(/\s+/g, ' ')
-            .trim();
+            .trim()
+            // Tolera pontua\u00e7\u00e3o de fechamento comum em cabe\u00e7alhos digitados \u00e0
+            // m\u00e3o (ex.: "T\u00e9cnica:") \u2014 o backend espera a chave sem pontua\u00e7\u00e3o.
+            .replace(/[:\-\u2013\u2014]+$/g, '')
+            .trim()
+            .replace(/\s+/g, ' ');
     }
 
     function secaoPorTitulo(texto) {
@@ -74,11 +85,23 @@ window.VoxelReports.editor = (function () {
         return Object.keys(TITULOS).find((chave) => normalizarTitulo(TITULOS[chave]) === titulo) || null;
     }
 
-    /** Extrai o conteúdo atual do editor de volta para {exame, tecnica, achados, conclusao, recomendacao}. */
+    /**
+     * Extrai o conteúdo atual do editor de volta para
+     * {exame, tecnica, achados, conclusao, recomendacao}.
+     *
+     * Garantia inegociável: NUNCA retornar as 5 seções vazias quando há texto
+     * visível no editor. A versão anterior descartava o documento inteiro
+     * quando o primeiro heading não batia com data-secao nem com um dos 5
+     * títulos canônicos (ex.: médico renomeou "Técnica"/"Achados" para
+     * "Método"/"Análise", ou colou um laudo vindo de outro sistema) — o
+     * autosave então sobrescrevia o banco com strings vazias a cada 30s.
+     * Ver diagnostics/pendencias-conhecidas.md.
+     */
     function extractSecoes() {
         const secoes = { exame: '', tecnica: '', achados: '', conclusao: '', recomendacao: '' };
         let atual = null;
         let marcadoresEncontrados = 0;
+        let preambulo = '';
         const nodes = Array.from(quill?.root?.children || []);
 
         nodes.forEach((node) => {
@@ -86,9 +109,10 @@ window.VoxelReports.editor = (function () {
 
             // Caminho ideal: o marcador foi preservado pelo Clipboard do Quill.
             // Fallback obrigatório: alguns builds removem atributos data-* ao
-            // hidratar HTML; nesse caso o título visual H4 continua confiável.
+            // hidratar HTML; nesse caso o título visual do heading continua
+            // confiável, desde que o texto bata com um dos 5 nomes canônicos.
             const marcado = node.dataset && node.dataset.secao;
-            const porTitulo = node.tagName === 'H4' ? secaoPorTitulo(node.textContent) : null;
+            const porTitulo = HEADING_TAGS.includes(node.tagName) ? secaoPorTitulo(node.textContent) : null;
             const proximaSecao = marcado && Object.prototype.hasOwnProperty.call(secoes, marcado)
                 ? marcado
                 : porTitulo;
@@ -101,17 +125,29 @@ window.VoxelReports.editor = (function () {
 
             if (atual && Object.prototype.hasOwnProperty.call(secoes, atual)) {
                 secoes[atual] += node.outerHTML || '';
+            } else {
+                // Conteúdo antes do primeiro marcador reconhecido (ou, no pior
+                // caso, o documento inteiro, se nenhum marcador bater). Nunca
+                // descartar — vira o "preâmbulo" tratado abaixo.
+                preambulo += node.outerHTML || '';
             }
         });
 
-        // Diagnóstico sem registrar conteúdo clínico: permite identificar no
-        // console quando o editor tem texto, mas não recebeu nenhum marcador.
         const temTextoVisivel = String(quill?.root?.textContent || '').trim() !== '';
-        if (temTextoVisivel && marcadoresEncontrados === 0) {
-            console.warn('[VOXEL Reports] editor sem marcadores de seção', {
+
+        if (marcadoresEncontrados === 0 && temTextoVisivel) {
+            // Nenhum heading do documento bateu com um marcador — todo o
+            // conteúdo caiu em "preambulo". Preserva tudo em "achados" em vez
+            // de perder o laudo inteiro; o médico reorganiza manualmente.
+            secoes.achados = preambulo;
+            console.warn('[VOXEL Reports] editor sem marcadores de seção — conteúdo preservado em "achados" para não perder o laudo', {
                 childTags: nodes.map((node) => node.tagName),
                 editorChars: String(quill.root.textContent || '').length,
             });
+        } else if (preambulo) {
+            // Houve marcador(es) reconhecido(s), mas sobrou conteúdo antes do
+            // primeiro — anexa à seção "exame" em vez de descartar.
+            secoes.exame = preambulo + secoes.exame;
         }
 
         return secoes;

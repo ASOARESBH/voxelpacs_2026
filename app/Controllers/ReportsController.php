@@ -161,6 +161,7 @@ class ReportsController extends Controller
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
                 'report_assinado_somente_leitura' => 'Este laudo já foi assinado e não pode mais ser editado.',
+                'payload_vazio_ignorado'          => 'Não foi possível identificar o conteúdo do editor. O laudo salvo anteriormente NÃO foi apagado — recarregue a página; se o texto sumir do editor, restaure pela aba Histórico.',
                 default                            => null, // sucesso — sem erro
             };
 
