@@ -578,9 +578,13 @@ $periodoLabel = [
             <!-- Situação -->
             <td class="col-sit">
                 <?= situacaoBadge($sit) ?>
-                <?php if (!empty($e['assumido_por'])): ?>
-                <div class="wl-assumido-por" title="Assumido por <?= htmlspecialchars($e['assumido_por']) ?>">
-                    <i class="fa fa-user-doctor"></i> <?= htmlspecialchars(explode(' ', $e['assumido_por'])[0]) ?>
+                <?php
+                // Exibe apenas se assumido_por for um nome válido (não numérico, não vazio)
+                $apExibir = $e['assumido_por'] ?? '';
+                $apValido = $apExibir !== '' && !is_numeric(trim($apExibir)) && strlen(trim($apExibir)) > 1;
+                if ($apValido): ?>
+                <div class="wl-assumido-por" title="Assumido por <?= htmlspecialchars($apExibir) ?>">
+                    <i class="fa fa-user-doctor"></i> <?= htmlspecialchars(explode(' ', trim($apExibir))[0]) ?>
                 </div>
                 <?php endif; ?>
             </td>
