@@ -150,6 +150,16 @@ Router::post('/usuarios/{id}/update',  'UsuariosController@update');
 Router::post('/usuarios/{id}/toggle',        'UsuariosController@toggleStatus');
 Router::post('/usuarios/{id}/reenviar-link', 'UsuariosController@reenviarLink');
 
+// ── Grupos (Sistema > Usuários > Grupos) — Fase 1: CRUD + vínculo de usuários ──
+Router::get('/usuarios/grupos',                                    'GruposController@index');
+Router::get('/usuarios/grupos/novo',                                'GruposController@novo');
+Router::post('/usuarios/grupos',                                    'GruposController@store');
+Router::get('/usuarios/grupos/{id}/editar',                         'GruposController@editar');
+Router::post('/usuarios/grupos/{id}/atualizar',                     'GruposController@atualizar');
+Router::post('/usuarios/grupos/{id}/excluir',                       'GruposController@excluir');
+Router::post('/usuarios/grupos/{id}/usuarios/adicionar',            'GruposController@adicionarUsuarios');
+Router::post('/usuarios/grupos/{id}/usuarios/{usuario_id}/remover', 'GruposController@removerUsuario');
+
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::post('/configuracoes/viewer-desktop/salvar', 'ConfiguracoesController@salvarViewerDesktop');

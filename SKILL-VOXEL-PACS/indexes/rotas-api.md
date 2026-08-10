@@ -30,6 +30,9 @@
 | POST | `/sla-regras/robo/toggle` | `SlaRegrasController@roboToggle` | idem acima | Liga/desliga o robô | 2026-07-18 |
 | GET | `/api/sla-regras/executar` | `SlaRoboController@executar` | **Pública** (token via query string, `hash_equals()`) — precisa estar em `App\Core\Router::$publicRoutes` **e** `public/index.php::$rotasPublicas` (duas listas independentes; achado replicado do caso de `/api/orthanc/ping`) | Dispara `SlaRulesEngineService::executarParaTodosTenants()`; chamada por cron externo (ex: cron-job.org), já que o hosting não tem crontab real | 2026-07-18 |
 | GET | `/api/medicos/cep/{cep}` | `MedicosController@buscarCep` | Login normal (rota autenticada, não pública) | Busca endereço por CEP via ViaCEP (`https://viacep.com.br/ws/{cep}/json/`), usada por `fetch()` no form de Médicos para autopreencher logradouro/bairro/cidade/estado; primeira integração de CEP do projeto (mesmo padrão estrutural de `Platform\NegociosController::buscarCnpj()`, mas sem `CURLOPT_SSL_VERIFYPEER => false`) | 2026-07-19 |
+| GET/POST | `/usuarios/grupos[...]` (index/novo/store/editar/atualizar/excluir) | `GruposController` | Login normal, escopado por `TenantContext::id()` | CRUD de Grupos (Fase 1 — ver `modules/grupos.md`); `excluir` é toggle de `ativo` (soft delete), não DELETE físico | 2026-08-10 |
+| POST | `/usuarios/grupos/{id}/usuarios/adicionar` | `GruposController@adicionarUsuarios` | idem acima | Vincula 1+ usuários ao grupo (`usuario_ids[]`), guard `usuarioPertenceAoTenant()` contra IDOR | 2026-08-10 |
+| POST | `/usuarios/grupos/{id}/usuarios/{usuario_id}/remover` | `GruposController@removerUsuario` | idem acima | Desvincula um usuário do grupo | 2026-08-10 |
 
 ## Convenções observadas (preencher conforme confirmado no código)
 

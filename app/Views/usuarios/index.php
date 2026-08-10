@@ -13,6 +13,11 @@ $perfilLabel = [
 ?>
 
 <style>
+.usuarios-tabs-bar { display:flex; gap:.25rem; border-bottom:1px solid var(--pacs-border); margin-bottom:1.25rem; }
+.usuarios-tab-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.65rem 1rem; font-size:.85rem; font-weight:600; color:var(--pacs-text-muted); text-decoration:none; border-bottom:2px solid transparent; }
+.usuarios-tab-btn:hover { color:var(--pacs-text); }
+.usuarios-tab-btn.active { color:var(--pacs-primary); border-bottom-color:var(--pacs-primary); }
+
 .pacs-badge-admin      { background:rgba(239,68,68,.15);  color:#ef4444; }
 .pacs-badge-medico     { background:rgba(79,195,247,.15); color:#4fc3f7; }
 .pacs-badge-secretaria { background:rgba(167,139,250,.15);color:#a78bfa; }
@@ -36,6 +41,16 @@ $perfilLabel = [
     </div>
     <a href="/usuarios/create" class="btn-pacs-primary">
         <i class="fa fa-plus me-1"></i> Novo Usuário
+    </a>
+</div>
+
+<!-- Navegação Usuários / Grupos -->
+<div class="usuarios-tabs-bar">
+    <a href="/usuarios" class="usuarios-tab-btn active">
+        <i class="fa fa-users"></i> <?= htmlspecialchars(t('usuarios.tabs.usuarios')) ?>
+    </a>
+    <a href="/usuarios/grupos" class="usuarios-tab-btn">
+        <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('usuarios.tabs.grupos')) ?>
     </a>
 </div>
 
