@@ -14,8 +14,14 @@
         'error' => t('report_chat.erro_generico'),
         'confirm' => t('report_chat.confirmar_conclusao'),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    window.VoxelReports.peerReviewI18n = <?= json_encode([
+        'confirmar' => t('peer_review.confirmar'),
+        'motivoCurto' => t('peer_review.motivo_curto'),
+        'error' => t('peer_review.erro'),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 </script>
 <script src="/assets/js/reports/reports-chat.js?v=<?= $v ?>"></script>
+<script src="/assets/js/reports/reports-peer-review.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-editor.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-autosave.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-templates.js?v=<?= $v ?>"></script>

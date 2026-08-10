@@ -154,6 +154,18 @@ body.reports-body {
     .reports-col-left > #card-exame {
         min-width: 0;
     }
+    .reports-col-left > #card-paciente {
+        grid-column: 1;
+        grid-row: 1;
+    }
+    .reports-col-left > #card-exame {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    .reports-col-left > #card-peer-review {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
     .reports-col-left > #card-chat,
     .reports-col-left > #card-historico-paciente,
     .reports-col-left > .reports-card-actions {
@@ -513,5 +525,122 @@ body.reports-body {
     }
     .reports-chat-actions .pacs-btn {
         flex: 1 1 140px;
+    }
+}
+
+/* ── Peer Review de laudos ─────────────────────────────────────────────── */
+.peer-review-card {
+    border: 1px solid rgba(168, 85, 247, .35);
+    background: linear-gradient(180deg, rgba(168, 85, 247, .08), transparent 58%);
+}
+.peer-review-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+}
+.peer-review-status {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: .18rem .5rem;
+    font-size: .65rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.peer-review-status-open {
+    color: #7c3aed;
+    background: rgba(124, 58, 237, .14);
+    border: 1px solid rgba(124, 58, 237, .3);
+}
+.peer-review-status-available {
+    color: #a855f7;
+    background: rgba(168, 85, 247, .12);
+    border: 1px solid rgba(168, 85, 247, .26);
+}
+.peer-review-description,
+.peer-review-hint {
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .72rem;
+    line-height: 1.4;
+    margin: 0;
+}
+.peer-review-field {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+.peer-review-field label {
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+.peer-review-field textarea {
+    min-height: 90px;
+    resize: vertical;
+    font-size: .75rem;
+    line-height: 1.4;
+}
+.peer-review-counter {
+    align-self: flex-end;
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .64rem;
+}
+.peer-review-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: .45rem;
+    padding: .55rem .65rem;
+    border-radius: 7px;
+    color: #c084fc;
+    background: rgba(168, 85, 247, .11);
+    border: 1px solid rgba(168, 85, 247, .28);
+    font-size: .72rem;
+    line-height: 1.35;
+}
+.peer-review-meta {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    padding: .55rem .65rem;
+    border-left: 3px solid #a855f7;
+    background: rgba(168, 85, 247, .06);
+    border-radius: 0 7px 7px 0;
+    font-size: .72rem;
+}
+.peer-review-meta div {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+}
+.peer-review-meta span {
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .64rem;
+    text-transform: uppercase;
+}
+.peer-review-meta strong {
+    color: var(--pacs-text, #e2e8f0);
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+.peer-review-open-btn {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    border-color: transparent;
+}
+.peer-review-open-btn:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+@media (max-width: 700px) {
+    .peer-review-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .peer-review-open-btn {
+        width: 100%;
+        justify-content: center;
     }
 }

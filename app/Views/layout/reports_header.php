@@ -7,6 +7,8 @@
 $pacienteNome = $estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente';
 $situacao     = $report->situacao ?? $report->status ?? 'rascunho';
 $reportId     = (int) $report->id;
+$peerReview   = $peerReview ?? null;
+$peerReviewAberto = !empty($peerReview['pendente']);
 
 // ── SLA Médico: tempo desde que assumiu ─────────────────────────────────────
 $slaTexto  = '';
@@ -59,6 +61,8 @@ $chatPendente = !empty($chat['pendente']);
      data-readonly="<?= $readonly ? '1' : '0' ?>"
      data-status="<?= htmlspecialchars($situacao) ?>"
      data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
+     data-peer-review-pending="<?= $peerReviewAberto ? '1' : '0' ?>"
+     data-peer-review-id="<?= (int) (($peerReview['aberta']->id ?? 0)) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">
 
     <!-- ═══════════════════════════════════════════════════════

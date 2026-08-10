@@ -21,7 +21,7 @@ class RelatorioFiltrosService
      * schema é um resíduo legado conflado com o campo `prioridade`, não um
      * estado de fluxo de trabalho (ver modules/relatorios.md).
      */
-    public const SITUACOES_VALIDAS = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'assinado', 'liberado'];
+    public const SITUACOES_VALIDAS = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'assinado', 'liberado', 'peer_review'];
 
     /** Situações tratadas como "concluído" — o cálculo de SLA congela nelas. */
     public const SITUACOES_CONCLUIDAS = ['assinado', 'liberado'];

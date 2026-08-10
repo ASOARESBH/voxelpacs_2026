@@ -133,13 +133,57 @@ class CopilotWebhookService
 
         // Busca o estudo
         $stmt = $this->pdo->prepare("
-            SELECT id, situacao, tenant_id FROM bi_pacs_estudos
-            WHERE study_instance_uid = :uid AND tenant_id = :tid LIMIT 1
+            SELECT e.id, e.situacao, e.tenant_id,
+                   r.id AS report_id, r.situacao AS report_situacao
+            FROM bi_pacs_estudos e
+            LEFT JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id
+            WHERE e.study_instance_uid = :uid AND e.tenant_id = :tid
+            LIMIT 1
         ");
         $stmt->execute(['uid' => $studyUid, 'tid' => $unidade->tenant_id]);
         $estudo = $stmt->fetch(\PDO::FETCH_OBJ);
         if (!$estudo) {
             return ['ok' => false, 'erro' => 'estudo_nao_encontrado'];
+        }
+
+        // Um webhook tardio não pode reabrir ou sobrescrever uma revisão clínica.
+        // Conferimos o estado denormalizado do estudo e o estado operacional do report.
+        $peerReviewAberto = ($estudo->situacao === 'peer_review' || $estudo->report_situacao === 'peer_review');
+        if (!$peerReviewAberto && !empty($estudo->report_id)) {
+            try {
+                $peerStmt = $this->pdo->prepare(
+                    "SELECT id FROM pacs_report_peer_reviews
+                     WHERE report_id = :report_id AND tenant_id = :tenant_id AND status = 'aberta'
+                     LIMIT 1"
+                );
+                $peerStmt->execute([
+                    'report_id' => (int) $estudo->report_id,
+                    'tenant_id' => (int) $estudo->tenant_id,
+                ]);
+                $peerReviewAberto = (bool) $peerStmt->fetchColumn();
+            } catch (\Throwable $peerError) {
+                // Instalações sem a migration ainda seguem o fluxo legado,
+                // mas o diagnóstico fica registrado para o deploy.
+                Logger::warning('[CopilotWebhookService::receberLaudo] não foi possível consultar Peer Review', [
+                    'estudo_id' => $estudo->id,
+                    'report_id' => $estudo->report_id ?? null,
+                    'tenant_id' => $estudo->tenant_id,
+                    'error' => $peerError->getMessage(),
+                ]);
+            }
+        }
+        if ($peerReviewAberto) {
+            Logger::warning('[CopilotWebhookService::receberLaudo] finalização bloqueada por Peer Review', [
+                'estudo_id' => $estudo->id,
+                'report_id' => $estudo->report_id ?? null,
+                'tenant_id' => $estudo->tenant_id,
+                'study_uid' => $studyUid,
+            ]);
+            return [
+                'ok' => false,
+                'erro' => 'peer_review_aberto',
+                'msg' => 'Laudo em Peer Review. Conclua a revisão no Report antes de receber nova finalização do Copilot.',
+            ];
         }
 
         // Valida token do médico

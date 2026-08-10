@@ -55,8 +55,9 @@ class ReportsController extends Controller
         $estudo   = $data['estudo'];
         $report   = $data['report'];
         $pedido   = $data['pedido'] ?? null;
-        $chat     = $data['chat'] ?? null;
-        $readonly = $data['readonly'];
+        $chat       = $data['chat'] ?? null;
+        $peerReview = $data['peerReview'] ?? null;
+        $readonly   = $data['readonly'];
         $lockInfo = $data['lockInfo'];
 
         // Exames anteriores do mesmo paciente
@@ -100,6 +101,7 @@ class ReportsController extends Controller
             'report'            => $report,
             'pedido'            => $pedido,
             'chat'              => $chat,
+            'peerReview'        => $peerReview,
             'readonly'          => $readonly,
             'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,
@@ -208,8 +210,9 @@ class ReportsController extends Controller
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
                     'report_nao_encontrado'       => 'Laudo não encontrado.',
-                    'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
-                                        'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
+                                        'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
+                    'peer_review_ciclo_nao_aberto' => 'O laudo está marcado para Peer Review, mas o ciclo aberto não foi localizado.',
+                    'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
                     'chat_pendente'                => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.',
                     'medico_sem_assinatura_ativa'   => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
                     'medico_assinatura_inativa'       => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',

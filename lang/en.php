@@ -486,4 +486,21 @@ return [
     'report_chat.erro_generico'          => 'The interaction could not be processed.',
     'report_chat.confirmar_conclusao'    => 'Complete this pending item? The study will return to its previous status.',
     'report_chat.nenhum_grupo'           => 'No active group is registered',
+
+    // Report Peer Review
+    'peer_review.titulo'                  => 'Peer Review',
+    'peer_review.status_aberta'           => 'In Peer Review',
+    'peer_review.status_disponivel'       => 'Available for review',
+    'peer_review.aviso_aberta'            => 'This report is under review and can be edited again.',
+    'peer_review.ciclo'                   => 'Cycle',
+    'peer_review.motivo'                  => 'Review reason',
+    'peer_review.motivo_placeholder'      => 'Explain why the report needs review (at least 20 characters)',
+    'peer_review.descricao'               => 'Release this report for review. The original report will be preserved for audit.',
+    'peer_review.liberar_botao'           => 'Release for Peer Review',
+    'peer_review.original_preservado'     => 'The original report was fully preserved for audit.',
+    'peer_review.confirmar'               => 'Do you want to release the report for review?',
+    'peer_review.motivo_curto'            => 'Enter a review reason with at least 20 characters.',
+    'peer_review.erro'                    => 'The Peer Review could not be opened.',
+    'peer_review.abrir_worklist'          => 'Open report for Peer Review',
+    'peer_review.botao_worklist'          => 'Peer Review',
 ];
