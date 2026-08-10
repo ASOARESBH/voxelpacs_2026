@@ -1,4 +1,4 @@
-<div class="pacs-card reports-card">
+<div class="pacs-card reports-card" id="card-historico-paciente">
     <div class="pacs-card-header"><i class="fa fa-history"></i> Histórico do Paciente</div>
     <div class="pacs-card-body reports-card-body">
         <p class="text-pacs-muted" style="font-size:.78rem;margin:0;">Exames anteriores deste paciente — em breve.</p>

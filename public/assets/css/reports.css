@@ -10,14 +10,19 @@ body.reports-body {
     background: var(--pacs-bg, #0a1628);
     color: var(--pacs-text, #e2e8f0);
     font-family: 'Inter', system-ui, sans-serif;
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 #reports-app {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
+    height: auto;
+    width: 100%;
+    max-width: 100vw;
 }
 
 /* ── Barra superior ─────────────────────────────────────────────── */
@@ -114,16 +119,19 @@ body.reports-body {
 /* ── Grid principal 30/70 ───────────────────────────────────────── */
 .reports-body-grid {
     display: grid;
-    grid-template-columns: 30% 70%;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
+    grid-template-columns: minmax(360px, clamp(360px, 34vw, 520px)) minmax(0, 1fr);
+    align-items: start;
+    width: 100%;
+    min-width: 0;
+    min-height: calc(100vh - 5rem);
+    overflow: visible;
 }
 
 .reports-col-left,
 .reports-col-right {
-    overflow-y: auto;
-    padding: 1rem;
+    overflow: visible;
+    padding: clamp(.75rem, 1.5vw, 1.25rem);
+    min-width: 0;
     min-height: 0;
 }
 
@@ -134,13 +142,58 @@ body.reports-body {
     gap: 1rem;
 }
 
-@media (max-width: 900px) {
-    .reports-body-grid { grid-template-columns: 1fr; grid-auto-rows: auto; overflow-y: auto; }
-    .reports-col-left, .reports-col-right { overflow-y: visible; }
+.reports-body-grid > * { min-width: 0; }
+
+@media (min-width: 1181px) {
+    .reports-col-left {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+    .reports-col-left > #card-paciente,
+    .reports-col-left > #card-exame {
+        min-width: 0;
+    }
+    .reports-col-left > #card-chat,
+    .reports-col-left > #card-historico-paciente,
+    .reports-col-left > .reports-card-actions {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 1180px) {
+    .reports-body-grid {
+        grid-template-columns: minmax(330px, 38%) minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 980px) {
+    .reports-body-grid {
+        grid-template-columns: 1fr;
+        min-height: 0;
+    }
+    .reports-col-left {
+        border-right: 0;
+        border-bottom: 1px solid var(--pacs-border, #1e3a5f);
+    }
+    .reports-col-left,
+    .reports-col-right {
+        overflow: visible;
+    }
 }
 
 /* ── Cards de informação ─────────────────────────────────────────── */
-.reports-card { margin-bottom: 0; }
+.reports-card {
+    margin-bottom: 0;
+    overflow: visible;
+    min-width: 0;
+}
+
+.rp-value--full {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+}
 .reports-card-body { display: flex; flex-direction: column; gap: .5rem; }
 
 .report-field { display: flex; flex-direction: column; gap: .1rem; flex: 1; }
@@ -165,11 +218,12 @@ body.reports-body {
     letter-spacing: .04em;
     margin: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: .3rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
 }
 .rp-field label i {
     opacity: .55;
@@ -262,9 +316,9 @@ body.reports-body {
 .reports-editor-card {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    min-height: 500px;
-    overflow: hidden;
+    height: auto;
+    min-height: clamp(560px, calc(100vh - 8.5rem), 900px);
+    overflow: visible;
 }
 
 .reports-editor-toolbar {
@@ -273,13 +327,21 @@ body.reports-body {
 }
 
 .reports-editor-container {
-    flex: 1;
-    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: clamp(500px, calc(100vh - 14rem), 820px);
+    overflow: visible;
     background: var(--pacs-card-bg, #0d1b2a);
     color: var(--pacs-text, #e2e8f0);
     font-size: .92rem;
     line-height: 1.6;
     border: none;
+}
+
+.reports-editor-container .ql-editor {
+    min-height: clamp(500px, calc(100vh - 14rem), 820px);
+    height: auto;
+    overflow: visible;
+    overflow-wrap: anywhere;
 }
 
 .reports-editor-container h4[data-secao] {
@@ -356,7 +418,18 @@ body.reports-body {
 
 
 /* ── CHAT contextual do Report ─────────────────────────────────────────── */
-.reports-chat-card { overflow: hidden; }
+.reports-chat-card {
+    overflow: visible;
+    min-width: 0;
+    width: 100%;
+}
+
+.reports-history-actions {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+    min-width: 0;
+}
 .reports-chat-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .reports-chat-subtitle { color: var(--pacs-text-muted, #8fa3bf); font-size: .72rem; margin: 0 0 .65rem; }
 .chat-status-badge {
@@ -372,8 +445,13 @@ body.reports-body {
 }
 .reports-chat-alert.d-none { display: none !important; }
 .reports-chat-messages {
-    max-height: 245px; overflow-y: auto; display: flex; flex-direction: column; gap: .55rem;
-    margin: 0 -.15rem .75rem; padding: .15rem .15rem .25rem;
+    max-height: none;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    margin: 0 -.15rem .75rem;
+    padding: .15rem .15rem .25rem;
 }
 .reports-chat-empty {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem;
@@ -397,7 +475,43 @@ body.reports-body {
 .reports-chat-actions .pacs-btn { font-size: .7rem; padding: .4rem .55rem; }
 .reports-chat-email-hint { color: var(--pacs-text-muted, #8fa3bf); font-size: .64rem; line-height: 1.3; }
 .reports-chat-toast { margin-top: .45rem; font-size: .7rem; }
-@media (max-width: 900px) {
-    .reports-chat-messages { max-height: 300px; }
-    .reports-chat-actions .pacs-btn { flex: 1 1 140px; }
+@media (max-width: 700px) {
+    .reports-topbar {
+        align-items: flex-start;
+        padding: .65rem .75rem;
+    }
+    .reports-topbar-actions {
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+    .reports-topbar .pacs-btn,
+    .reports-topbar-actions .pacs-btn {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .reports-col-left,
+    .reports-col-right {
+        padding: .75rem;
+    }
+    .reports-card-body,
+    .rp-row,
+    .report-field-row {
+        gap: .65rem;
+    }
+    .rp-row .rp-field,
+    .report-field-row .report-field {
+        flex-basis: 100%;
+        min-width: 100%;
+    }
+    .reports-editor-card {
+        min-height: 620px;
+    }
+    .reports-editor-container,
+    .reports-editor-container .ql-editor {
+        min-height: 560px;
+    }
+    .reports-chat-actions .pacs-btn {
+        flex: 1 1 140px;
+    }
 }

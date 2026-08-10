@@ -5,9 +5,7 @@ if (!empty($estudo->study_date)) {
     try { $dtEstudo = (new DateTime($estudo->study_date))->format('d/m/Y'); } catch (\Throwable $e) { $dtEstudo = $estudo->study_date; }
 }
 $hrEstudo = $estudo->study_time ?: '—';
-$studyUidShort = strlen($estudo->study_instance_uid ?? '') > 28
-    ? substr($estudo->study_instance_uid, 0, 28) . '…'
-    : ($estudo->study_instance_uid ?: '—');
+$studyUid = $estudo->study_instance_uid ?: '—';
 ?>
 <div class="pacs-card reports-card" id="card-exame">
     <div class="pacs-card-header"><i class="fa fa-file-waveform"></i> Exame</div>
@@ -79,7 +77,7 @@ $studyUidShort = strlen($estudo->study_instance_uid ?? '') > 28
 
         <div class="rp-field">
             <label><i class="fa fa-fingerprint"></i> Study UID</label>
-            <span class="rp-value rp-mono" title="<?= htmlspecialchars($estudo->study_instance_uid ?? '') ?>"><?= htmlspecialchars($studyUidShort) ?></span>
+            <span class="rp-value rp-mono rp-value--full" title="<?= htmlspecialchars($estudo->study_instance_uid ?? '') ?>"><?= htmlspecialchars($studyUid) ?></span>
         </div>
 
         <?php if (!empty($estudo->especialidade)): ?>
