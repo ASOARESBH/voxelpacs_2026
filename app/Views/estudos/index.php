@@ -48,6 +48,7 @@ function situacaoBadge(string $sit): string {
     $map = [
         'novo'     => ['sit-novo',     'NOVO'],
         'aberto'   => ['sit-aberto',   'ABERTO'],
+        'pendente' => ['sit-pendente', 'PENDENTE'],
         'a_laudar' => ['sit-a-laudar', 'A LAUDAR'],
         'em_laudo' => ['sit-em-laudo', 'EM LAUDO'],
         'rascunho' => ['sit-rascunho', 'RASCUNHO'],
@@ -303,6 +304,7 @@ $periodoLabel = [
         <option value="">Todas as situações</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>NOVO</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>ABERTO</option>
+        <option value="pendente" <?= $filtros['situacao']==='pendente'?'selected':'' ?>>PENDENTE</option>
         <option value="a_laudar" <?= $filtros['situacao']==='a_laudar'?'selected':'' ?>>A LAUDAR</option>
         <option value="em_laudo" <?= $filtros['situacao']==='em_laudo'?'selected':'' ?>>EM LAUDO</option>
         <option value="rascunho" <?= $filtros['situacao']==='rascunho'?'selected':'' ?>>RASCUNHO</option>
@@ -324,6 +326,7 @@ $periodoLabel = [
         <option value="">A laudar (Todos)</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>Novo</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>Aberto</option>
+        <option value="pendente" <?= $filtros['situacao']==='pendente'?'selected':'' ?>>Pendente</option>
         <option value="a_laudar" <?= $filtros['situacao']==='a_laudar'?'selected':'' ?>>A laudar</option>
         <option value="em_laudo" <?= $filtros['situacao']==='em_laudo'?'selected':'' ?>>Em laudo</option>
         <option value="urgente"  <?= $filtros['situacao']==='urgente'?'selected':'' ?>>Urgente</option>
@@ -936,6 +939,7 @@ $periodoLabel = [
 .sit-rascunho{background:#fefce8;color:#a16207;}
 .sit-assinado{background:#ecfdf5;color:#065f46;}
 .sit-liberado{background:#f0fdf4;color:#059669;}
+.sit-pendente{background:#fef2f2;color:#dc2626;border:1px solid rgba(220,38,38,.25);}
 .sit-urgente {background:#fef2f2;color:#dc2626;}
 .wl-assumido-por{font-size:.62rem;color:var(--pacs-text-muted);margin-top:.15rem;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:95px;}

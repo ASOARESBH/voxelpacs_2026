@@ -83,5 +83,15 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 - `lang/es.php` tinha (e ainda tem, nas chaves pré-existentes `pronto`/`erro_limite`/`erro_timeout` do mesmo namespace `download_lote.*`) escapes unicode corrompidos — ex.: `'u00a1Listo!...'` deveria ser `'¡Listo!...'` (faltou o `\` do escape numa edição anterior). Nunca foi percebido porque a JS não usa essas chaves.
 - As chaves `download_lote.titulo/selecione/preparando/processando/pronto/erro_limite/erro_sem_orthanc/erro_timeout` existem nos 3 idiomas desde 2026-07-25 mas **nunca são lidas pela JS** (que tem strings PT-BR hardcoded nos `alert()`/labels de progresso). Retrofit dessas strings fica para uma tarefa futura de i18n dedicada a essa tela — não fazia parte do pedido de "Agrupar vs Individual".
 
+## Status "PENDENTE" adicionado ao filtro/pill (2026-08-10)
+
+`bi_pacs_estudos.situacao` ganhou o valor `pendente` em `2026-08-10_reports_chat.sql` (setado por `ReportChatService::abrir()` quando alguém abre uma pendência de CHAT sobre o laudo; restaurado ao valor anterior — `situacao_anterior` — quando a conversa é concluída). O ENUM foi atualizado no mesmo dia, mas o filtro de situação (`#selectSituacao`/`situacao_rapida`, ~linha 302-333) e a pill da coluna SITUAÇÃO (`situacaoBadge()`, ~linha 47-60) **não foram** — eram mantidos manualmente, sem derivar do ENUM, então `pendente` ficou invisível no filtro e caiu no fallback cinza da pill (mesmo estilo de `NOVO`) até esta correção. Ver `patterns/status-colors.md` (mapa completo de cores por status, incluindo a divergência já existente entre pill e topbar para `a_laudar`/`em_laudo`/`rascunho`/`assinado`) e `modules/gestao-exames.md` (badge do topbar, mesmo status).
+
+**Posição escolhida**: entre `ABERTO` e `A LAUDAR`, nos dois dropdowns e no mapa da pill — `pendente` representa uma interrupção do fluxo normal (não um passo do pipeline), então foi colocado cedo/visível em vez de no fim da lista.
+
+**Cor**: vermelho (`#dc2626`/`#fef2f2`), reusando o token já usado por `.sit-urgente` — não foi inventada cor nova.
+
+**Fora do escopo desta tarefa (não corrigido)**: `peer_review` tem o mesmo problema (existe no ENUM, ausente do mapa da pill, cai no mesmo fallback cinza) — não tocado porque o pedido foi especificamente sobre `pendente`. O painel `.wl-resumo` (cards "Hoje/Semana/Mês/Urgentes/Total", `$contadores`/`$resumo` calculados em `EstudosController::index()` ~linha 439) está `display:none` — código morto/invisível, não recebeu `pendente` porque não há usuário nenhum vendo esse painel hoje.
+
 ## Última análise
-2026-08-06
+2026-08-10

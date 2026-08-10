@@ -4,6 +4,18 @@
 
 ## Ativas
 
+### Filtro/pill de situação da worklist não deriva do ENUM real — lista mantida manualmente (achado 2026-08-10)
+
+**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333) e mapa de cores `situacaoBadge()` (~linha 47-60).
+
+O valor válido de `bi_pacs_estudos.situacao` é o ENUM da coluna (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas o dropdown de filtro e o mapa de cores da pill são listas PHP hardcoded, mantidas manualmente, sem nenhuma checagem que avise quando divergem do ENUM. Foi exatamente essa divergência que deixou o status `pendente` (adicionado ao ENUM em `2026-08-10_reports_chat.sql`, pelo módulo de CHAT) invisível no filtro e sem cor na pill — corrigido nesta sessão (2026-08-10), mas o mecanismo que causou o gap continua o mesmo: **nada impede a próxima adição ao ENUM de repetir o problema**. `peer_review` já tem o mesmo sintoma na pill (existe no ENUM, ausente do mapa de cores, cai no fallback cinza) e não foi corrigido por estar fora do escopo pedido.
+
+**Também confirmado nesta investigação**: a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes**, já divergentes entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` (cores diferentes para o mesmo status, dependendo de qual componente renderiza) — ver `patterns/status-colors.md` para o mapa completo e a tabela de divergência.
+
+**Por que não corrigido agora**: consertar a causa raiz (derivar filtro/pill do ENUM real, ex. via `SHOW COLUMNS`/`INFORMATION_SCHEMA` ou uma constante PHP única compartilhada) é um refactor não pedido — o pedido desta tarefa foi só adicionar `pendente` nos 3 lugares. Registrado aqui para não precisar redescobrir o padrão na próxima vez que um status novo for adicionado ao ENUM e "sumir" da UI.
+
+**Prioridade sugerida**: baixa/média — não é falha de segurança nem perda de dado, é UX (status existe nos dados mas fica invisível no filtro/sem cor na pill até alguém notar e corrigir manualmente, como aconteceu aqui).
+
 ### `report_signatures` tem 3 definições de schema conflitantes entre migrations
 
 **Onde**: `database/migrations/2026-07-04_bi_reports_module.sql`, `2026-07-05_reports_module.sql`, `2026-07-25_migrations_pendentes_hostgator.sql`.

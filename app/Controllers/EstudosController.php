@@ -1035,12 +1035,12 @@ class EstudosController extends Controller
                 foreach ($institutionNames as $n) { $params[] = $n; }
             } else {
                 // Tenant sem institution_names vinculados — retorna zeros
-                $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+                $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
                 return;
             }
         } elseif (!$bypassGlobal) {
             // Sem tenant e sem bypass — não mostra nada
-            $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+            $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
             return;
         }
         // bypassGlobal (superadmin fora de impersonation) = sem filtro de institution
@@ -1056,6 +1056,7 @@ class EstudosController extends Controller
             $data = [
                 'novo'        => 0,
                 'aberto'      => 0,
+                'pendente'    => 0,
                 'a_laudar'    => 0,
                 'em_laudo'    => 0,
                 'rascunho'    => 0,
@@ -1078,7 +1079,7 @@ class EstudosController extends Controller
             $this->json($data);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::contadores] ' . $ex->getMessage());
-            $this->json(['novo'=>0,'aberto'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+            $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
         }
     }
 

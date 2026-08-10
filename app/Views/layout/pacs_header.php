@@ -209,6 +209,9 @@
                  inteiro fica fora do DOM, não só oculto via CSS. -->
             <?php if (\App\Core\Auth::perfilAtual() === 'medico'): ?>
             <div class="topbar-badges d-none d-lg-flex" id="topbar-badges-wrap">
+                <span class="topbar-badge" style="background:#fef2f2;color:#dc2626;" title="Laudos com pendência aberta (CHAT)">
+                    <span class="badge-count" id="cnt-pendente">0</span> PENDENTE
+                </span>
                 <span class="topbar-badge" style="background:#fff7ed;color:#ea580c;" title="Estudos aguardando laudo">
                     <span class="badge-count" id="cnt-a-laudar">0</span> A LAUDAR
                 </span>
@@ -234,6 +237,7 @@
                     .then(function(d) {
                         if (!d) return;
                         var m = {
+                            'cnt-pendente':   (d.pendente   || 0),
                             'cnt-a-laudar':   (d.a_laudar   || 0),
                             'cnt-em-laudo':   (d.em_laudo   || 0),
                             'cnt-rascunho':   (d.rascunho   || 0),

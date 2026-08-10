@@ -34,6 +34,20 @@
 
 ---
 
+## Filtro/pill de situação da worklist não deriva do ENUM real — lista mantida manualmente (2026-08-10)
+
+**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333) e mapa de cores `situacaoBadge()` (~linha 47-60).
+
+**O quê**: `bi_pacs_estudos.situacao` é um ENUM de banco (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas o dropdown de filtro e o mapa de cores da pill são listas PHP hardcoded, independentes do ENUM, sem nenhum mecanismo de sincronização. Quando um status novo é adicionado ao ENUM (por outra tarefa, outro dia), ele fica automaticamente invisível no filtro e sem cor na pill (cai no fallback cinza de "NOVO") até alguém notar manualmente.
+
+**Como foi encontrado**: pedido explícito do usuário (2026-08-10) — o status `pendente`, adicionado ao ENUM no mesmo dia por `2026-08-10_reports_chat.sql` (módulo de CHAT, `ReportChatService::abrir()`), já estava sendo atribuído a estudos reais mas ausente do dropdown e sem cor na pill. Corrigido nessa mesma tarefa (ver `modules/worklist-estudos.md`), mas o mecanismo que causou o gap não foi tocado — é estrutural, não um bug pontual.
+
+**Achado colateral confirmado**: `peer_review` (também no ENUM) tem o mesmo sintoma na pill hoje — não corrigido, fora do escopo do pedido (era só sobre `pendente`). E a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes já divergentes** entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` — mesmo status, cores diferentes dependendo de qual componente renderiza. Mapa completo em `patterns/status-colors.md` (novo, criado nesta tarefa).
+
+**Por que não corrigido agora**: fora do escopo pedido (era só adicionar `pendente` nos 3 lugares, não refatorar a fonte de verdade do filtro/pill). Corrigir de verdade exigiria derivar a lista do ENUM real (`SHOW COLUMNS`/`INFORMATION_SCHEMA`) ou centralizar num mapa PHP único compartilhado entre pill e topbar — refactor não pedido.
+
+**Prioridade sugerida**: baixa/média — UX, não segurança/perda de dado. Vale revisitar na próxima vez que um status novo entrar no ENUM.
+
 ## Endpoints do frontend de laudo com rota divergente da registrada em `routes/web.php`
 
 **Onde**: `reports-templates.js`, `reports-autotext.js`, `reports-history.js` (JS da tela `/reports/{id}`).
@@ -144,4 +158,4 @@
 ---
 
 ## Última análise
-2026-08-08
+2026-08-10

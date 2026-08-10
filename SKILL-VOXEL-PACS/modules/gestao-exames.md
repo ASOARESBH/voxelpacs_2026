@@ -29,6 +29,10 @@ Tela `/gestao-exames` — reaproveita a Worklist de Estudos (`EstudosController:
 
 **Não tocado**: dropdown de filtro "A laudar (Todos)" na barra de busca do worklist (`app/Views/estudos/index.php`) — é um filtro de busca diferente da barra de badges do header, análise confirmou que o pedido original se referia só à segunda.
 
+## Badge PENDENTE adicionado à barra (2026-08-10)
+
+Confirmado de novo (não presumido) nesta tarefa: a barra de badges continua sendo o mesmo componente compartilhado descrito acima — `pacs_header.php:206-` — renderizado igual em qualquer rota do layout `'pacs'`. Adicionado badge `PENDENTE` (vermelho, `#dc2626`/`#fef2f2`) alimentado pela mesma chave nova `pendente` em `EstudosController::contadores()` (`GET /api/estudos/contadores`) — mesmo endpoint, mesmo polling de 60s, mesmo escopo por tenant/`institution_name` já usado pelos outros badges (**não** escopado por médico responsável — mesmo débito já registrado abaixo, agora também vale para `pendente`). Posicionado primeiro na barra (antes de A LAUDAR), por ser o status que representa bloqueio/interrupção mais urgente. Ver `modules/worklist-estudos.md` e `patterns/status-colors.md` para o mapa completo.
+
 ## Validação executada (2026-08-08)
 - `php -l` limpo em `Auth.php` e `pacs_header.php`.
 - `Auth::perfilAtual()` testado via sessão simulada: médico/admin/secretaria/analista/viewer no tenant ativo, perfil em outro tenant (não o ativo), sem tenant ativo, sessão antiga sem `perfil` em cache — todos os 5 casos bateram o esperado.
@@ -36,4 +40,4 @@ Tela `/gestao-exames` — reaproveita a Worklist de Estudos (`EstudosController:
 - **Não validado**: navegador real, múltiplas rotas ao vivo lado a lado (ambiente sem servidor rodando neste sandbox).
 
 ## Última análise
-2026-08-08
+2026-08-10
