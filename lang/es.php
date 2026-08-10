@@ -486,4 +486,21 @@ return [
     'report_chat.erro_generico'          => 'No se pudo procesar la interacción.',
     'report_chat.confirmar_conclusao'    => '¿Completar esta pendiente? El estudio volverá a su estado anterior.',
     'report_chat.nenhum_grupo'           => 'No hay ningún grupo activo registrado',
+
+    // Peer Review de informes
+    'peer_review.titulo'                  => 'Peer Review',
+    'peer_review.status_aberta'           => 'En Peer Review',
+    'peer_review.status_disponivel'       => 'Disponible para revisión',
+    'peer_review.aviso_aberta'            => 'Este informe está en revisión y puede editarse nuevamente.',
+    'peer_review.ciclo'                   => 'Ciclo',
+    'peer_review.motivo'                  => 'Motivo de la revisión',
+    'peer_review.motivo_placeholder'      => 'Explique por qué el informe necesita revisión (mínimo 20 caracteres)',
+    'peer_review.descricao'               => 'Libere este informe para revisión. El informe original se conservará para auditoría.',
+    'peer_review.liberar_botao'           => 'Liberar Peer Review',
+    'peer_review.original_preservado'     => 'El informe original se conservó íntegramente para auditoría.',
+    'peer_review.confirmar'               => '¿Desea liberar el informe para revisión?',
+    'peer_review.motivo_curto'            => 'Informe el motivo de la revisión con al menos 20 caracteres.',
+    'peer_review.erro'                    => 'No se pudo abrir el Peer Review.',
+    'peer_review.abrir_worklist'          => 'Abrir el informe para Peer Review',
+    'peer_review.botao_worklist'          => 'Peer Review',
 ];

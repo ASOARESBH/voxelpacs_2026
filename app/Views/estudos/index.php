@@ -54,6 +54,7 @@ function situacaoBadge(string $sit): string {
         'rascunho' => ['sit-rascunho', 'RASCUNHO'],
         'assinado' => ['sit-assinado', 'ASSINADO'],
         'liberado' => ['sit-liberado', 'LIBERADO'],
+        'peer_review' => ['sit-peer-review', 'PEER REVIEW'],
         'urgente'  => ['sit-urgente',  'URGENTE'],
     ];
     [$cls, $label] = $map[$sit] ?? ['sit-novo', strtoupper(str_replace('_', ' ', $sit))];
@@ -310,6 +311,7 @@ $periodoLabel = [
         <option value="rascunho" <?= $filtros['situacao']==='rascunho'?'selected':'' ?>>RASCUNHO</option>
         <option value="assinado" <?= $filtros['situacao']==='assinado'?'selected':'' ?>>ASSINADO</option>
         <option value="liberado" <?= $filtros['situacao']==='liberado'?'selected':'' ?>>LIBERADO</option>
+        <option value="peer_review" <?= $filtros['situacao']==='peer_review'?'selected':'' ?>>PEER REVIEW</option>
     </select>
 
     <button type="submit" class="wl-btn-primary"><i class="fa fa-magnifying-glass"></i> Buscar</button>
@@ -333,6 +335,7 @@ $periodoLabel = [
         <option value="rascunho" <?= $filtros['situacao']==='rascunho'?'selected':'' ?>>Rascunho</option>
         <option value="assinado" <?= $filtros['situacao']==='assinado'?'selected':'' ?>>Assinado</option>
         <option value="liberado" <?= $filtros['situacao']==='liberado'?'selected':'' ?>>Liberado</option>
+        <option value="peer_review" <?= $filtros['situacao']==='peer_review'?'selected':'' ?>>Peer Review</option>
     </select>
 
     <span class="wl-divider"></span>
@@ -466,6 +469,8 @@ $periodoLabel = [
             // Permissões de ação
             $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
             $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
+            $podePeerReview = $isMedicoLogado && in_array($sit, ['assinado', 'liberado'], true)
+                && !empty($e['study_instance_uid']);
 
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);
@@ -632,6 +637,12 @@ $periodoLabel = [
                         <span class="wl-muted">—</span>
                         <?php endif; ?>
                     <?php else: ?>
+                        <?php if ($podePeerReview): ?>
+                        <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                           class="wl-btn-peer-review" title="<?= htmlspecialchars(t('peer_review.abrir_worklist')) ?>">
+                            <i class="fa fa-rotate"></i> <?= htmlspecialchars(t('peer_review.botao_worklist')) ?>
+                        </a>
+                        <?php endif; ?>
                         <?php if ($podeAssumir): ?>
                         <button type="button" class="wl-btn-assumir"
                                 data-id="<?= $e['id'] ?>"
@@ -940,6 +951,7 @@ $periodoLabel = [
 .sit-assinado{background:#ecfdf5;color:#065f46;}
 .sit-liberado{background:#f0fdf4;color:#059669;}
 .sit-pendente{background:#fef2f2;color:#dc2626;border:1px solid rgba(220,38,38,.25);}
+.sit-peer-review{background:#faf5ff;color:#7c3aed;border:1px solid rgba(124,58,237,.3);}
 .sit-urgente {background:#fef2f2;color:#dc2626;}
 .wl-assumido-por{font-size:.62rem;color:var(--pacs-text-muted);margin-top:.15rem;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:95px;}
@@ -985,6 +997,10 @@ $periodoLabel = [
 
 /* ── Ações ──────────────────────────────────────────────────────────────── */
 .wl-acoes-wrap{display:flex;flex-direction:column;gap:.25rem;align-items:center;}
+.wl-btn-peer-review{background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border:none;border-radius:5px;
+    padding:.25rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;
+    gap:.25rem;white-space:nowrap;width:100%;justify-content:center;transition:opacity .15s,transform .1s;text-decoration:none;}
+.wl-btn-peer-review:hover{opacity:.88;transform:scale(1.02);color:#fff;}
 .wl-btn-pedido{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:5px;
     padding:.25rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;
     gap:.25rem;white-space:nowrap;width:100%;justify-content:center;transition:opacity .15s,transform .1s;}

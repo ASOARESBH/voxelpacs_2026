@@ -489,4 +489,21 @@ return [
     'report_chat.erro_generico'          => 'Não foi possível processar a interação.',
     'report_chat.confirmar_conclusao'    => 'Concluir esta pendência? O estudo voltará à situação anterior.',
     'report_chat.nenhum_grupo'           => 'Nenhum grupo ativo cadastrado',
+
+    // Peer Review de laudos
+    'peer_review.titulo'                  => 'Peer Review',
+    'peer_review.status_aberta'           => 'Em Peer Review',
+    'peer_review.status_disponivel'       => 'Disponível para revisão',
+    'peer_review.aviso_aberta'            => 'Este laudo está em revisão e pode ser editado novamente.',
+    'peer_review.ciclo'                   => 'Ciclo',
+    'peer_review.motivo'                  => 'Motivo da revisão',
+    'peer_review.motivo_placeholder'      => 'Informe por que o laudo precisa ser revisado (mínimo de 20 caracteres)',
+    'peer_review.descricao'               => 'Libere este laudo para revisão. O laudo original será preservado para auditoria.',
+    'peer_review.liberar_botao'           => 'Liberar Peer Review',
+    'peer_review.original_preservado'     => 'O laudo original foi preservado integralmente para auditoria.',
+    'peer_review.confirmar'               => 'Deseja liberar o laudo para revisão?',
+    'peer_review.motivo_curto'            => 'Informe o motivo da revisão com pelo menos 20 caracteres.',
+    'peer_review.erro'                    => 'Não foi possível abrir o Peer Review.',
+    'peer_review.abrir_worklist'          => 'Abrir o laudo para Peer Review',
+    'peer_review.botao_worklist'          => 'Peer Review',
 ];

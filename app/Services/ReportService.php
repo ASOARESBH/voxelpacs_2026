@@ -132,10 +132,25 @@ class ReportService {
             ]);
         }
 
+        // Peer Review: a tela recebe o ciclo aberto e o histórico imutável.
+        // Se a migration ainda não estiver aplicada, a abertura do laudo não quebra.
+        $peerReview = null;
+        try {
+            $peerReview = (new ReportPeerReviewService())->contexto((int) $report->id);
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportService::carregarParaEdicao] Peer Review não carregado', [
+                'report_id' => $report->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Schema de produção usa 'situacao' (não 'status')
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
         if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
             $readonly = true;
+        } elseif ($reportSituacao === 'peer_review') {
+            // O laudo é editável somente dentro do ciclo aberto.
+            $readonly = empty($peerReview['pendente']);
         }
 
         AuditLogger::log('report.visualizar', 'reports', $report->id);
@@ -146,6 +161,7 @@ class ReportService {
             'report' => $report,
             'pedido' => $pedido,
             'chat' => $chat,
+            'peerReview' => $peerReview,
             'readonly' => $readonly,
             'lockInfo' => $lockInfo,
         ];
@@ -223,7 +239,10 @@ class ReportService {
         // Mantém compatibilidade: se vier array de secões, usa direto
         $conteudoAtual = ['secoes' => $secoes];
 
-        $novoStatus = $modo === 'auto' ? null : ($modo === 'rascunho' || $modo === 'salvar' ? 'rascunho' : null);
+        // Durante Peer Review, salvar não pode apagar o estado do ciclo aberto.
+        $novoStatus = ($reportSituacao === 'peer_review')
+            ? null
+            : ($modo === 'auto' ? null : ($modo === 'rascunho' || $modo === 'salvar' ? 'rascunho' : null));
 
         // estudo_id é o nome da FK no schema de produção
         $estudoIdFK = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
@@ -286,11 +305,23 @@ class ReportService {
         $report = $this->repo->findReportById($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
-        // 4(b) — trava de re-assinatura, mesmo padrão que salvar() já usa
-        // (gap registrado em diagnostics/pendencias-conhecidas.md, resolvido aqui).
+        // 4(b) — trava de re-assinatura, mas permite concluir um ciclo de Peer Review.
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
         if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
             return ['ok' => false, 'error' => 'report_ja_assinado'];
+        }
+
+        $peerReviewService = null;
+        $peerReviewAberto = null;
+        if ($reportSituacao === 'peer_review') {
+            $peerReviewService = new ReportPeerReviewService();
+            $peerReviewAberto = $peerReviewService->contexto($reportId)['aberta'] ?? null;
+            if (!$peerReviewAberto) {
+                Logger::warning('[ReportService::assinar] estado peer_review sem ciclo aberto', [
+                    'report_id' => $reportId, 'tenant_id' => $report->tenant_id ?? null,
+                ]);
+                return ['ok' => false, 'error' => 'peer_review_ciclo_nao_aberto'];
+            }
         }
 
         // Uma conversa aberta é uma pendência operacional do estudo. O bloqueio
@@ -402,6 +433,14 @@ class ReportService {
 
             $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
             $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+            if ($peerReviewAberto && $peerReviewService) {
+                $peerReviewService->concluirNaTransacao(
+                    (int) $peerReviewAberto->id,
+                    $userId,
+                    $modo === 'fechar' ? 'liberado' : 'assinado',
+                    $versaoNumero
+                );
+            }
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -440,6 +479,7 @@ class ReportService {
             'assinado_em' => $assinadoEm,
             'hash' => $hash,
             'pdf_url' => '/reports/pdf?report_id=' . rawurlencode((string) $reportId),
+            'peer_review_concluido' => $peerReviewAberto !== null,
         ];
     }
 
