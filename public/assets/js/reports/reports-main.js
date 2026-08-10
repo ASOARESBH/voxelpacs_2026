@@ -15,6 +15,7 @@ window.VoxelReports.main = (function () {
             modalidade: app.dataset.modalidade || '',
             readonly: app.dataset.readonly === '1',
             status: app.dataset.status,
+            chatPending: app.dataset.chatPending === '1',
             csrf: app.dataset.csrf,
         };
     }
@@ -40,6 +41,10 @@ window.VoxelReports.main = (function () {
         const btnLiberar = document.getElementById('btn-liberar');
         if (btnLiberar) {
             btnLiberar.addEventListener('click', () => {
+                if (window.VoxelReports.chat?.hasPending()) {
+                    alert('Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.');
+                    return;
+                }
                 if (!confirm('Liberar este laudo? Depois da liberação ele ficará pronto para impressão.')) return;
                 btnLiberar.disabled = true;
                 fetch('/api/reports/liberar', {
@@ -87,6 +92,9 @@ window.VoxelReports.main = (function () {
         window.VoxelReports.autotext.init(config);
         window.VoxelReports.signature.init(config);
         window.VoxelReports.history.init(config);
+        // O CHAT carrega o estado por HTTP; deve iniciar depois da assinatura
+        // para que reports:chat-status não seja perdido.
+        window.VoxelReports.chat.init(config);
 
         wireTopButtons(config);
     }

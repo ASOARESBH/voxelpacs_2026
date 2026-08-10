@@ -6,7 +6,8 @@
 <div class="reports-col-left">
     <?php include __DIR__ . '/partials/_paciente_card.php'; ?>
     <?php include __DIR__ . '/partials/_exame_card.php'; ?>
-    <?php include __DIR__ . '/partials/_equipamento_card.php'; ?>
+    <?php include __DIR__ . '/partials/_chat_card.php'; ?>
+    <?php include __DIR__ . '/partials/_historico_actions.php'; ?>
 </div>
 
 <div class="reports-col-right">

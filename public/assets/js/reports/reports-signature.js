@@ -33,7 +33,15 @@ window.VoxelReports.signature = (function () {
         });
     }
 
+    function chatPendente() {
+        return !!(window.VoxelReports.chat && window.VoxelReports.chat.hasPending());
+    }
+
     function open() {
+        if (chatPendente()) {
+            alert('Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.');
+            return;
+        }
         if (laudoEstaVazio()) {
             alert('Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.');
             return;
@@ -44,6 +52,10 @@ window.VoxelReports.signature = (function () {
 
     function confirmar(modo) {
         if (enviando) return;
+        if (chatPendente()) {
+            mostrarErro('Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.');
+            return;
+        }
         limparErro();
         enviando = true;
 
@@ -88,8 +100,12 @@ window.VoxelReports.signature = (function () {
         if (!modalEl) return;
         modal = new bootstrap.Modal(modalEl);
 
-        const btnSign = document.getElementById('btn-sign');
+                const btnSign = document.getElementById('btn-sign');
         if (btnSign) btnSign.addEventListener('click', open);
+        document.addEventListener('reports:chat-status', (event) => {
+            const pending = !!event.detail?.pending;
+            if (btnSign) btnSign.disabled = pending;
+        });
 
         const btnSomente = document.getElementById('btn-assinar-somente');
         if (btnSomente) btnSomente.addEventListener('click', () => confirmar('somente'));

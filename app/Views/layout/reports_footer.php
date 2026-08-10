@@ -5,6 +5,17 @@
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 
 <?php $v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
+<script>
+    window.VoxelReports = window.VoxelReports || {};
+    window.VoxelReports.chatI18n = <?= json_encode([
+        'pending' => t('report_chat.pendente'),
+        'clear' => t('report_chat.sem_mensagens'),
+        'required' => t('report_chat.mensagem') . ': ' . t('report_chat.erro_generico'),
+        'error' => t('report_chat.erro_generico'),
+        'confirm' => t('report_chat.confirmar_conclusao'),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+</script>
+<script src="/assets/js/reports/reports-chat.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-editor.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-autosave.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-templates.js?v=<?= $v ?>"></script>

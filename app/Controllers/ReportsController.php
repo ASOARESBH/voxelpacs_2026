@@ -8,6 +8,7 @@ use App\Core\Logger;
 use App\Services\ReportService;
 use App\Repositories\ReportRepository;
 use App\Repositories\EstudosRepository;
+use App\Services\ReportChatService;
 
 class ReportsController extends Controller
 {
@@ -54,6 +55,7 @@ class ReportsController extends Controller
         $estudo   = $data['estudo'];
         $report   = $data['report'];
         $pedido   = $data['pedido'] ?? null;
+        $chat     = $data['chat'] ?? null;
         $readonly = $data['readonly'];
         $lockInfo = $data['lockInfo'];
 
@@ -97,6 +99,7 @@ class ReportsController extends Controller
             'estudo'            => $estudo,
             'report'            => $report,
             'pedido'            => $pedido,
+            'chat'              => $chat,
             'readonly'          => $readonly,
             'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,
@@ -206,7 +209,8 @@ class ReportsController extends Controller
                 $msg = match ($resultado['error'] ?? null) {
                     'report_nao_encontrado'       => 'Laudo não encontrado.',
                     'report_ja_assinado'          => 'Este laudo já foi assinado e não pode ser assinado novamente.',
-                    'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
+                                        'laudo_vazio'                  => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
+                    'chat_pendente'                => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.',
                     'medico_sem_assinatura_ativa'   => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
                     'medico_assinatura_inativa'       => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',
                     'medico_nao_vinculado'            => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
@@ -730,20 +734,29 @@ class ReportsController extends Controller
             return;
         }
         try {
-            $pdo = \App\Core\Database::getInstance();
-            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id AND tenant_id = :tenant_id")
-                ->execute(['sit' => $situacao, 'id' => $reportId, 'tenant_id' => Auth::tenantId()]);
-            if (!$this->reportRepo->findReportById($reportId)) {
+            $tenantId = (int) Auth::tenantId();
+            $report = $this->reportRepo->findReportById($reportId);
+            if (!$report) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
+            if ((new ReportChatService())->hasPending($reportId, $tenantId)) {
+                Logger::warning('ReportsController::atualizarStatus bloqueado por CHAT pendente', [
+                    'report_id' => $reportId, 'tenant_id' => $tenantId, 'situacao_solicitada' => $situacao,
+                ]);
+                $this->json(['ok' => false, 'msg' => 'Conclua a pendência do CHAT antes de alterar a situação do laudo.'], 422);
+                return;
+            }
+            $pdo = \App\Core\Database::getInstance();
+            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id AND tenant_id = :tenant_id")
+                ->execute(['sit' => $situacao, 'id' => $reportId, 'tenant_id' => $tenantId]);
             // Espelha em bi_pacs_estudos
             $pdo->prepare(
                 "UPDATE bi_pacs_estudos e
                  JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
                  SET e.situacao = :sit
                  WHERE r.id = :rid"
-            )->execute(['sit' => $situacao, 'rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
+            )->execute(['sit' => $situacao, 'rid' => $reportId, 'tenant_id' => $tenantId]);
             Logger::info('ReportsController::atualizarStatus', [
                 'report_id' => $reportId, 'situacao' => $situacao, 'usuario' => Auth::userId(),
             ]);
@@ -771,6 +784,13 @@ class ReportsController extends Controller
         try {
             $report = $this->reportRepo->findReportById($reportId);
             if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
+            if ((new ReportChatService())->hasPending($reportId, (int) Auth::tenantId())) {
+                Logger::warning('ReportsController::liberar bloqueado por CHAT pendente', [
+                    'report_id' => $reportId, 'tenant_id' => Auth::tenantId(), 'usuario_id' => Auth::userId(),
+                ]);
+                $this->json(['ok' => false, 'msg' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.'], 422);
+                return;
+            }
             $situacao = $report->situacao ?? $report->status ?? 'rascunho';
 
             // Se ainda não foi assinado, usa a mesma validação de conteúdo,

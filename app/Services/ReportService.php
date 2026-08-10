@@ -116,6 +116,22 @@ class ReportService {
             ]);
         }
 
+        // CHAT contextual do estudo: uma falha de carregamento não impede a
+        // abertura do laudo, mas fica registrada para diagnóstico.
+        $chat = null;
+        try {
+            $chat = (new ReportChatService())->context(
+                (int) $report->id,
+                (int) ($estudo->tenant_id ?? TenantContext::id()),
+                (int) $userId
+            );
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportService::carregarParaEdicao] CHAT não carregado', [
+                'report_id' => $report->id ?? null, 'tenant_id' => $estudo->tenant_id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Schema de produção usa 'situacao' (não 'status')
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
         if (in_array($reportSituacao, ['assinado', 'liberado'], true)) {
@@ -129,6 +145,7 @@ class ReportService {
             'estudo' => $estudo,
             'report' => $report,
             'pedido' => $pedido,
+            'chat' => $chat,
             'readonly' => $readonly,
             'lockInfo' => $lockInfo,
         ];
@@ -195,7 +212,16 @@ class ReportService {
         $this->repo->atualizarConteudo($reportId, $conteudoAtual, $novoStatus, $templateId);
         if ($estudoIdFK) $this->repo->marcarHeartbeat($estudoIdFK);
 
-        if ($novoStatus === 'rascunho' && $estudoIdFK) {
+        $chatPendente = false;
+        try {
+            $chatPendente = (new ReportChatService())->hasPending($reportId, (int) Auth::tenantId());
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportService::salvar] não foi possível consultar CHAT', [
+                'report_id' => $reportId, 'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($novoStatus === 'rascunho' && $estudoIdFK && !$chatPendente) {
             $this->repo->atualizarSituacaoEstudo($estudoIdFK, 'rascunho');
 
             // ── Notifica o VoxelCopilot sobre o rascunho salvo ─────────────
@@ -248,6 +274,16 @@ class ReportService {
             return ['ok' => false, 'error' => 'report_ja_assinado'];
         }
 
+        // Uma conversa aberta é uma pendência operacional do estudo. O bloqueio
+        // existe no Service e não depende do botão estar desabilitado no browser.
+        $tenantIdAtual = Auth::tenantId();
+        if ($tenantIdAtual && (new ReportChatService())->hasPending($reportId, (int) $tenantIdAtual)) {
+            Logger::warning('[ReportService::assinar] assinatura bloqueada por CHAT pendente', [
+                'report_id' => $reportId, 'tenant_id' => $tenantIdAtual, 'usuario_id' => Auth::userId(),
+            ]);
+            return ['ok' => false, 'error' => 'chat_pendente'];
+        }
+
         // O schema operacional guarda as cinco seções em colunas secao_*;
         // versões legadas podem ter JSON em conteudo. A assinatura deve usar o
         // mesmo conteúdo que o editor e o PDF exibem, nunca somente o JSON.
@@ -264,7 +300,7 @@ class ReportService {
         $conteudoDecodificado = ['secoes' => $secoesAtuais];
 
         $userId   = Auth::userId();
-        $tenantId = Auth::tenantId();
+        $tenantId = $tenantIdAtual;
 
         // 4(a) — assinatura visual ativa + CRM do médico logado, resolvidos
         // automaticamente (sem input manual). Decisão confirmada: bloquear

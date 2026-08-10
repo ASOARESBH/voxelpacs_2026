@@ -201,6 +201,9 @@ Router::post('/reports/assumir',           'ReportsController@assumir');
 Router::post('/api/reports/status',        'ReportsController@atualizarStatus');
 Router::post('/api/reports/liberar',       'ReportsController@liberar');
 Router::get('/api/reports/by-estudo',      'ReportsController@byEstudo');
+Router::get('/api/reports/chat',             'ReportChatController@context');
+Router::post('/api/reports/chat/send',       'ReportChatController@send');
+Router::post('/api/reports/chat/complete',   'ReportChatController@complete');
 
 // Compatibilidade com o botão PDF antigo que usa /reports/{study_uid}/pdf.
 Router::get('/reports/{study_uid}/pdf',     'ReportsController@pdfByStudyUid');

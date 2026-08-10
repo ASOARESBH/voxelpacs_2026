@@ -34,6 +34,7 @@ if ($assumidoEm) {
 
 // ── Botão principal: Assinar ou Liberar ─────────────────────────────────────
 $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
+$chatPendente = !empty($chat['pendente']);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -57,6 +58,7 @@ $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
      data-modalidade="<?= htmlspecialchars(explode('/', (string) ($estudo->modalities ?? ''))[0] ?? '') ?>"
      data-readonly="<?= $readonly ? '1' : '0' ?>"
      data-status="<?= htmlspecialchars($situacao) ?>"
+     data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">
 
     <!-- ═══════════════════════════════════════════════════════
@@ -101,13 +103,15 @@ $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
             <?php if ($situacao === 'assinado'): ?>
             <!-- Laudo assinado, mas ainda não liberado: permite finalizar. -->
             <button type="button" class="pacs-btn btn-pacs-success" id="btn-liberar"
-                    title="Liberar laudo e fechar">
+                    title="<?= $chatPendente ? 'Conclua o CHAT antes de liberar' : 'Liberar laudo e fechar' ?>"
+                    <?= $chatPendente ? 'disabled' : '' ?>>
                 <i class="fa fa-paper-plane"></i> Liberar
             </button>
             <?php elseif (!$readonly): ?>
             <!-- Laudo não assinado: mostra Assinar -->
             <button type="button" class="pacs-btn btn-pacs-primary" id="btn-sign"
-                    title="Assinar laudo (Ctrl+Enter)">
+                    title="<?= $chatPendente ? 'Conclua o CHAT antes de assinar' : 'Assinar laudo (Ctrl+Enter)' ?>"
+                    <?= $chatPendente ? 'disabled' : '' ?>>
                 <i class="fa fa-signature"></i> Assinar
             </button>
             <?php endif; ?>

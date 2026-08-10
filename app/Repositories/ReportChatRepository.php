@@ -1,0 +1,256 @@
+<?php
+
+namespace App\Repositories;
+
+use App\Core\Database;
+use App\Core\Logger;
+
+/**
+ * Persistência do CHAT contextual de Reports.
+ * Toda consulta exige tenant_id e não confia em IDs recebidos do navegador.
+ */
+class ReportChatRepository
+{
+    private \PDO $pdo;
+
+    public function __construct()
+    {
+        $this->pdo = Database::getInstance();
+    }
+
+    public function findByReport(int $reportId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pacs_report_chats
+             WHERE report_id = :report_id AND tenant_id = :tenant_id
+             LIMIT 1'
+        );
+        $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function findReportContext(int $reportId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT r.id AS report_id, r.estudo_id, r.study_instance_uid,
+                    COALESCE(e.situacao, "novo") AS situacao
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e
+                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+              WHERE r.id = :report_id AND r.tenant_id = :tenant_id
+              LIMIT 1'
+        );
+        $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function listMessages(int $chatId, int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT m.id, m.chat_id, m.autor_id, m.corpo, m.criado_em,
+                    COALESCE(u.name, "Usuário") AS autor_nome
+               FROM pacs_report_chat_mensagens m
+               LEFT JOIN bi_users u ON u.id = m.autor_id
+              WHERE m.chat_id = :chat_id AND m.tenant_id = :tenant_id
+              ORDER BY m.criado_em ASC, m.id ASC'
+        );
+        $stmt->execute(['chat_id' => $chatId, 'tenant_id' => $tenantId]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function listActiveUsers(int $tenantId, int $excludeUserId = 0): array
+    {
+        $sql = 'SELECT u.id, u.name, u.email, ut.perfil
+                  FROM bi_users u
+                  INNER JOIN bi_user_tenants ut
+                          ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
+                 WHERE ut.ativo = 1 AND u.status = "ativo"';
+        $params = ['tenant_id' => $tenantId];
+        if ($excludeUserId > 0) {
+            $sql .= ' AND u.id <> :exclude_user_id';
+            $params['exclude_user_id'] = $excludeUserId;
+        }
+        $sql .= ' ORDER BY u.name ASC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function findActiveUser(int $userId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT u.id, u.name, u.email, ut.perfil
+               FROM bi_users u
+               INNER JOIN bi_user_tenants ut
+                       ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
+              WHERE u.id = :user_id AND ut.ativo = 1 AND u.status = "ativo"
+              LIMIT 1'
+        );
+        $stmt->execute(['user_id' => $userId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function listUsersByProfiles(int $tenantId, array $profiles, int $excludeUserId = 0): array
+    {
+        $profiles = array_values(array_filter(array_map('strval', $profiles)));
+        if (!$profiles) return [];
+
+        $placeholders = [];
+        $params = ['tenant_id' => $tenantId];
+        foreach ($profiles as $index => $profile) {
+            $key = 'perfil_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $profile;
+        }
+
+        $sql = 'SELECT u.id, u.name, u.email, ut.perfil
+                  FROM bi_users u
+                  INNER JOIN bi_user_tenants ut
+                          ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
+                 WHERE ut.ativo = 1 AND u.status = "ativo"
+                   AND ut.perfil IN (' . implode(',', $placeholders) . ')';
+        if ($excludeUserId > 0) {
+            $sql .= ' AND u.id <> :exclude_user_id';
+            $params['exclude_user_id'] = $excludeUserId;
+        }
+        $sql .= ' ORDER BY u.name ASC';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function upsertPending(
+        int $reportId,
+        int $estudoId,
+        int $tenantId,
+        string $destinatarioTipo,
+        ?string $destinatarioGrupo,
+        ?int $destinatarioUserId,
+        string $assuntoCodigo,
+        string $assunto,
+        string $situacaoAnterior,
+        int $autorId
+    ): int {
+        $existing = $this->findByReport($reportId, $tenantId);
+        if ($existing) {
+            $stmt = $this->pdo->prepare(
+                'UPDATE pacs_report_chats
+                    SET status = "pendente",
+                        destinatario_tipo = :destinatario_tipo,
+                        destinatario_grupo = :destinatario_grupo,
+                        destinatario_user_id = :destinatario_user_id,
+                        assunto_codigo = :assunto_codigo,
+                        assunto = :assunto,
+                        situacao_anterior = CASE
+                            WHEN status = "concluido" OR situacao_anterior IS NULL OR situacao_anterior = ""
+                            THEN :situacao_anterior ELSE situacao_anterior END,
+                        concluido_por = NULL,
+                        concluido_em = NULL,
+                        atualizado_em = NOW()
+                  WHERE id = :id AND report_id = :report_id AND tenant_id = :tenant_id'
+            );
+            $stmt->execute([
+                'destinatario_tipo' => $destinatarioTipo,
+                'destinatario_grupo' => $destinatarioGrupo,
+                'destinatario_user_id' => $destinatarioUserId,
+                'assunto_codigo' => $assuntoCodigo,
+                'assunto' => $assunto,
+                'situacao_anterior' => $situacaoAnterior,
+                'id' => (int) $existing['id'],
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+            ]);
+            return (int) $existing['id'];
+        }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO pacs_report_chats
+                (tenant_id, report_id, estudo_id, status, destinatario_tipo,
+                 destinatario_grupo, destinatario_user_id, assunto_codigo, assunto,
+                 situacao_anterior, criado_por)
+             VALUES
+                (:tenant_id, :report_id, :estudo_id, "pendente", :destinatario_tipo,
+                 :destinatario_grupo, :destinatario_user_id, :assunto_codigo, :assunto,
+                 :situacao_anterior, :criado_por)'
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'estudo_id' => $estudoId,
+            'destinatario_tipo' => $destinatarioTipo,
+            'destinatario_grupo' => $destinatarioGrupo,
+            'destinatario_user_id' => $destinatarioUserId,
+            'assunto_codigo' => $assuntoCodigo,
+            'assunto' => $assunto,
+            'situacao_anterior' => $situacaoAnterior,
+            'criado_por' => $autorId,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    public function addMessage(int $chatId, int $tenantId, int $autorId, string $corpo): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO pacs_report_chat_mensagens (tenant_id, chat_id, autor_id, corpo)
+             VALUES (:tenant_id, :chat_id, :autor_id, :corpo)'
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'chat_id' => $chatId,
+            'autor_id' => $autorId,
+            'corpo' => $corpo,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    public function updateStudySituation(int $estudoId, int $tenantId, string $situacao): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE bi_pacs_estudos
+                SET situacao = :situacao
+              WHERE id = :estudo_id AND tenant_id = :tenant_id'
+        );
+        $stmt->execute(['situacao' => $situacao, 'estudo_id' => $estudoId, 'tenant_id' => $tenantId]);
+    }
+
+    public function complete(int $chatId, int $reportId, int $tenantId, int $userId): ?array
+    {
+        $chat = $this->findByReport($reportId, $tenantId);
+        if (!$chat || (int) $chat['id'] !== $chatId || $chat['status'] !== 'pendente') return null;
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE pacs_report_chats
+                SET status = "concluido", concluido_por = :user_id,
+                    concluido_em = NOW(), atualizado_em = NOW()
+              WHERE id = :id AND report_id = :report_id AND tenant_id = :tenant_id
+                AND status = "pendente"'
+        );
+        $stmt->execute([
+            'user_id' => $userId,
+            'id' => $chatId,
+            'report_id' => $reportId,
+            'tenant_id' => $tenantId,
+        ]);
+        return $chat;
+    }
+
+    public function hasPending(int $reportId, int $tenantId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM pacs_report_chats
+              WHERE report_id = :report_id AND tenant_id = :tenant_id AND status = "pendente"
+              LIMIT 1'
+        );
+        $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public function pdo(): \PDO
+    {
+        return $this->pdo;
+    }
+}
