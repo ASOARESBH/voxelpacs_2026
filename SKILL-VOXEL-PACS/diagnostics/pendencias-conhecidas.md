@@ -24,6 +24,30 @@
 
 **Validação**: `php -l` limpo em `ReportService.php`/`ReportsController.php`/`View.php`; `node --check` limpo em `reports-editor.js`; os 4 cenários do teste de extração passam. **Não validado**: reprodução real no navegador (Quill de verdade, toolbar real), nem confirmação de que a aba do médico com o conteúdo em memória ainda estava aberta no momento da correção.
 
+## `UnidadesController` sem controle de acesso por perfil (2026-08-11)
+
+**Onde**: `app/Controllers/UnidadesController.php` — todos os métodos.
+
+**O quê**: só `Auth::check()` global + escopo de tenant, sem checagem de perfil/role. Qualquer usuário autenticado do tenant (médico incluso) pode editar Unidade: CNPJ, endereço, logo, e desde 2026-08-11 o template de laudo (`report_layout_template_id`).
+
+**Como foi encontrado**: tarefa de Template de Laudo (`modules/report-templates.md`) pedia explicitamente "médico não pode alterar o template" — hoje isso só é verdade informalmente.
+
+**Por que não corrigido**: afeta a tela inteira de Unidade, não só o campo de template — mudança de controle de acesso mais ampla que o escopo pedido (camada visual do laudo).
+
+**Prioridade sugerida**: baixa/média.
+
+## `ReportsController::liberar()` chama método inexistente `mensagemErroReport()` (2026-08-11)
+
+**Onde**: `app/Controllers/ReportsController.php::liberar()`.
+
+**O quê**: `$this->mensagemErroReport(...)` não existe na classe — `\Error` fatal se o branch for alcançado (report não-assinado que falha ao tentar `assinar('fechar')`), mascarado pelo catch externo genérico.
+
+**Como foi encontrado**: en passant, durante leitura do arquivo na tarefa de Template de Laudo — não relacionado.
+
+**Por que não corrigido**: tarefa que encontrou tinha restrição explícita de não tocar no fluxo de assinatura/liberação.
+
+**Prioridade sugerida**: média.
+
 ## ✅ Resolvido — `ReportService::assinar()` não impedia re-assinatura de laudo já assinado
 
 **Status**: corrigido em 2026-08-08, junto com a integração da aba Assinatura do médico (ver `modules/assinatura-medico.md`, item 4b).

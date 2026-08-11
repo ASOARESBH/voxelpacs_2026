@@ -1,7 +1,7 @@
 # Módulo — Reports (Editor de Laudo, `/reports/{studyUid}`)
 
 ## Propósito
-Editor de laudo médico (Quill.js, documento único contínuo) usado a partir do botão "Assumir"/"Continuar" na worklist. Cobre edição, autosave, versionamento, templates, autotexto, CHAT contextual, assinatura e geração de PDF. Ver também `modules/assinatura-medico.md` (integração com a aba Assinatura de `/medicos/{id}/edit`) — este arquivo foca no fluxo de edição/salvamento, não duplica o que já está lá.
+Editor de laudo médico (Quill.js, documento único contínuo) usado a partir do botão "Assumir"/"Continuar" na worklist. Cobre edição, autosave, versionamento, templates, autotexto, CHAT contextual, assinatura e geração de PDF. Ver também `modules/assinatura-medico.md` (integração com a aba Assinatura de `/medicos/{id}/edit`) e `modules/report-templates.md` (layout visual de impressão/PDF, por Unidade — **não confundir** com `report_templates`/"Máscaras", que é conteúdo, não layout) — este arquivo foca no fluxo de edição/salvamento, não duplica o que já está lá.
 
 ## Arquivos principais
 | Arquivo | Papel |
@@ -43,5 +43,9 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 `report_signatures`, `report_autotext` e `report_templates` têm definições de coluna conflitantes entre migrations diferentes (histórico de iterações do módulo). `ReportRepository`/`ReportsController` fazem fallback tentando múltiplos schemas em sequência — ver comentários inline e `docs/PENDENCIAS_CONHECIDAS.md` (`report_signatures` tem 3 definições conflitantes — pendência ainda ativa, não afeta o fluxo de `save()`, só o de `assinar()`).
 
+## Renderização de tela/impressão/PDF é um ponto único (2026-08-11)
+
+`ReportsController::pdf()` + `app/Views/reports/pdf.php` servem as 3 saídas ao mesmo tempo — o projeto não gera PDF binário (sem dompdf), é HTML com CSS de impressão + `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` no load. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
+
 ## Última análise
-2026-08-10
+2026-08-11

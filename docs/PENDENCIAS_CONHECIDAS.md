@@ -4,6 +4,30 @@
 
 ## Ativas
 
+### `UnidadesController` sem controle de acesso por perfil (achado 2026-08-11)
+
+**Onde**: `app/Controllers/UnidadesController.php` — todos os métodos.
+
+Não há checagem de perfil/role em nenhum lugar do controller, só `Auth::check()` (global, via `Router::dispatch()`) e escopo de tenant. Qualquer usuário autenticado do tenant — médico incluso — pode criar/editar/excluir Unidade: CNPJ, endereço, logo e, desde 2026-08-11, o **template de laudo** (`report_layout_template_id`, ver `modules/report-templates.md`). O link "Unidades" no menu também não é condicionado por perfil.
+
+**Como foi encontrado**: durante a tarefa de Template de Laudo, cujo requisito explícito era "médicos NÃO têm permissão de alterar o template — escolha exclusiva do Administrador". Hoje isso só é verdade informalmente (médico não tem motivo pra procurar essa tela, mas nada tecnicamente impede).
+
+**Por que não corrigido agora**: adicionar checagem de perfil em `UnidadesController` afeta a tela inteira (CNPJ, endereço, logo, vínculos DICOM), não só o campo de template — é uma mudança de controle de acesso mais ampla que "camada visual do laudo", fora do escopo pedido. Registrado para decisão separada de Andre.
+
+**Prioridade sugerida**: baixa/média — não é dado clínico nem financeiro, mas é uma tela administrativa (CNPJ, endereço) sem controle de acesso, e o requisito de "só Admin escolhe template" fica sem enforcement real até isso ser resolvido.
+
+### `ReportsController::liberar()` chama método inexistente `mensagemErroReport()` (achado 2026-08-11)
+
+**Onde**: `app/Controllers/ReportsController.php::liberar()`, branch de erro do `assinar('fechar')` quando o report já não estava `assinado`.
+
+`$this->mensagemErroReport($resultado['error'] ?? '')` — esse método não existe na classe. Se esse branch específico for alcançado em produção, é `\Error` fatal (capturado só pelo `catch (\Throwable $e)` externo do método, retornando "Erro interno ao liberar laudo." em vez da mensagem específica do erro).
+
+**Como foi encontrado**: leitura de `ReportsController.php` durante a tarefa de Template de Laudo (não relacionado — encontrado en passant).
+
+**Por que não corrigido agora**: a tarefa que encontrou isso tinha restrição explícita de não tocar no fluxo de assinatura/liberação/`salvar()`/`assinar()`. Corrigir aqui seria misturar dois problemas.
+
+**Prioridade sugerida**: média — só afeta um branch de erro específico (report não-assinado que falha ao tentar "Assinar e Fechar"), mas quando ocorre a mensagem de erro real fica mascarada.
+
 ### Regras condicionadas por `situacao` da worklist não derivam do ENUM real — lista mantida manualmente em vários pontos (achado 2026-08-10, 3º caso confirmado em 2026-08-11)
 
 **Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333), mapa de cores `situacaoBadge()` (~linha 47-60), **e agora também `$podeLaudar`** (~linha 477, condição que decide se o botão "Laudo" aparece na coluna AÇÕES).

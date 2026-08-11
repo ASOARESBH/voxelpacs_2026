@@ -314,12 +314,30 @@ class ReportsController extends Controller
                         e.referring_physician_name, e.num_instances, e.num_series,
                         COALESCE(m.nome, u.name) AS medico_nome,
                         m.crm AS medico_crm,
-                        t.nome as tenant_nome
+                        t.nome as tenant_nome,
+                        un.id               AS unidade_id,
+                        un.report_layout_template_id,
+                        un.nome_fantasia    AS unidade_nome_fantasia,
+                        un.razao_social     AS unidade_razao_social,
+                        un.cnpj             AS unidade_cnpj,
+                        un.logo_path        AS unidade_logo_path,
+                        un.telefone         AS unidade_telefone,
+                        un.email            AS unidade_email,
+                        un.logradouro       AS unidade_logradouro,
+                        un.numero           AS unidade_numero,
+                        un.complemento      AS unidade_complemento,
+                        un.bairro           AS unidade_bairro,
+                        un.cidade           AS unidade_cidade,
+                        un.estado           AS unidade_estado
                  FROM reports r
                  JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
+                 LEFT JOIN bi_negocio_institution_names bnin
+                        ON bnin.tenant_id = r.tenant_id
+                       AND bnin.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                 LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = r.tenant_id
                  WHERE r.id = :id AND r.tenant_id = :tenant_id
                  LIMIT 1"
             );
@@ -341,10 +359,17 @@ class ReportsController extends Controller
                 $download ? 'Download PDF' : 'Visualização PDF'
             );
 
+            // Template visual (camada de apresentação — ver App\Services\ReportLayoutService).
+            // Unidade resolvida via institution_name; sem unidade vinculada ou sem
+            // template escolhido, cai no padrão (classico_centralizado).
+            $templateCodigo = (new \App\Services\ReportLayoutService())
+                ->resolverCodigo(isset($data['report_layout_template_id']) ? (int) $data['report_layout_template_id'] : null);
+
             // Renderizar a view de PDF
             $this->view('reports/pdf', [
-                'report'   => $data,
-                'download' => $download,
+                'report'         => $data,
+                'download'       => $download,
+                'templateCodigo' => $templateCodigo,
                 'qr_data'  => base64_encode(json_encode([
                     'id'   => $reportId,
                     'hash' => $data['assinatura_hash'] ?? '',

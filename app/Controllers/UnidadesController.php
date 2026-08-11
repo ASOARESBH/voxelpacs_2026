@@ -13,6 +13,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\CnpjLookupService;
+use App\Services\ReportLayoutService;
 
 class UnidadesController extends Controller
 {
@@ -22,10 +23,12 @@ class UnidadesController extends Controller
     private const LOGO_EXTS     = ['png', 'jpg', 'jpeg', 'svg'];
 
     private \PDO $pdo;
+    private ReportLayoutService $reportLayoutService;
 
     public function __construct()
     {
         $this->pdo = Database::getInstance();
+        $this->reportLayoutService = new ReportLayoutService();
     }
 
     // INDEX
@@ -346,8 +349,9 @@ class UnidadesController extends Controller
 
         // Listar institution_names disponíveis para vínculo
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId);
+        $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
         $unidade = null;
-        $this->view('unidades/nova', compact('unidade', 'institutionNames'));
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'templatesLaudo'));
     }
 
     // POST /unidades/nova
@@ -391,6 +395,7 @@ class UnidadesController extends Controller
             'email'        => trim($_POST['email']         ?? '') ?: null,
             'site'         => trim($_POST['site']          ?? '') ?: null,
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
+            'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => 1,
         ];
 
@@ -447,7 +452,8 @@ class UnidadesController extends Controller
         } catch (\Throwable $e) {}
 
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId, $id);
-        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados'));
+        $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados', 'templatesLaudo'));
     }
 
     // POST /unidades/{id}/editar
@@ -488,6 +494,7 @@ class UnidadesController extends Controller
             'email'        => trim($_POST['email']         ?? '') ?: null,
             'site'         => trim($_POST['site']          ?? '') ?: null,
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
+            'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => isset($_POST['ativo']) ? 1 : 0,
         ];
 

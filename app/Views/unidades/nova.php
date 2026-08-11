@@ -17,6 +17,8 @@ if ($isEdit && !empty($unidade['cnpj'])) {
     else $cnpjFmt = $c;
 }
 $logoUrl = ($isEdit && !empty($unidade['logo_path'])) ? '/' . $unidade['logo_path'] : null;
+$templatesLaudo = $templatesLaudo ?? [];
+$templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
 ?>
 
 <div class="d-flex align-items-center gap-2 mb-3">
@@ -291,6 +293,78 @@ $logoUrl = ($isEdit && !empty($unidade['logo_path'])) ? '/' . $unidade['logo_pat
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════
+     SEÇÃO 5B — TEMPLATE DE LAUDO (layout visual de tela/impressão/PDF)
+═══════════════════════════════════════════════════════════════════ -->
+<div class="card shadow-sm mb-3">
+    <div class="card-header py-2 d-flex align-items-center gap-2">
+        <i class="fa fa-file-medical text-primary"></i>
+        <span class="fw-semibold small">Template de Laudo</span>
+        <span class="text-muted ms-auto" style="font-size:10px">
+            Layout visual aplicado à tela, impressão e PDF do laudo desta unidade
+        </span>
+    </div>
+    <div class="card-body p-3">
+        <?php if (empty($templatesLaudo)): ?>
+        <div class="text-muted small text-center py-3">
+            <i class="fa fa-info-circle me-1"></i>
+            Nenhum template disponível. Execute a migration
+            <code>2026-08-11_report_layout_templates.sql</code>.
+        </div>
+        <?php else: ?>
+        <input type="hidden" name="report_layout_template_id" id="reportLayoutTemplateId"
+               value="<?= $templateAtualId ?: '' ?>">
+        <div class="row g-2" id="templateLaudoGrid">
+            <?php foreach ($templatesLaudo as $tpl):
+                $tplId    = (int) $tpl['id'];
+                $selecionado = $templateAtualId === $tplId || (!$templateAtualId && $tpl['codigo'] === 'classico_centralizado');
+            ?>
+            <div class="col-12 col-md-6 col-xl-3">
+                <div class="template-laudo-card <?= $selecionado ? 'selected' : '' ?>"
+                     data-template-id="<?= $tplId ?>" role="button" tabindex="0">
+                    <div class="template-laudo-preview template-preview-<?= htmlspecialchars($tpl['codigo']) ?>">
+                        <?php if ($tpl['codigo'] === 'classico_centralizado'): ?>
+                            <div class="tp-logo tp-center"></div>
+                            <div class="tp-line tp-center" style="width:70%"></div>
+                            <div class="tp-body"></div>
+                            <div class="tp-sig tp-center"></div>
+                        <?php elseif ($tpl['codigo'] === 'moderno_lateral'): ?>
+                            <div class="tp-row"><div class="tp-logo"></div></div>
+                            <div class="tp-line tp-center" style="width:60%"></div>
+                            <div class="tp-body tp-center-text"></div>
+                            <div class="tp-sig tp-center"></div>
+                        <?php elseif ($tpl['codigo'] === 'corporativo_faixa'): ?>
+                            <div class="tp-band"></div>
+                            <div class="tp-row" style="margin-top:6px;">
+                                <div class="tp-col"></div><div class="tp-col"></div>
+                            </div>
+                            <div class="tp-body"></div>
+                            <div class="tp-sig" style="margin-left:auto;"></div>
+                        <?php else: /* minimalista */ ?>
+                            <div class="tp-row"><div class="tp-line" style="width:40%"></div><div class="tp-line" style="width:25%;margin-left:auto"></div></div>
+                            <div class="tp-body" style="margin-top:10px;"></div>
+                            <div class="tp-sig"></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="template-laudo-info">
+                        <div class="template-laudo-nome">
+                            <?= htmlspecialchars($tpl['nome']) ?>
+                            <i class="fa fa-check-circle template-laudo-check"></i>
+                        </div>
+                        <div class="template-laudo-desc"><?= htmlspecialchars($tpl['descricao'] ?? '') ?></div>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="text-muted mt-2" style="font-size:10px">
+            <i class="fa fa-info-circle me-1"></i>
+            Sem escolha aqui, o laudo usa o template padrão (Clássico Centralizado). Só um template fica ativo por vez.
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
      SEÇÃO 6 — OBSERVAÇÕES E STATUS
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="card shadow-sm mb-3">
@@ -344,6 +418,34 @@ $logoUrl = ($isEdit && !empty($unidade['logo_path'])) ? '/' . $unidade['logo_pat
 .logo-upload-preview { width: 80px; height: 80px; }
 .logo-preview-img    { width: 80px; height: 80px; object-fit: contain; border: 1px solid #e5e7eb; background: #f9fafb; }
 .logo-preview-placeholder { width: 80px; height: 80px; }
+
+/* ── Template de Laudo — cards selecionáveis com preview CSS ─────────── */
+.template-laudo-card {
+    border: 2px solid #e5e7eb; border-radius: 8px; padding: .6rem; cursor: pointer;
+    transition: border-color .15s, background .15s; height: 100%;
+}
+.template-laudo-card:hover { border-color: #93c5fd; }
+.template-laudo-card.selected { border-color: #0d6efd; background: #eff6ff; }
+.template-laudo-preview {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 4px;
+    height: 90px; padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow: hidden;
+}
+.tp-logo { width: 22px; height: 14px; background: #93c5fd; border-radius: 2px; }
+.tp-logo.tp-center { margin: 0 auto; }
+.tp-line { height: 4px; background: #d1d5db; border-radius: 2px; }
+.tp-line.tp-center { margin: 0 auto; }
+.tp-body { flex: 1; background: repeating-linear-gradient(#f3f4f6 0, #f3f4f6 2px, transparent 2px, transparent 5px); border-radius: 2px; }
+.tp-body.tp-center-text { background-position: center; }
+.tp-sig { width: 30%; height: 4px; background: #6b7280; border-radius: 2px; margin-top: auto; }
+.tp-sig.tp-center { margin-left: auto; margin-right: auto; }
+.tp-row { display: flex; gap: 4px; align-items: center; }
+.tp-band { height: 12px; background: linear-gradient(90deg, #0d6efd, #6ea8fe); border-radius: 2px; }
+.tp-col { flex: 1; height: 18px; background: #eef2ff; border-radius: 2px; }
+.template-laudo-info { margin-top: .5rem; }
+.template-laudo-nome { font-size: .78rem; font-weight: 600; display: flex; align-items: center; gap: .3rem; }
+.template-laudo-check { color: #0d6efd; font-size: .8rem; visibility: hidden; margin-left: auto; }
+.template-laudo-card.selected .template-laudo-check { visibility: visible; }
+.template-laudo-desc { font-size: 10px; color: #6b7280; margin-top: .15rem; line-height: 1.35; }
 </style>
 
 <script>
@@ -450,6 +552,20 @@ $logoUrl = ($isEdit && !empty($unidade['logo_path'])) ? '/' . $unidade['logo_pat
             if (placeholder) placeholder.classList.add('d-none');
         };
         reader.readAsDataURL(file);
+    });
+
+    // ── Seleção de Template de Laudo (único, via input hidden) ───────────
+    const templateInput = document.getElementById('reportLayoutTemplateId');
+    document.querySelectorAll('.template-laudo-card').forEach(function (card) {
+        function selecionar() {
+            document.querySelectorAll('.template-laudo-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            if (templateInput) templateInput.value = card.dataset.templateId;
+        }
+        card.addEventListener('click', selecionar);
+        card.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selecionar(); }
+        });
     });
 
     // ── Highlight dos checkboxes de institution_names ────────────────────
