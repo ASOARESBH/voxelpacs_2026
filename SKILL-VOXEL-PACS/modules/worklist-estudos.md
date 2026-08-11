@@ -93,5 +93,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Fora do escopo desta tarefa (não corrigido)**: `peer_review` tem o mesmo problema (existe no ENUM, ausente do mapa da pill, cai no mesmo fallback cinza) — não tocado porque o pedido foi especificamente sobre `pendente`. O painel `.wl-resumo` (cards "Hoje/Semana/Mês/Urgentes/Total", `$contadores`/`$resumo` calculados em `EstudosController::index()` ~linha 439) está `display:none` — código morto/invisível, não recebeu `pendente` porque não há usuário nenhum vendo esse painel hoje.
 
+## Rodapé de paginação fixo + fix do dropdown "Abrir" (2026-08-11)
+
+`.wl-pagination` (barra "Mostrando X–Y de Z estudos" + navegação de página) ficava em fluxo normal do documento logo depois de `.wl-table-wrap` — com poucos resultados (ex.: filtro retornando 1 estudo), a tabela ficava curta e o rodapé "subia" para o meio da tela em vez de ficar ancorado embaixo. Corrigido envolvendo tabela + barra de seleção + paginação num novo container `.wl-worklist-body` (`display:flex;flex-direction:column;min-height:calc(100vh - 230px)`), com `.wl-pagination` ganhando `margin-top:auto` (empurra pro fim quando o conteúdo é curto) + `position:sticky;bottom:0` (mantém colado embaixo durante scroll quando o conteúdo é longo). Nenhuma mudança na lógica de cálculo de paginação — só CSS/estrutura. Ver `patterns/layout-rodape-fixo.md` para o detalhe técnico completo (por que `sticky` sozinho não resolve, por que as duas técnicas coexistem sem conflito).
+
+**Achado adicional no mesmo diagnóstico**: o dropdown "Abrir ▾" (`.wl-viewer-menu` — Voxel View/VOXEL Desktop/RadiAnt/Weasis) usava `position:absolute` dentro de `.wl-viewer-wrap`, e `.wl-table-wrap` (`overflow-x:auto`, que pela regra de overflow computado do CSS também recorta no eixo vertical) cortava esse menu quando ele tentava abrir perto do fim da tabela — exatamente o cenário de poucos resultados do print que motivou esta tarefa. Corrigido trocando para `position:fixed` com posicionamento calculado via JS (`trigger.getBoundingClientRect()`, com flip pra cima quando não há espaço abaixo) — detalhe completo também em `patterns/layout-rodape-fixo.md`. Esse achado é conceitualmente separado do rodapé (duas causas raiz distintas no mesmo print), mas fica documentado junto por terem sido encontrados na mesma investigação.
+
+**Escopo**: `app/Views/estudos/index.php` é usado tanto por `/estudos` quanto por `/gestao-exames` (mesma view — ver `modules/gestao-exames.md`), então a correção vale para as duas rotas automaticamente, sem duplicação. Registrado em `architecture/dependencias.md`.
+
 ## Última análise
-2026-08-10
+2026-08-11

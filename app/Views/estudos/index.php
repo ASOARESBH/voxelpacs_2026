@@ -401,6 +401,12 @@ $periodoLabel = [
 </div>
 </form>
 
+<!-- ═══════════════════════════════════════════════════════════ CORPO DA WORKLIST
+     Wrapper flex-column com min-height até o fim da viewport — permite que
+     .wl-pagination seja empurrado para a borda inferior (margin-top:auto)
+     mesmo quando a tabela tem poucos resultados, em vez de "subir" junto com
+     um corpo de tabela curto. Ver patterns/layout-rodape-fixo.md. -->
+<div class="wl-worklist-body">
 <!-- ═══════════════════════════════════════════════════════════ TABELA -->
 <div class="wl-table-wrap">
 <table class="wl-table">
@@ -766,6 +772,7 @@ $periodoLabel = [
     <?php endif; ?>
 </div>
 <?php endif; ?>
+</div><!-- /.wl-worklist-body -->
 
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
 <!-- ═══════════════════════════════════════════════════════════ MODAL PEDIDO -->
@@ -1038,6 +1045,10 @@ $periodoLabel = [
     padding:.05rem .35rem;font-size:.63rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
 
 /* ── Tabela ─────────────────────────────────────────────────────────────── */
+/* Empurra .wl-pagination (margin-top:auto) para a borda inferior mesmo com
+   poucos resultados; cresce além disso quando a tabela precisa de mais
+   espaço (min-height é piso, não teto) — ver patterns/layout-rodape-fixo.md. */
+.wl-worklist-body{display:flex;flex-direction:column;min-height:calc(100vh - 230px);}
 .wl-table-wrap{overflow-x:auto;max-height:calc(100vh - 230px);border-radius:8px;
     border:1px solid var(--pacs-border);margin-top:.4rem;}
 .wl-table{width:100%;border-collapse:collapse;font-size:.78rem;}
@@ -1238,7 +1249,12 @@ $periodoLabel = [
     display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;width:100%;
     justify-content:center;transition:opacity .15s;}
 .wl-btn-abrir:hover{opacity:.88;}
-.wl-viewer-menu{display:none;position:absolute;right:0;top:calc(100% + 3px);z-index:50;
+/* position:fixed (não absolute) — .wl-table-wrap tem overflow-x:auto, e pela
+   regra de overflow computado do CSS (um eixo não-visible força o outro pra
+   auto) isso recorta qualquer descendente absolute que ultrapasse a caixa da
+   tabela. fixed escapa desse clipping; posição é calculada via JS (abaixo)
+   a partir do botão .viewer-trigger no momento do clique. */
+.wl-viewer-menu{display:none;position:fixed;z-index:1060;
     background:var(--pacs-surface);border:1px solid var(--pacs-border);border-radius:6px;
     box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:160px;overflow:hidden;}
 .wl-viewer-menu.show{display:block;}
@@ -1265,7 +1281,8 @@ $periodoLabel = [
 .wl-empty a{color:var(--pacs-primary);}
 
 /* ── Paginação ──────────────────────────────────────────────────────────── */
-.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.25rem 0 .15rem;flex-wrap:wrap;}
+.wl-pagination{display:flex;align-items:center;gap:.5rem;padding:.4rem 0 .15rem;flex-wrap:wrap;
+    margin-top:auto;position:sticky;bottom:0;background:var(--pacs-bg);z-index:10;}
 .wl-pag-info{font-size:.72rem;color:var(--pacs-text-muted);}
 .wl-pag-links{display:flex;gap:.2rem;margin:0 auto;}
 .wl-pag-btn{display:inline-flex;align-items:center;justify-content:center;
@@ -1451,9 +1468,30 @@ document.querySelectorAll('.wl-table tbody tr[data-id]').forEach(row => {
 <?php endif; ?>
 
 // ── Menu Abrir (dropdown) ────────────────────────────────────────────────
+// position:fixed calculado a partir do botão — .wl-viewer-menu não pode mais
+// contar com o position:relative de .wl-viewer-wrap, porque .wl-table-wrap
+// (overflow-x:auto) recortaria um menu absolute que abrisse perto do fim da
+// tabela (ex.: última linha, ou tabela com poucos resultados). Fecha ao
+// rolar em vez de reposicionar em tempo real — dropdown de vida curta, mesma
+// simplicidade do fechar-ao-clicar-fora já existente.
 (function () {
     let menuAberto = null;
     function fechar() { if (menuAberto) { menuAberto.classList.remove('show'); menuAberto = null; } }
+    function posicionar(trigger, menu) {
+        const rect = trigger.getBoundingClientRect();
+        const menuH = menu.offsetHeight || 160; // fallback só se offsetHeight vier 0 por algum motivo
+        const espacoAbaixo = window.innerHeight - rect.bottom;
+        const abrirParaCima = espacoAbaixo < menuH + 8 && rect.top > menuH + 8;
+        menu.style.left = 'auto';
+        menu.style.right = Math.max(4, window.innerWidth - rect.right) + 'px';
+        if (abrirParaCima) {
+            menu.style.top = 'auto';
+            menu.style.bottom = (window.innerHeight - rect.top + 3) + 'px';
+        } else {
+            menu.style.bottom = 'auto';
+            menu.style.top = (rect.bottom + 3) + 'px';
+        }
+    }
     document.addEventListener('click', function(e) {
         const trigger = e.target.closest('.viewer-trigger');
         if (trigger) {
@@ -1461,12 +1499,20 @@ document.querySelectorAll('.wl-table tbody tr[data-id]').forEach(row => {
             const menu = trigger.parentElement.querySelector('.wl-viewer-menu');
             const jaAberto = menu === menuAberto;
             fechar();
-            if (!jaAberto) { menu.classList.add('show'); menuAberto = menu; }
+            if (!jaAberto) {
+                menu.classList.add('show');
+                posicionar(trigger, menu);
+                menuAberto = menu;
+            }
             return;
         }
         if (!e.target.closest('.wl-viewer-menu')) fechar();
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
+    // Fecha ao rolar (tabela internamente ou a página) — a posição fixed
+    // ficaria desalinhada do botão sem isso; capture:true pega o scroll
+    // interno de .wl-table-wrap também, que não borbulha por padrão em todo browser.
+    window.addEventListener('scroll', fechar, true);
 })();
 
 // ── Botão Assumir (AJAX) ─────────────────────────────────────────────────
