@@ -474,7 +474,7 @@ $periodoLabel = [
 
             // Permissões de ação
             $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
-            $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
+            $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho','pendente']);
             $podePeerReview = $isMedicoLogado && in_array($sit, ['assinado', 'liberado'], true)
                 && !empty($e['study_instance_uid']);
 

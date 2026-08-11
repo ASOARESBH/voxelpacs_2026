@@ -34,19 +34,25 @@
 
 ---
 
-## Filtro/pill de situação da worklist não deriva do ENUM real — lista mantida manualmente (2026-08-10)
+## Regras condicionadas por `situacao` da worklist não derivam do ENUM real — 3º caso confirmado (2026-08-10 → 2026-08-11)
 
-**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333) e mapa de cores `situacaoBadge()` (~linha 47-60).
+**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333), mapa de cores `situacaoBadge()` (~linha 47-60), **e `$podeLaudar`** (~linha 477 — decide se o botão "Laudo" aparece na coluna AÇÕES).
 
-**O quê**: `bi_pacs_estudos.situacao` é um ENUM de banco (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas o dropdown de filtro e o mapa de cores da pill são listas PHP hardcoded, independentes do ENUM, sem nenhum mecanismo de sincronização. Quando um status novo é adicionado ao ENUM (por outra tarefa, outro dia), ele fica automaticamente invisível no filtro e sem cor na pill (cai no fallback cinza de "NOVO") até alguém notar manualmente.
+**O quê**: `bi_pacs_estudos.situacao` é um ENUM de banco (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas **toda** regra de UI condicionada por status nesta view é lista PHP hardcoded (`in_array($sit, [...])` ou mapa associativo), independente do ENUM e independente umas das outras, sem nenhum mecanismo de sincronização. Quando um status novo é adicionado ao ENUM, ele fica automaticamente de fora de qualquer uma dessas listas até alguém notar manualmente — e já aconteceu 3 vezes seguidas com o mesmo status:
 
-**Como foi encontrado**: pedido explícito do usuário (2026-08-10) — o status `pendente`, adicionado ao ENUM no mesmo dia por `2026-08-10_reports_chat.sql` (módulo de CHAT, `ReportChatService::abrir()`), já estava sendo atribuído a estudos reais mas ausente do dropdown e sem cor na pill. Corrigido nessa mesma tarefa (ver `modules/worklist-estudos.md`), mas o mecanismo que causou o gap não foi tocado — é estrutural, não um bug pontual.
+1. **2026-08-10** — `pendente` ausente do dropdown de filtro e do mapa de cores da pill (`situacaoBadge()`). Corrigido.
+2. **2026-08-10** — `pendente` ausente do badge/contador do topbar (`EstudosController::contadores()`). Corrigido.
+3. **2026-08-11** — `pendente` ausente de `$podeLaudar` (`in_array($sit, ['a_laudar','em_laudo','rascunho'])`) — o botão "Laudo" sumia da coluna AÇÕES para o médico responsável enquanto o estudo tinha uma pendência de CHAT aberta (`ReportChatService::abrir()` marca `situacao='pendente'`, restaura ao concluir). Corrigido (`pendente` adicionado à lista). **Mais grave que os dois primeiros**: não era só UX — impedia acesso funcional a um laudo em andamento (o médico não conseguia reabrir/continuar o report enquanto a pendência estivesse aberta). Confirmado que não há trava equivalente no backend (`ReportService::carregarParaEdicao()` não bloqueia `situacao='pendente'` do estudo) — o bug era só a ausência do link/botão no frontend.
 
-**Achado colateral confirmado**: `peer_review` (também no ENUM) tem o mesmo sintoma na pill hoje — não corrigido, fora do escopo do pedido (era só sobre `pendente`). E a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes já divergentes** entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` — mesmo status, cores diferentes dependendo de qual componente renderiza. Mapa completo em `patterns/status-colors.md` (novo, criado nesta tarefa).
+`peer_review` já tem o mesmo sintoma na pill de cor (existe no ENUM, ausente do mapa, cai no fallback cinza) — não corrigido, fora do escopo de todas as três tarefas até agora.
 
-**Por que não corrigido agora**: fora do escopo pedido (era só adicionar `pendente` nos 3 lugares, não refatorar a fonte de verdade do filtro/pill). Corrigir de verdade exigiria derivar a lista do ENUM real (`SHOW COLUMNS`/`INFORMATION_SCHEMA`) ou centralizar num mapa PHP único compartilhado entre pill e topbar — refactor não pedido.
+**Achado colateral confirmado (2026-08-10)**: a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes já divergentes** entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` — mesmo status, cores diferentes dependendo de qual componente renderiza. Mapa completo em `patterns/status-colors.md`.
 
-**Prioridade sugerida**: baixa/média — UX, não segurança/perda de dado. Vale revisitar na próxima vez que um status novo entrar no ENUM.
+**Checklist para o próximo status novo no ENUM**: checar TODOS os pontos condicionados por status em `app/Views/estudos/index.php` — dropdown de filtro, `situacaoBadge()`, badge do topbar (+ `EstudosController::contadores()`), e as 3 flags de ação `$podeAssumir`/`$podeLaudar`/`$podePeerReview`. Nenhum deriva do ENUM automaticamente.
+
+**Por que não corrigido na raiz**: derivar todos os pontos do ENUM real (`SHOW COLUMNS`/`INFORMATION_SCHEMA`) ou centralizar num mapa PHP único "status → o que habilita" é um refactor maior, não pedido em nenhuma das três tarefas pontuais que encontraram isso.
+
+**Prioridade sugerida**: subiu de baixa/média para **média/alta** depois do 3º caso — o padrão já causou um bloqueio funcional real (acesso a laudo em andamento), não só um problema visual. Vale considerar a consolidação numa tarefa dedicada se aparecer um 4º caso.
 
 ## Endpoints do frontend de laudo com rota divergente da registrada em `routes/web.php`
 
@@ -158,4 +164,4 @@
 ---
 
 ## Última análise
-2026-08-10
+2026-08-11

@@ -101,5 +101,19 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Escopo**: `app/Views/estudos/index.php` é usado tanto por `/estudos` quanto por `/gestao-exames` (mesma view — ver `modules/gestao-exames.md`), então a correção vale para as duas rotas automaticamente, sem duplicação. Registrado em `architecture/dependencias.md`.
 
+## Botão "Laudo" ausente para situação PENDENTE (P0, 2026-08-11)
+
+**Onde**: `app/Views/estudos/index.php`, variável `$podeLaudar` (~linha 477): `$isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho'])`. Controla se o botão "Laudo" (link para `/reports/{studyUid}`) aparece na coluna AÇÕES, dentro do bloco `elseif ($podeLaudar)` (~linha 673) — mutuamente exclusivo com `$podeAssumir` (novo/aberto) via if/elseif.
+
+**Causa raiz**: `pendente` faltava nessa lista. É o mesmo padrão já documentado em `docs/PENDENCIAS_CONHECIDAS.md` ("Regras condicionadas por situacao não derivam do ENUM real") — terceira ocorrência do mesmo gap desde que `pendente` foi criado (2026-08-10, módulo de CHAT). As duas primeiras (filtro/pill de cor, badge do topbar) eram só visuais; esta impedia acesso funcional: o médico responsável não conseguia reabrir/continuar um laudo em andamento enquanto uma pendência de CHAT estivesse aberta sobre ele.
+
+**O que `pendente` significa**: setado por `ReportChatService::abrir()` (`app/Services/ReportChatService.php`) quando alguém abre uma conversa/pendência operacional sobre o report (`pacs_report_chats`, migration `2026-08-10_reports_chat.sql`) — `situacao_anterior` guarda o valor anterior pra restaurar quando a conversa é concluída. Não é um estado bloqueado/aguardando externo (cenário b do item 1.2 desta tarefa) — o laudo continua editável e salvável normalmente (`ReportService::salvar()` não bloqueia por CHAT pendente, só ajusta se espelha a situação de volta pra `rascunho` no estudo enquanto a pendência está aberta); só a assinatura/liberação respeitam a pendência. Cenário (a): estado "em progresso com uma pendência anexada", precisa do botão Laudo igual a_laudar/em_laudo/rascunho.
+
+**Confirmado, não precisou de correção**: nenhuma trava equivalente no backend — `ReportService::carregarParaEdicao()` só aplica lock-check quando `situacao` do estudo está em `['em_laudo','rascunho','revisao']` (pendente não entra, então não trava) e o `readonly` do editor depende da situação do **report** (`rascunho`/`assinado`/`liberado`/`peer_review`), não da situação do estudo. O bug era exclusivamente a ausência do link no frontend — corrigir só `$podeLaudar` foi suficiente, sem trava "mascarada" no backend.
+
+**Perfil**: o botão "Laudo" já é exclusivo de médico (`$isMedicoLogado`) pra qualquer situação — Administrador/Secretaria/Analista nunca veem esse botão específico no worklist (usam outro caminho, "Ver laudo" no modal Gerenciar de Gestão de Exames, gated por `report.situacao`, não por `estudo.situacao`). A correção não introduz assimetria nova de perfil.
+
+**Correção**: `pendente` adicionado à lista de `$podeLaudar`. Nenhuma mudança em `$podeAssumir`/`$podePeerReview` nem em qualquer outro status.
+
 ## Última análise
 2026-08-11

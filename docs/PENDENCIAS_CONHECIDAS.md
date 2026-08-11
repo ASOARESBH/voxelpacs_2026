@@ -4,17 +4,24 @@
 
 ## Ativas
 
-### Filtro/pill de situação da worklist não deriva do ENUM real — lista mantida manualmente (achado 2026-08-10)
+### Regras condicionadas por `situacao` da worklist não derivam do ENUM real — lista mantida manualmente em vários pontos (achado 2026-08-10, 3º caso confirmado em 2026-08-11)
 
-**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333) e mapa de cores `situacaoBadge()` (~linha 47-60).
+**Onde**: `app/Views/estudos/index.php` — dropdown `#selectSituacao`/`situacao_rapida` (~linha 302-333), mapa de cores `situacaoBadge()` (~linha 47-60), **e agora também `$podeLaudar`** (~linha 477, condição que decide se o botão "Laudo" aparece na coluna AÇÕES).
 
-O valor válido de `bi_pacs_estudos.situacao` é o ENUM da coluna (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas o dropdown de filtro e o mapa de cores da pill são listas PHP hardcoded, mantidas manualmente, sem nenhuma checagem que avise quando divergem do ENUM. Foi exatamente essa divergência que deixou o status `pendente` (adicionado ao ENUM em `2026-08-10_reports_chat.sql`, pelo módulo de CHAT) invisível no filtro e sem cor na pill — corrigido nesta sessão (2026-08-10), mas o mecanismo que causou o gap continua o mesmo: **nada impede a próxima adição ao ENUM de repetir o problema**. `peer_review` já tem o mesmo sintoma na pill (existe no ENUM, ausente do mapa de cores, cai no fallback cinza) e não foi corrigido por estar fora do escopo pedido.
+O valor válido de `bi_pacs_estudos.situacao` é o ENUM da coluna (hoje: `novo, aberto, a_laudar, em_laudo, rascunho, revisao, assinado, liberado, urgente, peer_review, pendente`), mas **toda** regra de UI condicionada por status nesta view é uma lista PHP hardcoded (`in_array($sit, [...])` ou mapa associativo), mantida manualmente, sem nenhuma checagem que avise quando diverge do ENUM ou dos outros pontos condicionados pelo mesmo status. O status `pendente` (adicionado ao ENUM em `2026-08-10_reports_chat.sql`, pelo módulo de CHAT — `ReportChatService::abrir()` marca o estudo como `pendente` quando alguém abre uma pendência de conversa sobre o laudo, restaurando a situação anterior ao concluir) já bateu nesse mesmo padrão **três vezes seguidas**:
+1. **2026-08-10** — ausente do dropdown de filtro e do mapa de cores da pill (`situacaoBadge()`) — corrigido.
+2. **2026-08-10** — ausente do badge/contador do topbar (`EstudosController::contadores()`) — corrigido.
+3. **2026-08-11** — ausente de `$podeLaudar` (`in_array($sit, ['a_laudar','em_laudo','rascunho'])`), fazendo o botão "Laudo" sumir da coluna AÇÕES para o médico responsável quando o estudo tinha uma pendência de CHAT aberta — corrigido (`pendente` adicionado à lista). Esse caso era mais sério que os dois primeiros: não era só uma questão visual/de filtro, **impedia o médico de reabrir e continuar um laudo em andamento** enquanto a pendência de CHAT estivesse aberta.
 
-**Também confirmado nesta investigação**: a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes**, já divergentes entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` (cores diferentes para o mesmo status, dependendo de qual componente renderiza) — ver `patterns/status-colors.md` para o mapa completo e a tabela de divergência.
+`peer_review` já tem o mesmo sintoma na pill de cor (existe no ENUM, ausente do mapa de cores, cai no fallback cinza) e não foi corrigido por estar fora do escopo de nenhuma das três tarefas.
 
-**Por que não corrigido agora**: consertar a causa raiz (derivar filtro/pill do ENUM real, ex. via `SHOW COLUMNS`/`INFORMATION_SCHEMA` ou uma constante PHP única compartilhada) é um refactor não pedido — o pedido desta tarefa foi só adicionar `pendente` nos 3 lugares. Registrado aqui para não precisar redescobrir o padrão na próxima vez que um status novo for adicionado ao ENUM e "sumir" da UI.
+**Também confirmado**: a pill da coluna SITUAÇÃO e os badges do topbar (`pacs_header.php`) usam dois mapas de cor **independentes**, já divergentes entre si para `a_laudar`/`em_laudo`/`rascunho`/`assinado` (cores diferentes para o mesmo status, dependendo de qual componente renderiza) — ver `patterns/status-colors.md` para o mapa completo e a tabela de divergência.
 
-**Prioridade sugerida**: baixa/média — não é falha de segurança nem perda de dado, é UX (status existe nos dados mas fica invisível no filtro/sem cor na pill até alguém notar e corrigir manualmente, como aconteceu aqui).
+**Checklist para o próximo status novo** (ex.: se `revisao` ou `peer_review` precisarem das mesmas regras de UI que os demais): ao adicionar um valor novo ao ENUM `bi_pacs_estudos.situacao`, checar TODOS os pontos condicionados por status em `app/Views/estudos/index.php`, não só o dado em si — dropdown de filtro (`#selectSituacao`/`situacao_rapida`), mapa de cores (`situacaoBadge()`), badge do topbar (`EstudosController::contadores()` + `pacs_header.php`), e as 3 flags de ação (`$podeAssumir`, `$podeLaudar`, `$podePeerReview`). Nenhum desses deriva do ENUM automaticamente — é lista manual em cada um.
+
+**Por que não corrigido na raiz**: consertar de verdade (derivar todos os pontos do ENUM real, ex. via `SHOW COLUMNS`/`INFORMATION_SCHEMA` ou uma constante PHP única compartilhada listando "quais status habilitam o quê") é um refactor maior, não pedido em nenhuma das três tarefas pontuais. Com 3 ocorrências confirmadas do mesmo gap em ~24h, vale considerar essa consolidação numa tarefa dedicada se um 4º caso aparecer.
+
+**Prioridade sugerida**: subiu de baixa/média para **média/alta** após o 3º caso — o primeiro par (filtro/cor) era só UX; este último bloqueava acesso funcional a um laudo em andamento, o tipo de sintoma que já gerou 2 bugs P0 nesta mesma sessão (perda de conteúdo do editor, coluna MÉDICO vazia).
 
 ### `report_signatures` tem 3 definições de schema conflitantes entre migrations
 
@@ -64,4 +71,4 @@ Só é calculada dentro de `EstudosController` (`index()`/`gestao()`) e passada 
 - **2026-08-08** — Modal "Assinar Laudo" não tem mais campos de CRM/Senha; assinatura passou a ser 100% autenticada por sessão (decisão consciente do Andre, risco de estação compartilhada aceito para o cenário de teleradiologia remota). Detalhe completo em `modules/assinatura-medico.md` (skill) — se algum código futuro reintroduzir um campo de senha aqui, é regressão da decisão, não correção.
 
 ## Última análise
-2026-08-08
+2026-08-11
