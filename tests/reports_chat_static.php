@@ -63,6 +63,9 @@ mustContain($repo, 'findActiveUser', 'Repository não valida usuário ativo do t
 mustContain($repo, 'bi_grupo_usuarios', 'Repository não consulta o pivot de membros do grupo.');
 mustContain($repo, 'status = "pendente"', 'Repository não consulta pendências abertas.');
 mustContain($repo, 'status = "concluido"', 'Repository não conclui a conversa.');
+mustContain($repo, 'lastMessageAuthorId', 'Repository não identifica o último autor da conversa.');
+mustContain($repo, 'findByReportForUpdate', 'Repository não oferece lock transacional da conversa.');
+mustContain($repo, 'COALESCE(r.situacao, e.situacao', 'Contexto do Chat não prioriza a situação do laudo.');
 
 mustContain($service, 'findDefaultAdministrativeGroup', 'Service não seleciona Administrativo como grupo padrão.');
 mustContain($service, 'findActiveGroup', 'Service não valida o grupo recebido no tenant.');
@@ -71,10 +74,16 @@ mustContain($service, 'Mailer::send', 'Notificação por e-mail ausente.');
 mustContain($service, 'updateStudySituation((int) $context[\'estudo_id\'], $tenantId, \'pendente\')', 'Envio não muda estudo para pendente.');
 mustContain($service, 'normalizarSituacaoRestaurada', 'Conclusão não restaura a situação anterior.');
 mustContain($service, 'destinatario_invalido', 'Validação de destinatário ausente.');
+mustContain($service, 'aguardando_contraparte', 'Chat não bloqueia nova interação do mesmo autor enquanto pendente.');
+mustContain($service, 'origemGestao', 'Chat não possui exceção explícita para origem Gestão de Exames.');
+mustContain($service, "['assinado', 'liberado']", 'Chat não reconhece laudos assinados/liberados na regra de origem administrativa.');
 
 mustContain($controller, 'validarCsrf', 'Controller do CHAT não valida CSRF.');
 mustContain($controller, 'TenantContext::id', 'Controller do CHAT não resolve tenant.');
 mustContain($controller, 'ReportChatService', 'Controller não usa o Service do CHAT.');
+mustContain($controller, 'PedidoMedicoService', 'Controller não importa a guarda administrativa do Chat.');
+mustContain($controller, "origem'] ?? '') === 'gestao_exames'", 'Controller não verifica a origem administrativa do Chat.');
+mustContain($controller, 'podeGerenciar', 'Controller não aplica RBAC à origem administrativa do Chat.');
 
 mustContain($reportService, 'hasPending($reportId', 'Assinatura não consulta CHAT pendente.');
 mustContain($reportService, "'chat_pendente'", 'Assinatura não possui erro específico de CHAT pendente.');

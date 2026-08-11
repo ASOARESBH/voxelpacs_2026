@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Logger;
 use App\Core\TenantContext;
+use App\Services\PedidoMedicoService;
 use App\Services\ReportChatService;
 
 class ReportChatController extends Controller
@@ -57,6 +58,13 @@ class ReportChatController extends Controller
             return;
         }
         $tenantId = $this->tenantId();
+        if ((string) ($input['origem'] ?? '') === 'gestao_exames') {
+            $pedidoService = new PedidoMedicoService();
+            if (!$pedidoService->podeGerenciar($tenantId, Auth::isPlatformAdmin() && !Auth::isImpersonating())) {
+                $this->json(['ok' => false, 'msg' => 'A origem administrativa não está autorizada para este usuário.'], 403);
+                return;
+            }
+        }
         $reportId = (int) ($input['report_id'] ?? 0);
         if ($reportId <= 0) {
             $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422);
@@ -140,6 +148,7 @@ class ReportChatController extends Controller
             'mensagem_muito_longa' => 'A interação deve ter no máximo 5.000 caracteres.',
             'destinatario_invalido' => 'O destinatário não pertence ao tenant atual ou está inativo.',
             'destinatario_autor' => 'Escolha outro usuário para receber a interação.',
+            'aguardando_contraparte' => 'A pendência está aguardando a resposta da parte contrária.',
             'estudo_finalizado' => 'Este estudo já foi finalizado e não aceita novas pendências.',
             'chat_sem_pendencia' => 'Não há pendência aberta para concluir.',
             'persistencia_falhou' => 'Não foi possível salvar a interação. Verifique a migration do CHAT.',

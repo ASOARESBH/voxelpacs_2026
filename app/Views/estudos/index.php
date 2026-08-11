@@ -514,7 +514,7 @@ $periodoLabel = [
             </td>
             <!-- Prioridade DICOM (0040,1003) -->
             <td class="col-prioridade">
-                <?= prioridadeBadge($e['dicom_priority'] ?? '', 'pt_BR') ?>
+                <?= prioridadeBadge($e['dicom_priority_effective'] ?? ($e['dicom_priority'] ?? ''), 'pt_BR') ?>
             </td>
             <!-- Estudo: apenas study_description -->
             <td class="col-estudo">
@@ -635,6 +635,19 @@ $periodoLabel = [
                         </a>
                         <?php else: ?>
                         <span class="wl-muted">—</span>
+                        <?php endif; ?>
+                        <?php if ($podeGerenciarPedido): ?>
+                        <button type="button" class="wl-btn-gerenciar gerenciar-trigger"
+                                data-id="<?= (int) $e['id'] ?>"
+                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-report-id="<?= (int) ($e['report_id'] ?? 0) ?>"
+                                data-report-situacao="<?= htmlspecialchars((string) ($e['report_situacao'] ?? ''), ENT_QUOTES) ?>"
+                                data-chat-status="<?= htmlspecialchars((string) ($e['chat_status'] ?? ''), ENT_QUOTES) ?>"
+                                data-priority="<?= htmlspecialchars((string) ($e['dicom_priority_effective'] ?? $e['dicom_priority'] ?? 'ROUTINE'), ENT_QUOTES) ?>"
+                                data-dicom-priority="<?= htmlspecialchars((string) ($e['dicom_priority'] ?? ''), ENT_QUOTES) ?>"
+                                title="<?= htmlspecialchars(t('gestao_gerenciar.acao.gerenciar')) ?>">
+                            <i class="fa fa-sliders"></i> <?= htmlspecialchars(t('gestao_gerenciar.acao.gerenciar')) ?>
+                        </button>
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if ($podePeerReview): ?>
@@ -806,6 +819,167 @@ $periodoLabel = [
         </div>
     </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL GERENCIAR -->
+<div class="modal fade" id="gerenciarModal" tabindex="-1" aria-labelledby="gerenciarModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarModalLabel">
+                    <i class="fa fa-sliders me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.modal.titulo')) ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <div class="modal-body">
+                <div class="gerenciar-estudo-context">
+                    <span><?= htmlspecialchars(t('gestao_gerenciar.modal.estudo')) ?></span>
+                    <strong id="gerenciarPacienteNome">—</strong>
+                    <small id="gerenciarEstudoMeta">—</small>
+                </div>
+                <div id="gerenciarFeedback" class="alert py-2 small" style="display:none;"></div>
+                <div class="gerenciar-submenu" role="menu" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.modal.submenu')) ?>">
+                    <a id="gerenciarVerLaudo" class="gerenciar-menu-item" href="#" target="_blank" rel="noopener" style="display:none;">
+                        <i class="fa fa-file-medical"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.ver_laudo')) ?></strong><small><?= htmlspecialchars(t('gestao_gerenciar.menu.ver_laudo_desc')) ?></small></span>
+                        <i class="fa fa-arrow-up-right-from-square ms-auto"></i>
+                    </a>
+                    <button type="button" id="gerenciarChat" class="gerenciar-menu-item">
+                        <i class="fa fa-comments"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.chat')) ?></strong><small id="gerenciarChatDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.chat_desc')) ?></small></span>
+                        <span id="gerenciarChatBadge" class="gerenciar-menu-badge" style="display:none;"><?= htmlspecialchars(t('gestao_gerenciar.menu.pendente')) ?></span>
+                    </button>
+                    <button type="button" id="gerenciarPrioridade" class="gerenciar-menu-item">
+                        <i class="fa fa-flag"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade')) ?></strong><small id="gerenciarPrioridadeDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade_desc')) ?></small></span>
+                        <i class="fa fa-chevron-right ms-auto"></i>
+                    </button>
+                </div>
+                <div id="gerenciarLockNotice" class="gerenciar-lock-notice" style="display:none;">
+                    <i class="fa fa-lock"></i> <span><?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL CHAT GERENCIAR -->
+<div class="modal fade" id="gerenciarChatModal" tabindex="-1" aria-labelledby="gerenciarChatModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content gestao-chat-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarChatModalLabel"><i class="fa fa-comments me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.chat.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <div class="modal-body">
+                <div id="gerenciarChatStatus" class="alert py-2 small" style="display:none;"></div>
+                <div id="gerenciarChatHistory" class="gerenciar-chat-history"><div class="chat-empty"><i class="fa fa-spinner fa-spin"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.carregando')) ?></div></div>
+                <form id="gerenciarChatForm" class="gerenciar-chat-form">
+                    <input type="hidden" id="gerenciarChatReportId" name="report_id" value="0">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <input type="hidden" name="origem" value="gestao_exames">
+                    <div class="gerenciar-chat-grid">
+                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.destinatario')) ?>
+                            <select id="gerenciarChatTipo" name="destinatario_tipo" class="form-select form-select-sm">
+                                <option value="grupo"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?></option>
+                                <option value="usuario"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?></option>
+                            </select>
+                        </label>
+                        <label id="gerenciarChatGrupoWrap"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?>
+                            <select id="gerenciarChatGrupo" name="destinatario_grupo" class="form-select form-select-sm"></select>
+                        </label>
+                        <label id="gerenciarChatUsuarioWrap" style="display:none;"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?>
+                            <select id="gerenciarChatUsuario" name="destinatario_user_id" class="form-select form-select-sm"></select>
+                        </label>
+                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.tema')) ?>
+                            <select id="gerenciarChatAssuntoCodigo" name="assunto_codigo" class="form-select form-select-sm"></select>
+                        </label>
+                        <label class="gerenciar-chat-assunto"><?= htmlspecialchars(t('gestao_gerenciar.chat.assunto')) ?>
+                            <input id="gerenciarChatAssunto" name="assunto" class="form-control form-control-sm" maxlength="180" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.chat.assunto_placeholder')) ?>">
+                        </label>
+                    </div>
+                    <label class="gerenciar-chat-mensagem"><?= htmlspecialchars(t('gestao_gerenciar.chat.mensagem')) ?>
+                        <textarea id="gerenciarChatMensagem" name="mensagem" class="form-control" rows="3" maxlength="5000" required></textarea>
+                    </label>
+                    <div class="gerenciar-chat-footer">
+                        <small id="gerenciarChatHint" class="text-muted"></small>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm" id="gerenciarChatEnviar"><i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.enviar')) ?></button>
+                            <button type="button" class="btn btn-success btn-sm" id="gerenciarChatConcluir"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.concluir')) ?></button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL PRIORIDADE -->
+<div class="modal fade" id="gerenciarPrioridadeModal" tabindex="-1" aria-labelledby="gerenciarPrioridadeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarPrioridadeModalLabel"><i class="fa fa-flag me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.prioridade.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <form id="gerenciarPrioridadeForm">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div class="gerenciar-prioridade-atual"><span><?= htmlspecialchars(t('gestao_gerenciar.prioridade.atual')) ?></span><strong id="gerenciarPrioridadeAtual">—</strong><small id="gerenciarPrioridadeDicom">—</small></div>
+                    <label><?= htmlspecialchars(t('gestao_gerenciar.prioridade.nova')) ?>
+                        <select id="gerenciarPrioridadeSelect" name="prioridade" class="form-select"></select>
+                    </label>
+                    <label class="mt-3"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.motivo')) ?>
+                        <textarea id="gerenciarPrioridadeMotivo" name="motivo" class="form-control" rows="4" minlength="20" maxlength="1000" required></textarea>
+                    </label>
+                    <div class="d-flex justify-content-between mt-1"><small class="text-muted"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.minimo')) ?></small><small id="gerenciarPrioridadeCount" class="text-muted">0/20</small></div>
+                    <div id="gerenciarPrioridadeAviso" class="alert alert-warning py-2 small mt-3" style="display:none;"><i class="fa fa-lock"></i> <?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></div>
+                    <div id="gerenciarPrioridadeErro" class="alert alert-danger py-2 small mt-3" style="display:none;"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button><button type="submit" class="btn btn-primary" id="gerenciarPrioridadeSalvar"><i class="fa fa-save"></i> <?= htmlspecialchars(t('gestao_gerenciar.prioridade.salvar')) ?></button></div>
+            </form>
+        </div>
+    </div>
+</div>
+<div id="gerenciarI18n" class="d-none"
+     data-carregando-acoes="<?= htmlspecialchars(t('gestao_gerenciar.js.carregando_acoes')) ?>"
+     data-study-uid="<?= htmlspecialchars(t('gestao_gerenciar.js.study_uid')) ?>"
+     data-laudo="<?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>"
+     data-sem-laudo="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_laudo')) ?>"
+     data-prioridade="<?= htmlspecialchars(t('gestao_gerenciar.js.prioridade')) ?>"
+     data-sem-mensagens="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_mensagens')) ?>"
+     data-aguardando-saneamento="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_saneamento')) ?>"
+     data-aguardando-contraparte="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_contraparte')) ?>"
+     data-primeiro-envio="<?= htmlspecialchars(t('gestao_gerenciar.js.primeiro_envio')) ?>"
+     data-enviando="<?= htmlspecialchars(t('gestao_gerenciar.js.enviando')) ?>"
+     data-enviado="<?= htmlspecialchars(t('gestao_gerenciar.js.enviado')) ?>"
+     data-concluindo="<?= htmlspecialchars(t('gestao_gerenciar.js.concluindo')) ?>"
+     data-concluido="<?= htmlspecialchars(t('gestao_gerenciar.js.concluido')) ?>"
+     data-confirmar-conclusao="<?= htmlspecialchars(t('gestao_gerenciar.js.confirmar_conclusao')) ?>"
+     data-dicom-original="<?= htmlspecialchars(t('gestao_gerenciar.js.dicom_original')) ?>"
+     data-sem-override="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_override')) ?>"
+     data-motivo-curto="<?= htmlspecialchars(t('gestao_gerenciar.js.motivo_curto')) ?>"
+     data-confirmar-prioridade="<?= htmlspecialchars(t('gestao_gerenciar.js.confirmar_prioridade')) ?>"
+     data-erro-contexto="<?= htmlspecialchars(t('gestao_gerenciar.erro.contexto')) ?>"
+     data-erro-operacao="<?= htmlspecialchars(t('gestao_gerenciar.erro.interno')) ?>"
+     data-status-assinado="<?= htmlspecialchars(t('gestao_gerenciar.js.status_assinado')) ?>"
+     data-status-liberado="<?= htmlspecialchars(t('gestao_gerenciar.js.status_liberado')) ?>"
+     data-status-novo="<?= htmlspecialchars(t('relatorios.situacao.novo')) ?>"
+     data-status-aberto="<?= htmlspecialchars(t('relatorios.situacao.aberto')) ?>"
+     data-status-a-laudar="<?= htmlspecialchars(t('relatorios.situacao.a_laudar')) ?>"
+     data-status-em-laudo="<?= htmlspecialchars(t('relatorios.situacao.em_laudo')) ?>"
+     data-status-rascunho="<?= htmlspecialchars(t('relatorios.situacao.rascunho')) ?>"
+     data-status-revisao="<?= htmlspecialchars(t('relatorios.situacao.revisao')) ?>"
+     data-status-peer-review="<?= htmlspecialchars(t('peer_review.status_aberta')) ?>"
+     data-prioridade-stat="<?= htmlspecialchars(t('gestao_gerenciar.prioridade.stat')) ?>"
+     data-prioridade-high="<?= htmlspecialchars(t('gestao_gerenciar.prioridade.high')) ?>"
+     data-prioridade-routine="<?= htmlspecialchars(t('gestao_gerenciar.prioridade.routine')) ?>"
+     data-prioridade-medium="<?= htmlspecialchars(t('gestao_gerenciar.prioridade.medium')) ?>"
+     data-prioridade-low="<?= htmlspecialchars(t('gestao_gerenciar.prioridade.low')) ?>"
+     data-tema-erro-pedido="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.erro_pedido')) ?>"
+     data-tema-contraste="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.contraste')) ?>"
+     data-tema-exames-complementares="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.exames_complementares')) ?>"
+     data-tema-duvida-administrativa="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.duvida_administrativa')) ?>"
+     data-tema-outro="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.outro')) ?>"></div>
 <?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════════ ESTILOS -->
@@ -1005,6 +1179,50 @@ $periodoLabel = [
     padding:.25rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;
     gap:.25rem;white-space:nowrap;width:100%;justify-content:center;transition:opacity .15s,transform .1s;}
 .wl-btn-pedido:hover{opacity:.88;transform:scale(1.02);}
+.wl-btn-gerenciar{background:linear-gradient(135deg,#475569,#334155);color:#fff;border:none;border-radius:5px;
+    padding:.25rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;
+    gap:.25rem;white-space:nowrap;width:100%;justify-content:center;transition:opacity .15s,transform .1s;}
+.wl-btn-gerenciar:hover{opacity:.88;transform:scale(1.02);}
+.wl-btn-gerenciar:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+.gerenciar-estudo-context{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.7rem .8rem;margin-bottom:.8rem;border:1px solid rgba(14,165,233,.2);background:rgba(14,165,233,.06);border-radius:7px;}
+.gerenciar-estudo-context span{font-size:.65rem;text-transform:uppercase;letter-spacing:.04em;color:var(--pacs-text-muted);font-weight:700;}
+.gerenciar-estudo-context strong{font-size:.9rem;color:var(--pacs-text-primary);}
+.gerenciar-estudo-context small{width:100%;font-size:.7rem;color:var(--pacs-text-muted);}
+.gerenciar-submenu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;}
+.gerenciar-menu-item{min-height:74px;display:flex;align-items:center;gap:.65rem;text-align:left;padding:.75rem;border:1px solid var(--pacs-border);border-radius:8px;background:var(--pacs-surface);color:var(--pacs-text-primary);text-decoration:none;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .1s;}
+.gerenciar-menu-item:hover{border-color:var(--pacs-primary);box-shadow:0 3px 10px rgba(15,23,42,.12);transform:translateY(-1px);color:var(--pacs-primary);}
+.gerenciar-menu-item>i:first-child{font-size:1.1rem;color:var(--pacs-primary);width:22px;text-align:center;flex-shrink:0;}
+.gerenciar-menu-item span:not(.gerenciar-menu-badge){display:flex;flex-direction:column;gap:.18rem;min-width:0;}
+.gerenciar-menu-item strong{font-size:.78rem;}
+.gerenciar-menu-item small{font-size:.66rem;color:var(--pacs-text-muted);font-weight:400;line-height:1.25;}
+.gerenciar-menu-item:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+.gerenciar-menu-badge{margin-left:auto;background:#fef3c7;color:#92400e;border-radius:999px;padding:.18rem .4rem;font-size:.58rem;font-weight:800;white-space:nowrap;}
+.gerenciar-lock-notice{margin-top:.75rem;padding:.6rem .7rem;border-radius:6px;border:1px solid rgba(245,158,11,.3);background:rgba(245,158,11,.09);color:#92400e;font-size:.72rem;}
+.gestao-gerenciar-modal,.gestao-chat-modal{border:0;box-shadow:0 16px 46px rgba(15,23,42,.25);}
+.gestao-chat-modal .modal-body{padding:1rem;}
+.gerenciar-chat-history{max-height:300px;overflow:auto;border:1px solid var(--pacs-border);border-radius:7px;padding:.7rem;background:rgba(248,250,252,.7);margin-bottom:.85rem;}
+.gerenciar-chat-history .chat-empty{text-align:center;color:var(--pacs-text-muted);font-size:.75rem;padding:1.6rem .5rem;}
+.gerenciar-chat-message{padding:.55rem .65rem;border-radius:7px;background:#fff;border:1px solid var(--pacs-border);margin-bottom:.5rem;}
+.gerenciar-chat-message:last-child{margin-bottom:0;}
+.gerenciar-chat-message.is-own{border-left:3px solid var(--pacs-primary);}
+.gerenciar-chat-message header{display:flex;justify-content:space-between;gap:.5rem;font-size:.67rem;color:var(--pacs-text-muted);margin-bottom:.25rem;}
+.gerenciar-chat-message p{white-space:pre-wrap;word-break:break-word;font-size:.76rem;color:var(--pacs-text-primary);margin:0;}
+.gerenciar-chat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;}
+.gerenciar-chat-grid label,.gerenciar-chat-form>label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;font-weight:700;color:var(--pacs-text-secondary);}
+.gerenciar-chat-assunto{grid-column:1/-1;}
+.gerenciar-chat-mensagem{margin-top:.6rem;}
+.gerenciar-chat-footer{display:flex;justify-content:space-between;gap:.6rem;align-items:center;margin-top:.65rem;flex-wrap:wrap;}
+.gerenciar-prioridade-atual{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.7rem;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.18);border-radius:7px;margin-bottom:1rem;}
+.gerenciar-prioridade-atual span{font-size:.68rem;color:var(--pacs-text-muted);font-weight:700;text-transform:uppercase;}
+.gerenciar-prioridade-atual strong{font-size:.9rem;color:var(--pacs-primary);}
+.gerenciar-prioridade-atual small{width:100%;font-size:.65rem;color:var(--pacs-text-muted);}
+#gerenciarPrioridadeForm label{font-size:.7rem;font-weight:700;color:var(--pacs-text-secondary);}
+@media (max-width: 720px){
+    .gerenciar-submenu{grid-template-columns:1fr;}
+    .gerenciar-chat-grid{grid-template-columns:1fr;}
+    .gerenciar-chat-assunto{grid-column:auto;}
+    .gerenciar-chat-history{max-height:38vh;}
+}
 .wl-btn-assumir{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;
     border:none;border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;
     cursor:pointer;display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;
@@ -1762,3 +1980,6 @@ function resetDownloadUI() {
     });
 }());
 </script>
+<?php if ($modoGestao && $podeGerenciarPedido): ?>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=20260811-2"></script>
+<?php endif; ?>

@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Logger;
+use App\Services\GestaoExamesService;
 use App\Services\PedidoMedicoService;
 
 /**
@@ -18,10 +19,12 @@ use App\Services\PedidoMedicoService;
 class GestaoExamesController extends Controller
 {
     private PedidoMedicoService $service;
+    private GestaoExamesService $gerenciarService;
 
     public function __construct()
     {
         $this->service = new PedidoMedicoService();
+        $this->gerenciarService = new GestaoExamesService();
     }
 
     public function anexar(int $estudoId): void
@@ -124,6 +127,88 @@ class GestaoExamesController extends Controller
         }
     }
 
+    /**
+     * Contexto do submenu Gerenciar para um estudo da Worklist.
+     * Inclui report, impressão, Chat e prioridade efetiva/auditada.
+     */
+    public function gerenciarContext(int $estudoId): void
+    {
+        if (!$this->autorizadoGerenciar()) return;
+        $tenantId = (int) (Auth::tenantId() ?? 0);
+        if ($tenantId <= 0) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.tenant')], 403);
+            return;
+        }
+
+        try {
+            $context = $this->gerenciarService->context($estudoId, $tenantId, (int) Auth::userId());
+            if (!$context) {
+                $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.estudo')], 404);
+                return;
+            }
+            $this->json(['ok' => true, 'context' => $context]);
+        } catch (\Throwable $e) {
+            Logger::error('[GestaoExamesController::gerenciarContext] falha', [
+                'estudo_id' => $estudoId,
+                'tenant_id' => $tenantId,
+                'usuario_id' => Auth::userId(),
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.contexto')], 500);
+        }
+    }
+
+    /** Altera somente o override operacional da prioridade DICOM e audita o motivo. */
+    public function alterarPrioridade(int $estudoId): void
+    {
+        if (!$this->autorizadoGerenciar()) return;
+        $input = $this->inputJsonOuPost();
+        if (!$this->validarCsrf($input['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.csrf')], 403);
+            return;
+        }
+
+        $tenantId = (int) (Auth::tenantId() ?? 0);
+        $priority = (string) ($input['prioridade'] ?? '');
+        $reason = (string) ($input['motivo'] ?? '');
+        if ($tenantId <= 0) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.tenant')], 403);
+            return;
+        }
+
+        try {
+            $result = $this->gerenciarService->changePriority(
+                $estudoId,
+                $tenantId,
+                (int) (Auth::userId() ?? 0),
+                $priority,
+                $reason
+            );
+            if (!$result['ok']) {
+                $this->json([
+                    'ok' => false,
+                    'msg' => $this->mensagemGerenciar($result['error'] ?? null),
+                ], $this->statusGerenciar($result['error'] ?? null));
+                return;
+            }
+            $this->json([
+                'ok' => true,
+                'msg' => t('gestao_gerenciar.msg.prioridade_alterada'),
+                'priority' => $result['priority'],
+                'label' => $result['label'],
+                'audit_id' => $result['audit_id'],
+            ]);
+        } catch (\Throwable $e) {
+            Logger::error('[GestaoExamesController::alterarPrioridade] falha', [
+                'estudo_id' => $estudoId,
+                'tenant_id' => $tenantId,
+                'usuario_id' => Auth::userId(),
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.persistencia')], 500);
+        }
+    }
+
     /** Proxy autenticado: o arquivo real permanece fora de public/. */
     public function arquivo(int $pedidoId): void
     {
@@ -163,6 +248,46 @@ class GestaoExamesController extends Controller
             ]);
             http_response_code(500);
         }
+    }
+
+    private function autorizadoGerenciar(): bool
+    {
+        if (!Auth::check()) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.nao_autenticado')], 401);
+            return false;
+        }
+        $tenantId = (int) (Auth::tenantId() ?? 0);
+        if (!$this->service->podeGerenciar(
+            $tenantId > 0 ? $tenantId : null,
+            Auth::isPlatformAdmin() && !Auth::isImpersonating()
+        )) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.permissao')], 403);
+            return false;
+        }
+        return true;
+    }
+
+    private function statusGerenciar(?string $codigo): int
+    {
+        return match ($codigo) {
+            'estudo_nao_encontrado' => 404,
+            'chat_pendente' => 409,
+            default => 422,
+        };
+    }
+
+    private function mensagemGerenciar(?string $codigo): string
+    {
+        return match ($codigo) {
+            'prioridade_invalida' => t('gestao_gerenciar.erro.prioridade_invalida'),
+            'motivo_curto' => t('gestao_gerenciar.erro.motivo_curto'),
+            'motivo_longo' => t('gestao_gerenciar.erro.motivo_longo'),
+            'prioridade_igual' => t('gestao_gerenciar.erro.prioridade_igual'),
+            'chat_pendente' => t('gestao_gerenciar.erro.chat_pendente'),
+            'estudo_nao_encontrado' => t('gestao_gerenciar.erro.estudo'),
+            'persistencia_falhou' => t('gestao_gerenciar.erro.persistencia'),
+            default => t('gestao_gerenciar.erro.interno'),
+        };
     }
 
     private function validarCsrf(string $token): bool

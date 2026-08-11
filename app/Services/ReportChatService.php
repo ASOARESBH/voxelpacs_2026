@@ -45,6 +45,7 @@ class ReportChatService
 
         $chat = $this->repo->findByReport($reportId, $tenantId);
         $messages = $chat ? $this->repo->listMessages((int) $chat['id'], $tenantId) : [];
+        $lastAuthorId = $chat ? $this->repo->lastMessageAuthorId((int) $chat['id'], $tenantId) : null;
         $groups = $this->repo->listActiveGroups($tenantId);
         $defaultGroup = $this->repo->findDefaultAdministrativeGroup($tenantId);
 
@@ -88,6 +89,9 @@ class ReportChatService
             'subjects' => $this->subjects(),
             'groups' => $groupOptions,
             'users' => $this->repo->listActiveUsers($tenantId, $currentUserId),
+            'last_message_author_id' => $lastAuthorId,
+            'can_interact' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
+            'can_complete' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
         ];
     }
 
@@ -145,14 +149,22 @@ class ReportChatService
         if (mb_strlen($assunto, 'UTF-8') > 180) $assunto = mb_substr($assunto, 0, 180, 'UTF-8');
 
         $situacaoAtual = (string) ($context['situacao'] ?? 'em_laudo');
-        if (in_array($situacaoAtual, ['assinado', 'liberado'], true)) {
+        $origemGestao = (string) ($input['origem'] ?? '') === 'gestao_exames';
+        if (in_array($situacaoAtual, ['assinado', 'liberado'], true) && !$origemGestao) {
             return ['ok' => false, 'error' => 'estudo_finalizado'];
         }
 
         $pdo = $this->repo->pdo();
         try {
             $pdo->beginTransaction();
-            $chat = $this->repo->findByReport($reportId, $tenantId);
+            $chat = $this->repo->findByReportForUpdate($reportId, $tenantId);
+            if ($chat && ($chat['status'] ?? '') === 'pendente') {
+                $lastAuthorId = $this->repo->lastMessageAuthorId((int) $chat['id'], $tenantId);
+                if ($lastAuthorId !== null && $lastAuthorId === $userId) {
+                    $pdo->rollBack();
+                    return ['ok' => false, 'error' => 'aguardando_contraparte'];
+                }
+            }
             $situacaoAnterior = (string) ($chat['situacao_anterior'] ?? '');
             if (!$chat || ($chat['status'] ?? '') === 'concluido' || $situacaoAnterior === '') {
                 $situacaoAnterior = $situacaoAtual === 'pendente' ? 'em_laudo' : $situacaoAtual;
@@ -211,10 +223,19 @@ class ReportChatService
         if (!$chat || $chat['status'] !== 'pendente') {
             return ['ok' => false, 'error' => 'chat_sem_pendencia'];
         }
-
         $pdo = $this->repo->pdo();
         try {
             $pdo->beginTransaction();
+            $chat = $this->repo->findByReportForUpdate($reportId, $tenantId);
+            if (!$chat || ($chat['status'] ?? '') !== 'pendente') {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'chat_sem_pendencia'];
+            }
+            $lastAuthorId = $this->repo->lastMessageAuthorId((int) $chat['id'], $tenantId);
+            if ($lastAuthorId !== null && $lastAuthorId === $userId) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'aguardando_contraparte'];
+            }
             $closed = $this->repo->complete((int) $chat['id'], $reportId, $tenantId, $userId);
             if (!$closed) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
@@ -241,7 +262,7 @@ class ReportChatService
 
     private function normalizarSituacaoRestaurada(string $situacao): string
     {
-        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review'];
+        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review', 'assinado', 'liberado'];
         return in_array($situacao, $permitidas, true) ? $situacao : 'em_laudo';
     }
 

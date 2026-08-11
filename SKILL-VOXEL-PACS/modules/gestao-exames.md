@@ -33,11 +33,23 @@ Tela `/gestao-exames` — reaproveita a Worklist de Estudos (`EstudosController:
 
 Confirmado de novo (não presumido) nesta tarefa: a barra de badges continua sendo o mesmo componente compartilhado descrito acima — `pacs_header.php:206-` — renderizado igual em qualquer rota do layout `'pacs'`. Adicionado badge `PENDENTE` (vermelho, `#dc2626`/`#fef2f2`) alimentado pela mesma chave nova `pendente` em `EstudosController::contadores()` (`GET /api/estudos/contadores`) — mesmo endpoint, mesmo polling de 60s, mesmo escopo por tenant/`institution_name` já usado pelos outros badges (**não** escopado por médico responsável — mesmo débito já registrado abaixo, agora também vale para `pendente`). Posicionado primeiro na barra (antes de A LAUDAR), por ser o status que representa bloqueio/interrupção mais urgente. Ver `modules/worklist-estudos.md` e `patterns/status-colors.md` para o mapa completo.
 
+## Submenu Gerenciar (2026-08-11)
+
+A Worklist administrativa mantém o botão **Pedido** e adiciona **Gerenciar** imediatamente abaixo nas ações. O modal administrativo expõe três caminhos: **Ver laudo**, somente para reports `assinado`/`liberado` e aberto pela mesma tela de Reports em modo somente leitura; **Chat**, reutilizando `pacs_report_chats` por `report_id`, com grupos reais de `bi_grupos`/`bi_grupo_usuarios`, usuários do tenant, histórico e bloqueio por último autor; e **Alterar prioridade**, que grava somente `bi_pacs_estudos.dicom_priority_override` e uma linha de auditoria por alteração.
+
+Os endpoints são `GET /api/gestao-exames/estudos/{id}/gerenciar` e `POST /api/gestao-exames/estudos/{id}/prioridade`, ambos protegidos por sessão, tenant e permissão de gestão; a escrita também exige CSRF. A prioridade efetiva é `COALESCE(NULLIF(dicom_priority_override,''), dicom_priority, 'ROUTINE')`, preservando `dicom_priority` como a tag DICOM (0040,1003) original. A migration `2026-08-11_gestao_exames_gerenciar.sql` é idempotente para MySQL 5.7/MariaDB e cria a tabela `bi_pacs_estudos_prioridade_auditoria`.
+
+Quando o Chat está pendente, a Gestão desabilita a alteração de prioridade. O mesmo autor não pode enviar nova mensagem nem concluir a pendência até que a parte contrária responda; depois da conclusão, a situação anterior do estudo — inclusive `assinado`/`liberado` — é restaurada. A origem `gestao_exames` permite que o usuário administrativo abra uma pendência mesmo quando o laudo já está finalizado, mas o controller do Chat verifica novamente `PedidoMedicoService::podeGerenciar()`.
+
 ## Validação executada (2026-08-08)
 - `php -l` limpo em `Auth.php` e `pacs_header.php`.
 - `Auth::perfilAtual()` testado via sessão simulada: médico/admin/secretaria/analista/viewer no tenant ativo, perfil em outro tenant (não o ativo), sem tenant ativo, sessão antiga sem `perfil` em cache — todos os 5 casos bateram o esperado.
 - Render completo do header via PHP CLI (`ob_start()`/`include`) para os 6 perfis possíveis (5 + `null`): badges aparecem só para `medico`; título "VOXEL PACS" e nome do usuário logado presentes e intactos em todos os 6 casos.
 - **Não validado**: navegador real, múltiplas rotas ao vivo lado a lado (ambiente sem servidor rodando neste sandbox).
 
+## Validação adicional do Gerenciar (2026-08-11)
+
+Foram validados `php -l` nos arquivos PHP alterados, `node --check` no JavaScript do submenu, os contratos estáticos de Gestão, Chat e workflow de Reports, `git diff --check` e a paridade dos três catálogos de idioma. A consulta `SHOW COLUMNS` não pôde ser executada neste sandbox porque não há conexão configurada com o banco; por isso o Repository não referencia `atualizado_em` no `UPDATE` do override.
+
 ## Última análise
-2026-08-10
+2026-08-11

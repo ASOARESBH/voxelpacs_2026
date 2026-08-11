@@ -29,11 +29,24 @@ class ReportChatRepository
         return $row ?: null;
     }
 
+    public function findByReportForUpdate(int $reportId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pacs_report_chats
+             WHERE report_id = :report_id AND tenant_id = :tenant_id
+             LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
     public function findReportContext(int $reportId, int $tenantId): ?array
     {
         $stmt = $this->pdo->prepare(
             'SELECT r.id AS report_id, r.estudo_id, r.study_instance_uid,
-                    COALESCE(e.situacao, "novo") AS situacao
+                    COALESCE(r.situacao, e.situacao, "novo") AS situacao,
+                    r.situacao AS report_situacao
                FROM reports r
                INNER JOIN bi_pacs_estudos e
                        ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
@@ -57,6 +70,20 @@ class ReportChatRepository
         );
         $stmt->execute(['chat_id' => $chatId, 'tenant_id' => $tenantId]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function lastMessageAuthorId(int $chatId, int $tenantId): ?int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT autor_id
+               FROM pacs_report_chat_mensagens
+              WHERE chat_id = :chat_id AND tenant_id = :tenant_id
+              ORDER BY id DESC
+              LIMIT 1'
+        );
+        $stmt->execute(['chat_id' => $chatId, 'tenant_id' => $tenantId]);
+        $value = $stmt->fetchColumn();
+        return $value === false ? null : (int) $value;
     }
 
     /** Usuários ativos do tenant para o destinatário individual. */

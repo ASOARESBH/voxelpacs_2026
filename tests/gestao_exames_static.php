@@ -29,8 +29,18 @@ $report      = $read('app/Services/ReportService.php');
 $reportCard  = $read('app/Views/reports/partials/_exame_card.php');
 $permissions = $read('app/Core/Permission.php');
 $header      = $read('app/Views/layout/pacs_header.php');
+$gerenciarService = $read('app/Services/GestaoExamesService.php');
+$gerenciarRepository = $read('app/Repositories/GestaoExamesRepository.php');
+$gerenciarController = $read('app/Controllers/GestaoExamesController.php');
+$gerenciarMigration = $read('database/migrations/2026-08-11_gestao_exames_gerenciar.sql');
+$gerenciarJs = $read('public/assets/js/gestao-exames-gerenciar.js');
+$chatService = $read('app/Services/ReportChatService.php');
+$chatRepository = $read('app/Repositories/ReportChatRepository.php');
+$chatController = $read('app/Controllers/ReportChatController.php');
 
 $expect(str_contains($routes, "Router::get('/gestao-exames'") , 'Rota da Gestão de Exames ausente.');
+$expect(str_contains($routes, "Router::get('/api/gestao-exames/estudos/{id}/gerenciar'") && str_contains($routes, 'GestaoExamesController@gerenciarContext'), 'Rota do submenu Gerenciar ausente.');
+$expect(str_contains($routes, "Router::post('/api/gestao-exames/estudos/{id}/prioridade'") && str_contains($routes, 'GestaoExamesController@alterarPrioridade'), 'Rota de alteração de prioridade ausente.');
 $expect(str_contains($header, "fetch('/api/estudos/contadores'") && !str_contains($header, "fetch('/estudos/contadores'"), 'Sidebar chama rota inválida de contadores.');
 $expect(str_contains($routes, "GestaoExamesController@anexar") , 'Rota de anexação ausente.');
 $expect(str_contains($routes, "GestaoExamesController@remover") , 'Rota de remoção ausente.');
@@ -39,6 +49,9 @@ $expect(str_contains($controller, 'LEFT JOIN bi_pacs_estudos_pedidos') , 'Join d
 $expect(str_contains($controller, "public function gestao(): void") , 'Ação gestao() ausente no Controller de Estudos.');
 $expect(str_contains($view, "t('pedido_medico.coluna')") , 'Coluna PEDIDO não está internacionalizada.');
 $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi renderizada.');
+$expect(str_contains($view, 'gerenciar-trigger') && str_contains($view, "t('gestao_gerenciar.acao.gerenciar')"), 'Botão Gerenciar não está na Worklist ou não está internacionalizado.');
+$expect(str_contains($view, 'id="gerenciarModal"') && str_contains($view, 'id="gerenciarChatModal"') && str_contains($view, 'id="gerenciarPrioridadeModal"'), 'Modais do submenu Gerenciar incompletos.');
+$expect(str_contains($view, 'gestao-exames-gerenciar.js'), 'JavaScript do submenu Gerenciar não foi carregado.');
 $expect(str_contains($view, "setAttribute('capture', 'environment')"), 'Fallback de câmera não está configurado.');
 $expect(str_contains($view, 'id="pedidoCameraFile"') && str_contains($view, 'accept="image/*" capture="environment"'), 'Input nativo exclusivo de câmera ausente.');
 $expect(str_contains($view, 'cameraInput.click()'), 'Botão Câmera não aciona o input exclusivo.');
@@ -58,7 +71,7 @@ $expect(!str_contains($managementBranch, 'wl-btn-abrir'), 'Gestão expõe botão
 $expect(!str_contains($managementBranch, '/abrir'), 'Gestão expõe rota de abertura.');
 $expect(str_contains($view, '<?php if (!$modoGestao): ?>'), 'Duplo clique do viewer não está condicionado ao modo médico.');
 $expect(!str_contains($view, '<?php if ($modoGestao && $podeGerenciarPedido): ?>\n<script>'), 'Modal do pedido contém script aninhado dentro do bloco principal.');
-$expect(substr_count($view, '<script>') === 1 && substr_count($view, '</script>') === 1, 'Worklist possui quantidade inconsistente de tags script.');
+$expect(substr_count($view, '<script>') === 1 && substr_count($view, '</script>') === 2, 'Worklist possui quantidade inconsistente de tags script.');
 
 $expect(str_contains($migration, 'CREATE TABLE IF NOT EXISTS `bi_pacs_estudos_pedidos`'), 'Migration sem CREATE TABLE idempotente.');
 $expect(str_contains($migration, 'UNIQUE KEY `uq_pedido_tenant_estudo`'), 'Migration sem unicidade tenant/estudo.');
@@ -72,6 +85,23 @@ $expect(str_contains($repository, 'WHERE estudo_id = :estudo_id AND tenant_id = 
 $expect(str_contains($permissions, "'manage_pedidos'"), 'Permissão manage_pedidos ausente.');
 $expect(str_contains($report, "'pedido' => \$pedido"), 'ReportService não devolve pedido.');
 $expect(str_contains($reportCard, "pedido_medico.status.anexado"), 'Card do report sem status do pedido.');
+
+// Contrato do submenu Gerenciar: leitura, Chat contextual e prioridade auditável.
+$expect(str_contains($gerenciarController, 'public function gerenciarContext') && str_contains($gerenciarController, 'public function alterarPrioridade'), 'Endpoints do Gerenciar ausentes no Controller.');
+$expect(str_contains($gerenciarController, 'autorizadoGerenciar') && str_contains($gerenciarController, 'validarCsrf'), 'Gerenciar não centraliza autorização e CSRF.');
+$expect(str_contains($gerenciarService, 'dicom_priority_override') && str_contains($gerenciarService, 'addPriorityAudit'), 'Service não separa override DICOM da auditoria.');
+$expect(str_contains($gerenciarService, "mb_strlen(\$reason, 'UTF-8') < 20"), 'Motivo de prioridade não exige pelo menos 20 caracteres.');
+$expect(str_contains($gerenciarService, "'chat_pendente'"), 'Alteração de prioridade não bloqueia Chat pendente.');
+$expect(str_contains($gerenciarRepository, 'WHERE id = :study_id AND tenant_id = :tenant_id'), 'Repository do Gerenciar não está tenant-scoped.');
+$expect(str_contains($gerenciarRepository, 'SET dicom_priority_override = :priority') && !str_contains($gerenciarRepository, 'atualizado_em = NOW()'), 'Override ainda referencia atualizado_em inexistente ou não confirmado.');
+$expect(str_contains($gerenciarMigration, 'INFORMATION_SCHEMA.COLUMNS') && str_contains($gerenciarMigration, 'CREATE TABLE IF NOT EXISTS'), 'Migration do Gerenciar não é idempotente.');
+$expect(str_contains($gerenciarMigration, 'dicom_priority_override') && str_contains($gerenciarMigration, 'bi_pacs_estudos_prioridade_auditoria'), 'Migration sem override e auditoria de prioridade.');
+$expect(str_contains($gerenciarJs, '/api/gestao-exames/estudos/') && str_contains($gerenciarJs, '/prioridade'), 'Frontend não chama o endpoint de prioridade.');
+$expect(str_contains($gerenciarJs, 'origem: \'gestao_exames\'') && str_contains($gerenciarJs, '/api/reports/chat/send'), 'Frontend do Gerenciar não envia Chat com origem administrativa.');
+$expect(str_contains($gerenciarJs, 'reason.length < 20'), 'Frontend não valida motivo mínimo da prioridade.');
+$expect(str_contains($chatService, 'lastMessageAuthorId') && str_contains($chatService, 'origemGestao'), 'Chat não aplica bloqueio por último autor ou exceção administrativa.');
+$expect(str_contains($chatRepository, 'lastMessageAuthorId'), 'Repository do Chat não expõe o último autor.');
+$expect(str_contains($chatController, 'PedidoMedicoService') && str_contains($chatController, 'origem') && str_contains($chatController, 'podeGerenciar'), 'Controller do Chat não protege a origem administrativa.');
 
 $locales = [
     'pt_BR' => $root . '/lang/pt_BR.php',

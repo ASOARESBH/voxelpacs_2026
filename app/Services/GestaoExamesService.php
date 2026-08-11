@@ -1,0 +1,195 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Core\Logger;
+use App\Repositories\GestaoExamesRepository;
+
+/**
+ * Regras administrativas da tela Gestão de Exames.
+ *
+ * A prioridade exibida é a efetiva: override operacional quando houver,
+ * senão a tag DICOM bruta importada do Orthanc.
+ */
+class GestaoExamesService
+{
+    private const PRIORITIES = ['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'];
+
+    private GestaoExamesRepository $repo;
+
+    public function __construct(?GestaoExamesRepository $repo = null)
+    {
+        $this->repo = $repo ?: new GestaoExamesRepository();
+    }
+
+    public function context(int $studyId, int $tenantId, int $currentUserId = 0): ?array
+    {
+        $study = $this->repo->findStudyContext($studyId, $tenantId);
+        if (!$study) return null;
+
+        $reportSituacao = strtolower(trim((string) ($study['report_situacao'] ?? '')));
+        $chatPending = ($study['chat_status'] ?? '') === 'pendente';
+        $priority = strtoupper(trim((string) ($study['prioridade_efetiva'] ?? 'ROUTINE')));
+        if (!in_array($priority, self::PRIORITIES, true)) $priority = 'ROUTINE';
+
+        $chat = null;
+        if ((int) ($study['report_id'] ?? 0) > 0) {
+            $chatService = new ReportChatService();
+            $chat = $chatService->context((int) $study['report_id'], $tenantId, $currentUserId);
+        }
+        if (is_array($chat) && ($chat['status'] ?? '') === 'pendente') {
+            $chatPending = true;
+        }
+        $chatCanInteract = !is_array($chat) || ($chat['can_interact'] ?? true) !== false;
+        $chatCanComplete = !is_array($chat) || ($chat['can_complete'] ?? true) !== false;
+
+        return [
+            'study_id' => (int) $study['id'],
+            'tenant_id' => (int) $study['tenant_id'],
+            'study_instance_uid' => (string) ($study['study_instance_uid'] ?? ''),
+            'patient_name' => (string) ($study['patient_name'] ?? ''),
+            'study_description' => (string) ($study['study_description'] ?? ''),
+            'situacao' => (string) ($study['situacao'] ?? 'novo'),
+            'report_id' => (int) ($study['report_id'] ?? 0),
+            'report_situacao' => $reportSituacao,
+            'can_view_report' => in_array($reportSituacao, ['assinado', 'liberado'], true),
+            'report_url' => $this->reportUrl((string) ($study['study_instance_uid'] ?? '')),
+            'pdf_url' => (int) ($study['report_id'] ?? 0) > 0
+                ? '/reports/pdf?report_id=' . (int) $study['report_id']
+                : null,
+            'chat_pending' => $chatPending,
+            'can_interact' => $chatCanInteract,
+            'can_complete' => $chatCanComplete,
+            'chat' => $chat,
+            'priority' => [
+                'effective' => $priority,
+                'raw_dicom' => strtoupper(trim((string) ($study['dicom_priority'] ?? ''))),
+                'override' => $study['dicom_priority_override'] !== null
+                    ? strtoupper(trim((string) $study['dicom_priority_override']))
+                    : null,
+                'label' => $this->priorityLabel($priority),
+                'options' => $this->priorityOptions(),
+            ],
+            'can_change_priority' => !$chatPending,
+            'priority_audit' => $this->priorityAudit($studyId, $tenantId),
+        ];
+    }
+
+    public function changePriority(
+        int $studyId,
+        int $tenantId,
+        int $userId,
+        string $priority,
+        string $reason
+    ): array {
+        $priority = strtoupper(trim($priority));
+        $reason = trim($reason);
+        if (!in_array($priority, self::PRIORITIES, true)) {
+            return ['ok' => false, 'error' => 'prioridade_invalida'];
+        }
+        if (mb_strlen($reason, 'UTF-8') < 20) {
+            return ['ok' => false, 'error' => 'motivo_curto'];
+        }
+        if (mb_strlen($reason, 'UTF-8') > 1000) {
+            return ['ok' => false, 'error' => 'motivo_longo'];
+        }
+
+        $pdo = $this->repo->pdo();
+        try {
+            $pdo->beginTransaction();
+            $study = $this->repo->lockStudyContext($studyId, $tenantId);
+            if (!$study) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
+            if ((string) ($study['situacao'] ?? '') === 'pendente') {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'chat_pendente'];
+            }
+
+            $previous = strtoupper(trim((string) ($study['prioridade_efetiva'] ?? 'ROUTINE')));
+            if (!in_array($previous, self::PRIORITIES, true)) $previous = 'ROUTINE';
+            if ($previous === $priority) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'prioridade_igual'];
+            }
+
+            $this->repo->updatePriorityOverride($studyId, $tenantId, $priority);
+            $auditId = $this->repo->addPriorityAudit(
+                $studyId,
+                $tenantId,
+                (string) ($study['dicom_priority'] ?? ''),
+                $previous,
+                $priority,
+                $reason,
+                $userId
+            );
+            $pdo->commit();
+
+            Logger::info('[GestaoExamesService::changePriority] prioridade alterada', [
+                'study_id' => $studyId,
+                'tenant_id' => $tenantId,
+                'user_id' => $userId,
+                'previous' => $previous,
+                'next' => $priority,
+                'audit_id' => $auditId,
+            ]);
+
+            return [
+                'ok' => true,
+                'audit_id' => $auditId,
+                'priority' => $priority,
+                'label' => $this->priorityLabel($priority),
+            ];
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('[GestaoExamesService::changePriority] falha', [
+                'study_id' => $studyId,
+                'tenant_id' => $tenantId,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => 'persistencia_falhou'];
+        }
+    }
+
+    private function priorityAudit(int $studyId, int $tenantId): array
+    {
+        try {
+            return $this->repo->listPriorityAudit($studyId, $tenantId);
+        } catch (\Throwable $e) {
+            Logger::warning('[GestaoExamesService::priorityAudit] migration ausente ou consulta indisponível', [
+                'study_id' => $studyId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
+
+    private function priorityOptions(): array
+    {
+        return array_map(fn(string $value): array => [
+            'value' => $value,
+            'label' => $this->priorityLabel($value),
+        ], self::PRIORITIES);
+    }
+
+    private function priorityLabel(string $value): string
+    {
+        return [
+            'STAT' => 'Emergência (STAT)',
+            'HIGH' => 'Urgência (HIGH)',
+            'ROUTINE' => 'Rotina (ROUTINE)',
+            'MEDIUM' => 'Rotina (MEDIUM)',
+            'LOW' => 'Ambulatorial (LOW)',
+        ][$value] ?? 'Rotina (ROUTINE)';
+    }
+
+    private function reportUrl(string $studyUid): ?string
+    {
+        return $studyUid !== '' ? '/reports/' . rawurlencode($studyUid) . '?origem=gestao' : null;
+    }
+}

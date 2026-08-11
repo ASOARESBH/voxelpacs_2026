@@ -289,6 +289,18 @@ class EstudosController extends Controller
         $limitClause = $porPagina > 0 ? "LIMIT {$porPagina} OFFSET {$offset}" : '';
 
         // ── SELECT ────────────────────────────────────────────────────────────────────────
+        // O override é opcional para manter a Worklist funcional durante o deploy da migration.
+        $hasPriorityOverride = false;
+        try {
+            $priorityColumn = $pdo->query("SHOW COLUMNS FROM bi_pacs_estudos LIKE 'dicom_priority_override'")->fetch(\PDO::FETCH_ASSOC);
+            $hasPriorityOverride = is_array($priorityColumn) && !empty($priorityColumn);
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::index] prioridade override: ' . $ex->getMessage());
+        }
+        $priorityEffectiveSql = $hasPriorityOverride
+            ? "COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE')"
+            : "COALESCE(e.dicom_priority, 'ROUTINE')";
+
         $estudos = [];
         try {
             $sql = "
@@ -317,6 +329,7 @@ class EstudosController extends Controller
                     COALESCE(e.especialidade,'')       AS especialidade,
                     COALESCE(e.prioridade,   'normal') AS prioridade,
                     COALESCE(e.dicom_priority, '')     AS dicom_priority,
+                    {$priorityEffectiveSql}            AS dicom_priority_effective,
                     COALESCE(e.assumido_por, '')       AS assumido_por,
                     e.assumido_em,
                     e.laudo_assinado_em,
@@ -330,10 +343,17 @@ class EstudosController extends Controller
                     p.nome_original                               AS pedido_nome_original,
                     p.mime_type                                   AS pedido_mime_type,
                     p.tamanho_bytes                               AS pedido_tamanho_bytes,
-                    p.caminho_arquivo                             AS pedido_caminho_arquivo
+                    p.caminho_arquivo                             AS pedido_caminho_arquivo,
+                    r.id                                           AS report_id,
+                    COALESCE(r.situacao, '')                       AS report_situacao,
+                    COALESCE(c.status, '')                         AS chat_status
                 FROM bi_pacs_estudos e
                 LEFT JOIN bi_pacs_estudos_pedidos p
                        ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id
+                LEFT JOIN reports r
+                       ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id
+                LEFT JOIN pacs_report_chats c
+                       ON c.report_id = r.id AND c.tenant_id = r.tenant_id
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
                 {$limitClause}
