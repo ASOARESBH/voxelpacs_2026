@@ -1,7 +1,11 @@
 # Módulo — Template de Laudo (layout visual, por Unidade)
 
+## ⚠️ Correção 2026-08-11 (mesmo dia): implementado nos DOIS sistemas de Unidade
+
+A primeira versão desta feature foi implementada só em `bi_unidades`/`unidades/nova.php` — presumido, sem confirmar contra a tela real, que fosse o sistema em uso. Um print de produção real (`server.voxelpacs.com.br/unidades/33/edit`) mostrou que a tela ativa é outra (`unidades/edit.php`, tabela `bi_negocio_institution_names`). Corrigido no mesmo dia: a seleção de template agora existe **nos dois sistemas** (`unidades/edit.php` E `unidades/nova.php`), cada um com sua própria coluna `report_layout_template_id` na respectiva tabela, e `ReportsController::pdf()` lê das duas com `COALESCE` (prioriza `bi_negocio_institution_names`, que é onde há dado real hoje). Ver `modules/unidades.md` para o mapa completo dos dois sistemas — **leia aquele arquivo antes de mexer em qualquer tela de Unidade de novo**.
+
 ## Propósito
-Cada Unidade (`bi_unidades`) escolhe **um** layout visual entre um catálogo fixo de 4 modelos profissionais, aplicado automaticamente à tela/impressão/PDF do laudo. É camada de **apresentação** — reorganiza/estiliza os mesmos dados do laudo já existentes (paciente, exame, seções, assinatura), não altera nenhum dado clínico nem toca no fluxo de edição/assinatura/autosave.
+Cada Unidade escolhe **um** layout visual entre um catálogo fixo de 4 modelos profissionais, aplicado automaticamente à tela/impressão/PDF do laudo. É camada de **apresentação** — reorganiza/estiliza os mesmos dados do laudo já existentes (paciente, exame, seções, assinatura), não altera nenhum dado clínico nem toca no fluxo de edição/assinatura/autosave.
 
 ⚠️ **Não confundir com `report_templates`** (`app/Controllers/ReportsController::templates()`/`template()`) — aquela é a funcionalidade de **conteúdo** ("Máscaras": texto pré-formatado por médico/modalidade, `secao_exame`/`tecnica`/etc. como *starter text* do corpo do laudo). Este módulo é sobre **layout visual de impressão**, um eixo completamente diferente. Por isso a tabela nova tem nome deliberadamente distinto: `report_layout_templates`.
 
@@ -9,12 +13,14 @@ Cada Unidade (`bi_unidades`) escolhe **um** layout visual entre um catálogo fix
 | Arquivo | Papel |
 |---|---|
 | `app/Services/ReportLayoutService.php` | Catálogo (`listarCatalogo()`), resolução de qual template aplicar (`resolverCodigo()`, sempre retorna um código válido — nunca quebra), caminho do partial (`caminhoPartial()`). `PADRAO = 'classico_centralizado'`. |
-| `app/Controllers/UnidadesController.php` | `novaUnidade()`/`editarUnidade()` passam o catálogo pra view; `criarUnidade()`/`atualizarUnidade()` persistem `report_layout_template_id` (mesmo padrão `$campos`/array dinâmico já usado pros outros campos). |
-| `app/Views/unidades/nova.php` | Card "Template de Laudo" (Seção 5B, entre "Vínculos com InstitutionName DICOM" e "Configurações") — grade de 4 cards selecionáveis (seleção única, preview via CSS puro, sem imagens de exemplo) escrevendo num `<input type="hidden" name="report_layout_template_id">`. |
-| `app/Controllers/ReportsController.php` (`pdf()`) | `SELECT` ganhou `LEFT JOIN bi_negocio_institution_names` → `LEFT JOIN bi_unidades` (mesmo padrão de match case-insensitive de `institution_name` já usado em `UnidadesController`) pra trazer `report_layout_template_id` + dados da unidade (logo, nome, CNPJ, endereço, telefone). Resolve o código via `ReportLayoutService` e passa pra view. **Não tocou** na cláusula `WHERE r.id = :id AND r.tenant_id = :tenant_id` (autorização/isolamento de tenant) — só adicionou JOINs de leitura. |
+| `app/Controllers/UnidadesController.php` | `edit()` (Sistema A, ativo) e `novaUnidade()`/`editarUnidade()` (Sistema B) passam o catálogo pra view; `update()`/`criarUnidade()`/`atualizarUnidade()` persistem `report_layout_template_id` (mesmo padrão `$campos`/array dinâmico já usado pros outros campos), cada um na sua tabela. |
+| `app/Views/unidades/edit.php` | **Sistema A (ativo em produção)**. Card "Template de Laudo" na coluna direita, logo após "InstitutionName DICOM" — lista vertical de cards selecionáveis (`.template-laudo-card-sm`), sem preview visual (coluna estreita, `col-lg-4`). |
+| `app/Views/unidades/nova.php` | Sistema B. Card "Template de Laudo" (grade de 4 cards com preview CSS, `.template-laudo-card`), entre "Vínculos com InstitutionName DICOM" e "Configurações". |
+| `app/Controllers/ReportsController.php` (`pdf()`) | `SELECT` ganhou `LEFT JOIN bi_negocio_institution_names` (bnin) → `LEFT JOIN bi_unidades` (un, via `bnin.unidade_id`) — mesmo padrão de match case-insensitive de `institution_name` já usado em `UnidadesController`. Cada campo de unidade (nome, CNPJ, logo, endereço, telefone, `report_layout_template_id`) é `COALESCE(NULLIF(bnin.campo,''), un.campo)` — prioriza Sistema A (dado real), cai pro B se faltar. Resolve o código via `ReportLayoutService` e passa pra view. **Não tocou** na cláusula `WHERE r.id = :id AND r.tenant_id = :tenant_id` (autorização/isolamento de tenant) — só adicionou JOINs de leitura. |
 | `app/Views/reports/pdf.php` | Virou dispatcher fino: monta `$r`/`$paciente`/`$download` (igual antes) e só decide qual partial `require`. Nenhuma lógica de dado aqui. |
 | `app/Views/reports/pdf/templates/_*.php` | Os 4 templates — cada um é um documento HTML completo e autocontido (própria `<style>`), não fragmentos combinados num CSS compartilhado. |
-| `database/migrations/2026-08-11_report_layout_templates.sql` | Tabela nova + coluna em `bi_unidades` + seed dos 4 templates. |
+| `database/migrations/2026-08-11_report_layout_templates.sql` | Tabela `report_layout_templates` + coluna em `bi_unidades` (Sistema B) + seed dos 4 templates. |
+| `database/migrations/2026-08-11_report_layout_template_institution_names.sql` | Coluna equivalente em `bi_negocio_institution_names` (Sistema A — a correção do mesmo dia). |
 
 ## Por que "tela + impressão + PDF" é um ponto único
 
@@ -36,25 +42,28 @@ Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto 
 ```
 reports.estudo_id → bi_pacs_estudos.institution_name
   → bi_negocio_institution_names.institution_name (match case-insensitive, COLLATE utf8mb4_general_ci)
-  → bi_negocio_institution_names.unidade_id
-  → bi_unidades.report_layout_template_id
+  → COALESCE(
+       bi_negocio_institution_names.report_layout_template_id,          -- Sistema A (prioridade — dado real)
+       bi_unidades.report_layout_template_id  (via unidade_id)          -- Sistema B (fallback)
+     )
   → report_layout_templates.codigo
 ```
 
-Se qualquer elo da cadeia faltar (estudo sem `institution_name` cadastrado em Unidades, unidade sem template escolhido, `report_layout_template_id` apontando pra um template desativado) **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide isso, chamada uma vez em `ReportsController::pdf()`.
+Se qualquer elo da cadeia faltar (estudo sem `institution_name` cadastrado em Unidades, unidade sem template escolhido em nenhum dos dois sistemas, `report_layout_template_id` apontando pra um template desativado) **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide isso, chamada uma vez em `ReportsController::pdf()`.
 
 ## Regra de acesso — médico não pode alterar (limitação conhecida)
 
-O requisito "médico não pode escolher o template, só Administrador" é satisfeito **apenas informalmente**: o controle só existe na tela `/unidades/{id}/editar`, que não aparece pra perfis sem acesso a essa área do menu. **Achado, não corrigido**: `UnidadesController` não tem nenhuma checagem de perfil/role em nenhum método — a tela inteira (não só o campo de template) é acessível a qualquer usuário autenticado, médico incluso, hoje. Corrigir isso é uma mudança de controle de acesso mais ampla que "camada visual do laudo" (afetaria CNPJ, endereço, logo, vínculos DICOM — todo o cadastro de Unidade), fora do escopo desta tarefa. Registrado em `docs/PENDENCIAS_CONHECIDAS.md`.
+O requisito "médico não pode escolher o template, só Administrador" é satisfeito **apenas informalmente**: o controle só existe nas telas de Unidade (`/unidades/{id}/edit` e `/unidades/{id}/editar`), que não aparecem pra perfis sem acesso a essa área do menu. **Achado, não corrigido**: `UnidadesController` não tem nenhuma checagem de perfil/role em nenhum método, nos dois sistemas — a tela inteira (não só o campo de template) é acessível a qualquer usuário autenticado, médico incluso, hoje. Corrigir isso é uma mudança de controle de acesso mais ampla que "camada visual do laudo" (afetaria CNPJ, endereço, logo, vínculos DICOM — todo o cadastro de Unidade), fora do escopo desta tarefa. Registrado em `docs/PENDENCIAS_CONHECIDAS.md`.
 
 ## Achado à parte (não corrigido, fora do escopo — restrição explícita da tarefa)
 
 `ReportsController::liberar()` chama `$this->mensagemErroReport($resultado['error'] ?? '')` — método que **não existe** na classe (`\Error` em runtime se esse branch for alcançado). Não relacionado a templates; é uma pré-existência dentro do fluxo de assinatura/liberação, que a tarefa explicitamente pediu para não tocar. Registrado em `docs/PENDENCIAS_CONHECIDAS.md` para decisão separada.
 
 ## Validação executada
-- `php -l` limpo nos 9 arquivos alterados/criados.
+- `php -l` limpo em todos os arquivos alterados/criados (incluindo a correção do mesmo dia em `unidades/edit.php`/`UnidadesController`/`ReportsController`).
+- Colunas referenciadas no `COALESCE` de `pdf()` (`razao_social`, `nome_fantasia`, `logradouro`, `numero`, `complemento`, `bairro`, `cidade`, `estado`, `telefone`, `email`, `cnpj`, `logo_path`) confirmadas como já existentes em `bi_negocio_institution_names` via `2026-07-25_unidades_cnpj_endereco_logo.sql`/`2026-07-26_institution_names_complemento.sql` (não são colunas novas desta tarefa) — evita erro de "coluna desconhecida" no JOIN.
 - Os 4 partials renderizados via PHP CLI (sem banco) com dados simulados completos e depois com todos os campos de unidade `NULL` (cenário de estudo sem unidade vinculada) — sem erro/warning em nenhum dos 8 casos, HTML válido gerado, nome do paciente presente no output.
-- **Não validado**: navegador real, PDO/banco de dados real (sem acesso a banco neste ambiente — migration não foi executada), fluxo completo `/unidades/{id}/editar` → salvar → `/reports/pdf` ao vivo.
+- **Não validado**: navegador real, PDO/banco de dados real (sem acesso a banco neste ambiente — nenhuma das duas migrations foi executada), fluxo completo `/unidades/{id}/edit` → salvar → `/reports/pdf` ao vivo.
 
 ## Última análise
 2026-08-11

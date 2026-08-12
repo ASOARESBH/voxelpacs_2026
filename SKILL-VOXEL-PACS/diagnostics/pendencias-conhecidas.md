@@ -24,6 +24,18 @@
 
 **Validação**: `php -l` limpo em `ReportService.php`/`ReportsController.php`/`View.php`; `node --check` limpo em `reports-editor.js`; os 4 cenários do teste de extração passam. **Não validado**: reprodução real no navegador (Quill de verdade, toolbar real), nem confirmação de que a aba do médico com o conteúdo em memória ainda estava aberta no momento da correção.
 
+## Dois sistemas paralelos de cadastro de Unidade coexistem (2026-08-11)
+
+**Onde**: `app/Controllers/UnidadesController.php` — Sistema A (`edit()`/`update()` → `bi_negocio_institution_names` → `unidades/edit.php`) vs. Sistema B (`novaUnidade()`/`editarUnidade()` → `bi_unidades` → `unidades/nova.php`).
+
+**O quê**: dois pares completos rota/controller/view/tabela pra mesma entidade "Unidade", ambos ativos, `unidades/index.php` lista os dois. Só o A tem dado real confirmado em produção.
+
+**Como foi encontrado**: a tarefa de Template de Laudo implementou primeiro só no Sistema B (presumido "o ativo" pelo comentário de código, sem confirmar contra a tela real) — usuário mandou print de produção mostrando que o card não aparecia; a tela real é a A. Corrigido no mesmo dia, feature agora nos dois sistemas. **Lição registrada em `modules/unidades.md`**: confirmar contra a URL/navegação real antes de editar uma tela achando que "achei o form certo pela estrutura do código".
+
+**Por que não corrigido na raiz**: decidir qual sistema deprecar é decisão de produto, não efeito colateral de tarefa de template.
+
+**Prioridade sugerida**: média/alta — mesmo padrão já visto com as duas tabelas de InstitutionNames (`modules/negocios.md`), e já causou um erro de implementação real nesta sessão.
+
 ## `UnidadesController` sem controle de acesso por perfil (2026-08-11)
 
 **Onde**: `app/Controllers/UnidadesController.php` — todos os métodos.

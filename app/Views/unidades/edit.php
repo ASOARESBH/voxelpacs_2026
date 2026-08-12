@@ -6,6 +6,8 @@ $cnpjRaw = preg_replace('/\D/', '', $u['cnpj'] ?? '');
 if (strlen($cnpjRaw) === 14) {
     $cnpjFormatado = substr($cnpjRaw,0,2).'.'.substr($cnpjRaw,2,3).'.'.substr($cnpjRaw,5,3).'/'.substr($cnpjRaw,8,4).'-'.substr($cnpjRaw,12,2);
 }
+$templatesLaudo  = $templatesLaudo ?? [];
+$templateAtualId = (int) ($u['report_layout_template_id'] ?? 0);
 ?>
 
 <div class="d-flex align-items-center gap-2 mb-3">
@@ -253,6 +255,42 @@ if (strlen($cnpjRaw) === 14) {
             </div>
         </div>
 
+        <!-- Card: Template de Laudo -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-2 border-bottom">
+                <span class="fw-semibold small"><i class="fa fa-file-medical me-2 text-primary"></i>Template de Laudo</span>
+            </div>
+            <div class="card-body p-3">
+                <?php if (empty($templatesLaudo)): ?>
+                <p class="text-muted small mb-0">
+                    <i class="fa fa-info-circle me-1"></i>Nenhum template disponível.
+                </p>
+                <?php else: ?>
+                <p class="text-muted small mb-2">Layout aplicado à tela, impressão e PDF do laudo desta unidade.</p>
+                <input type="hidden" name="report_layout_template_id" id="reportLayoutTemplateId"
+                       value="<?= $templateAtualId ?: '' ?>">
+                <div class="d-flex flex-column gap-2" id="templateLaudoGrid">
+                    <?php foreach ($templatesLaudo as $tpl):
+                        $tplId = (int) $tpl['id'];
+                        $selecionado = $templateAtualId === $tplId || (!$templateAtualId && $tpl['codigo'] === 'classico_centralizado');
+                    ?>
+                    <div class="template-laudo-card-sm <?= $selecionado ? 'selected' : '' ?>"
+                         data-template-id="<?= $tplId ?>" role="button" tabindex="0">
+                        <div class="template-laudo-nome-sm">
+                            <?= htmlspecialchars($tpl['nome']) ?>
+                            <i class="fa fa-check-circle template-laudo-check-sm"></i>
+                        </div>
+                        <div class="template-laudo-desc-sm"><?= htmlspecialchars($tpl['descricao'] ?? '') ?></div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <p class="text-muted mt-2 mb-0" style="font-size:10px">
+                    <i class="fa fa-info-circle me-1"></i>Sem escolha, usa o template padrão (Clássico Centralizado).
+                </p>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <!-- Botões -->
         <div class="d-grid gap-2">
             <button type="submit" class="btn btn-primary">
@@ -268,9 +306,36 @@ if (strlen($cnpjRaw) === 14) {
 </div><!-- /row -->
 </form>
 
+<style>
+.template-laudo-card-sm {
+    border: 2px solid #e5e7eb; border-radius: 6px; padding: .5rem .65rem; cursor: pointer;
+    transition: border-color .15s, background .15s;
+}
+.template-laudo-card-sm:hover { border-color: #93c5fd; }
+.template-laudo-card-sm.selected { border-color: #0d6efd; background: #eff6ff; }
+.template-laudo-nome-sm { font-size: .78rem; font-weight: 600; display: flex; align-items: center; gap: .3rem; }
+.template-laudo-check-sm { color: #0d6efd; font-size: .78rem; visibility: hidden; margin-left: auto; }
+.template-laudo-card-sm.selected .template-laudo-check-sm { visibility: visible; }
+.template-laudo-desc-sm { font-size: 10px; color: #6b7280; margin-top: .1rem; line-height: 1.35; }
+</style>
+
 <script>
 (function () {
     const unitId = <?= $id ?>;
+
+    // ── Seleção de Template de Laudo (único, via input hidden) ───────────
+    const templateInput = document.getElementById('reportLayoutTemplateId');
+    document.querySelectorAll('.template-laudo-card-sm').forEach(function (card) {
+        function selecionar() {
+            document.querySelectorAll('.template-laudo-card-sm').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            if (templateInput) templateInput.value = card.dataset.templateId;
+        }
+        card.addEventListener('click', selecionar);
+        card.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selecionar(); }
+        });
+    });
 
     // ── Máscara CNPJ ──────────────────────────────────────────────────────
     document.getElementById('cnpj').addEventListener('input', function () {

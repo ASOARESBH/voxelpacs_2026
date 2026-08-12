@@ -315,25 +315,28 @@ class ReportsController extends Controller
                         COALESCE(m.nome, u.name) AS medico_nome,
                         m.crm AS medico_crm,
                         t.nome as tenant_nome,
-                        un.id               AS unidade_id,
-                        un.report_layout_template_id,
-                        un.nome_fantasia    AS unidade_nome_fantasia,
-                        un.razao_social     AS unidade_razao_social,
-                        un.cnpj             AS unidade_cnpj,
-                        un.logo_path        AS unidade_logo_path,
-                        un.telefone         AS unidade_telefone,
-                        un.email            AS unidade_email,
-                        un.logradouro       AS unidade_logradouro,
-                        un.numero           AS unidade_numero,
-                        un.complemento      AS unidade_complemento,
-                        un.bairro           AS unidade_bairro,
-                        un.cidade           AS unidade_cidade,
-                        un.estado           AS unidade_estado
+                        COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
+                        COALESCE(NULLIF(bnin.nome_fantasia, ''), un.nome_fantasia)   AS unidade_nome_fantasia,
+                        COALESCE(NULLIF(bnin.razao_social, ''), un.razao_social)     AS unidade_razao_social,
+                        COALESCE(NULLIF(bnin.cnpj, ''), un.cnpj)                     AS unidade_cnpj,
+                        COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path)           AS unidade_logo_path,
+                        COALESCE(NULLIF(bnin.telefone, ''), un.telefone)             AS unidade_telefone,
+                        COALESCE(NULLIF(bnin.email, ''), un.email)                   AS unidade_email,
+                        COALESCE(NULLIF(bnin.logradouro, ''), un.logradouro)         AS unidade_logradouro,
+                        COALESCE(NULLIF(bnin.numero, ''), un.numero)                 AS unidade_numero,
+                        COALESCE(NULLIF(bnin.complemento, ''), un.complemento)       AS unidade_complemento,
+                        COALESCE(NULLIF(bnin.bairro, ''), un.bairro)                 AS unidade_bairro,
+                        COALESCE(NULLIF(bnin.cidade, ''), un.cidade)                 AS unidade_cidade,
+                        COALESCE(NULLIF(bnin.estado, ''), un.estado)                 AS unidade_estado
                  FROM reports r
                  JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
+                 -- Unidade: duas tabelas coexistem (ver modules/unidades.md) — a tela
+                 -- realmente usada em produção (/unidades/{id}/edit) grava direto em
+                 -- bi_negocio_institution_names; bi_unidades é um 2º sistema, mais novo,
+                 -- ainda sem dado real confirmado. Prioriza bnin, cai pra un se faltar.
                  LEFT JOIN bi_negocio_institution_names bnin
                         ON bnin.tenant_id = r.tenant_id
                        AND bnin.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci

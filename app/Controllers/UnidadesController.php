@@ -120,7 +120,8 @@ class UnidadesController extends Controller
     {
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $unidade  = $this->findOrFail($id, $tenantId);
-        $this->view('unidades/edit', compact('unidade'));
+        $templatesLaudo = $this->reportLayoutService->listarCatalogo();
+        $this->view('unidades/edit', compact('unidade', 'templatesLaudo'));
     }
 
     // UPDATE
@@ -148,6 +149,7 @@ class UnidadesController extends Controller
             'sla_minutos'            => (int)($_POST['sla_minutos'] ?? 0) ?: null,
             'modalidades_permitidas' => trim($_POST['modalidades_permitidas'] ?? ''),
             'observacoes'            => trim($_POST['observacoes']            ?? ''),
+            'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'                  => isset($_POST['ativo']) ? 1 : 0,
         ];
 

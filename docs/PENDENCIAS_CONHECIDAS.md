@@ -4,6 +4,18 @@
 
 ## Ativas
 
+### Dois sistemas paralelos de cadastro de Unidade coexistem sem um suplantar o outro (achado 2026-08-11)
+
+**Onde**: `app/Controllers/UnidadesController.php` — Sistema A (`edit()`/`update()`, tabela `bi_negocio_institution_names`, view `unidades/edit.php`) vs. Sistema B (`novaUnidade()`/`criarUnidade()`/`editarUnidade()`/`atualizarUnidade()`, tabela `bi_unidades`, view `unidades/nova.php`).
+
+**O quê**: dois pares completos de rota/controller/view/tabela para "Unidade", ambos ativos no código, `unidades/index.php` lista os dois lado a lado com botões de editar separados. Só o Sistema A tem dado real confirmado em produção — o Sistema B (`bi_unidades`, criado em `2026-08-02_bi_unidades.sql`) parece uma segunda tentativa mais recente de modelar a mesma entidade, sem migração de dados do A pro B.
+
+**Como foi encontrado**: a tarefa de Template de Laudo (2026-08-11) implementou a feature primeiro só no Sistema B, presumindo — pelo comentário "bi_unidades: entidade rica" no código — que fosse o ativo. O usuário mandou um print da tela real de produção (`/unidades/33/edit`) mostrando que não tinha o card novo, revelando o engano. Corrigido no mesmo dia: a feature agora existe nos dois sistemas. Ver `modules/unidades.md` (mapa completo) e `modules/report-templates.md`.
+
+**Por que não corrigido na raiz**: decidir qual sistema deprecar (e migrar os dados do outro) é uma decisão de produto/arquitetura, não algo pra resolver como efeito colateral de uma tarefa de template visual.
+
+**Prioridade sugerida**: média/alta — é o tipo de duplicação que já causou um erro real nesta sessão (implementar no sistema errado) e vai continuar causando até alguém decidir qual manter. Mesmo padrão já visto com as duas tabelas de InstitutionNames em `modules/negocios.md` ("InstitutionNames — duas tabelas convivendo").
+
 ### `UnidadesController` sem controle de acesso por perfil (achado 2026-08-11)
 
 **Onde**: `app/Controllers/UnidadesController.php` — todos os métodos.
