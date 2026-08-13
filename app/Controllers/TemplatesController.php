@@ -42,6 +42,20 @@ class TemplatesController extends Controller
         return $_POST;
     }
 
+    /**
+     * O editor de máscaras permite somente <strong> para preservar o negrito
+     * clínico. Todo o restante é removido no servidor antes da persistência.
+     */
+    private function sanitizeSectionHtml($value): string
+    {
+        $html = (string) $value;
+        $html = strip_tags($html, '<p><br><strong><b>');
+        $html = preg_replace('/<(?:strong|b)\\b[^>]*>/i', '<strong>', $html) ?? '';
+        $html = preg_replace('/<\\/(?:strong|b)>/i', '</strong>', $html) ?? '';
+        $html = preg_replace('/<p\\b[^>]*>/i', '<p>', $html) ?? '';
+        return trim($html);
+    }
+
     /** Bloqueia médico restrito de consultar ou manipular máscaras de outro cadastro. */
     private function guardOwnMedicoOrDeny(int $medicoId): bool
     {
@@ -105,11 +119,11 @@ class TemplatesController extends Controller
         $modalidade          = trim($input['modalidade'] ?? '');
         $compartilhar        = (int) ($input['compartilhar'] ?? 0);
         $studyDescriptionTag = trim($input['study_description_tag'] ?? '');
-        $secaoExame          = $input['secao_exame']        ?? '';
-        $secaoTecnica        = $input['secao_tecnica']      ?? '';
-        $secaoAchados        = $input['secao_achados']      ?? '';
-        $secaoConclusao      = $input['secao_conclusao']    ?? '';
-        $secaoRecomendacao   = $input['secao_recomendacao'] ?? '';
+        $secaoExame          = (string) ($input['secao_exame']        ?? '');
+        $secaoTecnica        = $this->sanitizeSectionHtml($input['secao_tecnica'] ?? '');
+        $secaoAchados        = $this->sanitizeSectionHtml($input['secao_achados'] ?? '');
+        $secaoConclusao      = $this->sanitizeSectionHtml($input['secao_conclusao'] ?? '');
+        $secaoRecomendacao   = (string) ($input['secao_recomendacao'] ?? '');
 
         if (!$nome) {
             $this->json(['ok' => false, 'msg' => 'Nome do template é obrigatório.'], 422);
@@ -120,6 +134,23 @@ class TemplatesController extends Controller
             $pdo = Database::getInstance();
 
             if ($id > 0) {
+                // Os campos Exame/Recomendação não são mais editáveis no modal.
+                // Preserva os valores antigos para não destruir máscaras legadas.
+                $legacy = $pdo->prepare("
+                    SELECT secao_exame, secao_recomendacao
+                    FROM report_templates
+                    WHERE id = :id AND medico_id = :mid AND tenant_id = :tid
+                    LIMIT 1
+                ");
+                $legacy->execute(['id' => $id, 'mid' => $medicoId, 'tid' => $tenantId]);
+                $legacyTemplate = $legacy->fetch(\PDO::FETCH_ASSOC);
+                if (!$legacyTemplate) {
+                    $this->json(['ok' => false, 'msg' => 'Máscara não encontrada ou sem permissão de edição.'], 404);
+                    return;
+                }
+                $secaoExame = (string) ($legacyTemplate['secao_exame'] ?? '');
+                $secaoRecomendacao = (string) ($legacyTemplate['secao_recomendacao'] ?? '');
+
                 // Atualizar — garante que pertence ao médico e tenant
                 $stmt = $pdo->prepare("
                     UPDATE report_templates SET
