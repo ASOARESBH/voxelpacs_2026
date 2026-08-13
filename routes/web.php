@@ -86,7 +86,10 @@ Router::post('/api/medicos/{id}/permissao-ver-medico-laudo', 'MedicosController@
 // ── Templates / Máscaras de Laudo ──────────────────────────────────────────
 Router::get('/api/medicos/{medicoId}/templates',           'TemplatesController@listar');
 Router::post('/api/medicos/{medicoId}/templates',          'TemplatesController@salvar');
-Router::post('/api/medicos/{medicoId}/templates/importar', 'TemplatesController@importar');
+// Rotas específicas devem vir antes do alias /importar porque o Router usa first-match.
+Router::post('/api/medicos/{medicoId}/templates/importar/analisar',  'TemplatesController@analisar');
+Router::post('/api/medicos/{medicoId}/templates/importar/confirmar', 'TemplatesController@confirmar');
+Router::post('/api/medicos/{medicoId}/templates/importar',           'TemplatesController@importar');
 Router::post('/api/medicos/{medicoId}/templates/{id}/excluir', 'TemplatesController@excluir');
 Router::get('/medicos/{medicoId}/mascaras/{mascaraId}/visualizar', 'TemplatesController@visualizar');
 Router::get('/api/templates/buscar',                       'TemplatesController@buscar');

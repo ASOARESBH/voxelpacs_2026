@@ -2,11 +2,13 @@
 namespace App\Controllers;
 
 use App\Core\Access\MedicoAccess;
+use App\Core\Audit\AuditLogger;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
+use App\Services\MascaraDocxImportService;
 
 /**
  * TemplatesController — Módulo de Máscaras/Templates de Laudo
@@ -16,8 +18,10 @@ use App\Core\TenantContext;
  *   POST /api/medicos/{medicoId}/templates          → salvar()
  *   PUT  /api/medicos/{medicoId}/templates/{id}     → salvar() (com id no body)
  *   DELETE /api/medicos/{medicoId}/templates/{id}   → excluir()
- *   POST /api/medicos/{medicoId}/templates/importar → importar() (upload DOCX)
- *   GET  /api/templates/buscar                      → buscar() (para o laudário)
+ *   POST /api/medicos/{medicoId}/templates/importar/analisar  → analisar() (prévia DOCX)
+ *   POST /api/medicos/{medicoId}/templates/importar/confirmar → confirmar() (persistência revisada)
+ *   POST /api/medicos/{medicoId}/templates/importar           → importar() (alias legado da prévia)
+ *   GET  /api/templates/buscar                                 → buscar() (para o laudário)
  *   GET  /api/templates/auto                        → autoCarregar() (por study_description)
  */
 class TemplatesController extends Controller
@@ -246,13 +250,15 @@ class TemplatesController extends Controller
                 // Criar novo
                 $stmt = $pdo->prepare("
                     INSERT INTO report_templates
-                        (tenant_id, medico_id, nome, modalidade, compartilhar,
-                         study_description_tag, secao_exame, secao_tecnica,
-                         secao_achados, secao_conclusao, secao_recomendacao, ativo)
+                        (tenant_id, medico_id, origem, arquivo_origem, revisar,
+                         nome, modalidade, compartilhar, study_description_tag,
+                         secao_exame, secao_tecnica, secao_achados,
+                         secao_conclusao, secao_recomendacao, ativo)
                     VALUES
-                        (:tid, :mid, :nome, :modalidade, :compartilhar,
-                         :study_desc, :s_exame, :s_tecnica,
-                         :s_achados, :s_conclusao, :s_recomendacao, 1)
+                        (:tid, :mid, 'manual', NULL, 0,
+                         :nome, :modalidade, :compartilhar, :study_desc,
+                         :s_exame, :s_tecnica, :s_achados,
+                         :s_conclusao, :s_recomendacao, 1)
                 ");
                 $stmt->execute([
                     'tid'            => $tenantId,
@@ -299,136 +305,223 @@ class TemplatesController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // POST /api/medicos/{medicoId}/templates/importar
-    // Importa templates de um arquivo DOCX ou JSON
+    // POST /api/medicos/{medicoId}/templates/importar/analisar
+    // Analisa DOCX sem persistir nenhuma máscara.
     // ══════════════════════════════════════════════════════════════════════════
+    public function analisar(int $medicoId): void
+    {
+        if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
+        $this->tenantId();
+
+        try {
+            $arquivo = $this->validarUploadDocx($_FILES['arquivo'] ?? null);
+            $mascaras = (new MascaraDocxImportService())->analisar($arquivo['tmp_name']);
+            $totalRevisar = count(array_filter($mascaras, static fn(array $mascara): bool => !empty($mascara['revisar'])));
+
+            $this->json([
+                'ok' => true,
+                'mascaras' => $mascaras,
+                'arquivo_nome' => $arquivo['nome'],
+                'total' => count($mascaras),
+                'total_revisar' => $totalRevisar,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Logger::error('TemplatesController::analisar error', [
+                'medico_id' => $medicoId,
+                'msg' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Não foi possível analisar o DOCX enviado.'], 500);
+        }
+    }
+
+    // Mantém compatibilidade com a rota antiga, mas nunca grava antes da revisão.
     public function importar(int $medicoId): void
+    {
+        $this->analisar($medicoId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // POST /api/medicos/{medicoId}/templates/importar/confirmar
+    // Persiste somente máscaras selecionadas e revisadas pelo médico.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function confirmar(int $medicoId): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
         if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
         $tenantId = $this->tenantId();
-
-        // Aceita JSON no body (lista de templates pré-processados)
         $input = $this->getJsonInput();
-        if (!empty($input['templates']) && is_array($input['templates'])) {
-            $this->importarJson($medicoId, $tenantId, $input['templates']);
-            return;
-        }
 
-        // Aceita upload de arquivo DOCX
-        if (!empty($_FILES['arquivo'])) {
-            $this->importarDocx($medicoId, $tenantId, $_FILES['arquivo']);
-            return;
-        }
-
-        $this->json(['ok' => false, 'msg' => 'Envie um arquivo DOCX ou JSON com os templates.'], 422);
-    }
-
-    private function importarJson(int $medicoId, int $tenantId, array $templates): void
-    {
         try {
-            $pdo       = Database::getInstance();
-            $importados = 0;
-            foreach ($templates as $tpl) {
-                $nome = trim($tpl['nome'] ?? '');
-                if (!$nome) continue;
-                // Evitar duplicatas
-                $check = $pdo->prepare("SELECT id FROM report_templates WHERE tenant_id = :tid AND medico_id = :mid AND nome = :nome AND ativo = 1 LIMIT 1");
-                $check->execute(['tid' => $tenantId, 'mid' => $medicoId, 'nome' => $nome]);
-                if ($check->fetchColumn()) continue;
+            $mascaras = $this->prepararMascarasImportacao($input['mascaras'] ?? []);
+            $arquivoOrigem = $this->sanitizarArquivoOrigem($input['arquivo_nome'] ?? 'mascaras.docx');
+            $totalRevisar = count(array_filter($mascaras, static fn(array $mascara): bool => $mascara['revisar'] === 1));
 
-                $pdo->prepare("
-                    INSERT INTO report_templates
-                        (tenant_id, medico_id, nome, modalidade, compartilhar,
-                         study_description_tag, secao_exame, secao_tecnica,
-                         secao_achados, secao_conclusao, secao_recomendacao, ativo)
-                    VALUES (:tid, :mid, :nome, :modalidade, :compartilhar,
-                            :study_desc, :s_exame, :s_tecnica,
-                            :s_achados, :s_conclusao, :s_recomendacao, 1)
-                ")->execute([
-                    'tid'            => $tenantId,
-                    'mid'            => $medicoId,
-                    'nome'           => $nome,
-                    'modalidade'     => $tpl['modalidade'] ?? 'CT',
-                    'compartilhar'   => (int) ($tpl['compartilhar'] ?? 0),
-                    'study_desc'     => $tpl['study_description_tag'] ?? null,
-                    's_exame'        => $tpl['secao_exame']        ?? '',
-                    's_tecnica'      => $tpl['secao_tecnica']      ?? '',
-                    's_achados'      => $tpl['secao_achados']      ?? '',
-                    's_conclusao'    => $tpl['secao_conclusao']    ?? '',
-                    's_recomendacao' => $tpl['secao_recomendacao'] ?? '',
-                ]);
-                $importados++;
+            $pdo = Database::getInstance();
+            $pdo->beginTransaction();
+            try {
+                $existe = $pdo->prepare(
+                    'SELECT id FROM report_templates
+                     WHERE tenant_id = :tid AND medico_id = :mid AND nome = :nome AND ativo = 1
+                     LIMIT 1'
+                );
+                $inserir = $pdo->prepare(
+                    'INSERT INTO report_templates
+                        (tenant_id, medico_id, origem, arquivo_origem, revisar,
+                         nome, modalidade, compartilhar, study_description_tag,
+                         secao_exame, secao_tecnica, secao_achados,
+                         secao_conclusao, secao_recomendacao, ativo)
+                     VALUES
+                        (:tid, :mid, \'importado\', :arquivo_origem, :revisar,
+                         :nome, :modalidade, 0, :study_description_tag,
+                         \'\', :secao_tecnica, :secao_achados,
+                         :secao_conclusao, \'\', 1)'
+                );
+
+                $importados = 0;
+                $ignorados = 0;
+                foreach ($mascaras as $mascara) {
+                    $existe->execute([
+                        'tid' => $tenantId,
+                        'mid' => $medicoId,
+                        'nome' => $mascara['nome'],
+                    ]);
+                    if ($existe->fetchColumn()) {
+                        $ignorados++;
+                        continue;
+                    }
+
+                    $inserir->execute([
+                        'tid' => $tenantId,
+                        'mid' => $medicoId,
+                        'arquivo_origem' => $arquivoOrigem,
+                        'revisar' => $mascara['revisar'],
+                        'nome' => $mascara['nome'],
+                        'modalidade' => $mascara['modalidade'],
+                        'study_description_tag' => $mascara['study_description_tag'],
+                        'secao_tecnica' => $mascara['secao_tecnica'],
+                        'secao_achados' => $mascara['secao_achados'],
+                        'secao_conclusao' => $mascara['secao_conclusao'],
+                    ]);
+                    $importados++;
+                }
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $e;
             }
-            Logger::info('TemplatesController::importarJson', ['importados' => $importados, 'medico_id' => $medicoId]);
-            $this->json(['ok' => true, 'importados' => $importados, 'msg' => "$importados template(s) importado(s) com sucesso."]);
+
+            // Um único evento resume o lote; nunca há auditoria por máscara.
+            AuditLogger::log('importar_mascaras_docx', 'medico', $medicoId, [
+                'arquivo' => $arquivoOrigem,
+                'total_selecionadas' => count($mascaras),
+                'total_importadas' => $importados,
+                'total_ignoradas_duplicadas' => $ignorados,
+                'total_revisar' => $totalRevisar,
+            ], $tenantId);
+
+            $this->json([
+                'ok' => true,
+                'importados' => $importados,
+                'ignorados' => $ignorados,
+                'msg' => $importados . ' máscara(s) importada(s) com sucesso.',
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
-            Logger::error('TemplatesController::importarJson error', ['msg' => $e->getMessage()]);
-            $this->json(['ok' => false, 'msg' => 'Erro ao importar templates.'], 500);
+            Logger::error('TemplatesController::confirmar error', [
+                'medico_id' => $medicoId,
+                'msg' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Não foi possível confirmar a importação das máscaras.'], 500);
         }
     }
 
-    private function importarDocx(int $medicoId, int $tenantId, array $file): void
+    /** @return array{tmp_name:string,nome:string} */
+    private function validarUploadDocx(mixed $arquivo): array
     {
-        // Processar DOCX via Python (disponível no servidor)
-        $tmpPath = tempnam(sys_get_temp_dir(), 'voxel_tpl_') . '.docx';
-        move_uploaded_file($file['tmp_name'], $tmpPath);
-
-        $script = <<<'PYEOF'
-import sys, json
-from docx import Document
-
-doc = Document(sys.argv[1])
-templates = []
-current = None
-
-for para in doc.paragraphs:
-    text = para.text.strip()
-    if not text:
-        continue
-    if para.style.name in ('Heading 1', 'Heading 2', 'Heading 3'):
-        if current:
-            templates.append(current)
-        current = {'nome': text, 'secao_exame': '', 'secao_tecnica': '', 'secao_achados': '', 'secao_conclusao': '', 'secao_recomendacao': '', 'modalidade': 'CT', 'compartilhar': 0, 'study_description_tag': text}
-    elif current:
-        label = text.lower()
-        if 'método' in label or 'metodo' in label or 'técnica' in label or 'tecnica' in label:
-            current['_section'] = 'tecnica'
-        elif 'análise' in label or 'analise' in label or 'achado' in label:
-            current['_section'] = 'achados'
-        elif 'conclus' in label:
-            current['_section'] = 'conclusao'
-        elif 'recomend' in label:
-            current['_section'] = 'recomendacao'
-        else:
-            section = current.get('_section', 'exame')
-            key = 'secao_' + section
-            current[key] = (current.get(key, '') + '<p>' + text + '</p>').strip()
-
-if current:
-    templates.append(current)
-
-# Limpar _section
-for t in templates:
-    t.pop('_section', None)
-
-print(json.dumps(templates, ensure_ascii=False))
-PYEOF;
-
-        $scriptPath = tempnam(sys_get_temp_dir(), 'voxel_py_') . '.py';
-        file_put_contents($scriptPath, $script);
-
-        $output = shell_exec("python3 " . escapeshellarg($scriptPath) . " " . escapeshellarg($tmpPath) . " 2>/dev/null");
-        unlink($tmpPath);
-        unlink($scriptPath);
-
-        $templates = json_decode($output ?: '[]', true);
-        if (!is_array($templates)) {
-            $this->json(['ok' => false, 'msg' => 'Não foi possível processar o arquivo DOCX.'], 422);
-            return;
+        if (!is_array($arquivo) || !isset($arquivo['error'], $arquivo['tmp_name'], $arquivo['name'])) {
+            throw new \InvalidArgumentException('Selecione um arquivo DOCX para análise.');
+        }
+        if ((int) $arquivo['error'] !== UPLOAD_ERR_OK) {
+            throw new \InvalidArgumentException('O upload do DOCX falhou. Selecione o arquivo novamente.');
+        }
+        if (!is_uploaded_file((string) $arquivo['tmp_name'])) {
+            throw new \InvalidArgumentException('Upload DOCX inválido.');
+        }
+        if ((int) ($arquivo['size'] ?? 0) <= 0 || (int) ($arquivo['size'] ?? 0) > 15 * 1024 * 1024) {
+            throw new \InvalidArgumentException('O DOCX deve ter entre 1 byte e 15 MB.');
         }
 
-        $this->importarJson($medicoId, $tenantId, $templates);
+        $nome = $this->sanitizarArquivoOrigem($arquivo['name']);
+        if (strtolower(substr($nome, -5)) !== '.docx') {
+            throw new \InvalidArgumentException('Formato inválido. Envie exclusivamente um arquivo DOCX.');
+        }
+
+        $handle = @fopen((string) $arquivo['tmp_name'], 'rb');
+        $assinatura = $handle ? fread($handle, 4) : false;
+        if (is_resource($handle)) fclose($handle);
+        if ($assinatura !== "PK\x03\x04") {
+            throw new \InvalidArgumentException('Arquivo DOCX inválido: a assinatura ZIP esperada não foi encontrada.');
+        }
+
+        return ['tmp_name' => (string) $arquivo['tmp_name'], 'nome' => $nome];
+    }
+
+    /** @return array<int,array{nome:string,modalidade:string,study_description_tag:string,secao_tecnica:string,secao_achados:string,secao_conclusao:string,revisar:int}> */
+    private function prepararMascarasImportacao(mixed $mascaras): array
+    {
+        if (!is_array($mascaras) || !$mascaras) {
+            throw new \InvalidArgumentException('Selecione ao menos uma máscara para importar.');
+        }
+        if (count($mascaras) > 100) {
+            throw new \InvalidArgumentException('O lote de importação aceita no máximo 100 máscaras.');
+        }
+
+        $preparadas = [];
+        $nomesRecebidos = [];
+        foreach ($mascaras as $mascara) {
+            if (!is_array($mascara)) continue;
+            $nome = trim(strip_tags((string) ($mascara['nome'] ?? '')));
+            $nome = substr($nome, 0, 255);
+            if ($nome === '') continue;
+
+            // A mesma máscara pode ser marcada duas vezes no browser; não deixe
+            // uma seleção repetida gerar duas linhas no mesmo lote.
+            $chaveNome = strtolower($nome);
+            if (isset($nomesRecebidos[$chaveNome])) continue;
+            $nomesRecebidos[$chaveNome] = true;
+
+            $modalidade = strtoupper(trim((string) ($mascara['modalidade'] ?? '')));
+            $modalidade = preg_replace('/[^A-Z0-9_-]/', '', $modalidade) ?? '';
+            $modalidade = substr($modalidade, 0, 16);
+            $studyDescription = trim(strip_tags((string) ($mascara['study_description_tag'] ?? $nome)));
+
+            $preparadas[] = [
+                'nome' => $nome,
+                'modalidade' => $modalidade,
+                'study_description_tag' => substr($studyDescription, 0, 255),
+                'secao_tecnica' => $this->sanitizeSectionHtml($mascara['secao_tecnica'] ?? ''),
+                'secao_achados' => $this->sanitizeSectionHtml($mascara['secao_achados'] ?? ''),
+                'secao_conclusao' => $this->sanitizeSectionHtml($mascara['secao_conclusao'] ?? ''),
+                'revisar' => !empty($mascara['revisar']) ? 1 : 0,
+            ];
+        }
+
+        if (!$preparadas) {
+            throw new \InvalidArgumentException('Nenhuma máscara válida foi selecionada para importação.');
+        }
+        return $preparadas;
+    }
+
+    private function sanitizarArquivoOrigem(mixed $nome): string
+    {
+        $nome = basename(str_replace('\\', '/', (string) $nome));
+        $nome = preg_replace('/[^A-Za-z0-9._-]+/', '_', $nome) ?? '';
+        $nome = trim($nome, '._-');
+        return substr($nome !== '' ? $nome : 'mascaras.docx', 0, 255);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

@@ -1282,8 +1282,37 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
         <div style="padding:1rem 1.5rem;border-top:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:flex-end;gap:.75rem;">
             <button type="button" class="btn-pacs-outline" onclick="fecharModalImportar()">Cancelar</button>
             <button type="button" class="btn-pacs-primary" onclick="executarImportar()" id="btnExecutarImportar">
-                <i class="fa fa-upload me-1"></i> Importar
+                <i class="fa fa-magnifying-glass me-1"></i> Analisar e Revisar
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL REVISAR IMPORTAÇÃO DOCX ───────────────────────────────────────── -->
+<div id="modalRevisarImportacao" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.72);overflow-y:auto;">
+    <div style="max-width:860px;margin:3rem auto;background:var(--pacs-card-bg,#1e2330);border:1px solid var(--pacs-border,#2d3244);border-radius:12px;overflow:hidden;">
+        <div style="padding:1rem 1.5rem;border-bottom:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:space-between;align-items:center;gap:1rem;">
+            <div>
+                <h5 id="revisarImportacaoTitulo" style="margin:0;font-size:1rem;font-weight:700;"><i class="fa fa-list-check me-2"></i> Revisar Máscaras Importadas</h5>
+                <small id="revisarImportacaoSubtitulo" style="color:var(--pacs-text-muted);"></small>
+            </div>
+            <button type="button" onclick="cancelarRevisaoImportacao()" style="background:transparent;border:none;color:var(--pacs-text-muted);font-size:1.2rem;cursor:pointer;" title="Cancelar revisão"><i class="fa fa-xmark"></i></button>
+        </div>
+        <div style="padding:1rem 1.5rem .5rem;">
+            <div style="padding:.65rem .8rem;border-radius:7px;background:rgba(79,195,247,.09);color:var(--pacs-text-muted);font-size:.8rem;">
+                <i class="fa fa-circle-info me-1" style="color:#4fc3f7;"></i>
+                Revise a seleção e a modalidade sugerida. Máscaras destacadas em laranja precisam de atenção antes do uso.
+            </div>
+        </div>
+        <div id="revisarImportacaoLista" style="padding:.5rem 1.5rem 1.25rem;max-height:55vh;overflow-y:auto;"></div>
+        <div style="padding:1rem 1.5rem;border-top:1px solid var(--pacs-border,#2d3244);display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;">
+            <span id="revisarImportacaoContador" style="font-size:.82rem;color:var(--pacs-text-muted);"></span>
+            <div style="display:flex;gap:.75rem;">
+                <button type="button" class="btn-pacs-outline" onclick="cancelarRevisaoImportacao()">Cancelar</button>
+                <button type="button" class="btn-pacs-primary" onclick="confirmarImportacaoRevisada()" id="btnConfirmarImportacao">
+                    <i class="fa fa-file-import me-1"></i> Importar selecionadas
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -1666,6 +1695,8 @@ const MASCARA_SECOES_EDITAVEIS = ['tecnica', 'achados', 'conclusao'];
 let _mascarasAll = [];
 let _mascaraEditors = {};
 let _mascaraLegacySecoes = { exame: '', recomendacao: '' };
+let _mascarasImportacao = [];
+let _arquivoOrigemImportacao = '';
 
 // Carrega a lista quando a aba "Máscaras" (Bootstrap tabs) é aberta — em vez
 // de recarregar toda vez, evita chamada redundante se o médico só olhar e
@@ -1705,6 +1736,8 @@ function renderizarMascaras(lista) {
             t.modalidade ? `<span class="mascara-badge mascara-badge-modal">${escHtml(t.modalidade)}</span>` : '',
             t.compartilhar == 1 ? '<span class="mascara-badge mascara-badge-shared"><i class="fa fa-share-nodes"></i> Compartilhado</span>' : '',
             t.study_description_tag ? '<span class="mascara-badge mascara-badge-auto"><i class="fa fa-tag"></i> Auto</span>' : '',
+            t.origem === 'importado' ? '<span class="mascara-badge" style="background:rgba(79,195,247,.15);color:#4fc3f7;font-size:.65rem;" title="Importada de ' + escHtml(t.arquivo_origem || '') + '"><i class="fa fa-file-import"></i> Importada</span>' : '',
+            t.revisar == 1 ? '<span class="mascara-badge" style="background:rgba(255,152,0,.15);color:#ff9800;font-size:.65rem;" title="Revise o conteúdo antes de usar"><i class="fa fa-triangle-exclamation"></i> Revisar</span>' : '',
         ].filter(Boolean).join(' ');
         const meta = [
             t.study_description_tag ? t.study_description_tag : null,
@@ -1879,32 +1912,144 @@ function fecharModalImportar() {
 function executarImportar() {
     const arquivo = document.getElementById('importarArquivo').files[0];
     if (!arquivo) { alert('Selecione um arquivo .docx'); return; }
+
     const btn = document.getElementById('btnExecutarImportar');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Importando...';
     const status = document.getElementById('importarStatus');
-    status.innerHTML = '<span style="color:#f59e0b;">Processando arquivo...</span>';
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Analisando...';
+    status.innerHTML = '<span style="color:#f59e0b;">Analisando o DOCX sem salvar máscaras...</span>';
+
     const formData = new FormData();
     formData.append('arquivo', arquivo);
-    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/importar', {
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/importar/analisar', {
         method: 'POST',
         body: formData
     })
     .then(r => r.json())
     .then(data => {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-upload me-1"></i> Importar';
-        if (data.ok) {
-            status.innerHTML = '<span style="color:#22c55e;"><i class="fa fa-circle-check me-1"></i>' + data.msg + '</span>';
-            setTimeout(() => { fecharModalImportar(); carregarMascaras(); }, 1500);
-        } else {
-            status.innerHTML = '<span style="color:#e05252;"><i class="fa fa-triangle-exclamation me-1"></i>' + (data.msg || 'Erro ao importar.') + '</span>';
+        btn.innerHTML = '<i class="fa fa-magnifying-glass me-1"></i> Analisar e Revisar';
+        if (!data.ok) {
+            status.innerHTML = '<span style="color:#e05252;"><i class="fa fa-triangle-exclamation me-1"></i>' + escHtml(data.msg || 'Erro ao analisar o DOCX.') + '</span>';
+            return;
         }
+
+        _mascarasImportacao = Array.isArray(data.mascaras) ? data.mascaras : [];
+        _arquivoOrigemImportacao = data.arquivo_nome || arquivo.name || 'mascaras.docx';
+        if (!_mascarasImportacao.length) {
+            status.innerHTML = '<span style="color:#e05252;">Nenhuma máscara foi encontrada no DOCX.</span>';
+            return;
+        }
+        fecharModalImportar();
+        abrirRevisaoImportacao(data.total_revisar || 0);
     })
     .catch(() => {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-upload me-1"></i> Importar';
+        btn.innerHTML = '<i class="fa fa-magnifying-glass me-1"></i> Analisar e Revisar';
         status.innerHTML = '<span style="color:#e05252;">Erro de conexão.</span>';
+    });
+}
+
+function abrirRevisaoImportacao(totalRevisar) {
+    document.getElementById('revisarImportacaoTitulo').innerHTML = '<i class="fa fa-list-check me-2"></i> Revisar Máscaras Importadas (' + _mascarasImportacao.length + ' detectadas)';
+    document.getElementById('revisarImportacaoSubtitulo').textContent = _arquivoOrigemImportacao + (totalRevisar ? ' · ' + totalRevisar + ' requer(em) revisão' : ' · pronto para confirmar');
+    renderizarRevisaoImportacao();
+    document.getElementById('modalRevisarImportacao').style.display = 'block';
+}
+
+function textoPreviewImportacao(html) {
+    const texto = String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return texto.length > 80 ? texto.slice(0, 80) + '…' : texto || 'Sem achados identificados';
+}
+
+function opcoesModalidadeImportacao(selecionada) {
+    const modalidades = ['', 'CR', 'CT', 'MR', 'US', 'DX', 'MG', 'NM', 'PT', 'OT'];
+    return modalidades.map(modalidade => {
+        const texto = modalidade || 'Não definida';
+        return '<option value="' + modalidade + '"' + (modalidade === selecionada ? ' selected' : '') + '>' + texto + '</option>';
+    }).join('');
+}
+
+function renderizarRevisaoImportacao() {
+    const lista = document.getElementById('revisarImportacaoLista');
+    lista.innerHTML = _mascarasImportacao.map((mascara, indice) => {
+        const requerRevisao = !!mascara.revisar;
+        const corBorda = requerRevisao ? '#f59e0b' : 'var(--pacs-border,#2d3244)';
+        const fundo = requerRevisao ? 'rgba(245,158,11,.08)' : 'rgba(0,0,0,.08)';
+        const aviso = requerRevisao
+            ? '<span class="mascara-badge" style="background:rgba(255,152,0,.15);color:#ff9800;font-size:.65rem;"><i class="fa fa-triangle-exclamation"></i> Revisar</span>'
+            : '<span class="mascara-badge" style="background:rgba(34,197,94,.12);color:#22c55e;font-size:.65rem;"><i class="fa fa-circle-check"></i> Detectada</span>';
+        return '<div style="border:1px solid ' + corBorda + ';background:' + fundo + ';border-radius:8px;padding:.8rem;margin-bottom:.65rem;">'
+            + '<div style="display:flex;gap:.75rem;align-items:flex-start;">'
+            + '<input type="checkbox" class="importacao-selecao" data-indice="' + indice + '" checked onchange="atualizarContadorImportacao()" style="margin-top:.35rem;accent-color:#1a56db;">'
+            + '<div style="flex:1;min-width:0;">'
+            + '<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">'
+            + '<strong style="font-size:.86rem;">' + escHtml(mascara.nome) + '</strong>' + aviso
+            + '</div>'
+            + '<div style="display:flex;align-items:center;gap:.5rem;margin:.45rem 0;flex-wrap:wrap;">'
+            + '<label style="font-size:.74rem;color:var(--pacs-text-muted);">Modalidade</label>'
+            + '<select class="medico-select" style="width:128px;height:30px;padding:.15rem .4rem;font-size:.76rem;" onchange="atualizarModalidadeImportacao(' + indice + ', this.value)">'
+            + opcoesModalidadeImportacao(String(mascara.modalidade || '').toUpperCase())
+            + '</select>'
+            + '</div>'
+            + '<div style="font-size:.76rem;color:var(--pacs-text-muted);line-height:1.4;"><strong>Achados:</strong> ' + escHtml(textoPreviewImportacao(mascara.secao_achados)) + '</div>'
+            + '</div></div></div>';
+    }).join('');
+    atualizarContadorImportacao();
+}
+
+function atualizarModalidadeImportacao(indice, modalidade) {
+    if (_mascarasImportacao[indice]) _mascarasImportacao[indice].modalidade = modalidade;
+}
+
+function atualizarContadorImportacao() {
+    const total = Array.from(document.querySelectorAll('.importacao-selecao:checked')).length;
+    document.getElementById('revisarImportacaoContador').textContent = total + ' de ' + _mascarasImportacao.length + ' máscara(s) selecionada(s)';
+    document.getElementById('btnConfirmarImportacao').innerHTML = '<i class="fa fa-file-import me-1"></i> Importar ' + total + ' selecionada(s)';
+}
+
+function cancelarRevisaoImportacao() {
+    document.getElementById('modalRevisarImportacao').style.display = 'none';
+    _mascarasImportacao = [];
+    _arquivoOrigemImportacao = '';
+    abrirImportarMascara();
+}
+
+function confirmarImportacaoRevisada() {
+    const selecionadas = Array.from(document.querySelectorAll('.importacao-selecao:checked'))
+        .map(input => _mascarasImportacao[Number(input.dataset.indice)])
+        .filter(Boolean);
+    if (!selecionadas.length) {
+        alert('Selecione ao menos uma máscara para importar.');
+        return;
+    }
+
+    const btn = document.getElementById('btnConfirmarImportacao');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Salvando...';
+    fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates/importar/confirmar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ arquivo_nome: _arquivoOrigemImportacao, mascaras: selecionadas })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (!data.ok) {
+            atualizarContadorImportacao();
+            alert('Erro: ' + (data.msg || 'Não foi possível importar as máscaras.'));
+            return;
+        }
+        document.getElementById('modalRevisarImportacao').style.display = 'none';
+        _mascarasImportacao = [];
+        _arquivoOrigemImportacao = '';
+        carregarMascaras();
+        alert(data.msg + (data.ignorados ? ' ' + data.ignorados + ' duplicada(s) foram ignoradas.' : ''));
+    })
+    .catch(() => {
+        btn.disabled = false;
+        atualizarContadorImportacao();
+        alert('Erro de conexão.');
     });
 }
 
