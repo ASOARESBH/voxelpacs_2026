@@ -55,7 +55,7 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 
 ## MedicoAccess — escopo de cadastro médico (2026-08-13)
 
-`App\Core\Access\MedicoAccess` resolve, por request, o vínculo entre `Auth::userId()`, o tenant ativo e `bi_medicos.usuario_id`. Para perfil `medico` vinculado, expõe `isRestricted()` e `currentMedicoId()`; administradores de tenant e superadministradores não entram nesse escopo. Em erro de resolução para perfil médico, o helper falha fechado: não libera cadastros de terceiros.
+`App\Core\Access\MedicoAccess` resolve, por request, o vínculo entre `Auth::userId()`, o tenant ativo e `bi_medicos.usuario_id`. Para perfil `medico` vinculado, expõe `isRestricted()`, `currentMedicoId()`, `allowedInstitutionNames()` e `isInstitutionAllowed()`; administradores de tenant e superadministradores não entram nesse escopo. Em erro de resolução para perfil médico, o helper falha fechado: não libera cadastros de terceiros.
 
 ### Onde é aplicado
 
@@ -64,6 +64,7 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 - `UnidadesController`: médico restrito recebe `403` em listagem, CRUD e APIs administrativas; `apiInfo()` só continua acessível para a integração com Bearer de unidade validado.
 - `pacs_header.php`: a navegação **Unidades** não é renderizada para médico restrito. Esta é apenas a camada visual; o backend continua sendo a proteção efetiva.
 - `MedicosController` + `MedicoService`: a escrita do vínculo `bi_medico_unidades` é uma ação administrativa de escopo clínico. Pela regra **Leitura B**, confirmada em 2026-08-13, somente `superadmin` ou usuário com `role = admin` pode criar ou sincronizar `unidades[]`. Médico, analista e viewer continuam vendo os vínculos atuais no formulário, mas os checkboxes ficam desabilitados e o backend ignora `unidades[]` mesmo em requisição POST forjada; os demais dados de contato e endereço ainda são salvos normalmente.
+- `EstudosController::renderWorklist()`: para médico restrito, a Worklist, seus contadores e o dropdown de Unidade usam `MedicoAccess::allowedInstitutionNames()` como fonte única. Um `?unidade=` fora da lista é descartado por `isInstitutionAllowed()`, evitando resultado vazio por condições contraditórias. Perfis não restritos preservam a lista operacional de Unidades do tenant.
 
 ### Gaps conhecidos fora do escopo
 
