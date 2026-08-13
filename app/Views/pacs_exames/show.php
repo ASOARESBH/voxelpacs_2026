@@ -18,7 +18,7 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
         <?php if ($orthancBase && $estudo['orthanc_id']): ?>
             <a href="<?= $orthancBase ?>/app/explorer.html#study?uuid=<?= urlencode($estudo['orthanc_id']) ?>"
                target="_blank" class="btn btn-outline-primary btn-sm">
-                <i class="fa fa-external-link-alt me-1"></i> Abrir no Orthanc
+                <i class="fa fa-external-link-alt me-1"></i> Abrir no <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?>
             </a>
         <?php endif; ?>
         <a href="/pacs/exames" class="btn btn-outline-secondary btn-sm">

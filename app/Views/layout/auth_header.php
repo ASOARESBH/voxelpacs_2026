@@ -18,7 +18,7 @@
         <p>PACS em nuvem para teleradiologia. Conecte clínicas, médicos laudadores e pacientes num único sistema seguro e rastreável.</p>
 
         <ul class="benefits-list">
-            <li><i class="fa fa-bolt"></i> Worklist em tempo real, direto do Orthanc PACS</li>
+            <li><i class="fa fa-bolt"></i> Worklist em tempo real, direto do <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?></li>
             <li><i class="fa fa-file-medical"></i> Laudo estruturado com exportação em PDF</li>
             <li><i class="fa fa-users"></i> Multi-tenant: várias clínicas, um único acesso</li>
             <li><i class="fa fa-chart-line"></i> Analytics e SLA de laudo em tempo real</li>

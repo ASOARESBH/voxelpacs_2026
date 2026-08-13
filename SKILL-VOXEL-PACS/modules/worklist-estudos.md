@@ -139,5 +139,11 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção**: o backend agora usa `situacao_rapida` somente quando `situacao` está vazio. No frontend, o select principal limpa `situacao_rapida` ao mudar; o auto-submit central da Worklist então aplica imediatamente a última seleção. O atalho rápido continua sincronizando seu valor com o select principal e disparando o mesmo auto-submit. As opções ativas no checkout são `NOVO`, `ABERTO`, `PENDENTE`, `A LAUDAR`, `EM LAUDO`, `RASCUNHO`, `ASSINADO`, `LIBERADO` e `PEER REVIEW`.
 
+## Marca pública do servidor PACS — 2026-08-13
+
+`App\Config\BrandConfig::PACS_SERVER_NAME` é a fonte única para o nome exibido ao usuário e seu valor é **VOXEL PACS**. A Worklist usa a constante no badge de origem e nas mensagens de download; a tela de login, o fallback do viewer e o detalhe do exame usam a mesma configuração. Assim, o usuário final não recebe rótulos "Orthanc" em fluxos clínicos ou mensagens operacionais.
+
+**Exceções deliberadas**: nomenclatura de integração continua técnica em classes, colunas, endpoints, URLs, logs e no CSS. As telas administrativas de configuração de servidor — `/platform/servidor-pacs/configurar`, Configurações PACS e o cadastro legado de servidores — podem mencionar Orthanc para que o administrador identifique corretamente o protocolo, credenciais e arquivo de configuração usados pela integração. Nenhum comportamento de sincronização, ping ou download foi alterado nesta troca visual.
+
 ## Última análise
 2026-08-13
