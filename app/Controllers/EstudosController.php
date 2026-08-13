@@ -133,6 +133,11 @@ class EstudosController extends Controller
             // 'personalizado': usa dt_inicio e dt_fim do GET
         }
 
+        // Identidade usada na posse exclusiva do estudo. A FK operacional é
+        // bi_pacs_estudos.usuario_responsavel_id -> bi_users.id.
+        $usuarioLogadoId = (int) Auth::userId();
+        $isMedicoFiltro  = false;
+
         // ── Resolução de InstitutionNames (fonte única da verdade multi-tenant) ──────────
         // Retorna array de nomes de unidades vinculadas ao tenant.
         // Usado tanto no WHERE principal quanto nos contadores/resumo para consistência.
@@ -154,8 +159,11 @@ class EstudosController extends Controller
                 );
                 $stmtMedFiltro->execute([(int)$tenantId, (int)Auth::userId()]);
                 $rowMedFiltro = $stmtMedFiltro->fetch(\PDO::FETCH_ASSOC);
-                if ($rowMedFiltro) {
+                // Um administrador pode possuir cadastro em bi_medicos, mas não
+                // deve herdar as restrições da fila clínica nem das unidades.
+                if ($rowMedFiltro && !$isAdmin) {
                     $medicoIdFiltro = (int)$rowMedFiltro['id'];
+                    $isMedicoFiltro = true;
                     $stmtMedUnid = $pdo->prepare(
                         'SELECT institution_name FROM bi_medico_unidades WHERE medico_id = ? AND institution_name IS NOT NULL'
                     );
@@ -266,6 +274,14 @@ class EstudosController extends Controller
             $params[] = '%' . $filtros['medico'] . '%';
         }
 
+        // Regra de posse exclusiva: o médico vê a fila livre (NOVO/ABERTO),
+        // mas estudos já assumidos só aparecem para o próprio responsável.
+        // Admins e demais perfis do tenant preservam a visão operacional completa.
+        if ($isMedicoFiltro && $usuarioLogadoId > 0) {
+            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?)";
+            $params[] = $usuarioLogadoId;
+        }
+
         $whereStr = implode(' AND ', $where);
         $orderCol = 'e.' . $filtros['ordenar'];
         $orderDir = $filtros['direcao'];
@@ -331,6 +347,7 @@ class EstudosController extends Controller
                     COALESCE(e.dicom_priority, '')     AS dicom_priority,
                     {$priorityEffectiveSql}            AS dicom_priority_effective,
                     COALESCE(e.assumido_por, '')       AS assumido_por,
+                    e.usuario_responsavel_id,
                     e.assumido_em,
                     e.laudo_assinado_em,
                     e.urgente_em,
@@ -544,7 +561,7 @@ class EstudosController extends Controller
             'unidades','medicos','contadores','resumo',
             'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
             'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
-            'medicoLogadoNome','podeVerMedicoLaudo'
+            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId'
         ), 'pacs');
     }
 
@@ -1037,10 +1054,15 @@ class EstudosController extends Controller
     public function contadores(): void
     {
         $pdo          = Database::getInstance();
-        $tenantId     = Auth::tenantId();
+                $tenantId     = Auth::tenantId();
         $isAdmin      = Auth::isPlatformAdmin();
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
-
+        $usuarioLogadoId = (int) Auth::userId();
+        // Administradores mantêm a visão total do tenant, mesmo que também
+        // possuam cadastro em bi_medicos por razões administrativas.
+        $perfilAdministrativo = Auth::isPlatformAdmin()
+            || in_array(Auth::perfilAtual(), ['admin', 'administrador'], true);
+        $isMedicoFiltro = false;
         // ── Mesmo padrão de filtro multi-tenant da worklist ──────────────────────
         // bi_pacs_estudos não tem tenant_id — é filtrado por institution_name
         // via InstitutionResolverService (fonte única da verdade)
@@ -1063,7 +1085,26 @@ class EstudosController extends Controller
             $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
             return;
         }
-        // bypassGlobal (superadmin fora de impersonation) = sem filtro de institution
+                // bypassGlobal (superadmin fora de impersonation) = sem filtro de institution
+
+        // Os badges precisam representar a mesma fila da worklist. Para o
+        // perfil médico, estudos em fluxo de laudo pertencem exclusivamente ao
+        // usuário que os assumiu; NOVO/ABERTO permanecem disponíveis na fila.
+        if ($tenantId && !$bypassGlobal && !$perfilAdministrativo && $usuarioLogadoId > 0) {
+            try {
+                $stmtMedico = $pdo->prepare(
+                    'SELECT id FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
+                );
+                $stmtMedico->execute([(int) $tenantId, $usuarioLogadoId]);
+                $isMedicoFiltro = (bool) $stmtMedico->fetchColumn();
+            } catch (\Throwable $ex) {
+                error_log('[EstudosController::contadores] identificação do médico: ' . $ex->getMessage());
+            }
+        }
+        if ($isMedicoFiltro) {
+            $where[]  = "(COALESCE(situacao, 'novo') IN ('novo', 'aberto') OR usuario_responsavel_id = ?)";
+            $params[] = $usuarioLogadoId;
+        }
 
         try {
             $wBase = implode(' AND ', $where);
@@ -1201,15 +1242,36 @@ class EstudosController extends Controller
                 return;
             }
 
-            // Atualiza o estudo
-            $pdo->prepare(
+            // A tomada de posse deve ser atômica: entre a leitura acima e este
+            // UPDATE outro médico pode tentar assumir o mesmo estudo. A condição
+            // impede substituição silenciosa do responsável já gravado.
+            $whereAssumir  = "id = ? AND COALESCE(situacao, 'novo') IN ('novo', 'aberto', '') AND usuario_responsavel_id IS NULL";
+            $paramsAssumir = [$nomeMedico, $userId, $estudoId];
+            if ($tenantId) {
+                $whereAssumir .= ' AND tenant_id = ?';
+                $paramsAssumir[] = $tenantId;
+            }
+            $stmtAssumir = $pdo->prepare(
                 "UPDATE bi_pacs_estudos SET
                     situacao               = 'a_laudar',
                     assumido_por           = ?,
                     assumido_em            = NOW(),
                     usuario_responsavel_id = ?
-                 WHERE id = ?"
-            )->execute([$nomeMedico, $userId, $estudoId]);
+                 WHERE {$whereAssumir}"
+            );
+            $stmtAssumir->execute($paramsAssumir);
+            if ($stmtAssumir->rowCount() !== 1) {
+                \App\Core\Logger::warning('[EstudosController::assumirEstudo] posse concorrente bloqueada', [
+                    'estudo_id' => $estudoId,
+                    'usuario_id' => $userId,
+                    'tenant_id' => $tenantId,
+                ]);
+                echo json_encode([
+                    'ok' => false,
+                    'msg' => 'Este estudo já foi assumido por outro médico. Atualize a worklist.',
+                ]);
+                return;
+            }
 
             \App\Core\Logger::info("[EstudosController::assumirEstudo] estudo_id={$estudoId} medico={$nomeMedico} user_id={$userId}");
 

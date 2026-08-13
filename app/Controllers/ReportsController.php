@@ -164,6 +164,7 @@ class ReportsController extends Controller
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
                 'report_assinado_somente_leitura' => 'Este laudo já foi assinado e não pode mais ser editado.',
                 'payload_vazio_ignorado'          => 'Não foi possível identificar o conteúdo do editor. O laudo salvo anteriormente NÃO foi apagado — recarregue a página; se o texto sumir do editor, restaure pela aba Histórico.',
+                'estudo_assumido_por_outro'       => 'Este estudo foi assumido por outro médico e não pode ser alterado.',
                 default                            => null, // sucesso — sem erro
             };
 
@@ -210,17 +211,18 @@ class ReportsController extends Controller
 
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
-                    'report_nao_encontrado'       => 'Laudo não encontrado.',
-                    'report_ja_assinado'            => 'Este laudo já foi assinado e não pode ser assinado novamente.',
-                    'peer_review_ciclo_nao_aberto'  => 'O laudo está marcado para Peer Review, mas o ciclo aberto não foi localizado.',
-                    'laudo_vazio'                   => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
-                    'chat_pendente'                 => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.',
-                    'medico_sem_assinatura_ativa'   => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
-                    'medico_assinatura_inativa'     => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',
-                    'medico_nao_vinculado'          => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
+                    'report_nao_encontrado'          => 'Laudo não encontrado.',
+                    'report_ja_assinado'             => 'Este laudo já foi assinado e não pode ser assinado novamente.',
+                    'peer_review_ciclo_nao_aberto'   => 'O laudo está marcado para Peer Review, mas o ciclo aberto não foi localizado.',
+                    'laudo_vazio'                    => 'Não é possível assinar um laudo em branco. Salve o conteúdo antes de assinar.',
+                    'chat_pendente'                  => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.',
+                    'medico_sem_assinatura_ativa'    => 'Cadastre uma assinatura na aba Assinatura do seu cadastro de médico antes de assinar laudos.',
+                    'medico_assinatura_inativa'      => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',
+                    'medico_nao_vinculado'           => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
                     'estudo_nao_encontrado'          => 'O estudo vinculado ao laudo não foi encontrado no tenant atual.',
+                    'estudo_assumido_por_outro'      => 'Este estudo foi assumido por outro médico e não pode ser assinado por sua conta.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
-                    default                          => 'Erro ao assinar.',
+                    default                           => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;

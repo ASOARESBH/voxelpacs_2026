@@ -472,10 +472,17 @@ $periodoLabel = [
                 $slaMCls = slaClass($e['assumido_em'], $fimSla);
             }
 
-            // Permissões de ação
-            $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
-            $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho','pendente']);
-            $podePeerReview = $isMedicoLogado && in_array($sit, ['assinado', 'liberado'], true)
+            // Permissões de ação: o laudo e o peer review são exclusivos do
+            // médico que assumiu. usuario_responsavel_id referencia bi_users.id.
+            $estudoPertenceAoMedico = (int) ($e['usuario_responsavel_id'] ?? 0) > 0
+                && (int) ($e['usuario_responsavel_id'] ?? 0) === (int) ($usuarioLogadoId ?? 0);
+            $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto'], true);
+            $podeLaudar  = $isMedicoLogado
+                && $estudoPertenceAoMedico
+                && in_array($sit, ['a_laudar','em_laudo','rascunho'], true);
+            $podePeerReview = $isMedicoLogado
+                && $estudoPertenceAoMedico
+                && in_array($sit, ['assinado', 'liberado'], true)
                 && !empty($e['study_instance_uid']);
 
             // Recebido há
