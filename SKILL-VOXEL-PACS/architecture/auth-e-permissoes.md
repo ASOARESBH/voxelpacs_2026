@@ -63,13 +63,14 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 - `TemplatesController` e `MedicoAssinaturaController`: guard de posse para impedir bypass por endpoints AJAX contendo `{medicoId}`.
 - `UnidadesController`: médico restrito recebe `403` em listagem, CRUD e APIs administrativas; `apiInfo()` só continua acessível para a integração com Bearer de unidade validado.
 - `pacs_header.php`: a navegação **Unidades** não é renderizada para médico restrito. Esta é apenas a camada visual; o backend continua sendo a proteção efetiva.
+- `MedicosController` + `MedicoService`: a escrita do vínculo `bi_medico_unidades` é uma ação administrativa de escopo clínico. Pela regra **Leitura B**, confirmada em 2026-08-13, somente `superadmin` ou usuário com `role = admin` pode criar ou sincronizar `unidades[]`. Médico, analista e viewer continuam vendo os vínculos atuais no formulário, mas os checkboxes ficam desabilitados e o backend ignora `unidades[]` mesmo em requisição POST forjada; os demais dados de contato e endereço ainda são salvos normalmente.
 
 ### Gaps conhecidos fora do escopo
 
 1. `/usuarios`, `/configuracoes`, `/sla-regras` e `/modalidades` ainda não aplicam uma política de autorização equivalente para perfil médico. Não foram alterados para limitar o raio desta correção.
 2. `App\Core\Permission`, `Auth::can()` e `PermissionMiddleware` continuam como infraestrutura RBAC não conectada ao despacho das rotas. Não foram removidos nem ativados nesta entrega, pois RBAC por role não substitui a regra de posse `usuário → médico`.
 3. Todo novo endpoint que receba `medicoId` pela rota ou querystring deve aplicar `MedicoAccess::currentMedicoId()` antes de consultar ou alterar dados do cadastro.
-4. A validação ponta a ponta deve ser executada manualmente com administrador, analista/viewer sem vínculo e médico vinculado; não há suíte de integração autenticada no projeto.
+4. A validação ponta a ponta deve ser executada manualmente com superadmin, administrador do tenant, analista/viewer e médico vinculado; não há suíte de integração autenticada no projeto.
 
 ## Última análise
 2026-08-13

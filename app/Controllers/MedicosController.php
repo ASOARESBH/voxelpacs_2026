@@ -96,6 +96,16 @@ class MedicosController extends Controller
         ]));
     }
 
+    /**
+     * Vínculo médico ↔ Unidade DICOM altera o escopo clínico da Worklist.
+     * Por regra de segurança, somente admin do tenant ou superadmin pode gravá-lo.
+     */
+    private function podeGerenciarUnidades(): bool
+    {
+        return \App\Core\Auth::isPlatformAdmin()
+            || (\App\Core\Auth::user()?->role === 'admin');
+    }
+
     public function store(): void
     {
         $this->denyIfRestricted();
@@ -108,7 +118,7 @@ class MedicosController extends Controller
             'post_keys' => implode(',', array_keys($_POST)),
         ]);
 
-        $resultado = $this->service->cadastrar($_POST, $tenantId);
+        $resultado = $this->service->cadastrar($_POST, $tenantId, $this->podeGerenciarUnidades());
 
         if (!$resultado['ok']) {
             Logger::error('[MedicosController::store] Cadastro falhou — redirecionando com erros', [
@@ -205,7 +215,10 @@ class MedicosController extends Controller
             'post_nome' => $_POST['nome'] ?? '(vazio)',
         ]);
 
-        $resultado = $this->service->atualizar($id, $_POST, $tenantId);
+        // Não bloqueia a atualização geral do próprio médico. Para perfis não
+        // administrativos, o serviço ignora apenas unidades[] e preserva os
+        // vínculos existentes, inclusive contra POST forjado.
+        $resultado = $this->service->atualizar($id, $_POST, $tenantId, $this->podeGerenciarUnidades());
 
         if (!$resultado['ok']) {
             Logger::error('[MedicosController::update] Atualização falhou', [

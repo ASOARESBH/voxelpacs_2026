@@ -59,9 +59,9 @@ Um usuário cujo perfil ativo no tenant é `medico` e cujo `bi_users.id` está v
 | Edição e status | Um médico só pode acessar, atualizar ou alternar o status do próprio ID; tentativas contra outro ID retornam `403`. |
 | Copilot, Workspace e permissão de visibilidade | As APIs por `{medicoId}` aplicam a mesma regra de posse. |
 | Assinaturas e máscaras | As APIs de assinatura e templates também validam o próprio médico para evitar bypass por URL/AJAX. |
-| Unidades | O menu é ocultado e todas as rotas administrativas de unidade retornam `403` para médico restrito; a API externa do Copilot continua disponível apenas quando autenticada por Bearer válido. |
+| Unidades | O menu é ocultado e todas as rotas administrativas de unidade retornam `403` para médico restrito; a API externa do Copilot continua disponível apenas quando autenticada por Bearer válido. No formulário unificado de médico, os vínculos `bi_medico_unidades` continuam visíveis, mas a gravação de `unidades[]` é exclusiva de `superadmin` ou usuário com `role = admin` (Leitura B confirmada em 2026-08-13). Médico, analista e viewer veem chips bloqueados, com aviso de permissão; o backend ignora `unidades[]` em POST não autorizado e preserva os vínculos existentes, sem impedir a atualização de contato/endereço. |
 
-A listagem usa o filtro opcional `onlyMedicoId` em `MedicoService`/`MedicoRepository`, preservando o comportamento anterior para administrador, analista e viewer. Não há migration nesta correção.
+A listagem usa o filtro opcional `onlyMedicoId` em `MedicoService`/`MedicoRepository`, preservando o comportamento anterior para administrador, analista e viewer. A exceção específica é a escrita de Unidades: somente administradores podem sincronizá-las. Não há migration nesta correção.
 
 ## Última análise
 2026-08-13
