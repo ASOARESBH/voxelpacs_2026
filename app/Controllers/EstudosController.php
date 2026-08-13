@@ -404,6 +404,7 @@ class EstudosController extends Controller
         $medicos                  = []; // array de ['id'=>int, 'nome'=>string]
         $medicoLogadoId           = null;  // id em bi_medicos do usuário logado (se for médico)
         $medicoLogadoNome         = null;  // nome do médico logado
+        $meRow                    = null;  // registro do médico logado no tenant
         $isMedicoLogado           = false; // flag: usuário logado é um médico cadastrado
         $workspaceLaudoHabilitado = false; // flag: médico tem Workspace Laudo habilitado
         // Permissão de visibilidade da coluna Médico:
@@ -430,29 +431,25 @@ class EstudosController extends Controller
                         $podeVerMedicoLaudo          = !empty($meRow['ver_medico_laudo']);
                     }
                 }
-                // Todos os perfis vêem todos os médicos ativos do tenant.
-                // O médico logado tem seu nome pré-selecionado por conveniência,
-                // mas pode alterar o filtro livremente (sem restrição de visibilidade).
-                $stmtAll = $pdo->prepare(
-                    "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome"
-                );
-                $stmtAll->execute([(int)$tenantId]);
-                $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
-                // CORREÇÃO BUG FILTROS MÉDICO (2026-07-28):
-                // NÃO pré-selecionar filtros['medico'] automaticamente.
-                //
-                // O problema: quando filtros['medico'] era pré-preenchido com o nome do médico,
-                // a query adicionava AND assumido_por LIKE '%nome%' a TODAS as buscas.
-                // Estudos com situacao='novo' têm assumido_por=NULL → eram eliminados
-                // quando o médico aplicava qualquer outro filtro (paciente, unidade, etc.).
-                //
-                // Regra correta (RBAC + Multi-Tenant):
-                //   1. Restrição de segurança: institution_name IN (tenant_names) — aplicada acima
-                //   2. Filtros opcionais: paciente, unidade, modalidade, situacao, medico, etc.
-                //      O médico PODE filtrar por si mesmo usando o dropdown, mas não é obrigatório.
-                //
-                // O médico vê todos os estudos do tenant (igual ao admin).
-                // A diferença de perfil está nos botões de ação (Assumir/Laudar), não na visibilidade.
+                // Médico restrito só pode escolher o próprio nome. Não pré-seleciona
+                // filtros['medico']: a lista vazia continua exibindo também a fila livre
+                // (NOVO/ABERTO) até que o médico escolha explicitamente seu nome.
+                $onlyMedicoId = MedicoAccess::isRestricted()
+                    ? MedicoAccess::currentMedicoId()
+                    : null;
+                if ($onlyMedicoId !== null && $meRow && (int)$meRow['id'] === $onlyMedicoId) {
+                    $medicos = [[
+                        'id'   => (int) $meRow['id'],
+                        'nome' => $meRow['nome'],
+                    ]];
+                } else {
+                    // Admin, superadmin, analista e viewer preservam a visão completa.
+                    $stmtAll = $pdo->prepare(
+                        "SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome"
+                    );
+                    $stmtAll->execute([(int)$tenantId]);
+                    $medicos = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
+                }
             } elseif ($bypassGlobal) {
                 // Superadmin sem impersonação: lista todos os médicos de todos os tenants
                 $medicos = $pdo->query(
