@@ -8,6 +8,8 @@ $unidades         = $unidades ?? [];
 $unidadesMarcadas = $unidadesMarcadas ?? [];
 $erros            = $erros ?? [];
 $estados          = \App\Core\Estados::all();
+$podeGerenciarUnidades = \App\Core\Auth::isPlatformAdmin()
+    || (\App\Core\Auth::user()?->role === 'admin');
 
 // Aba inicial (só relevante em modo edição, onde a tela usa abas) — aceita
 // ?aba=dados|copilot|mascaras, caindo em 'dados' para qualquer valor inválido/ausente.
@@ -154,6 +156,19 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     accent-color: var(--pacs-primary, #1a56db);
     width: 13px;
     height: 13px;
+}
+.medico-unidade-chip.is-locked {
+    cursor: not-allowed;
+    opacity: .62;
+    background: rgba(136,146,164,.08);
+    border-color: rgba(136,146,164,.28);
+}
+.medico-unidade-chip.is-locked:hover {
+    background: rgba(136,146,164,.08);
+    border-color: rgba(136,146,164,.28);
+}
+.medico-unidade-chip.is-locked input[type="checkbox"] {
+    cursor: not-allowed;
 }
 
 /* ── Card de máscara ─────────────────────────────────────────────────────────────────── */
@@ -714,16 +729,24 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
             <label class="medico-label">Unidades (InstitutionName DICOM)</label>
             <div style="display:flex;flex-wrap:wrap;gap:.5rem;padding:.85rem;background:var(--pacs-input-bg,#252b3b);border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;">
                 <?php foreach ($unidades as $unidade): ?>
-                    <label class="medico-unidade-chip">
+                    <?php $unidadeMarcada = in_array($unidade, $unidadesMarcadas, true); ?>
+                    <label class="medico-unidade-chip<?= !$podeGerenciarUnidades ? ' is-locked' : '' ?>">
                         <input type="checkbox"
                                name="unidades[]"
-                               value="<?= htmlspecialchars($unidade) ?>"
-                               <?= in_array($unidade, $unidadesMarcadas, true) ? 'checked' : '' ?>>
-                        <?= htmlspecialchars($unidade) ?>
+                               value="<?= htmlspecialchars($unidade, ENT_QUOTES, 'UTF-8') ?>"
+                               <?= $unidadeMarcada ? 'checked' : '' ?>
+                               <?= !$podeGerenciarUnidades ? 'disabled' : '' ?>>
+                        <?= htmlspecialchars($unidade, ENT_QUOTES, 'UTF-8') ?>
                     </label>
                 <?php endforeach; ?>
             </div>
-            <span class="medico-hint">Selecione as unidades onde este médico atua.</span>
+            <?php if ($podeGerenciarUnidades): ?>
+                <span class="medico-hint">Selecione as unidades onde este médico atua.</span>
+            <?php else: ?>
+                <p class="medico-hint" style="margin:.5rem 0 0;">
+                    <i class="fa fa-lock me-1"></i> Somente um administrador pode alterar as unidades vinculadas.
+                </p>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
     </div>

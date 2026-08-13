@@ -165,7 +165,7 @@ class MedicoService
      * Cadastra um novo médico.
      * Retorna ['ok' => true, 'id' => X] ou ['ok' => false, 'erros' => [...]]
      */
-    public function cadastrar(array $post, int $tenantId): array
+    public function cadastrar(array $post, int $tenantId, bool $podeGerenciarUnidades = false): array
     {
         $dados  = $this->normalizarPost($post);
         $erros  = $this->validar($dados, $tenantId);
@@ -181,9 +181,11 @@ class MedicoService
 
         try {
             $id = $this->repo->inserir($dados);
-            $unidades = array_filter((array) ($post['unidades'] ?? []), fn($u) => trim($u) !== '');
-            if ($unidades) {
-                $this->repo->sincronizarUnidades($id, $tenantId, $unidades);
+            if ($podeGerenciarUnidades) {
+                $unidades = array_filter((array) ($post['unidades'] ?? []), fn($u) => trim($u) !== '');
+                if ($unidades) {
+                    $this->repo->sincronizarUnidades($id, $tenantId, $unidades);
+                }
             }
             Logger::error('[MedicoService::cadastrar] Médico cadastrado com sucesso', ['id' => $id, 'nome' => $dados['nome']]);
             return ['ok' => true, 'id' => $id];
@@ -201,7 +203,7 @@ class MedicoService
      * Atualiza os dados de um médico.
      * Retorna ['ok' => true] ou ['ok' => false, 'erros' => [...]]
      */
-    public function atualizar(int $id, array $post, int $tenantId): array
+    public function atualizar(int $id, array $post, int $tenantId, bool $podeGerenciarUnidades = false): array
     {
         $dados = $this->normalizarPost($post);
         $erros = $this->validar($dados, $tenantId, $id);
@@ -216,8 +218,10 @@ class MedicoService
 
         try {
             $this->repo->atualizar($id, $tenantId, $dados);
-            $unidades = array_filter((array) ($post['unidades'] ?? []), fn($u) => trim($u) !== '');
-            $this->repo->sincronizarUnidades($id, $tenantId, $unidades);
+            if ($podeGerenciarUnidades) {
+                $unidades = array_filter((array) ($post['unidades'] ?? []), fn($u) => trim($u) !== '');
+                $this->repo->sincronizarUnidades($id, $tenantId, $unidades);
+            }
             return ['ok' => true];
         } catch (\Throwable $e) {
             Logger::error('[MedicoService::atualizar] EXCEÇÃO ao atualizar: ' . $e->getMessage(), [
