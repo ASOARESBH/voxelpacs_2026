@@ -95,6 +95,9 @@ window.VoxelReports.main = (function () {
         // O CHAT carrega o estado por HTTP; deve iniciar depois da assinatura
         // para que reports:chat-status não seja perdido.
         window.VoxelReports.chat.init(config);
+        if (window.VoxelReports.measurements) {
+            window.VoxelReports.measurements.init(config);
+        }
 
         wireTopButtons(config);
     }

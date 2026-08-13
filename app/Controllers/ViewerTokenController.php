@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Services\ViewerMeasurementService;
 
 /**
  * ViewerTokenController
@@ -55,7 +56,8 @@ class ViewerTokenController extends Controller
         try {
             // Buscar token válido (não expirado)
             $stmt = $pdo->prepare("
-                SELECT id, study_instance_uid, orthanc_id, expires_at, usado, usos
+                SELECT id, estudo_id, tenant_id, usuario_id, study_instance_uid,
+                       orthanc_id, expires_at, usado, usos
                 FROM pacs_viewer_tokens
                 WHERE token = :token
                   AND expires_at > NOW()
@@ -89,11 +91,26 @@ class ViewerTokenController extends Controller
             error_log('[ViewerToken] Erro ao registrar uso: ' . $e->getMessage());
         }
 
+        // Emite credencial exclusiva do adapter de medições. O valor bruto é
+        // entregue apenas no fragmento (#), que não chega ao Nginx nem fica em logs.
+        $adapterToken = null;
+        if (!empty($row['estudo_id'])) {
+            try {
+                $adapterToken = (new ViewerMeasurementService())->createAdapterToken($row);
+            } catch (\Throwable $e) {
+                // Não bloqueia a abertura clínica se a camada opcional de medidas falhar.
+                error_log('[ViewerToken] Erro ao criar sessão de medições: ' . $e->getMessage());
+            }
+        }
+
         // Montar URL do OHIF Viewer
         $studyUid  = $row['study_instance_uid'];
         $viewerUrl = $this->viewerBase
             . '/viewer?StudyInstanceUIDs='
             . urlencode($studyUid);
+        if ($adapterToken !== null) {
+            $viewerUrl .= '#voxel_measurement_token=' . rawurlencode($adapterToken);
+        }
 
         // Redirecionar para o OHIF
         header('Location: ' . $viewerUrl, true, 302);

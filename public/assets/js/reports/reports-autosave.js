@@ -75,6 +75,15 @@ window.VoxelReports.autosave = (function () {
         return request;
     }
 
+    function markSaved() {
+        if (!config || !editor) return;
+        lastPayload = JSON.stringify(editor.extractSecoes());
+        lastSavedAt = Date.now();
+        const el = statusEl();
+        if (el) el.classList.remove('autosave-error');
+        tickStatusText();
+    }
+
     function init(cfg) {
         config = cfg;
         if (config.readonly) return;
@@ -96,5 +105,5 @@ window.VoxelReports.autosave = (function () {
         if (btnDraft) btnDraft.addEventListener('click', () => save('rascunho'));
     }
 
-    return { init, save };
+    return { init, save, markSaved };
 })();
