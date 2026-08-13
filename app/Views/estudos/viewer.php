@@ -260,7 +260,7 @@
                 <dd><?= htmlspecialchars($estudo['patient_name'] ?? 'ANON') ?></dd>
                 <dt>Estudo</dt>
                 <dd><?= htmlspecialchars($estudo['study_description'] ?? '—') ?></dd>
-                <dt>Orthanc ID</dt>
+                <dt>ID do <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?></dt>
                 <dd><?= htmlspecialchars($estudo['orthanc_id']) ?></dd>
             </dl>
         </div>
@@ -271,7 +271,7 @@
             <h2>Estudo sem imagens vinculadas</h2>
             <p>
                 Este estudo ainda não possui imagens DICOM associadas no servidor PACS.<br>
-                Verifique a configuração do servidor Orthanc ou aguarde a sincronização.
+                Verifique a configuração do servidor <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> ou aguarde a sincronização.
             </p>
             <a href="/estudos" class="orthanc-link">
                 <i class="fa fa-arrow-left"></i> Voltar à Worklist

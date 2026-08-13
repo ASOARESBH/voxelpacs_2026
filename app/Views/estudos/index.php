@@ -394,7 +394,7 @@ $periodoLabel = [
         <?php endif; ?>
         <span class="wl-sep-dot">·</span>
         <i class="fa fa-server" style="font-size:.62rem;"></i>
-        <span>Orthanc PACS</span>
+        <span><?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?></span>
         <?php if ($filtros['periodo'] !== 'todos'): ?>
         <span class="wl-period-badge"><?= $periodoLabel ?></span>
         <?php endif; ?>
@@ -1818,7 +1818,7 @@ function baixarComoGrupo(ids, nomes) {
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Iniciando...';
     prog.style.display = 'block';
     bar.style.width = '5%';
-    lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Criando archive no Orthanc...';
+    lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Criando archive no ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + '...';
     fetch('/api/download-lote/iniciar', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
@@ -1840,7 +1840,7 @@ function pollJob(jobId, logId, tentativa = 0) {
     const lbl = document.getElementById('wl-dl-prog-label');
     if (tentativa > MAX_TENTATIVAS) {
         resetDownloadUI();
-        alert('Timeout: o Orthanc demorou demais para gerar o arquivo.');
+        alert('Timeout: o ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + ' demorou demais para gerar o arquivo.');
         return;
     }
     fetch('/api/download-lote/status?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId), {
@@ -1861,7 +1861,7 @@ function pollJob(jobId, logId, tentativa = 0) {
                 setTimeout(resetDownloadUI, 3000);
             }, 600);
         } else if (data.state === 'Failure') {
-            throw new Error('O Orthanc falhou ao gerar o archive.');
+            throw new Error('O ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + ' falhou ao gerar o archive.');
         } else {
             lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Processando... ' + (data.progress || 0) + '%';
             setTimeout(() => pollJob(jobId, logId, tentativa + 1), 1000);
@@ -1882,7 +1882,7 @@ function pollJobPromise(jobId, logId, onProgress) {
     return new Promise((resolve, reject) => {
         (function tick(tentativa) {
             if (tentativa > MAX_TENTATIVAS) {
-                reject(new Error('Timeout: o Orthanc demorou demais para gerar o arquivo.'));
+                reject(new Error('Timeout: o ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + ' demorou demais para gerar o arquivo.'));
                 return;
             }
             fetch('/api/download-lote/status?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId), {
@@ -1893,7 +1893,7 @@ function pollJobPromise(jobId, logId, onProgress) {
                 if (!data.ok) throw new Error(data.msg || 'Erro no polling');
                 if (typeof onProgress === 'function') onProgress(data.progress || 0);
                 if (data.state === 'Success') resolve();
-                else if (data.state === 'Failure') throw new Error('O Orthanc falhou ao gerar o archive.');
+                else if (data.state === 'Failure') throw new Error('O ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + ' falhou ao gerar o archive.');
                 else setTimeout(() => tick(tentativa + 1), 1000);
             })
             .catch(reject);
