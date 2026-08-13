@@ -1711,13 +1711,18 @@ function renderizarMascaras(lista) {
             t.uso_count > 0 ? t.uso_count + 'x usado' : null,
             !isMeu && t.medico_nome ? 'de ' + escHtml(t.medico_nome) : null,
         ].filter(Boolean).join(' · ');
-        const acoes = isMeu ? `
-            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;" onclick="editarMascara(${t.id})" title="Editar">
+        const templateId = Number(t.id) || 0;
+        const visualizar = templateId ? `
+            <a class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;" href="/medicos/${MEDICO_ID_MASCARAS}/mascaras/${templateId}/visualizar" target="_blank" rel="noopener" title="Visualizar Laudo">
+                <i class="fa fa-eye"></i>
+            </a>` : '';
+        const acoes = visualizar + (isMeu ? `
+            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;" onclick="editarMascara(${templateId})" title="Editar">
                 <i class="fa fa-pen"></i>
             </button>
-            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;color:#e05252;" onclick="excluirMascara(${t.id})" title="Excluir">
+            <button type="button" class="pacs-btn" style="padding:.3rem .6rem;font-size:.75rem;color:#e05252;" onclick="excluirMascara(${templateId})" title="Excluir">
                 <i class="fa fa-trash"></i>
-            </button>` : '';
+            </button>` : '');
         return `<div class="mascara-card">
             <div class="mascara-card-icon"><i class="fa fa-file-medical"></i></div>
             <div class="mascara-card-info">

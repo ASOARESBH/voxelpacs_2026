@@ -40,3 +40,17 @@ Nenhuma migration é necessária. Máscaras existentes continuam sendo lidas. Ao
 - `app/Controllers/TemplatesController.php` — CRUD, guarda de acesso e sanitização de HTML.
 - `app/Views/reports/index.php` — aplicação no editor clínico.
 - `app/Controllers/ReportsController.php` — recuperação de máscara para o laudário.
+
+## Pré-visualização somente leitura
+
+Cada cartão da aba **Máscaras** possui, nesta ordem, as ações **Visualizar Laudo**, **Editar** e **Excluir**. O botão de visualização abre uma nova aba:
+
+```text
+GET /medicos/{medicoId}/mascaras/{mascaraId}/visualizar
+```
+
+A rota usa `TemplatesController::visualizar()`. Ela não altera `uso_count`, não cria relatório e não consulta estudos ou pacientes. A consulta exige `tenant_id` do contexto atual, `ativo = 1` e que a máscara seja do médico indicado, compartilhada com a clínica ou global. Para médico restrito, `MedicoAccess` exige que `{medicoId}` seja o próprio cadastro.
+
+A view `app/Views/mascaras/visualizar.php` reaproveita o padrão tipográfico, cabeçalho, títulos de seção e ações de impressão do template PDF Clássico Centralizado, porém **não exibe nenhum dado de paciente**. Ela mostra somente Técnica, Achados e Impressão, preservando o HTML sanitizado de negrito, e contém o aviso visível de que se trata de uma pré-visualização sem vínculo com estudo real.
+
+Não há botão de download de PDF nessa página. Os únicos controles são **Imprimir** e **Voltar para Máscaras**.
