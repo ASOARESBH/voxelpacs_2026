@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Auth;
+use App\Core\Access\MedicoAccess;
 use App\Services\DesktopViewerService;
 use App\Services\InstitutionResolverService;
 use App\Services\PedidoMedicoService;
@@ -99,6 +100,13 @@ class EstudosController extends Controller
             $filtros['situacao'] = $filtros['situacao_rapida'];
         }
 
+        // Um parâmetro de URL não pode ampliar o escopo clínico do médico.
+        // Em vez de retornar uma Worklist vazia e sem explicação, descarta uma
+        // Unidade fora do vínculo e mantém a visão das Unidades autorizadas.
+        if ($filtros['unidade'] !== '' && !MedicoAccess::isInstitutionAllowed($filtros['unidade'])) {
+            $filtros['unidade'] = '';
+        }
+
         // ── Calcular datas do período ──────────────────────────────────────────────────────
         $today = date('Y-m-d');
         switch ($filtros['periodo']) {
@@ -148,41 +156,14 @@ class EstudosController extends Controller
             $usaInstitutionFilter = true;
         }
 
-        // ── Filtro RBAC por unidades do médico ────────────────────────────────────────────
-        // Se o usuário logado é um médico cadastrado (bi_medicos.usuario_id = Auth::userId()),
-        // restringe os institutionNames às unidades onde ele atua (bi_medico_unidades).
-        // Admins e analistas veem tudo (sem restrição adicional).
-        if ($tenantId && !$bypassGlobal) {
-            try {
-                $stmtMedFiltro = $pdo->prepare(
-                    'SELECT id FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
-                );
-                $stmtMedFiltro->execute([(int)$tenantId, (int)Auth::userId()]);
-                $rowMedFiltro = $stmtMedFiltro->fetch(\PDO::FETCH_ASSOC);
-                // Um administrador pode possuir cadastro em bi_medicos, mas não
-                // deve herdar as restrições da fila clínica nem das unidades.
-                if ($rowMedFiltro && !$isAdmin) {
-                    $medicoIdFiltro = (int)$rowMedFiltro['id'];
-                    $isMedicoFiltro = true;
-                    $stmtMedUnid = $pdo->prepare(
-                        'SELECT institution_name FROM bi_medico_unidades WHERE medico_id = ? AND institution_name IS NOT NULL'
-                    );
-                    $stmtMedUnid->execute([$medicoIdFiltro]);
-                    $unidadesMedico = $stmtMedUnid->fetchAll(\PDO::FETCH_COLUMN);
-                    if (!empty($unidadesMedico)) {
-                        if (!empty($institutionNames)) {
-                            // Intersecção: só mostra unidades que o médico tem E que pertencem ao tenant
-                            $institutionNames = array_values(array_intersect($institutionNames, $unidadesMedico));
-                        } else {
-                            $institutionNames     = $unidadesMedico;
-                            $usaInstitutionFilter = true;
-                        }
-                    }
-                    // Se médico não tem unidades cadastradas: mantém filtro do tenant
-                }
-            } catch (\Throwable $ex) {
-                error_log('[EstudosController::index] filtro medico_unidades: ' . $ex->getMessage());
-            }
+        // ── Filtro RBAC por Unidades do médico ────────────────────────────────────────────
+        // Médicos restritos usam exatamente a mesma fonte dos vínculos clínicos
+        // (bi_medico_unidades via MedicoAccess), sem rederivar a lista em outra query.
+        // Admin, superadmin, analista e viewer mantêm a visão operacional do tenant.
+        $isMedicoFiltro = MedicoAccess::isRestricted();
+        if ($isMedicoFiltro) {
+            $institutionNames     = MedicoAccess::allowedInstitutionNames();
+            $usaInstitutionFilter = true;
         }
 
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
@@ -200,6 +181,9 @@ class EstudosController extends Controller
                 foreach ($institutionNames as $iName) {
                     $params[] = $iName;
                 }
+            } elseif ($isMedicoFiltro) {
+                // Médico sem Unidade vinculada não pode herdar a visão inteira do tenant.
+                $where[] = '1=0';
             } else {
                 // Tenant sem InstitutionNames cadastradas — fallback por tenant_id
                 $where[]  = 'e.tenant_id = ?';
@@ -385,23 +369,31 @@ class EstudosController extends Controller
         $tempoConsulta = round((microtime(true) - $tempoInicio) * 1000, 1);
 
         // ── Dados para selects ────────────────────────────────────────────────────────────
-        // Fonte primária: bi_negocio_institution_names (tabela oficial de unidades por tenant)
+        // Médico restrito recebe diretamente as Unidades vinculadas ao seu cadastro.
+        // Isso mantém dropdown e WHERE na mesma fonte e inclui Unidades recém-vinculadas,
+        // mesmo antes da chegada do primeiro estudo importado.
         $unidades = [];
-        try {
-            $uSql = "SELECT institution_name FROM bi_negocio_institution_names WHERE ativo = 1 AND institution_name IS NOT NULL AND institution_name != ''";
-            if ($tenantId) $uSql .= ' AND tenant_id = ' . (int)$tenantId;
-            $uSql .= ' ORDER BY institution_name';
-            $unidades = $pdo->query($uSql)->fetchAll(\PDO::FETCH_COLUMN);
-        } catch (\Throwable $ex) { $unidades = []; }
-        // Fallback: institution_names dos estudos PACS (para tenants sem cadastro ainda)
-        if (empty($unidades)) {
+        if ($isMedicoFiltro) {
+            $unidades = MedicoAccess::allowedInstitutionNames();
+            sort($unidades, SORT_STRING);
+        } else {
+            // Fonte primária: bi_negocio_institution_names (unidades oficiais do tenant)
             try {
-                $uW = ["institution_name IS NOT NULL", "institution_name != ''"];
-                if ($tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
-                $unidades = $pdo->query(
-                    "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
-                )->fetchAll(\PDO::FETCH_COLUMN);
+                $uSql = "SELECT institution_name FROM bi_negocio_institution_names WHERE ativo = 1 AND institution_name IS NOT NULL AND institution_name != ''";
+                if ($tenantId) $uSql .= ' AND tenant_id = ' . (int)$tenantId;
+                $uSql .= ' ORDER BY institution_name';
+                $unidades = $pdo->query($uSql)->fetchAll(\PDO::FETCH_COLUMN);
             } catch (\Throwable $ex) { $unidades = []; }
+            // Fallback: InstitutionNames dos estudos PACS (tenant sem cadastro oficial)
+            if (empty($unidades)) {
+                try {
+                    $uW = ["institution_name IS NOT NULL", "institution_name != ''"];
+                    if ($tenantId) $uW[] = 'tenant_id = ' . (int)$tenantId;
+                    $unidades = $pdo->query(
+                        "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE " . implode(' AND ', $uW) . " ORDER BY institution_name"
+                    )->fetchAll(\PDO::FETCH_COLUMN);
+                } catch (\Throwable $ex) { $unidades = []; }
+            }
         }
 
         // ── Médicos para o dropdown ───────────────────────────────────────────────────────
@@ -482,6 +474,8 @@ class EstudosController extends Controller
                     $cPh      = implode(',', array_fill(0, count($institutionNames), '?'));
                     $cWhere[] = "institution_name IN ({$cPh})";
                     foreach ($institutionNames as $iName) { $cParams[] = $iName; }
+                } elseif ($isMedicoFiltro) {
+                    $cWhere[] = '1=0';
                 } else {
                     $cWhere[]  = 'tenant_id = ?';
                     $cParams[] = $tenantId;
@@ -513,6 +507,8 @@ class EstudosController extends Controller
                     $rPh      = implode(',', array_fill(0, count($institutionNames), '?'));
                     $rWhere[] = "institution_name IN ({$rPh})";
                     foreach ($institutionNames as $iName) { $rBase_p[] = $iName; }
+                } elseif ($isMedicoFiltro) {
+                    $rWhere[] = '1=0';
                 } else {
                     $rWhere[]  = 'tenant_id = ?';
                     $rBase_p[] = $tenantId;

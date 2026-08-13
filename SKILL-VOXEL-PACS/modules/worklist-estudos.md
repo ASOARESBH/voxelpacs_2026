@@ -115,5 +115,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção**: `pendente` adicionado à lista de `$podeLaudar`. Nenhuma mudança em `$podeAssumir`/`$podePeerReview` nem em qualquer outro status.
 
+## Dropdown de Unidade para médico restrito — 2026-08-13
+
+**Sintoma**: a tabela da Worklist já respeitava as Unidades vinculadas ao médico, porém o dropdown "Todas as unidades" era carregado a partir de `bi_negocio_institution_names` (ou do fallback em `bi_pacs_estudos`) sem aplicar o mesmo recorte. Consequentemente, o médico podia enxergar opções fora do próprio escopo clínico e, ao selecioná-las por URL ou formulário, receber uma lista vazia por condições contraditórias.
+
+**Causa raiz confirmada**: o bloco de montagem dos selects em `EstudosController::renderWorklist()` não reutilizava a lista de Unidades que limitava a consulta principal. Não foi divergência de deploy, cache de `MedicoAccess` ou normalização de InstitutionName.
+
+**Correção**: `MedicoAccess` passou a expor `allowedInstitutionNames()` e `isInstitutionAllowed()`. Para médico restrito, a query principal, contadores, resumo e dropdown usam a mesma lista de `bi_medico_unidades`; assim, uma Unidade recém-vinculada aparece no select mesmo sem estudo importado. O parâmetro `?unidade=` fora dessa lista é ignorado e a Worklist volta para todas as Unidades autorizadas. Admin, superadmin, analista e viewer mantêm o comportamento anterior.
+
 ## Última análise
-2026-08-11
+2026-08-13

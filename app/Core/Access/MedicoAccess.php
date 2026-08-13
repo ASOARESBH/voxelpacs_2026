@@ -18,6 +18,8 @@ final class MedicoAccess
     private static bool $resolved = false;
     private static bool $restricted = false;
     private static ?int $medicoId = null;
+    /** @var string[]|null */
+    private static ?array $allowedInstitutionNames = null;
 
     private function __construct()
     {
@@ -36,12 +38,88 @@ final class MedicoAccess
         return self::$medicoId;
     }
 
+    /**
+     * InstitutionNames DICOM permitidos ao médico restrito no tenant ativo.
+     * Para perfis não restritos, retorna array vazio porque não há limitação adicional.
+     *
+     * @return string[]
+     */
+    public static function allowedInstitutionNames(): array
+    {
+        self::resolve();
+        if (!self::$restricted || self::$medicoId === null || self::$medicoId <= 0) {
+            return [];
+        }
+        if (self::$allowedInstitutionNames !== null) {
+            return self::$allowedInstitutionNames;
+        }
+
+        $tenantId = TenantContext::id() ?? Auth::tenantId();
+        if (!$tenantId) {
+            return self::$allowedInstitutionNames = [];
+        }
+
+        try {
+            $stmt = Database::getInstance()->prepare(
+                'SELECT DISTINCT institution_name
+                 FROM bi_medico_unidades
+                 WHERE tenant_id = :tenant_id
+                   AND medico_id = :medico_id
+                   AND institution_name IS NOT NULL
+                   AND institution_name != \'\'
+                 ORDER BY institution_name'
+            );
+            $stmt->execute([
+                'tenant_id' => $tenantId,
+                'medico_id' => self::$medicoId,
+            ]);
+            $unidades = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            self::$allowedInstitutionNames = array_values(array_unique(array_filter(
+                array_map(static fn($unidade) => trim((string) $unidade), $unidades),
+                static fn(string $unidade): bool => $unidade !== ''
+            )));
+        } catch (\Throwable $e) {
+            self::$allowedInstitutionNames = [];
+            Logger::error('[MedicoAccess::allowedInstitutionNames] Falha ao carregar Unidades permitidas', [
+                'tenant_id' => $tenantId,
+                'medico_id' => self::$medicoId,
+                'erro' => $e->getMessage(),
+            ]);
+        }
+
+        return self::$allowedInstitutionNames;
+    }
+
+    /**
+     * Perfis não restritos podem usar qualquer Unidade do tenant; médico restrito
+     * só pode aplicar filtros sobre os InstitutionNames explicitamente vinculados.
+     */
+    public static function isInstitutionAllowed(string $institutionName): bool
+    {
+        if (!self::isRestricted()) {
+            return true;
+        }
+
+        $institutionName = trim($institutionName);
+        if ($institutionName === '') {
+            return false;
+        }
+
+        foreach (self::allowedInstitutionNames() as $unidade) {
+            if (strcasecmp($unidade, $institutionName) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Limpa o cache estático; útil em testes e troca de contexto na mesma execução. */
     public static function reset(): void
     {
         self::$resolved = false;
         self::$restricted = false;
         self::$medicoId = null;
+        self::$allowedInstitutionNames = null;
     }
 
     private static function resolve(): void
