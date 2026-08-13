@@ -52,3 +52,24 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 
 ## Última análise
 2026-07-15
+
+## MedicoAccess — escopo de cadastro médico (2026-08-13)
+
+`App\Core\Access\MedicoAccess` resolve, por request, o vínculo entre `Auth::userId()`, o tenant ativo e `bi_medicos.usuario_id`. Para perfil `medico` vinculado, expõe `isRestricted()` e `currentMedicoId()`; administradores de tenant e superadministradores não entram nesse escopo. Em erro de resolução para perfil médico, o helper falha fechado: não libera cadastros de terceiros.
+
+### Onde é aplicado
+
+- `MedicosController`: listagem limitada ao próprio registro; bloqueio de criação e guards de posse em edição, atualização, status, token Copilot, modo de laudário e permissão de visibilidade.
+- `TemplatesController` e `MedicoAssinaturaController`: guard de posse para impedir bypass por endpoints AJAX contendo `{medicoId}`.
+- `UnidadesController`: médico restrito recebe `403` em listagem, CRUD e APIs administrativas; `apiInfo()` só continua acessível para a integração com Bearer de unidade validado.
+- `pacs_header.php`: a navegação **Unidades** não é renderizada para médico restrito. Esta é apenas a camada visual; o backend continua sendo a proteção efetiva.
+
+### Gaps conhecidos fora do escopo
+
+1. `/usuarios`, `/configuracoes`, `/sla-regras` e `/modalidades` ainda não aplicam uma política de autorização equivalente para perfil médico. Não foram alterados para limitar o raio desta correção.
+2. `App\Core\Permission`, `Auth::can()` e `PermissionMiddleware` continuam como infraestrutura RBAC não conectada ao despacho das rotas. Não foram removidos nem ativados nesta entrega, pois RBAC por role não substitui a regra de posse `usuário → médico`.
+3. Todo novo endpoint que receba `medicoId` pela rota ou querystring deve aplicar `MedicoAccess::currentMedicoId()` antes de consultar ou alterar dados do cadastro.
+4. A validação ponta a ponta deve ser executada manualmente com administrador, analista/viewer sem vínculo e médico vinculado; não há suíte de integração autenticada no projeto.
+
+## Última análise
+2026-08-13

@@ -19,9 +19,11 @@ $total        = $total ?? 0;
             <?php endif; ?>
         </p>
     </div>
+    <?php if (!\App\Core\Access\MedicoAccess::isRestricted()): ?>
     <a href="/medicos/create" class="btn-pacs-primary">
         <i class="fa fa-plus me-1"></i> Novo Médico
     </a>
+    <?php endif; ?>
 </div>
 
 <!-- Mensagens de sessão -->
@@ -88,9 +90,11 @@ $total        = $total ?? 0;
                             Nenhum médico encontrado para "<strong><?= htmlspecialchars($busca) ?></strong>".
                         <?php else: ?>
                             Nenhum médico cadastrado ainda.
+                            <?php if (!\App\Core\Access\MedicoAccess::isRestricted()): ?>
                             <a href="/medicos/create" class="d-block mt-2" style="color:var(--pacs-primary);">
                                 <i class="fa fa-plus me-1"></i> Cadastrar primeiro médico
                             </a>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </td>
                 </tr>

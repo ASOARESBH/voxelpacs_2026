@@ -27,6 +27,7 @@
 </head>
 <body>
 
+<?php $medicoRestrito = \App\Core\Access\MedicoAccess::isRestricted(); ?>
 <?php if (!empty($_SESSION['impersonating_tenant_id'])): ?>
 <div class="alert alert-warning text-center mb-0 rounded-0 py-2" style="position:sticky;top:0;z-index:9999;">
     <strong><i class="fa fa-eye me-1"></i>Visualizando como: <?= htmlspecialchars(\App\Core\TenantContext::name()) ?></strong>
@@ -108,10 +109,12 @@
                     <i class="fa fa-user-doctor"></i>
                     <span class="sidebar-label">Médicos</span>
                 </a>
+                <?php if (!$medicoRestrito): ?>
                 <a href="/unidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/unidades') ? 'active' : '' ?>">
                     <i class="fa fa-hospital"></i>
                     <span class="sidebar-label">Unidades</span>
                 </a>
+                <?php endif; ?>
                 <a href="/modalidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/modalidades') ? 'active' : '' ?>">
                     <i class="fa fa-satellite-dish"></i>
                     <span class="sidebar-label">Modalidades</span>

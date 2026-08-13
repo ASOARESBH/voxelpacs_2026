@@ -7,6 +7,7 @@
  */
 namespace App\Controllers;
 
+use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
@@ -31,9 +32,39 @@ class UnidadesController extends Controller
         $this->reportLayoutService = new ReportLayoutService();
     }
 
+    /** Impede que médico vinculado entre na gestão de unidades por URL direta. */
+    private function denyIfRestricted(): void
+    {
+        if (!MedicoAccess::isRestricted()) return;
+
+        Logger::error('[UnidadesController] Tentativa de acesso à gestão de unidades por médico restrito', [
+            'tenant_id' => TenantContext::id() ?? Auth::tenantId(),
+            'user_id' => Auth::userId(),
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+        ]);
+        http_response_code(403);
+        exit('Acesso negado: médicos não possuem acesso à gestão de unidades.');
+    }
+
+    /** Versão JSON da regra para APIs administrativas de unidades. */
+    private function denyIfRestrictedJson(): bool
+    {
+        if (!MedicoAccess::isRestricted()) return false;
+
+        Logger::error('[UnidadesController] Tentativa de API administrativa de unidades por médico restrito', [
+            'tenant_id' => TenantContext::id() ?? Auth::tenantId(),
+            'user_id' => Auth::userId(),
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+        ]);
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'msg' => 'Acesso negado: médicos não possuem acesso à gestão de unidades.']);
+        return true;
+    }
+
     // INDEX
     public function index(): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!$tenantId) { header('Location: /selecionar-empresa'); exit; }
 
@@ -118,6 +149,7 @@ class UnidadesController extends Controller
     // EDIT
     public function edit(int $id): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $unidade  = $this->findOrFail($id, $tenantId);
         $templatesLaudo = $this->reportLayoutService->listarCatalogo();
@@ -127,6 +159,7 @@ class UnidadesController extends Controller
     // UPDATE
     public function update(int $id): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $this->findOrFail($id, $tenantId);
 
@@ -193,6 +226,7 @@ class UnidadesController extends Controller
     {
         header('Content-Type: application/json');
         header('Cache-Control: no-store');
+        if ($this->denyIfRestrictedJson()) return;
 
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!Auth::check() || !$tenantId) {
@@ -257,8 +291,9 @@ class UnidadesController extends Controller
     // API: Listar unidades do tenant (filtro dependente)
     public function apiListar(): void
     {
-        $tenantId = TenantContext::id() ?? Auth::tenantId();
         header('Content-Type: application/json');
+        if ($this->denyIfRestrictedJson()) return;
+        $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!$tenantId) { echo json_encode([]); exit; }
         try {
             $stmt = $this->pdo->prepare("
@@ -346,6 +381,7 @@ class UnidadesController extends Controller
     // GET /unidades/nova
     public function novaUnidade(): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!$tenantId) { header('Location: /selecionar-empresa'); exit; }
 
@@ -359,6 +395,7 @@ class UnidadesController extends Controller
     // POST /unidades/nova
     public function criarUnidade(): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!$tenantId) { header('Location: /selecionar-empresa'); exit; }
 
@@ -439,6 +476,7 @@ class UnidadesController extends Controller
     // GET /unidades/{id}/editar
     public function editarUnidade(int $id): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $unidade  = $this->findOrFailUnidade($id, $tenantId);
 
@@ -461,6 +499,7 @@ class UnidadesController extends Controller
     // POST /unidades/{id}/editar
     public function atualizarUnidade(int $id): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $this->findOrFailUnidade($id, $tenantId);
 
@@ -545,6 +584,7 @@ class UnidadesController extends Controller
     // POST /unidades/{id}/excluir
     public function excluirUnidade(int $id): void
     {
+        $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $this->findOrFailUnidade($id, $tenantId);
         try {
@@ -586,6 +626,7 @@ class UnidadesController extends Controller
         }
 
         $tenantId = null;
+        $authenticatedByIntegration = false;
         if ($token) {
             // Validar token de integração Copilot
             try {
@@ -595,7 +636,10 @@ class UnidadesController extends Controller
                 ");
                 $stmt->execute([$token]);
                 $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-                if ($row) $tenantId = (int)$row['tenant_id'];
+                if ($row) {
+                    $tenantId = (int) $row['tenant_id'];
+                    $authenticatedByIntegration = true;
+                }
             } catch (\Throwable $e) {
                 Logger::error('[UnidadesController::apiInfo] token lookup: ' . $e->getMessage());
             }
@@ -609,6 +653,14 @@ class UnidadesController extends Controller
         if (!$tenantId) {
             http_response_code(401);
             echo json_encode(['ok' => false, 'msg' => 'Não autenticado.']);
+            return;
+        }
+
+        // Sessão de médico não pode usar este endpoint como atalho para dados de
+        // unidade. Integrações externas válidas usam Bearer token e seguem ativas.
+        if (!$authenticatedByIntegration && Auth::check() && MedicoAccess::isRestricted()) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'msg' => 'Acesso negado: médicos não possuem acesso à gestão de unidades.']);
             return;
         }
 

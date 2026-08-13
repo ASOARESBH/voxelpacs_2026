@@ -1,6 +1,7 @@
 <?php
 namespace App\Controllers;
 
+use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
@@ -49,9 +50,10 @@ class MedicosController extends Controller
         $busca        = trim($_GET['busca'] ?? '');
         $pagina       = max(1, (int) ($_GET['pagina'] ?? 1));
         $porPagina    = 20;
+        $onlyMedicoId = MedicoAccess::isRestricted() ? MedicoAccess::currentMedicoId() : null;
 
-        $medicos      = $this->service->listar($tenantId, $busca, $pagina, $porPagina);
-        $total        = $this->service->total($tenantId, $busca);
+        $medicos      = $this->service->listar($tenantId, $busca, $pagina, $porPagina, $onlyMedicoId);
+        $total        = $this->service->total($tenantId, $busca, $onlyMedicoId);
         $totalPaginas = (int) ceil($total / $porPagina);
 
         Logger::error('[MedicosController::index] Listagem carregada', [
@@ -77,6 +79,7 @@ class MedicosController extends Controller
 
     public function create(): void
     {
+        $this->denyIfRestricted();
         $tenantId = $this->tenantId();
 
         // Recupera erros e dados do POST anterior (se houver redirect de volta)
@@ -95,6 +98,7 @@ class MedicosController extends Controller
 
     public function store(): void
     {
+        $this->denyIfRestricted();
         $tenantId = $this->tenantId();
 
         Logger::error('[MedicosController::store] Início do cadastro', [
@@ -131,6 +135,7 @@ class MedicosController extends Controller
 
     public function edit(int $id): void
     {
+        $this->guardOwnRecordOrDeny($id);
         $tenantId = $this->tenantId();
         $medico   = $this->service->buscarPorId($id, $tenantId);
 
@@ -191,6 +196,7 @@ class MedicosController extends Controller
 
     public function update(int $id): void
     {
+        $this->guardOwnRecordOrDeny($id);
         $tenantId = $this->tenantId();
 
         Logger::error('[MedicosController::update] Início da atualização', [
@@ -227,6 +233,7 @@ class MedicosController extends Controller
 
     public function toggleStatus(int $id): void
     {
+        $this->guardOwnRecordOrDeny($id);
         $tenantId = $this->tenantId();
 
         Logger::error('[MedicosController::toggleStatus] Alternando status', [
@@ -286,6 +293,7 @@ class MedicosController extends Controller
     // -------------------------------------------------------------------------
     public function copilotToken(int $id): void
     {
+        if (!$this->guardOwnRecordJsonOrDeny($id)) return;
         $tenantId = $this->tenantId();
 
         // Verifica se o médico pertence ao tenant
@@ -531,6 +539,7 @@ class MedicosController extends Controller
     // =========================================================================
     public function toggleWorkspaceLaudo(int $id): void
     {
+        if (!$this->guardOwnRecordJsonOrDeny($id)) return;
         $tenantId = $this->tenantId();
         $medico   = $this->service->buscarPorId($id, $tenantId);
         if (!$medico) {
@@ -748,6 +757,51 @@ class MedicosController extends Controller
         }
     }
 
+    /**
+     * Impede que médico vinculado acesse ou altere o cadastro de outro médico.
+     * Administradores e demais perfis preservam o comportamento atual.
+     */
+    private function guardOwnRecordOrDeny(int $medicoId): void
+    {
+        if (!MedicoAccess::isRestricted()) return;
+        if (MedicoAccess::currentMedicoId() === $medicoId) return;
+
+        Logger::error('[MedicosController] Tentativa de acesso a cadastro médico de terceiro', [
+            'tenant_id' => Auth::tenantId(),
+            'user_id' => Auth::userId(),
+            'medico_id_solicitado' => $medicoId,
+        ]);
+        http_response_code(403);
+        exit('Acesso negado: você só pode gerenciar o próprio cadastro de médico.');
+    }
+
+    /** Versão JSON da regra de posse para os endpoints AJAX do próprio médico. */
+    private function guardOwnRecordJsonOrDeny(int $medicoId): bool
+    {
+        if (!MedicoAccess::isRestricted() || MedicoAccess::currentMedicoId() === $medicoId) return true;
+
+        Logger::error('[MedicosController] Tentativa de API sobre cadastro médico de terceiro', [
+            'tenant_id' => Auth::tenantId(),
+            'user_id' => Auth::userId(),
+            'medico_id_solicitado' => $medicoId,
+        ]);
+        $this->json(['ok' => false, 'msg' => 'Acesso negado: você só pode gerenciar o próprio cadastro de médico.'], 403);
+        return false;
+    }
+
+    /** Bloqueia por completo a criação de novos médicos para perfil médico vinculado. */
+    private function denyIfRestricted(): void
+    {
+        if (!MedicoAccess::isRestricted()) return;
+
+        Logger::error('[MedicosController] Tentativa de criação de médico por perfil médico restrito', [
+            'tenant_id' => Auth::tenantId(),
+            'user_id' => Auth::userId(),
+        ]);
+        http_response_code(403);
+        exit('Acesso negado: seu perfil não pode cadastrar médicos.');
+    }
+
     // -------------------------------------------------------------------------
     // PERMISSÃO: ver_medico_laudo
     // POST /api/medicos/{id}/permissao-ver-medico-laudo
@@ -758,6 +812,7 @@ class MedicosController extends Controller
     public function toggleVerMedicoLaudo(int $id): void
     {
         header('Content-Type: application/json; charset=utf-8');
+        if (!$this->guardOwnRecordJsonOrDeny($id)) return;
         if (!Auth::check()) {
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;

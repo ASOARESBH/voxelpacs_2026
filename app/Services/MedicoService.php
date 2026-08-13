@@ -24,14 +24,14 @@ class MedicoService
     // LISTAGEM
     // -------------------------------------------------------------------------
 
-    public function listar(int $tenantId, string $busca = '', int $pagina = 1, int $porPagina = 20): array
+    public function listar(int $tenantId, string $busca = '', int $pagina = 1, int $porPagina = 20, ?int $onlyMedicoId = null): array
     {
-        return $this->repo->findAll($tenantId, $busca, $pagina, $porPagina);
+        return $this->repo->findAll($tenantId, $busca, $pagina, $porPagina, $onlyMedicoId);
     }
 
-    public function total(int $tenantId, string $busca = ''): int
+    public function total(int $tenantId, string $busca = '', ?int $onlyMedicoId = null): int
     {
-        return $this->repo->count($tenantId, $busca);
+        return $this->repo->count($tenantId, $busca, $onlyMedicoId);
     }
 
     // -------------------------------------------------------------------------
