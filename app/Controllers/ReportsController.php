@@ -139,19 +139,23 @@ class ReportsController extends Controller
             if (!in_array($modo, ['auto', 'salvar', 'rascunho'], true)) $modo = 'auto';
             $templateId = isset($input['template_id']) && (int) $input['template_id'] > 0
                 ? (int) $input['template_id'] : null;
-            $secoes = $input['secoes'] ?? [
-                'exame'        => $input['secao_exame']        ?? '',
-                'tecnica'      => $input['secao_tecnica']      ?? '',
-                'achados'      => $input['secao_achados']      ?? '',
-                'conclusao'    => $input['secao_conclusao']    ?? '',
-                'recomendacao' => $input['secao_recomendacao'] ?? '',
-            ];
+            // O editor atual envia um único corpo clínico livre. O payload de
+            // seções permanece aceito para não quebrar versões antigas da tela.
+            $secoes = array_key_exists('corpo_laudo', $input)
+                ? ['corpo' => (string) $input['corpo_laudo']]
+                : ($input['secoes'] ?? [
+                    'exame'        => $input['secao_exame']        ?? '',
+                    'tecnica'      => $input['secao_tecnica']      ?? '',
+                    'achados'      => $input['secao_achados']      ?? '',
+                    'conclusao'    => $input['secao_conclusao']    ?? '',
+                    'recomendacao' => $input['secao_recomendacao'] ?? '',
+                ]);
 
             // reports-autosave.js manda report_id, não id.
             $reportId = (int) ($input['report_id'] ?? $input['id'] ?? 0);
             $sectionLengths = [];
-            foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
-                $sectionLengths[$section] = mb_strlen(strip_tags((string) ($secoes[$section] ?? '')), 'UTF-8');
+            foreach ($secoes as $section => $conteudo) {
+                $sectionLengths[$section] = strlen(strip_tags((string) $conteudo));
             }
             if (array_sum($sectionLengths) === 0) {
                 Logger::warning('ReportsController::save payload sem conteúdo', [
@@ -207,6 +211,18 @@ class ReportsController extends Controller
         $modo     = ($input['modo'] ?? 'somente') === 'fechar' ? 'fechar' : 'somente';
 
         try {
+            // A tela de texto livre envia o conteúdo junto da assinatura. Salva
+            // primeiro para que nenhum texto recém-colado fique fora do hash.
+            if (array_key_exists('corpo_laudo', $input)) {
+                $corpoLivre = (string) $input['corpo_laudo'];
+                if (trim(strip_tags($corpoLivre)) !== '') {
+                    $salvamento = $this->reportService->salvar($reportId, ['corpo' => $corpoLivre], 'rascunho');
+                    if (!$salvamento['ok']) {
+                        $this->json(['ok' => false, 'msg' => 'Não foi possível salvar o texto do laudo antes da assinatura.'], 422);
+                        return;
+                    }
+                }
+            }
             $resultado = $this->reportService->assinar($reportId, $modo);
 
             if (!$resultado['ok']) {
@@ -830,13 +846,15 @@ class ReportsController extends Controller
             // Se ainda não foi assinado, usa a mesma validação de conteúdo,
             // assinatura visual, hash e atualização de estudo do fluxo principal.
             if ($situacao !== 'assinado') {
-                $secoes = $input['secoes'] ?? [
-                    'exame' => $input['secao_exame'] ?? '',
-                    'tecnica' => $input['secao_tecnica'] ?? '',
-                    'achados' => $input['secao_achados'] ?? '',
-                    'conclusao' => $input['secao_conclusao'] ?? '',
-                    'recomendacao' => $input['secao_recomendacao'] ?? '',
-                ];
+                $secoes = array_key_exists('corpo_laudo', $input)
+                    ? ['corpo' => (string) $input['corpo_laudo']]
+                    : ($input['secoes'] ?? [
+                        'exame' => $input['secao_exame'] ?? '',
+                        'tecnica' => $input['secao_tecnica'] ?? '',
+                        'achados' => $input['secao_achados'] ?? '',
+                        'conclusao' => $input['secao_conclusao'] ?? '',
+                        'recomendacao' => $input['secao_recomendacao'] ?? '',
+                    ]);
                 if (array_filter($secoes, static fn($v) => $v !== null && $v !== '')) {
                     $save = $this->reportService->salvar($reportId, $secoes, 'rascunho');
                     if (!$save['ok']) { $this->json(['ok' => false, 'msg' => 'Não foi possível salvar o laudo antes de liberar.'], 422); return; }

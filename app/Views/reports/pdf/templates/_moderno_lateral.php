@@ -102,26 +102,9 @@ if (!empty($r['unidade_cnpj']) && strlen($r['unidade_cnpj']) === 14) {
         </div>
     </div>
 
-    <div class="pdf-section">
-        <div class="pdf-section-title">Exame</div>
-        <div class="pdf-section-content"><?= $r['secao_exame'] ?? '' ?></div>
-    </div>
-    <div class="pdf-section">
-        <div class="pdf-section-title">Técnica</div>
-        <div class="pdf-section-content"><?= $r['secao_tecnica'] ?? '' ?></div>
-    </div>
-    <div class="pdf-section">
-        <div class="pdf-section-title">Achados</div>
-        <div class="pdf-section-content"><?= $r['secao_achados'] ?? '' ?></div>
-    </div>
-    <div class="pdf-section">
-        <div class="pdf-section-title">Conclusão</div>
-        <div class="pdf-section-content"><?= $r['secao_conclusao'] ?? '' ?></div>
-    </div>
-    <?php if (!empty($r['secao_recomendacao'])): ?>
-    <div class="pdf-section">
-        <div class="pdf-section-title">Recomendação</div>
-        <div class="pdf-section-content"><?= $r['secao_recomendacao'] ?></div>
+    <?php if (trim(strip_tags($corpoLaudo)) !== ''): ?>
+    <div class="pdf-section pdf-section-free">
+        <div class="pdf-section-content"><?= $corpoLaudo ?></div>
     </div>
     <?php endif; ?>
 

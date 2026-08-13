@@ -213,6 +213,42 @@ class ReportRepository {
      */
     public function atualizarConteudo(int $reportId, array $conteudo, ?string $status = null, ?int $templateId = null): void {
         $secoes = $conteudo['secoes'] ?? $conteudo; // suporta ambos os formatos
+
+        if (array_key_exists('corpo', $secoes)) {
+            $sets = ['corpo_laudo = :corpo_laudo'];
+            $params = [
+                'corpo_laudo' => (string) $secoes['corpo'],
+                'id' => $reportId,
+            ];
+            if ($status !== null) {
+                $statusMap = ['em_laudo' => 'rascunho', 'rascunho' => 'rascunho', 'assinado' => 'assinado', 'liberado' => 'liberado'];
+                $sets[] = 'situacao = :situacao';
+                $params['situacao'] = $statusMap[$status] ?? 'rascunho';
+            }
+            if ($templateId !== null) {
+                $sets[] = 'template_id = :template_id';
+                $params['template_id'] = $templateId;
+            }
+
+            try {
+                $this->pdo->prepare("UPDATE reports SET " . implode(', ', $sets) . " WHERE id = :id")->execute($params);
+                return;
+            } catch (\PDOException $e) {
+                if (stripos($e->getMessage(), 'corpo_laudo') === false) {
+                    throw $e;
+                }
+                // Deploy tolerante: antes da migration, mantém o editor livre
+                // usando a coluna legada sem expor rótulos clínicos na interface.
+                Logger::warning('ReportRepository::atualizarConteudo sem corpo_laudo — migration pendente', [
+                    'report_id' => $reportId,
+                    'error' => $e->getMessage(),
+                ]);
+                $sets[0] = 'secao_achados = :corpo_laudo';
+                $this->pdo->prepare("UPDATE reports SET " . implode(', ', $sets) . " WHERE id = :id")->execute($params);
+                return;
+            }
+        }
+
         $sets   = [
             'secao_exame        = :secao_exame',
             'secao_tecnica      = :secao_tecnica',

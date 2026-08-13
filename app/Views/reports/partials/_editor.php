@@ -6,23 +6,21 @@ if (isset($report->conteudo) && is_string($report->conteudo) && trim($report->co
     $conteudo = json_decode($report->conteudo, true) ?: [];
 }
 $secoesJson = is_array($conteudo['secoes'] ?? null) ? $conteudo['secoes'] : [];
-$secoes = [];
-foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
-    $campo = 'secao_' . $chave;
-    $valorColuna = property_exists($report, $campo) ? ($report->{$campo} ?? null) : null;
-    $secoes[$chave] = ($valorColuna !== null && $valorColuna !== '')
-        ? (string) $valorColuna
-        : (string) ($secoesJson[$chave] ?? '');
+$corpoLaudo = property_exists($report, 'corpo_laudo') ? (string) ($report->corpo_laudo ?? '') : '';
+if (trim($corpoLaudo) === '') {
+    $corpoLaudo = (string) ($secoesJson['corpo'] ?? '');
+}
+if (trim($corpoLaudo) === '') {
+    $blocosLegados = [];
+    foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
+        $campo = 'secao_' . $chave;
+        $valorColuna = property_exists($report, $campo) ? ($report->{$campo} ?? null) : null;
+        $valor = ($valorColuna !== null && $valorColuna !== '') ? (string) $valorColuna : (string) ($secoesJson[$chave] ?? '');
+        if (trim(strip_tags($valor)) !== '') $blocosLegados[] = $valor;
+    }
+    $corpoLaudo = implode('<br><br>', $blocosLegados);
 }
 $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
-
-$secaoTitulos = [
-    'exame'        => 'Exame',
-    'tecnica'      => 'Técnica',
-    'achados'      => 'Achados',
-    'conclusao'    => 'Conclusão',
-    'recomendacao' => 'Recomendação',
-];
 ?>
 <div class="pacs-card reports-editor-card">
     <div id="editor-toolbar" class="reports-editor-toolbar">
@@ -55,11 +53,8 @@ $secaoTitulos = [
         </span>
     </div>
 
-    <div id="editor-container" class="reports-editor-container">
-        <?php foreach ($secaoTitulos as $chave => $titulo): ?>
-            <h4 data-secao="<?= $chave ?>"><?= $titulo ?></h4>
-            <?= $secoes[$chave] ?? '<p><br></p>' ?>
-        <?php endforeach; ?>
+    <div id="editor-container" class="reports-editor-container" data-placeholder="Redija, cole ou aplique uma máscara de laudo...">
+        <?= $corpoLaudo !== '' ? $corpoLaudo : '<p><br></p>' ?>
     </div>
 
     <?php if (in_array($reportSituacao, ['assinado', 'liberado'], true)): ?>

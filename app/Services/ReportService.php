@@ -584,30 +584,42 @@ class ReportService {
     }
 
     /**
-     * Normaliza o conteúdo de um report de qualquer uma das duas gerações de
-     * schema existentes: colunas secao_* (produção) ou JSON conteudo.secoes.
+     * Normaliza o conteúdo para um corpo clínico livre. Quando um laudo antigo
+     * ainda está apenas nas colunas secao_*, seus trechos são unidos sem criar
+     * rótulos obrigatórios, preservando integralmente o texto histórico.
      */
     private function extrairSecoesDoReport(object $report): array {
+        $corpoLivre = property_exists($report, 'corpo_laudo') ? (string) ($report->corpo_laudo ?? '') : '';
+        if (trim($corpoLivre) !== '') {
+            return ['corpo' => $corpoLivre];
+        }
+
         $json = [];
         if (isset($report->conteudo) && is_string($report->conteudo) && trim($report->conteudo) !== '') {
             $decoded = json_decode($report->conteudo, true);
             if (is_array($decoded)) $json = is_array($decoded['secoes'] ?? null) ? $decoded['secoes'] : $decoded;
         }
+        if (!empty($json['corpo'])) {
+            return ['corpo' => (string) $json['corpo']];
+        }
 
-        $secoes = [];
+        $blocos = [];
         foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
             $campo = 'secao_' . $chave;
             $valorColuna = property_exists($report, $campo) ? ($report->{$campo} ?? null) : null;
-            $secoes[$chave] = ($valorColuna !== null && $valorColuna !== '')
+            $valor = ($valorColuna !== null && $valorColuna !== '')
                 ? (string) $valorColuna
                 : (string) ($json[$chave] ?? '');
+            if (trim(strip_tags($valor)) !== '') {
+                $blocos[] = $valor;
+            }
         }
-        return $secoes;
+        return ['corpo' => implode('<br><br>', $blocos)];
     }
 
     private function secoesTemConteudo(array $secoes): bool {
-        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
-            $texto = html_entity_decode((string) ($secoes[$chave] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        foreach ($secoes as $textoHtml) {
+            $texto = html_entity_decode((string) $textoHtml, ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $texto = preg_replace('/\x{00A0}|\x{200B}/u', ' ', strip_tags($texto)) ?? '';
             if (trim($texto) !== '') return true;
         }
@@ -617,9 +629,9 @@ class ReportService {
     /** Retorna somente tamanhos para diagnóstico; nunca registra texto clínico. */
     private function tamanhosSecoes(array $secoes): array {
         $tamanhos = [];
-        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
-            $texto = html_entity_decode((string) ($secoes[$chave] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            $tamanhos[$chave] = mb_strlen(strip_tags($texto), 'UTF-8');
+        foreach ($secoes as $chave => $textoHtml) {
+            $texto = html_entity_decode((string) $textoHtml, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $tamanhos[$chave] = strlen(strip_tags($texto));
         }
         return $tamanhos;
     }

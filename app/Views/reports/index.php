@@ -179,78 +179,27 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
             </div>
         </div>
 
-        <!-- Seções do Laudo -->
-        <div id="report-sections">
-
-            <!-- Seção: EXAME -->
-            <div class="rsection" id="sec-exame">
-                <div class="rsection-header" onclick="toggleSection('exame')">
-                    <span><i class="bi bi-chevron-down" id="ico-exame"></i> EXAME</span>
-                </div>
-                <div class="rsection-body" id="body-exame">
-                    <div class="report-editor <?= $somenteLeitura ? 'readonly' : '' ?>"
-                         id="editor-exame"
-                         contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
-                         data-section="exame"
-                         data-placeholder="Descreva o exame realizado..."><?= $r ? htmlspecialchars_decode(htmlspecialchars($r->secao_exame ?? '', ENT_QUOTES)) : '' ?></div>
-                </div>
-            </div>
-
-            <!-- Seção: TÉCNICA -->
-            <div class="rsection" id="sec-tecnica">
-                <div class="rsection-header" onclick="toggleSection('tecnica')">
-                    <span><i class="bi bi-chevron-down" id="ico-tecnica"></i> TÉCNICA</span>
-                </div>
-                <div class="rsection-body" id="body-tecnica">
-                    <div class="report-editor <?= $somenteLeitura ? 'readonly' : '' ?>"
-                         id="editor-tecnica"
-                         contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
-                         data-section="tecnica"
-                         data-placeholder="Descreva a técnica utilizada..."><?= $r ? htmlspecialchars_decode(htmlspecialchars($r->secao_tecnica ?? '', ENT_QUOTES)) : '' ?></div>
-                </div>
-            </div>
-
-            <!-- Seção: ACHADOS -->
-            <div class="rsection" id="sec-achados">
-                <div class="rsection-header" onclick="toggleSection('achados')">
-                    <span><i class="bi bi-chevron-down" id="ico-achados"></i> ACHADOS</span>
-                </div>
-                <div class="rsection-body" id="body-achados">
-                    <div class="report-editor <?= $somenteLeitura ? 'readonly' : '' ?>"
-                         id="editor-achados"
-                         contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
-                         data-section="achados"
-                         data-placeholder="Descreva os achados do exame..."><?= $r ? htmlspecialchars_decode(htmlspecialchars($r->secao_achados ?? '', ENT_QUOTES)) : '' ?></div>
-                </div>
-            </div>
-
-            <!-- Seção: CONCLUSÃO -->
-            <div class="rsection" id="sec-conclusao">
-                <div class="rsection-header" onclick="toggleSection('conclusao')">
-                    <span><i class="bi bi-chevron-down" id="ico-conclusao"></i> CONCLUSÃO</span>
-                </div>
-                <div class="rsection-body" id="body-conclusao">
-                    <div class="report-editor <?= $somenteLeitura ? 'readonly' : '' ?>"
-                         id="editor-conclusao"
-                         contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
-                         data-section="conclusao"
-                         data-placeholder="Conclusão do laudo..."><?= $r ? htmlspecialchars_decode(htmlspecialchars($r->secao_conclusao ?? '', ENT_QUOTES)) : '' ?></div>
-                </div>
-            </div>
-
-            <!-- Seção: RECOMENDAÇÃO -->
-            <div class="rsection" id="sec-recomendacao">
-                <div class="rsection-header" onclick="toggleSection('recomendacao')">
-                    <span><i class="bi bi-chevron-down" id="ico-recomendacao"></i> RECOMENDAÇÃO</span>
-                </div>
-                <div class="rsection-body" id="body-recomendacao">
-                    <div class="report-editor <?= $somenteLeitura ? 'readonly' : '' ?>"
-                         id="editor-recomendacao"
-                         contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
-                         data-section="recomendacao"
-                         data-placeholder="Recomendações ao paciente ou médico solicitante..."><?= $r ? htmlspecialchars_decode(htmlspecialchars($r->secao_recomendacao ?? '', ENT_QUOTES)) : '' ?></div>
-                </div>
-            </div>
+        <!-- Corpo clínico livre: o médico digita, cola ou aplica uma máscara sem
+             cabeçalhos obrigatórios. Templates podem trazer títulos próprios. -->
+        <div id="report-sections" class="report-free-body-wrap">
+            <?php
+            $corpoLaudo = (string) ($r->corpo_laudo ?? '');
+            if (trim($corpoLaudo) === '' && $r) {
+                $blocosLegados = array_filter([
+                    (string) ($r->secao_exame ?? ''),
+                    (string) ($r->secao_tecnica ?? ''),
+                    (string) ($r->secao_achados ?? ''),
+                    (string) ($r->secao_conclusao ?? ''),
+                    (string) ($r->secao_recomendacao ?? ''),
+                ], static fn($valor) => trim(strip_tags($valor)) !== '');
+                $corpoLaudo = implode('<br><br>', $blocosLegados);
+            }
+            ?>
+            <div class="report-editor report-editor-free <?= $somenteLeitura ? 'readonly' : '' ?>"
+                 id="editor-corpo"
+                 contenteditable="<?= $somenteLeitura ? 'false' : 'true' ?>"
+                 data-placeholder="Redija, cole ou aplique uma máscara de laudo..."> <?= htmlspecialchars_decode(htmlspecialchars($corpoLaudo, ENT_QUOTES)) ?></div>
+        </div>
 
             <!-- Seção: ASSINATURA -->
             <div class="rsection" id="sec-assinatura">
@@ -373,16 +322,8 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
             <div class="rcard-header"><i class="bi bi-check2-square"></i> Checklist</div>
             <div class="rcard-body">
                 <div class="form-check form-check-sm">
-                    <input class="form-check-input" type="checkbox" id="chk-exame" onchange="updateChecklist()">
-                    <label class="form-check-label" for="chk-exame">Seção Exame preenchida</label>
-                </div>
-                <div class="form-check form-check-sm">
-                    <input class="form-check-input" type="checkbox" id="chk-achados" onchange="updateChecklist()">
-                    <label class="form-check-label" for="chk-achados">Achados descritos</label>
-                </div>
-                <div class="form-check form-check-sm">
-                    <input class="form-check-input" type="checkbox" id="chk-conclusao" onchange="updateChecklist()">
-                    <label class="form-check-label" for="chk-conclusao">Conclusão registrada</label>
+                    <input class="form-check-input" type="checkbox" id="chk-corpo" onchange="updateChecklist()">
+                    <label class="form-check-label" for="chk-corpo">Texto do laudo preenchido</label>
                 </div>
                 <div class="form-check form-check-sm">
                     <input class="form-check-input" type="checkbox" id="chk-assinatura" disabled>
@@ -590,7 +531,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
 .rinfo-label { color: var(--pacs-text-muted); min-width: 80px; flex-shrink: 0; }
 .rinfo-val { color: var(--pacs-text); word-break: break-word; }
 
-/* ── Seções do laudo ── */
+/* ── Estruturas legadas (laudos antigos) ── */
 .rsection { margin-bottom: .4rem; border: 1px solid var(--pacs-border); border-radius: 6px; overflow: hidden; }
 .rsection-header {
     background: rgba(15,52,96,.6);
@@ -624,6 +565,25 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     content: attr(data-placeholder);
     color: var(--pacs-text-muted);
     pointer-events: none;
+}
+/* Corpo livre: único campo clínico para digitação, colagem e máscaras. */
+.report-free-body-wrap {
+    min-height: clamp(520px, calc(100vh - 16rem), 900px);
+}
+.report-editor-free {
+    min-height: clamp(520px, calc(100vh - 16rem), 900px);
+    border: 1px solid var(--pacs-border);
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+.report-editor-free:focus {
+    box-shadow: 0 0 0 2px rgba(79,195,247,.12);
+}
+.report-editor-free.readonly {
+    min-height: auto;
+    background: transparent;
+    border-color: transparent;
 }
 
 /* ── Toolbar ── */
@@ -796,13 +756,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     }
 
     function getAllContent() {
-        return {
-            secao_exame:        getEditorContent('exame'),
-            secao_tecnica:      getEditorContent('tecnica'),
-            secao_achados:      getEditorContent('achados'),
-            secao_conclusao:    getEditorContent('conclusao'),
-            secao_recomendacao: getEditorContent('recomendacao')
-        };
+        return { corpo_laudo: getEditorContent('corpo') };
     }
 
     // ── Salvar laudo ─────────────────────────────────────────────────────
@@ -902,11 +856,8 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
         .then(function(data) {
             if (data.ok && data.template) {
                 var t = data.template;
-                var temConteudo = ['exame','tecnica','achados','conclusao','recomendacao']
-                    .some(function(s) {
-                        var el = document.getElementById('editor-' + s);
-                        return el && el.innerText.trim().length > 3;
-                    });
+                var editor = document.getElementById('editor-corpo');
+                var temConteudo = editor && editor.innerText.trim().length > 3;
                 if (!temConteudo) {
                     aplicarTemplate(t);
                     showToast('Mascara "' + t.nome + '" carregada automaticamente.', 'success');
@@ -917,11 +868,19 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     }
 
     function aplicarTemplate(t) {
-        setEditorContent('exame',        t.secao_exame        || '');
-        setEditorContent('tecnica',      t.secao_tecnica      || '');
-        setEditorContent('achados',      t.secao_achados      || '');
-        setEditorContent('conclusao',    t.secao_conclusao    || '');
-        setEditorContent('recomendacao', t.secao_recomendacao || '');
+        // Máscaras continuam podendo guardar campos legados, mas são aplicadas
+        // como um único conteúdo contínuo. Títulos, se houver, pertencem ao
+        // próprio texto da máscara e nunca são impostos pelo sistema.
+        var corpo = t.corpo_laudo || [
+            t.secao_exame,
+            t.secao_tecnica,
+            t.secao_achados,
+            t.secao_conclusao,
+            t.secao_recomendacao
+        ].filter(function(html) {
+            return String(html || '').replace(/<[^>]+>/g, '').trim() !== '';
+        }).join('<br><br>');
+        setEditorContent('corpo', corpo);
         initChecklist();
     }
 
@@ -1116,21 +1075,17 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
 
     // ── Checklist ────────────────────────────────────────────────────────
     function initChecklist() {
-        const chkExame    = document.getElementById('chk-exame');
-        const chkAchados  = document.getElementById('chk-achados');
-        const chkConclusao= document.getElementById('chk-conclusao');
-        const chkAssin    = document.getElementById('chk-assinatura');
-        const progress    = document.getElementById('checklist-progress');
+        const chkCorpo = document.getElementById('chk-corpo');
+        const chkAssin = document.getElementById('chk-assinatura');
+        const progress = document.getElementById('checklist-progress');
 
-        if (!chkExame) return;
+        if (!chkCorpo) return;
 
-        chkExame.checked    = (getEditorContent('exame').trim().length > 5);
-        chkAchados.checked  = (getEditorContent('achados').trim().length > 5);
-        chkConclusao.checked= (getEditorContent('conclusao').trim().length > 5);
+        chkCorpo.checked = getEditorContent('corpo').replace(/<[^>]+>/g, '').trim().length > 5;
         if (chkAssin) chkAssin.checked = <?= in_array($situacao, ['assinado','liberado']) ? 'true' : 'false' ?>;
 
-        const total = 4;
-        const checked = [chkExame, chkAchados, chkConclusao, chkAssin].filter(c => c && c.checked).length;
+        const total = 2;
+        const checked = [chkCorpo, chkAssin].filter(c => c && c.checked).length;
         if (progress) progress.style.width = Math.round((checked / total) * 100) + '%';
     }
 
@@ -1208,11 +1163,10 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
         btn.addEventListener('click', function() {
             btn.disabled = true;
             btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Liberando...';
-            var payload = { report_id: REPORT_ID_CICLO };
-            ['exame','tecnica','achados','conclusao','recomendacao'].forEach(function(s) {
-                var el = document.getElementById('editor-' + s);
-                if (el) payload['secao_' + s] = el.innerHTML;
-            });
+            var payload = {
+                report_id: REPORT_ID_CICLO,
+                corpo_laudo: getEditorContent('corpo')
+            };
             fetch('/api/reports/liberar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

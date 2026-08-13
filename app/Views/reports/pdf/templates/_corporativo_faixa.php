@@ -2,10 +2,9 @@
 /**
  * Template de Laudo — "Corporativo com Faixa".
  * Faixa de topo colorida (logo à esquerda, dados da instituição à direita,
- * mesma linha), paciente/solicitante em duas colunas, corpo com subtítulos
- * em negrito ("Técnica:", "Análise:", "Impressão:" — rótulos alternativos
- * de exame/achados/conclusão, só nesta apresentação — não altera as chaves
- * internas nem o editor), assinatura à direita, rodapé com endereço completo.
+ * mesma linha), paciente/solicitante em duas colunas, corpo clínico livre,
+ * assinatura à direita e rodapé com endereço completo. O conteúdo é definido
+ * pelo médico ou pela máscara aplicada, sem rótulos impostos pelo layout.
  *
  * Variáveis recebidas do dispatcher (reports/pdf.php): $r, $paciente, $download.
  */
@@ -116,26 +115,9 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
             </div>
         </div>
 
-        <div class="pdf-section">
-            <div class="pdf-section-title">Exame</div>
-            <div class="pdf-section-content"><?= $r['secao_exame'] ?? '' ?></div>
-        </div>
-        <div class="pdf-section">
-            <div class="pdf-section-title">Técnica</div>
-            <div class="pdf-section-content"><?= $r['secao_tecnica'] ?? '' ?></div>
-        </div>
-        <div class="pdf-section">
-            <div class="pdf-section-title">Análise</div>
-            <div class="pdf-section-content"><?= $r['secao_achados'] ?? '' ?></div>
-        </div>
-        <div class="pdf-section">
-            <div class="pdf-section-title">Impressão</div>
-            <div class="pdf-section-content"><?= $r['secao_conclusao'] ?? '' ?></div>
-        </div>
-        <?php if (!empty($r['secao_recomendacao'])): ?>
-        <div class="pdf-section">
-            <div class="pdf-section-title">Recomendação</div>
-            <div class="pdf-section-content"><?= $r['secao_recomendacao'] ?></div>
+        <?php if (trim(strip_tags($corpoLaudo)) !== ''): ?>
+        <div class="pdf-section pdf-section-free">
+            <div class="pdf-section-content"><?= $corpoLaudo ?></div>
         </div>
         <?php endif; ?>
 
