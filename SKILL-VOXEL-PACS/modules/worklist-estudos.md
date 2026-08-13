@@ -123,5 +123,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção**: `MedicoAccess` passou a expor `allowedInstitutionNames()` e `isInstitutionAllowed()`. Para médico restrito, a query principal, contadores, resumo e dropdown usam a mesma lista de `bi_medico_unidades`; assim, uma Unidade recém-vinculada aparece no select mesmo sem estudo importado. O parâmetro `?unidade=` fora dessa lista é ignorado e a Worklist volta para todas as Unidades autorizadas. Admin, superadmin, analista e viewer mantêm o comportamento anterior.
 
+## Dropdown Médico responsável para médico restrito — 2026-08-13
+
+**Cenário confirmado**: B. O dropdown já era montado a partir de `bi_medicos` (cadastro oficial), e não por `DISTINCT assumido_por` de `bi_pacs_estudos`. A hipótese histórica de valores numéricos no select estava desatualizada: `EstudosController::assumirEstudo()` grava o nome do médico em `assumido_por`, e a cláusula `e.assumido_por LIKE ?` recebe o mesmo nome enviado pela opção da view.
+
+**Causa raiz**: mesmo reconhecendo o médico logado, `EstudosController::renderWorklist()` sempre carregava todos os médicos ativos do tenant para o select. Isso permitia ao perfil médico visualizar nomes de colegas no filtro, contrariando a regra de acesso aplicada às demais superfícies do módulo.
+
+**Correção**: quando `MedicoAccess::isRestricted()` retorna verdadeiro, o select recebe somente o registro cujo ID é `MedicoAccess::currentMedicoId()`. Não há pré-seleção automática do filtro para preservar a fila livre (`NOVO`/`ABERTO`) na abertura da Worklist; ao selecionar o próprio nome, a consulta textual por `assumido_por` retorna apenas estudos assumidos por ele. Admin, superadmin, analista e viewer preservam a lista completa do tenant.
+
 ## Última análise
 2026-08-13
