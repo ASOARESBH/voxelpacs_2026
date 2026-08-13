@@ -175,6 +175,45 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 .mascara-card-nome { font-size: .88rem; font-weight: 600; color: var(--pacs-text, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mascara-card-meta { font-size: .72rem; color: var(--pacs-text-muted, #8892a4); margin-top: .15rem; }
 .mascara-card-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+
+/* Toolbar de ações da aba Máscaras: botões textuais, sem sobreposição. */
+.medico-mascaras-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+.medico-mascaras-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .6rem;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+}
+.medico-mascaras-toolbar .btn-pacs-outline,
+.medico-mascaras-toolbar .btn-pacs-primary {
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+@media (max-width: 680px) {
+    .medico-mascaras-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .medico-mascaras-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+@media (max-width: 420px) {
+    .medico-mascaras-toolbar .btn-pacs-outline,
+    .medico-mascaras-toolbar .btn-pacs-primary {
+        flex: 1 1 100%;
+    }
+}
+
 .mascara-badge { display: inline-flex; align-items: center; gap: .25rem; padding: .15rem .5rem; border-radius: 4px; font-size: .68rem; font-weight: 600; }
 .mascara-badge-modal { background: rgba(26,86,219,.15); color: #60a5fa; }
 .mascara-badge-shared { background: rgba(34,197,94,.12); color: #4ade80; }
@@ -968,14 +1007,14 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     ══════════════════════════════════════════════════════════════════ -->
     <div class="tab-pane fade<?= $abaAtiva === 'mascaras' ? ' show active' : '' ?>" id="aba-mascaras" role="tabpanel">
         <div class="medico-section">
-            <div class="medico-section-header" style="justify-content:space-between;">
+            <div class="medico-section-header medico-mascaras-header">
                 <span><i class="fa fa-layer-group"></i> Máscaras de Laudo</span>
-                <div style="display:flex;gap:.5rem;">
-                    <button type="button" class="pacs-btn" onclick="abrirImportarMascara()" title="Importar DOCX">
-                        <i class="fa fa-file-import me-1"></i> Importar DOCX
+                <div class="medico-mascaras-toolbar">
+                    <button type="button" class="btn-pacs-outline" onclick="abrirImportarMascara()" title="Importar máscaras de um arquivo DOCX">
+                        <i class="fa fa-file-import"></i><span>Importar DOCX</span>
                     </button>
                     <button type="button" class="btn-pacs-primary" onclick="abrirNovaMascara()">
-                        <i class="fa fa-plus me-1"></i> Nova Máscara
+                        <i class="fa fa-plus"></i><span>Nova Máscara</span>
                     </button>
                 </div>
             </div>
