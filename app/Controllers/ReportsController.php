@@ -158,6 +158,7 @@ class ReportsController extends Controller
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
                 'report_assinado_somente_leitura' => 'Este laudo já foi assinado e não pode mais ser editado.',
+                'estudo_assumido_por_outro'       => 'Este estudo foi assumido por outro médico e não pode ser alterado.',
                 default                            => null, // sucesso — sem erro
             };
 
@@ -211,6 +212,7 @@ class ReportsController extends Controller
                     'medico_assinatura_inativa'       => 'A assinatura está cadastrada, mas inativa. Acesse o cadastro do médico, clique em Ativar e tente novamente.',
                     'medico_nao_vinculado'            => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
                     'estudo_nao_encontrado'          => 'O estudo vinculado ao laudo não foi encontrado no tenant atual.',
+                    'estudo_assumido_por_outro'      => 'Este estudo foi assumido por outro médico e não pode ser assinado por sua conta.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     default                          => 'Erro ao assinar.',
                 };

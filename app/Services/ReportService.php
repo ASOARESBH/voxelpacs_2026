@@ -82,21 +82,20 @@ class ReportService {
         $lockInfo = null;
 
         $donoId = $estudo->usuario_responsavel_id ? (int) $estudo->usuario_responsavel_id : null;
-        if ($donoId && $donoId !== $userId && in_array($estudo->situacao, ['em_laudo', 'rascunho', 'revisao'], true)) {
-            if ($this->lockExpirado($estudo->lock_heartbeat_em)) {
-                $this->repo->reatribuirLock($estudo->id, $userId);
-                AuditLogger::log('report.lock_expirado_reatribuido', 'bi_pacs_estudos', $estudo->id, [
-                    'dono_anterior_id' => $donoId,
-                    'novo_dono_id' => $userId,
-                ]);
-                $estudo = $this->repo->findEstudoById($estudo->id);
-            } else {
-                $readonly = true;
-                $lockInfo = [
-                    'nome' => $this->repo->findUserNome($donoId),
-                    'desde' => $estudo->hora_inicio_laudo,
-                ];
-            }
+
+        // A posse nasce no botão Assumir da worklist e é exclusiva. Não há
+        // reatribuição automática por expiração de lock: isso poderia transferir
+        // um laudo clínico a outro médico sem uma ação explícita e auditável.
+        if (!$donoId || $donoId !== $userId) {
+            AuditLogger::log('report.acesso_negado_posse', 'bi_pacs_estudos', $estudo->id, [
+                'usuario_tentativa_id' => $userId,
+                'usuario_responsavel_id' => $donoId,
+                'situacao' => $estudo->situacao ?? null,
+            ]);
+            return [
+                'ok' => false,
+                'error' => 'estudo_assumido_por_outro',
+            ];
         }
 
         $report = $this->getOrCreateReport($estudo, $userId);
@@ -191,6 +190,16 @@ class ReportService {
 
         // estudo_id é o nome da FK no schema de produção
         $estudoIdFK = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
+        $estudo = $estudoIdFK ? $this->repo->findEstudoById($estudoIdFK) : null;
+        if (!$estudo || (int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+            Logger::warning('[ReportService::salvar] tentativa de salvar laudo sem posse', [
+                'report_id' => $reportId,
+                'estudo_id' => $estudoIdFK,
+                'usuario_id' => $userId,
+                'usuario_responsavel_id' => $estudo->usuario_responsavel_id ?? null,
+            ]);
+            return ['ok' => false, 'error' => 'estudo_assumido_por_outro'];
+        }
 
         $this->repo->atualizarConteudo($reportId, $conteudoAtual, $novoStatus, $templateId);
         if ($estudoIdFK) $this->repo->marcarHeartbeat($estudoIdFK);
@@ -307,6 +316,15 @@ class ReportService {
         $estudo = $estudoId ? $this->repo->findEstudoById($estudoId) : null;
         if (!$estudo) {
             return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+        }
+        if ((int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+            Logger::warning('[ReportService::assinar] tentativa de assinatura sem posse', [
+                'report_id' => $reportId,
+                'estudo_id' => $estudoId,
+                'usuario_id' => $userId,
+                'usuario_responsavel_id' => $estudo->usuario_responsavel_id ?? null,
+            ]);
+            return ['ok' => false, 'error' => 'estudo_assumido_por_outro'];
         }
         $user = Auth::user();
         $assinadoEm = date('Y-m-d H:i:s');

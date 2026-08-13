@@ -460,9 +460,14 @@ $periodoLabel = [
                 $slaMCls = slaClass($e['assumido_em'], $fimSla);
             }
 
-            // Permissões de ação
-            $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto']);
-            $podeLaudar  = $isMedicoLogado && in_array($sit, ['a_laudar','em_laudo','rascunho']);
+            // Permissões de ação: o laudo é exclusivo do médico que assumiu.
+            // usuario_responsavel_id referencia bi_users.id, não bi_medicos.id.
+            $estudoPertenceAoMedico = (int) ($e['usuario_responsavel_id'] ?? 0) > 0
+                && (int) ($e['usuario_responsavel_id'] ?? 0) === (int) ($usuarioLogadoId ?? 0);
+            $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto'], true);
+            $podeLaudar  = $isMedicoLogado
+                && $estudoPertenceAoMedico
+                && in_array($sit, ['a_laudar','em_laudo','rascunho'], true);
 
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);

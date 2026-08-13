@@ -65,7 +65,10 @@ class ReportRepository {
                     hora_inicio_laudo = CURTIME(),
                     lock_heartbeat_em = NOW()
                 WHERE id = :id
-                  AND (usuario_responsavel_id IS NULL OR usuario_responsavel_id = :uid2 OR situacao IN ('novo','aberto','urgente'))
+                  AND (
+                        (usuario_responsavel_id IS NULL AND COALESCE(situacao, 'novo') IN ('novo','aberto','urgente'))
+                     OR (usuario_responsavel_id = :uid2 AND COALESCE(situacao, 'novo') IN ('a_laudar','em_laudo','rascunho'))
+                  )
             ");
             $stmt->execute($params);
         } catch (\PDOException $e) {
@@ -79,7 +82,10 @@ class ReportRepository {
                 SET situacao = 'em_laudo', usuario_responsavel_id = :uid,
                     data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME()
                 WHERE id = :id
-                  AND (usuario_responsavel_id IS NULL OR usuario_responsavel_id = :uid2 OR situacao IN ('novo','aberto','urgente'))
+                  AND (
+                        (usuario_responsavel_id IS NULL AND COALESCE(situacao, 'novo') IN ('novo','aberto','urgente'))
+                     OR (usuario_responsavel_id = :uid2 AND COALESCE(situacao, 'novo') IN ('a_laudar','em_laudo','rascunho'))
+                  )
             ");
             $stmt->execute($params);
         }
