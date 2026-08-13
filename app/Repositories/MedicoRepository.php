@@ -25,11 +25,16 @@ class MedicoRepository
      * Lista todos os médicos ativos do tenant com contagem de exames e nome do usuário vinculado.
      * Suporta busca por nome/CRM/especialidade e paginação.
      */
-    public function findAll(int $tenantId, string $busca = '', int $pagina = 1, int $porPagina = 20): array
+    public function findAll(int $tenantId, string $busca = '', int $pagina = 1, int $porPagina = 20, ?int $onlyMedicoId = null): array
     {
         $offset = ($pagina - 1) * $porPagina;
         $params = ['tenant_id' => $tenantId];
         $where  = 'WHERE m.tenant_id = :tenant_id';
+
+        if ($onlyMedicoId !== null) {
+            $where .= ' AND m.id = :only_medico_id';
+            $params['only_medico_id'] = $onlyMedicoId;
+        }
 
         if ($busca !== '') {
             $where   .= " AND (m.nome LIKE :busca OR m.crm LIKE :busca OR m.especialidade LIKE :busca OR m.email LIKE :busca)";
@@ -68,10 +73,15 @@ class MedicoRepository
     }
 
     /** Total de médicos do tenant para paginação. */
-    public function count(int $tenantId, string $busca = ''): int
+    public function count(int $tenantId, string $busca = '', ?int $onlyMedicoId = null): int
     {
         $params = ['tenant_id' => $tenantId];
         $where  = 'WHERE m.tenant_id = :tenant_id';
+
+        if ($onlyMedicoId !== null) {
+            $where .= ' AND m.id = :only_medico_id';
+            $params['only_medico_id'] = $onlyMedicoId;
+        }
 
         if ($busca !== '') {
             $where   .= " AND (m.nome LIKE :busca OR m.crm LIKE :busca OR m.especialidade LIKE :busca OR m.email LIKE :busca)";

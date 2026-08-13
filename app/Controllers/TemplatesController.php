@@ -1,6 +1,7 @@
 <?php
 namespace App\Controllers;
 
+use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
@@ -41,6 +42,22 @@ class TemplatesController extends Controller
         return $_POST;
     }
 
+    /** Bloqueia médico restrito de consultar ou manipular máscaras de outro cadastro. */
+    private function guardOwnMedicoOrDeny(int $medicoId): bool
+    {
+        if (!MedicoAccess::isRestricted() || MedicoAccess::currentMedicoId() === $medicoId) {
+            return true;
+        }
+
+        Logger::error('[TemplatesController] Tentativa de acesso a máscaras de outro médico', [
+            'tenant_id' => Auth::tenantId(),
+            'user_id' => Auth::userId(),
+            'medico_id_solicitado' => $medicoId,
+        ]);
+        $this->json(['ok' => false, 'msg' => 'Acesso negado: você só pode gerenciar as próprias máscaras.'], 403);
+        return false;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // GET /api/medicos/{medicoId}/templates
     // Lista templates do médico + compartilhados da unidade
@@ -48,6 +65,7 @@ class TemplatesController extends Controller
     public function listar(int $medicoId): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
         $tenantId = $this->tenantId();
         try {
             $pdo = Database::getInstance();
@@ -78,6 +96,7 @@ class TemplatesController extends Controller
     public function salvar(int $medicoId): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
         $tenantId = $this->tenantId();
         $input    = $this->getJsonInput();
 
@@ -173,6 +192,7 @@ class TemplatesController extends Controller
     public function excluir(int $medicoId, int $id): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
         $tenantId = $this->tenantId();
         try {
             $pdo = Database::getInstance();
@@ -193,6 +213,7 @@ class TemplatesController extends Controller
     public function importar(int $medicoId): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
         $tenantId = $this->tenantId();
 
         // Aceita JSON no body (lista de templates pré-processados)
@@ -329,6 +350,7 @@ PYEOF;
         $q         = trim($_GET['q'] ?? '');
         $modalidade = trim($_GET['modalidade'] ?? '');
         $medicoId  = (int) ($_GET['medico_id'] ?? 0);
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
 
         try {
             $pdo = Database::getInstance();
@@ -375,6 +397,7 @@ PYEOF;
         $tenantId        = $this->tenantId();
         $studyDescription = strtoupper(trim($_GET['study_description'] ?? ''));
         $medicoId        = (int) ($_GET['medico_id'] ?? 0);
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
 
         if (!$studyDescription) {
             $this->json(['ok' => true, 'template' => null]);

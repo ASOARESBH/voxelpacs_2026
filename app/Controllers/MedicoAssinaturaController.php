@@ -2,14 +2,13 @@
 /**
  * MedicoAssinaturaController — aba "Assinatura" em /medicos/{id}/edit.
  *
- * Autorização: mesmo escopo do resto de MedicosController::edit() (qualquer
- * usuário autenticado do tenant que já acessa essa tela, não restrito ao
- * médico logado — decisão confirmada explicitamente, ver
- * modules/assinatura-medico.md). Toda ação exige TenantContext + confere que
- * o {id} da URL é um bi_medicos.id do tenant do usuário logado.
+ * Autorização: administradores preservam o escopo do tenant. Médico vinculado
+ * só pode operar a assinatura do próprio registro bi_medicos, inclusive nos
+ * endpoints AJAX. Toda ação também confere isolamento por TenantContext.
  */
 namespace App\Controllers;
 
+use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
@@ -36,9 +35,18 @@ class MedicoAssinaturaController extends Controller
         return $id;
     }
 
-    /** Confere que $medicoId pertence ao tenant autenticado antes de qualquer ação. */
+    /** Confere tenant e, para médico vinculado, impede acesso à assinatura de terceiros. */
     private function validarMedicoDoTenant(int $medicoId, int $tenantId): bool
     {
+        if (MedicoAccess::isRestricted() && MedicoAccess::currentMedicoId() !== $medicoId) {
+            Logger::error('[MedicoAssinaturaController] Tentativa de acesso à assinatura de outro médico', [
+                'tenant_id' => $tenantId,
+                'user_id' => Auth::userId(),
+                'medico_id_solicitado' => $medicoId,
+            ]);
+            return false;
+        }
+
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare('SELECT id FROM bi_medicos WHERE id = :id AND tenant_id = :tenant_id LIMIT 1');
         $stmt->execute(['id' => $medicoId, 'tenant_id' => $tenantId]);

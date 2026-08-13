@@ -47,3 +47,21 @@ POST /api/medicos/{id}/workspace-laudo toggle Laudário Interno ↔ VOXEL Copilo
 
 ## Última análise
 2026-08-06
+
+## Correção de acesso por médico vinculado — 2026-08-13
+
+Um usuário cujo perfil ativo no tenant é `medico` e cujo `bi_users.id` está vinculado a `bi_medicos.usuario_id` passou a ser classificado como **médico restrito** por `App\Core\Access\MedicoAccess`. Administrador do tenant (`perfil` `admin`/`administrador`) e superadministrador permanecem fora dessa restrição, mesmo na existência de vínculo histórico em `bi_medicos`.
+
+| Ponto | Regra aplicada |
+|---|---|
+| `GET /medicos` | Retorna somente o registro `bi_medicos.id` vinculado ao usuário médico atual, sempre com `tenant_id` correspondente. |
+| Criação de médico | `GET /medicos/create` e `POST /medicos` respondem `403` para médico restrito. |
+| Edição e status | Um médico só pode acessar, atualizar ou alternar o status do próprio ID; tentativas contra outro ID retornam `403`. |
+| Copilot, Workspace e permissão de visibilidade | As APIs por `{medicoId}` aplicam a mesma regra de posse. |
+| Assinaturas e máscaras | As APIs de assinatura e templates também validam o próprio médico para evitar bypass por URL/AJAX. |
+| Unidades | O menu é ocultado e todas as rotas administrativas de unidade retornam `403` para médico restrito; a API externa do Copilot continua disponível apenas quando autenticada por Bearer válido. |
+
+A listagem usa o filtro opcional `onlyMedicoId` em `MedicoService`/`MedicoRepository`, preservando o comportamento anterior para administrador, analista e viewer. Não há migration nesta correção.
+
+## Última análise
+2026-08-13
