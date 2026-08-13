@@ -104,6 +104,67 @@ class TemplatesController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // GET /medicos/{medicoId}/mascaras/{mascaraId}/visualizar
+    // Prévia somente leitura: máscara própria, compartilhada ou global do tenant.
+    // Não incrementa uso_count nem escreve no banco.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function visualizar(int $medicoId, int $mascaraId): void
+    {
+        if (!Auth::check()) {
+            $this->redirect('/login');
+            return;
+        }
+        if (!$this->guardOwnMedicoOrDeny($medicoId)) return;
+
+        $tenantId = $this->tenantId();
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare("
+                SELECT id, nome, modalidade, compartilhar, study_description_tag,
+                       secao_tecnica, secao_achados, secao_conclusao, medico_id
+                FROM report_templates
+                WHERE id = :id
+                  AND tenant_id = :tid
+                  AND ativo = 1
+                  AND (medico_id = :mid OR compartilhar = 1 OR medico_id IS NULL)
+                LIMIT 1
+            ");
+            $stmt->execute(['id' => $mascaraId, 'tid' => $tenantId, 'mid' => $medicoId]);
+            $mascara = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$mascara) {
+                Logger::warning('TemplatesController::visualizar acesso negado ou máscara ausente', [
+                    'tenant_id' => $tenantId,
+                    'user_id' => Auth::userId(),
+                    'medico_id' => $medicoId,
+                    'mascara_id' => $mascaraId,
+                ]);
+                http_response_code(404);
+                $this->view('reports/error', [
+                    'mensagem' => 'Máscara não encontrada ou você não tem permissão para visualizá-la.',
+                ], 'pacs');
+                return;
+            }
+
+            $this->view('mascaras/visualizar', [
+                'mascara' => $mascara,
+                'medicoId' => $medicoId,
+            ], 'none');
+        } catch (\Throwable $e) {
+            Logger::error('TemplatesController::visualizar error', [
+                'msg' => $e->getMessage(),
+                'tenant_id' => $tenantId,
+                'medico_id' => $medicoId,
+                'mascara_id' => $mascaraId,
+            ]);
+            http_response_code(500);
+            $this->view('reports/error', [
+                'mensagem' => 'Erro ao abrir a pré-visualização da máscara.',
+            ], 'pacs');
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // POST /api/medicos/{medicoId}/templates
     // Cria ou atualiza template
     // ══════════════════════════════════════════════════════════════════════════

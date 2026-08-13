@@ -88,6 +88,7 @@ Router::get('/api/medicos/{medicoId}/templates',           'TemplatesController@
 Router::post('/api/medicos/{medicoId}/templates',          'TemplatesController@salvar');
 Router::post('/api/medicos/{medicoId}/templates/importar', 'TemplatesController@importar');
 Router::post('/api/medicos/{medicoId}/templates/{id}/excluir', 'TemplatesController@excluir');
+Router::get('/medicos/{medicoId}/mascaras/{mascaraId}/visualizar', 'TemplatesController@visualizar');
 Router::get('/api/templates/buscar',                       'TemplatesController@buscar');
 Router::get('/api/templates/auto',                         'TemplatesController@autoCarregar');
 
