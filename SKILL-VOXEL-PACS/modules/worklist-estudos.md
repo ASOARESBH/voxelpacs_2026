@@ -131,5 +131,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção**: quando `MedicoAccess::isRestricted()` retorna verdadeiro, o select recebe somente o registro cujo ID é `MedicoAccess::currentMedicoId()`. Não há pré-seleção automática do filtro para preservar a fila livre (`NOVO`/`ABERTO`) na abertura da Worklist; ao selecionar o próprio nome, a consulta textual por `assumido_por` retorna apenas estudos assumidos por ele. Admin, superadmin, analista e viewer preservam a lista completa do tenant.
 
+## Sincronização do filtro Situação — 2026-08-13
+
+**Sintoma**: depois de aplicar uma situação pelo atalho rápido, trocar a opção pelo dropdown completo podia restaurar a situação anterior. O efeito ocorria porque os dois selects pertencem ao mesmo formulário e enviavam simultaneamente `situacao` e `situacao_rapida`.
+
+**Causa raiz**: `EstudosController::renderWorklist()` atribuía `situacao_rapida` sobre `situacao` sempre que o atalho tivesse valor, mesmo quando o usuário acabara de escolher uma situação diferente no select principal. Assim, o valor antigo do atalho tinha precedência indevida na consulta e na renderização seguinte.
+
+**Correção**: o backend agora usa `situacao_rapida` somente quando `situacao` está vazio. No frontend, o select principal limpa `situacao_rapida` ao mudar; o auto-submit central da Worklist então aplica imediatamente a última seleção. O atalho rápido continua sincronizando seu valor com o select principal e disparando o mesmo auto-submit. As opções ativas no checkout são `NOVO`, `ABERTO`, `PENDENTE`, `A LAUDAR`, `EM LAUDO`, `RASCUNHO`, `ASSINADO`, `LIBERADO` e `PEER REVIEW`.
+
 ## Última análise
 2026-08-13
