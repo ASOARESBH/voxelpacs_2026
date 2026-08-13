@@ -301,7 +301,8 @@ $periodoLabel = [
         <?php endforeach; ?>
     </select>
 
-    <select name="situacao" id="selectSituacao" class="wl-select" style="width:138px;">
+    <select name="situacao" id="selectSituacao" class="wl-select" style="width:138px;"
+            onchange="this.form.elements['situacao_rapida'].value='';">
         <option value="">Todas as situações</option>
         <option value="novo"     <?= $filtros['situacao']==='novo'?'selected':'' ?>>NOVO</option>
         <option value="aberto"   <?= $filtros['situacao']==='aberto'?'selected':'' ?>>ABERTO</option>

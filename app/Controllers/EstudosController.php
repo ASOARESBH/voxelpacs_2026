@@ -96,7 +96,10 @@ class EstudosController extends Controller
             'por_pagina'     => $this->sanitizarPorPagina((int)($_GET['por_pagina'] ?? 25)),
         ];
 
-        if ($filtros['situacao_rapida'] !== '') {
+        // "situacao" é a escolha explícita do select principal. O atalho rápido
+        // só fornece um padrão quando o campo principal não veio no formulário;
+        // assim, um valor antigo de situacao_rapida não reverte uma troca recente.
+        if ($filtros['situacao'] === '' && $filtros['situacao_rapida'] !== '') {
             $filtros['situacao'] = $filtros['situacao_rapida'];
         }
 
