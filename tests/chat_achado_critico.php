@@ -41,6 +41,7 @@ requireCritical($migration, 'idx_achado_critico_em', 'Migration não cria índic
 requireCritical($migration, 'idx_achado_critico_por', 'Migration não cria índice do médico marcador.');
 requireCritical($migration, 'fk_bi_pacs_estudos_achado_critico_por', 'Migration não cria integridade referencial do médico marcador.');
 requireCritical($migration, 'utf8_unicode_ci', 'Migration não declara collation compatível com HostGator.');
+requireCritical($migration, "VARCHAR(255)\n        CHARACTER SET utf8 COLLATE utf8_unicode_ci NULL", 'Migration usa ordem incompatível de charset/collation para MariaDB.');
 requireCritical($migration, 'ROLLBACK', 'Migration não possui rollback.');
 if (strpos($migration, 'ADD COLUMN IF NOT EXISTS') !== false
     || preg_match('/^\\s*(?:SELECT|FROM|JOIN).*INFORMATION_SCHEMA/im', $migration)) {

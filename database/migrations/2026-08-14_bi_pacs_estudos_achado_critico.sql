@@ -25,8 +25,8 @@ ALTER TABLE `bi_pacs_estudos`
     ADD COLUMN `achado_critico_por` INT UNSIGNED NULL
         COMMENT 'bi_users.id do médico que comunicou achado crítico'
         AFTER `achado_critico_em`,
-    ADD COLUMN `achado_critico_assunto` VARCHAR(255) NULL
-        CHARACTER SET utf8 COLLATE utf8_unicode_ci
+    ADD COLUMN `achado_critico_assunto` VARCHAR(255)
+        CHARACTER SET utf8 COLLATE utf8_unicode_ci NULL
         COMMENT 'Resumo curto do assunto comunicado no CHAT'
         AFTER `achado_critico_por`;
 
