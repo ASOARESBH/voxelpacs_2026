@@ -151,6 +151,7 @@ class ReportDeliveryController extends Controller
         if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             throw new DomainException('A configuração pública deve ser um JSON válido.');
         }
+        $this->validateTransportConfiguration($transport, $decoded);
         if ($secret !== '') {
             $decodedSecret = json_decode($secret, true);
             if (!is_array($decodedSecret) || json_last_error() !== JSON_ERROR_NONE) {
@@ -170,6 +171,59 @@ class ReportDeliveryController extends Controller
             'timeout_seconds' => max(5, min(120, (int) ($_POST['timeout_seconds'] ?? 30))),
             'max_attempts' => max(1, min(10, (int) ($_POST['max_attempts'] ?? 5))),
         ];
+    }
+
+    /** @param array<string,mixed> $configuration */
+    private function validateTransportConfiguration(string $transport, array $configuration): void
+    {
+        $host = trim((string) ($configuration['host'] ?? ''));
+        $port = (int) ($configuration['port'] ?? 0);
+        $validHost = $host !== '' && strlen($host) <= 253 && preg_match('/^[a-zA-Z0-9.:-]+$/', $host);
+        $validPort = $port >= 1 && $port <= 65535;
+
+        if (in_array($transport, ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'sftp'], true) && (!$validHost || !$validPort)) {
+            throw new DomainException('Informe um endereço de servidor e uma porta válida para o destino.');
+        }
+
+        if (in_array($transport, ['dicom_pdf', 'dicom_sr'], true)) {
+            foreach (['called_ae' => 'AE Title do PACS cliente', 'calling_ae' => 'AE Title do VOXEL PACS'] as $field => $label) {
+                $value = trim((string) ($configuration[$field] ?? ''));
+                if ($value === '' || strlen($value) > 16 || !preg_match('/^[a-zA-Z0-9 _.-]+$/', $value)) {
+                    throw new DomainException("{$label} deve ter até 16 caracteres alfanuméricos.");
+                }
+            }
+            return;
+        }
+
+        if ($transport === 'hl7_oru') {
+            foreach (['sending_application', 'sending_facility', 'receiving_application', 'receiving_facility'] as $field) {
+                $value = trim((string) ($configuration[$field] ?? ''));
+                if ($value === '' || strlen($value) > 180) {
+                    throw new DomainException('Preencha os identificadores de aplicação e instituição do HIS/RIS.');
+                }
+            }
+            return;
+        }
+
+        if ($transport === 'https_webhook') {
+            $url = trim((string) ($configuration['url'] ?? ''));
+            if (!filter_var($url, FILTER_VALIDATE_URL) || parse_url($url, PHP_URL_SCHEME) !== 'https') {
+                throw new DomainException('Informe uma URL HTTPS válida para o endpoint do cliente.');
+            }
+            if (!in_array((string) ($configuration['auth_type'] ?? 'none'), ['none', 'bearer'], true)) {
+                throw new DomainException('Tipo de autenticação HTTPS inválido.');
+            }
+            return;
+        }
+
+        if ($transport === 'sftp') {
+            $protocol = (string) ($configuration['protocol'] ?? 'sftp');
+            $directory = trim((string) ($configuration['remote_directory'] ?? ''));
+            $username = trim((string) ($configuration['username'] ?? ''));
+            if (!in_array($protocol, ['sftp', 'ftps'], true) || $directory === '' || $directory[0] !== '/' || $username === '') {
+                throw new DomainException('Informe protocolo seguro, pasta remota iniciando com / e usuário do destino.');
+            }
+        }
     }
 
     private function isPlatformAdmin(): bool
