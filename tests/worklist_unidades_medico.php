@@ -16,11 +16,13 @@ $regras = [
     'Worklist importa o helper central' => str_contains($controller, 'use App\\Core\\Access\\MedicoAccess;'),
     'URL com Unidade não autorizada é normalizada' => str_contains($controller, "!MedicoAccess::isInstitutionAllowed(\$filtros['unidade'])")
         && str_contains($controller, "\$filtros['unidade'] = '';"),
-    'médico usa a fonte única de Unidades' => str_contains($controller, '$institutionNames     = MedicoAccess::allowedInstitutionNames();'),
+    'médico usa a fonte única de Unidades' => str_contains($controller, 'MedicoAccess::allowedInstitutionNames()')
+        && str_contains($controller, 'private function resolverEscopoWorklist'),
     'dropdown médico usa a mesma fonte' => str_contains($controller, '$unidades = MedicoAccess::allowedInstitutionNames();'),
-    'médico sem vínculo não recebe fallback do tenant' => substr_count($controller, "elseif (\$isMedicoFiltro) {\n                    \$cWhere[] = '1=0';") === 1
-        && substr_count($controller, "elseif (\$isMedicoFiltro) {\n                    \$rWhere[] = '1=0';") === 1
-        && str_contains($controller, "// Médico sem Unidade vinculada não pode herdar a visão inteira do tenant."),
+    'médico sem vínculo não recebe fallback do tenant' => str_contains(
+        $controller,
+        '// Médico sem Unidade vinculada não pode herdar a visão do tenant.'
+    ) && str_contains($controller, "\$where[] = '1=0';"),
 ];
 
 $falhas = array_keys(array_filter($regras, static fn(bool $ok): bool => !$ok));
