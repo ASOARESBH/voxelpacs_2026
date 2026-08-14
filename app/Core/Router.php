@@ -9,6 +9,7 @@ class Router {
         '/logout',
         '/selecionar-empresa',
         '/open/',
+        '/api/viewer/measurements',
         '/acesso/criar-senha/',
         '/esqueci-senha',
         '/api/sla-regras/executar',
@@ -19,8 +20,12 @@ class Router {
         self::$routes[] = ['method' => 'GET', 'path' => $path, 'handler' => $handler];
     }
 
-    public static function post(string $path, $handler): void {
+        public static function post(string $path, $handler): void {
         self::$routes[] = ['method' => 'POST', 'path' => $path, 'handler' => $handler];
+    }
+
+    public static function options(string $path, $handler): void {
+        self::$routes[] = ['method' => 'OPTIONS', 'path' => $path, 'handler' => $handler];
     }
 
     public static function group(array $options, callable $callback): void {

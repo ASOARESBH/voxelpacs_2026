@@ -28,6 +28,7 @@
 <script src="/assets/js/reports/reports-autotext.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-signature.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-history.js?v=<?= $v ?>"></script>
+<script src="/assets/js/reports/reports-measurements.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-main.js?v=<?= $v ?>"></script>
 <script>
     window.VoxelReports.main.init();

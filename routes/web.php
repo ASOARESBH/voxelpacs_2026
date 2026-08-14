@@ -207,12 +207,19 @@ Router::post('/reports/assumir',           'ReportsController@assumir');
 Router::post('/api/reports/status',        'ReportsController@atualizarStatus');
 Router::post('/api/reports/liberar',       'ReportsController@liberar');
 Router::get('/api/reports/by-estudo',      'ReportsController@byEstudo');
+// Medidas capturadas do VOXEL VIEW para seleção e inserção no laudário.
+Router::get('/api/reports/measurements',        'ReportMeasurementsController@index');
+Router::post('/api/reports/measurements/insert', 'ReportMeasurementsController@insert');
 Router::get('/api/reports/chat',             'ReportChatController@context');
 Router::post('/api/reports/chat/send',       'ReportChatController@send');
 Router::post('/api/reports/chat/complete',   'ReportChatController@complete');
 Router::get('/api/reports/peer-review/context',  'ReportPeerReviewController@context');
 Router::post('/api/reports/peer-review/open',    'ReportPeerReviewController@open');
 Router::get('/api/reports/peer-review/original', 'ReportPeerReviewController@original');
+
+// Endpoint público CORS restrito: adapter do MeasurementService no VOXEL VIEW.
+Router::options('/api/viewer/measurements', 'ViewerMeasurementsController@options');
+Router::post('/api/viewer/measurements',    'ViewerMeasurementsController@ingest');
 
 // Compatibilidade com o botão PDF antigo que usa /reports/{study_uid}/pdf.
 Router::get('/reports/{study_uid}/pdf',     'ReportsController@pdfByStudyUid');
