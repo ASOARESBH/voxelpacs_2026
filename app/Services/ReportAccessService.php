@@ -83,7 +83,7 @@ final class ReportAccessService
         if (!Auth::check()) {
             return false;
         }
-        if (Auth::isPlatformAdmin()) {
+        if (Auth::isPlatformAdmin() && !Auth::isImpersonating()) {
             return true;
         }
 
@@ -136,7 +136,7 @@ final class ReportAccessService
 
     private function isAllowed(object $resource, bool $requireOwnership): bool
     {
-        if (Auth::isPlatformAdmin()) {
+        if (Auth::isPlatformAdmin() && !Auth::isImpersonating()) {
             return true;
         }
 

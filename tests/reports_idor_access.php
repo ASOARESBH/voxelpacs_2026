@@ -13,6 +13,7 @@ $measurements = file_get_contents($raiz . '/app/Controllers/ReportMeasurementsCo
 $regras = [
     'serviço central une report e estudo para autorização' => str_contains($access, 'INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id'),
     'serviço central valida tenant do report' => str_contains($access, '$reportTenantId !== $currentTenantId'),
+    'superadmin em impersonação respeita o tenant selecionado' => substr_count($access, 'Auth::isPlatformAdmin() && !Auth::isImpersonating()') === 2,
     'serviço central aplica Unidade médica permitida' => str_contains($access, 'MedicoAccess::isInstitutionAllowed'),
     'médico sem vínculo é bloqueado por padrão' => str_contains($access, "'medico_nao_vinculado'")
         && str_contains($access, '$perfil === \'medico\''),

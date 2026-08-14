@@ -78,7 +78,7 @@ O contrato de `ReportRepository::findReportById()` usa os campos canônicos `rep
 
 ### Autorização de report_id e defesa IDOR (2026-08-14)
 
-`App\Services\ReportAccessService` é a fonte única de autorização para recursos de laudo recebidos por `report_id` ou `estudo_id`. Ele carrega o report com o estudo e, antes de qualquer retorno ou escrita, valida `reports.tenant_id`, a `institution_name` permitida pelo `MedicoAccess` e, para médico restrito, a posse em `bi_pacs_estudos.usuario_responsavel_id`. Médico sem cadastro ativo vinculado falha fechado. Superadmin preserva o acesso global previsto pela plataforma.
+`App\Services\ReportAccessService` é a fonte única de autorização para recursos de laudo recebidos por `report_id` ou `estudo_id`. Ele carrega o report com o estudo e, antes de qualquer retorno ou escrita, valida `reports.tenant_id`, a `institution_name` permitida pelo `MedicoAccess` e, para médico restrito, a posse em `bi_pacs_estudos.usuario_responsavel_id`. Médico sem cadastro ativo vinculado falha fechado. Superadmin preserva o acesso global somente fora de impersonação; ao visualizar um Negócio, respeita o tenant selecionado.
 
 A regra vale para editor, `save`, `sign`, histórico, restauração de versão, PDF, assinatura visual, busca por estudo, mudança de situação, CHAT, Peer Review e Medidas. Um recurso não autorizado deve responder como inexistente (`404`/payload sem ID), nunca como `403` com confirmação de existência. A tentativa fica registrada em `Logger::warning` sem conteúdo clínico.
 
