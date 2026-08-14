@@ -51,5 +51,15 @@ Quando o Chat está pendente, a Gestão desabilita a alteração de prioridade. 
 
 Foram validados `php -l` nos arquivos PHP alterados, `node --check` no JavaScript do submenu, os contratos estáticos de Gestão, Chat e workflow de Reports, `git diff --check` e a paridade dos três catálogos de idioma. A consulta `SHOW COLUMNS` não pôde ser executada neste sandbox porque não há conexão configurada com o banco; por isso o Repository não referencia `atualizado_em` no `UPDATE` do override.
 
+## Descrição do Estudo por modalidade (2026-08-14)
+
+O submenu **Gerenciar estudo** passou a incluir **Descrição do Estudo**. Ao abrir a opção, o modal lê a modalidade já presente no estudo e consulta `bi_modalidade_descricoes` somente no `tenant_id` ativo. As sugestões são ordenadas por `uso_count` decrescente; uma descrição nova é criada organicamente no mesmo momento em que é aplicada.
+
+A aplicação individual aceita os mesmos perfis administrativos já autorizados a usar Gerenciar e atualiza apenas o estudo selecionado. A aplicação em lote é exclusiva de `admin` do tenant ou superadmin, exige uma prévia seguida de confirmação explícita, e o `UPDATE` é limitado simultaneamente a `tenant_id`, `modalities`, `study_description_manual = 0` e `study_description` nulo ou vazio. Nenhuma descrição já preenchida é substituída pela ação em lote.
+
+As rotas são `GET /api/gestao-exames/descricoes-por-modalidade`, `POST /api/gestao-exames/estudos/{id}/descricao`, `POST /api/gestao-exames/estudos/{id}/descricao/previa-lote` e `POST /api/gestao-exames/estudos/{id}/descricao/lote`. Todos os POST exigem CSRF e as duas escritas registram auditoria em `bi_audit_logs`; o lote gera exatamente um evento com modalidade, descrição e total efetivamente afetado.
+
+A migration `2026-08-14_bi_modalidade_descricoes_study_description_manual.sql` adiciona `bi_pacs_estudos.study_description_manual`. Quando marcado como `1`, `PacsSyncService::upsertEstudo()` remove `study_description` do payload de atualização do Orthanc, preservando a correção humana nas sincronizações seguintes. A migration deve ser executada antes do deploy do código que passa a consultar essa coluna.
+
 ## Última análise
-2026-08-11
+2026-08-14

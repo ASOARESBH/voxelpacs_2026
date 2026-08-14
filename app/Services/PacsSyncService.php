@@ -159,12 +159,20 @@ class PacsSyncService
         $cols['dicom_tags_completas'] = $dicomTagsJson;
 
         $existeStmt = $pdo->prepare("
-            SELECT id, roteamento_resolvido_por FROM bi_pacs_estudos WHERE orthanc_id = ?
+            SELECT id, roteamento_resolvido_por, study_description_manual
+            FROM bi_pacs_estudos
+            WHERE orthanc_id = ?
         ");
         $existeStmt->execute([$study['orthanc_id']]);
         $existente = $existeStmt->fetch(\PDO::FETCH_ASSOC);
 
         $jaResolvidoManualmente = $existente && $existente['roteamento_resolvido_por'] !== null;
+        $descricaoResolvidaManualmente = $existente && !empty($existente['study_description_manual']);
+
+        // Uma correção humana é intencional e não pode ser revertida pelo payload DICOM.
+        if ($descricaoResolvidaManualmente) {
+            unset($cols['study_description']);
+        }
 
         if (!$jaResolvidoManualmente) {
             $cols['tenant_id']             = $routing['tenant_id'];

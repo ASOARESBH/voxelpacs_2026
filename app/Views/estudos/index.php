@@ -863,6 +863,11 @@ $periodoLabel = [
                         <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.chat')) ?></strong><small id="gerenciarChatDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.chat_desc')) ?></small></span>
                         <span id="gerenciarChatBadge" class="gerenciar-menu-badge" style="display:none;"><?= htmlspecialchars(t('gestao_gerenciar.menu.pendente')) ?></span>
                     </button>
+                    <button type="button" id="gerenciarDescricao" class="gerenciar-menu-item">
+                        <i class="fa fa-file-medical"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.descricao')) ?></strong><small id="gerenciarDescricaoDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.descricao_desc')) ?></small></span>
+                        <i class="fa fa-chevron-right ms-auto"></i>
+                    </button>
                     <button type="button" id="gerenciarPrioridade" class="gerenciar-menu-item">
                         <i class="fa fa-flag"></i>
                         <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade')) ?></strong><small id="gerenciarPrioridadeDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade_desc')) ?></small></span>
@@ -955,6 +960,39 @@ $periodoLabel = [
         </div>
     </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL DESCRIÇÃO -->
+<div class="modal fade" id="gerenciarDescricaoModal" tabindex="-1" aria-labelledby="gerenciarDescricaoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarDescricaoModalLabel"><i class="fa fa-file-medical me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.descricao.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <form id="gerenciarDescricaoForm">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div id="gerenciarDescricaoStatus" class="alert py-2 small" style="display:none;"></div>
+                    <p id="gerenciarDescricaoModalidade" class="text-muted small mb-3">—</p>
+                    <label class="w-100"><?= htmlspecialchars(t('gestao_gerenciar.descricao.campo')) ?>
+                        <input id="gerenciarDescricaoInput" name="descricao" class="form-control mt-1" list="gerenciarDescricaoSugestoes" maxlength="255" required autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.descricao.placeholder')) ?>">
+                    </label>
+                    <datalist id="gerenciarDescricaoSugestoes"></datalist>
+                    <div class="mt-3">
+                        <small class="text-muted d-block mb-1"><?= htmlspecialchars(t('gestao_gerenciar.descricao.sugestoes')) ?></small>
+                        <div id="gerenciarDescricaoSugestoesLista" class="d-flex flex-wrap gap-1"></div>
+                    </div>
+                </div>
+                <div class="modal-footer d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button>
+                    <button type="submit" class="btn btn-primary" id="gerenciarDescricaoAplicar"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.descricao.individual')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" id="gerenciarDescricaoLote" style="display:none;"><i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('gestao_gerenciar.descricao.lote')) ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <div id="gerenciarI18n" class="d-none"
      data-carregando-acoes="<?= htmlspecialchars(t('gestao_gerenciar.js.carregando_acoes')) ?>"
      data-study-uid="<?= htmlspecialchars(t('gestao_gerenciar.js.study_uid')) ?>"
@@ -994,7 +1032,10 @@ $periodoLabel = [
      data-tema-contraste="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.contraste')) ?>"
      data-tema-exames-complementares="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.exames_complementares')) ?>"
      data-tema-duvida-administrativa="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.duvida_administrativa')) ?>"
-     data-tema-outro="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.outro')) ?>"></div>
+     data-tema-outro="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.outro')) ?>"
+     data-descricao-modalidade="<?= htmlspecialchars(t('gestao_gerenciar.descricao.modalidade')) ?>"
+     data-descricao-sem-sugestoes="<?= htmlspecialchars(t('gestao_gerenciar.descricao.sem_sugestoes')) ?>"
+     data-confirmar-descricao-lote="<?= htmlspecialchars(t('gestao_gerenciar.descricao.confirmar_lote')) ?>"></div>
 <?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════════ ESTILOS -->
