@@ -38,6 +38,24 @@ $transportLabels = [
         <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Falhas/DLQ</div><div class="h3 mb-0 text-danger"><?= (int) ($stats['failed'] ?? 0) ?></div></div></div></div>
     </div>
 
+    <div class="card border-warning shadow-sm mb-4">
+        <div class="card-header bg-warning-subtle"><h2 class="h5 mb-0"><i class="fa fa-vial-circle-check me-1"></i> Envio único de homologação</h2></div>
+        <div class="card-body">
+            <p class="small mb-3">Use somente após confirmar o destino e o PACS de origem. O laudo deve estar <strong>liberado</strong>; o Hub aplicará o InstitutionName do estudo e somente criará job para destinos habilitados em homologação.</p>
+            <form id="manual-delivery-form" method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/enqueue" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <div class="col-lg-8">
+                    <label class="form-label" for="manual-report-token">Link ou token público do laudo liberado</label>
+                    <input class="form-control font-monospace" id="manual-report-token" name="report_public_token" maxlength="512" required placeholder="Cole o link /reports/r/{token} ou o token de 48 caracteres">
+                    <div class="form-text">O identificador não expõe o ID sequencial do laudo. O servidor valida o tenant, o status liberado e o PACS de origem.</div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-end"><button type="submit" class="btn btn-warning w-100"><i class="fa fa-paper-plane me-1"></i> Criar entrega de homologação</button></div>
+                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="manual-delivery-confirm" name="confirm_single_delivery" value="1" required><label class="form-check-label" for="manual-delivery-confirm">Confirmo a criação de <strong>uma única</strong> entrega para o laudo informado.</label></div></div>
+            </form>
+            <div id="manual-delivery-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
+        </div>
+    </div>
+
     <div class="row g-4">
         <div class="col-xl-5">
             <div class="card shadow-sm">
@@ -202,6 +220,8 @@ $transportLabels = [
 <script>
 (() => {
     const form = document.getElementById('destination-form');
+    const manualForm = document.getElementById('manual-delivery-form');
+    const manualFeedback = document.getElementById('manual-delivery-feedback');
     const title = document.getElementById('destination-form-title');
     const cancel = document.getElementById('destination-cancel');
     const feedback = document.getElementById('delivery-feedback');
@@ -302,6 +322,25 @@ $transportLabels = [
         renderTransportFields();
         syncEnvironment();
     }
+
+    manualForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const raw = document.getElementById('manual-report-token').value.trim();
+        const match = raw.match(/\/reports\/r\/([a-f0-9]{48})$/i) || raw.match(/^([a-f0-9]{48})$/i);
+        if (!match) {
+            manualFeedback.className = 'alert alert-danger mt-3 mb-0';
+            manualFeedback.textContent = 'Informe um link /reports/r/{token} ou um token válido de 48 caracteres.';
+            manualFeedback.classList.remove('d-none');
+            return;
+        }
+        document.getElementById('manual-report-token').value = match[1].toLowerCase();
+        const response = await fetch(manualForm.action, { method: 'POST', body: new FormData(manualForm), credentials: 'same-origin' });
+        const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
+        manualFeedback.className = 'alert ' + (result.success ? 'alert-success' : 'alert-danger') + ' mt-3 mb-0';
+        manualFeedback.textContent = result.message || 'Operação concluída.';
+        manualFeedback.classList.remove('d-none');
+        if (result.success) window.setTimeout(() => window.location.reload(), 1000);
+    });
 
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
     environment.addEventListener('change', syncEnvironment);

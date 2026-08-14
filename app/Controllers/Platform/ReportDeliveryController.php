@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Repositories\ReportDeliveryRepository;
 use App\Services\InstitutionResolverService;
 use App\Services\ReportDeliveryCryptoService;
+use App\Services\ReportDeliveryManualQueueService;
 use DomainException;
 use Throwable;
 
@@ -96,6 +97,51 @@ class ReportDeliveryController extends Controller
                 'error' => $e->getMessage(),
             ]);
             $this->json(['success' => false, 'message' => 'Não foi possível salvar o destino. Consulte os logs administrativos.'], 500);
+        }
+    }
+
+    public function enqueueReleasedReport(int $tenantId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada. Atualize a página e tente novamente.'], 419);
+        }
+        if (!$this->tenantModel->find($tenantId)) {
+            $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
+        }
+
+        if ((string) ($_POST['confirm_single_delivery'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => 'Confirme que deseja criar uma única entrega de homologação.'], 422);
+        }
+
+        $token = strtolower(trim((string) ($_POST['report_public_token'] ?? '')));
+        try {
+            $result = (new ReportDeliveryManualQueueService(Database::getInstance()))
+                ->queueReleasedReportByPublicToken($tenantId, $token, (int) Auth::userId());
+            AuditLogger::log('report_delivery.report_manually_queued', 'reports', (int) $result['report_id'], [
+                'tenant_id' => $tenantId,
+                'outbox_id' => $result['outbox_id'],
+                'job_count' => $result['job_count'],
+                'reason' => $result['reason'] ?? null,
+            ]);
+            $this->json([
+                'success' => true,
+                'message' => $result['job_count'] > 0
+                    ? 'Laudo liberado reenfileirado para a homologação.'
+                    : 'Evento registrado, mas nenhum destino habilitado corresponde ao InstitutionName do estudo.',
+                'outbox_id' => $result['outbox_id'],
+                'job_count' => $result['job_count'],
+            ]);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::enqueueReleasedReport] Falha ao reenfileirar laudo', [
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['success' => false, 'message' => 'Não foi possível reenfileirar o laudo. Consulte os logs administrativos.'], 500);
         }
     }
 
