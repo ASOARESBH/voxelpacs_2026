@@ -411,4 +411,28 @@ class ReportDeliveryRepository
 
         return $stmt->rowCount() === 1;
     }
+
+    /**
+     * Recupera exclusivamente um lease abandonado. Um job em processamento
+     * recente nunca é alterado, evitando duplicidade de entrega clínica.
+     */
+    public function recoverStaleProcessingJob(int $jobId, int $tenantId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_jobs
+             SET status = 'queued',
+                 next_attempt_at = NOW(),
+                 locked_at = NULL,
+                 locked_by = NULL,
+                 last_error = CONCAT(COALESCE(last_error, ''), ' | Lease obsoleto recuperado manualmente')
+             WHERE id = :id
+               AND tenant_id = :tenant_id
+               AND status = 'processing'
+               AND locked_at IS NOT NULL
+               AND locked_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)"
+        );
+        $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+
+        return $stmt->rowCount() === 1;
+    }
 }

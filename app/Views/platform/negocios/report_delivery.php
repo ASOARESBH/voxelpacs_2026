@@ -197,9 +197,9 @@ $transportLabels = [
                 <div class="card-header bg-white"><h2 class="h5 mb-0">Últimas entregas</h2></div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
-                        <thead><tr><th>Laudo</th><th>Destino</th><th>Status</th><th>Tentativas</th><th>Detalhe</th></tr></thead>
+                        <thead><tr><th>Laudo</th><th>Destino</th><th>Status</th><th>Tentativas</th><th>Detalhe</th><th class="text-end">Ação</th></tr></thead>
                         <tbody>
-                            <?php if (!$jobs): ?><tr><td colspan="5" class="text-center text-muted py-4">Ainda não existem jobs de entrega.</td></tr><?php endif; ?>
+                            <?php if (!$jobs): ?><tr><td colspan="6" class="text-center text-muted py-4">Ainda não existem jobs de entrega.</td></tr><?php endif; ?>
                             <?php foreach ($jobs as $job): ?>
                                 <tr>
                                     <td>#<?= (int) $job['report_id'] ?> · v<?= (int) $job['report_version'] ?></td>
@@ -207,6 +207,21 @@ $transportLabels = [
                                     <td><span class="badge text-bg-<?= $job['status'] === 'delivered' ? 'success' : ($job['status'] === 'queued' ? 'primary' : ($job['status'] === 'processing' ? 'warning' : 'danger')) ?>"><?= $escape($job['status']) ?></span></td>
                                     <td><?= (int) $job['attempt_count'] ?></td>
                                     <td class="small text-muted"><?= $escape($job['remote_reference'] ?: $job['last_error'] ?: '—') ?></td>
+                                    <td class="text-end">
+                                        <?php if ($job['status'] === 'processing'): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= (int) $job['id'] ?>/recover-stale" class="d-inline">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Recupera somente leases em processamento há mais de 10 minutos">Recuperar lease</button>
+                                            </form>
+                                        <?php elseif (in_array($job['status'], ['failed', 'dead_letter'], true)): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= (int) $job['id'] ?>/retry" class="d-inline">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary">Reenfileirar</button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span class="text-muted small">—</span>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

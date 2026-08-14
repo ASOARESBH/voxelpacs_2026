@@ -171,6 +171,39 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    /**
+     * Recupera um job cujo worker interrompeu antes de concluir a entrega.
+     * A operação é permitida somente após dez minutos em processamento.
+     */
+    public function recoverStaleProcessing(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+
+        try {
+            $queued = $this->repository->recoverStaleProcessingJob($jobId, $tenantId);
+            if (!$queued) {
+                $this->json(['success' => false, 'message' => 'O job ainda está em processamento recente ou não pode ser recuperado.'], 422);
+            }
+            AuditLogger::log('report_delivery.stale_job_recovered', 'pacs_report_delivery_jobs', $jobId, [
+                'tenant_id' => $tenantId,
+                'minimum_stale_minutes' => 10,
+            ]);
+            $this->json(['success' => true, 'message' => 'Lease obsoleto recuperado; o job voltou à fila de homologação.']);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::recoverStaleProcessing] Falha ao recuperar lease obsoleto', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['success' => false, 'message' => 'Não foi possível recuperar o job em processamento.'], 500);
+        }
+    }
+
     /** @return array<string, mixed> */
     private function validatedPayload(int $tenantId): array
     {
