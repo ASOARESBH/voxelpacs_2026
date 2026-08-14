@@ -289,6 +289,10 @@ class ReportDeliveryController extends Controller
                     throw new DomainException("{$label} deve ter até 16 caracteres alfanuméricos.");
                 }
             }
+            $patientIdNormalization = trim((string) ($configuration['patient_id_normalization'] ?? ''));
+            if (!in_array($patientIdNormalization, ['', 'vue_prefix_before_triple_dollar'], true)) {
+                throw new DomainException('Estratégia de compatibilidade de Patient ID inválida para o destino DICOM.');
+            }
             return;
         }
 

@@ -118,6 +118,7 @@ $transportLabels = [
                                 <div class="col-md-4"><label class="form-label" for="dicom-port">Porta DICOM</label><input class="form-control" id="dicom-port" data-field="port" type="number" min="1" max="65535" value="104" data-required></div>
                                 <div class="col-md-6"><label class="form-label" for="dicom-called-ae">AE Title do PACS cliente</label><input class="form-control text-uppercase" id="dicom-called-ae" data-field="called_ae" maxlength="16" data-required placeholder="Ex.: CLIENTE_PACS"></div>
                                 <div class="col-md-6"><label class="form-label" for="dicom-calling-ae">AE Title do VOXEL PACS</label><input class="form-control text-uppercase" id="dicom-calling-ae" data-field="calling_ae" maxlength="16" value="VOXEL_PACS" data-required></div>
+                                <div class="col-md-12"><label class="form-label" for="dicom-patient-id-normalization">Compatibilidade de identificação do paciente</label><select class="form-select" id="dicom-patient-id-normalization" data-field="patient_id_normalization"><option value="">Preservar o Patient ID original (padrão)</option><option value="vue_prefix_before_triple_dollar">Vue PACS: usar somente a parte antes de $$$</option></select><div class="form-text">Ative apenas quando o administrador do PACS confirmar que o archive remove o sufixo $$$ do Patient ID para localizar o estudo existente.</div></div>
                             </div>
                             <div class="form-check mt-3"><input class="form-check-input" id="dicom-tls" data-field="use_tls" type="checkbox"><label class="form-check-label" for="dicom-tls">Usar conexão DICOM TLS, quando disponibilizada pelo cliente</label></div>
                         </div>
@@ -248,7 +249,7 @@ $transportLabels = [
     const secretInput = document.getElementById('destination-secret');
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const baseAction = form.action;
-    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
+    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
     const guideText = {
         dicom_pdf: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
         dicom_sr: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
