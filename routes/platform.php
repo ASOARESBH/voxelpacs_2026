@@ -36,6 +36,12 @@ Router::post('/platform/api/negocios/{id}/webhook-hub/test',           'Platform
 Router::get('/platform/api/negocios/{id}/webhook-hub/logs',            'Platform\WebhookHubController@logs');
 Router::post('/platform/api/negocios/{id}/webhook-hub/retry/{evtId}',  'Platform\WebhookHubController@retryEvent');
 
+// VOXEL Report Delivery Hub — configuração e rastreabilidade por negócio
+Router::get('/platform/negocios/{id}/report-delivery',                'Platform\ReportDeliveryController@show');
+Router::post('/platform/negocios/{id}/report-delivery/destinations',  'Platform\ReportDeliveryController@save');
+Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}', 'Platform\ReportDeliveryController@save');
+Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
+
 // Token de acesso para admin (Etapa 4)
 Router::post('/platform/negocios/{id}/enviar-token',                   'Platform\NegociosController@enviarTokenAcesso');
 

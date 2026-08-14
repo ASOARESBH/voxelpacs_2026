@@ -188,6 +188,11 @@ Router::get('/api/sla-regras/executar', 'SlaRoboController@executar');
 // ============================================================
 Router::get('/api/servidor-pacs/sync-robo', 'PacsSyncRoboController@executar');
 
+// Worker persistente do VOXEL Report Delivery Hub — autenticação Bearer própria.
+Router::post('/api/report-delivery/lease', 'ReportDeliveryWorkerController@lease');
+Router::post('/api/report-delivery/jobs/{id}/complete', 'ReportDeliveryWorkerController@complete');
+Router::post('/api/report-delivery/jobs/{id}/fail', 'ReportDeliveryWorkerController@fail');
+
 // ============================================================
 // REPORTS — Módulo de Laudos Médicos
 // ============================================================
