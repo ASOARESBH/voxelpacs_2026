@@ -29,8 +29,17 @@ class RelatorioExportService
     // ─────────────────────────────────────────────────────────────────────
     // PDF — HTML (view dedicada) → Dompdf, mesmo mecanismo de ReportPdfService
     // ─────────────────────────────────────────────────────────────────────
+    public static function pdfDisponivel(): bool
+    {
+        return class_exists(Dompdf::class);
+    }
+
     public function streamPdf(string $viewPath, array $data, string $filename): void
     {
+        if (!self::pdfDisponivel()) {
+            throw new \RuntimeException('Biblioteca Dompdf indisponível no ambiente de execução.');
+        }
+
         $html = $this->renderView($viewPath, $data);
 
         // isPhpEnabled: só pra rodar o <script type="text/php"> do rodapé de

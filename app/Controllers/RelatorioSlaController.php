@@ -64,6 +64,19 @@ class RelatorioSlaController extends Controller
         $tenantId  = $this->tenantId();
         $formato   = ($_GET['formato'] ?? 'xlsx') === 'pdf' ? 'pdf' : 'xlsx';
 
+        if ($formato === 'pdf' && !RelatorioExportService::pdfDisponivel()) {
+            Logger::error('[RelatorioSlaController::exportar] Dompdf indisponível', [
+                'tenant_id' => $tenantId,
+                'user_id'   => Auth::userId(),
+            ]);
+            http_response_code(503);
+            $this->view('relatorios/pdf_indisponivel', [
+                'title'      => 'Exportação PDF indisponível',
+                'urlRetorno' => '/relatorios/sla',
+            ]);
+            return;
+        }
+
         $pdo       = Database::getInstance();
         $repo      = new RelatorioEstudosRepository($pdo);
         $filtroSvc = new RelatorioFiltrosService($repo);

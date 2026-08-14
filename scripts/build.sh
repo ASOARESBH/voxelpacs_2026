@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # VOXEL PACS — build.sh
-# Gera ZIP de deploy para Hostgator (sem vendor, sem .env, sem logs)
+# Gera ZIP de deploy para Hostgator (com vendor de produção, sem .env e sem logs)
 # ==============================================================================
 set -e
 
@@ -40,6 +40,14 @@ zip -r "${OUTPUT_DIR}/${ZIPNAME}" . \
     -q
 
 echo -e "${GREEN}✔ ZIP gerado: ${OUTPUT_DIR}/${ZIPNAME}${RESET}"
+
+# O HostGator pode não disponibilizar Composer: a dependência precisa seguir no ZIP.
+if ! unzip -l "${OUTPUT_DIR}/${ZIPNAME}" | grep -q 'vendor/dompdf/dompdf/src/Dompdf.php'; then
+    echo -e "${RED}ERRO: Dompdf não foi incluído no pacote de deploy.${RESET}"
+    rm -f "${OUTPUT_DIR}/${ZIPNAME}"
+    exit 1
+fi
+echo -e "${GREEN}✔ Dompdf confirmado no pacote de deploy${RESET}"
 
 # 3. Mostrar informações
 echo -e "\n${YELLOW}[3/3] Informações do build...${RESET}"
