@@ -304,7 +304,7 @@ class ReportService {
             }
         }
 
-        $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
+        $versaoNumero = $this->repo->proximaVersao($reportId);
         $acao = $modo === 'auto' ? 'salvo' : 'rascunho';
         $this->repo->createVersion($reportId, $conteudoAtual, $acao, $userId, $versaoNumero);
 
@@ -465,7 +465,7 @@ class ReportService {
                 $this->repo->atualizarSituacaoEstudo($estudoId, 'assinado');
             }
 
-            $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
+            $versaoNumero = $this->repo->proximaVersao($reportId);
             $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
             if ($peerReviewAberto && $peerReviewService) {
                 $peerReviewService->concluirNaTransacao(
@@ -478,11 +478,21 @@ class ReportService {
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            $erro = $e->getMessage();
             Logger::error('[ReportService::assinar] Persistência atômica falhou', [
-                'report_id' => $reportId, 'estudo_id' => $estudoId, 'modo' => $modo,
-                'error' => $e->getMessage(),
+                'report_id' => $reportId,
+                'estudo_id' => $estudoId,
+                'tenant_id' => $tenantId,
+                'modo' => $modo,
+                'versao_report' => $versaoNumero ?? null,
+                'error' => $erro,
             ]);
-            return ['ok' => false, 'error' => 'assinatura_persistencia_falhou'];
+            return [
+                'ok' => false,
+                'error' => str_contains($erro, 'Dados insuficientes para registrar a devolutiva')
+                    ? 'devolutiva_dados_insuficientes'
+                    : 'assinatura_persistencia_falhou',
+            ];
         }
 
         AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
@@ -580,7 +590,7 @@ class ReportService {
         $userId = Auth::userId();
 
         $this->repo->atualizarConteudo($reportId, $conteudo, 'rascunho');
-        $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
+        $versaoNumero = $this->repo->proximaVersao($reportId);
         $this->repo->createVersion($reportId, $conteudo, 'restaurado', $userId, $versaoNumero);
 
         AuditLogger::log('report.versao_restaurada', 'reports', $reportId, ['version_id' => $versionId]);

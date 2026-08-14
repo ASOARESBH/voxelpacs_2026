@@ -92,5 +92,11 @@ A regra vale para editor, `save`, `sign`, histórico, restauração de versão, 
 
 Não use `ReportRepository::findReportById()` diretamente em um endpoint: ele é um acesso de dados e não substitui a política clínica. Todo novo endpoint que receba um identificador de laudo deve chamar `ReportAccessService` antes de consultar conteúdo, criar versão, alterar status ou devolver metadados.
 
+### Assinatura e devolutiva transacional — versão positiva (2026-08-14)
+
+A assinatura usa `ReportRepository::proximaVersao($reportId)` para obter o número que será efetivamente persistido em `report_versions`; esse valor é sempre maior ou igual a 1 e deve ser reutilizado em `createVersion()`, no fechamento de Peer Review e em `ReportDeliveryOutboxService::queueReleasedReport()`. **Nunca subtrair 1** desse retorno: a devolutiva rejeita `report_version < 1` e, quando a feature de Delivery Hub está habilitada, o rollback atômico impede a assinatura e a liberação completas.
+
+Em qualquer exceção de assinatura, `ReportService::assinar()` registra `report_id`, `estudo_id`, `tenant_id`, `modo`, `versao_report` e a mensagem original, sem registrar conteúdo clínico. O código `devolutiva_dados_insuficientes` é traduzido no modal para orientação operacional específica; outras exceções continuam no código genérico de persistência. Essa distinção não substitui rollback: toda falha anterior ao commit continua sem assinar nem liberar parcialmente o laudo.
+
 ## Última análise
 2026-08-14
