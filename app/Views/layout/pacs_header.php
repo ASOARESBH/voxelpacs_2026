@@ -244,7 +244,7 @@
                             'cnt-a-laudar':   (d.a_laudar   || 0),
                             'cnt-em-laudo':   (d.em_laudo   || 0),
                             'cnt-rascunho':   (d.rascunho   || 0),
-                            'cnt-assinado':   ((d.assinado  || 0) + (d.liberado || 0)),
+                            'cnt-assinado':   (d.assinado || 0),
                             'cnt-peer-review':(d.peer_review || 0),
                         };
                         Object.keys(m).forEach(function(id) {

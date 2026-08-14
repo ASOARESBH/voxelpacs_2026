@@ -159,7 +159,7 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção obrigatória**: `resolverIntervaloPeriodo()` é a fonte única dos períodos Hoje, Ontem, 7, 30 e 90 dias, Ano, Todos e Personalizado. A tabela, os contadores iniciais e `/api/estudos/contadores` aplicam o mesmo intervalo. Cabeçalho e rodapé encaminham `periodo`, `dt_inicio` e `dt_fim` atuais ao endpoint de badges, inclusive após a atualização automática.
 
-**Decisão confirmada pelo usuário**: para `assinado` e `liberado`, a lista usa `DATE(laudo_assinado_em)` como data de referência. Assim, um exame antigo liberado hoje aparece no filtro de estados terminais de hoje. Para preservar registros históricos sem timestamp, há fallback seguro para `study_date`. Os demais estados continuam usando `study_date`. Os badges aplicam um `CASE` equivalente por registro, garantindo que o contador de cada situação represente a mesma coorte do filtro.
+**Decisão confirmada pelo usuário**: para `assinado` e `liberado`, a lista usa `DATE(laudo_assinado_em)` como data de referência. Assim, um exame antigo liberado hoje aparece no filtro de estados terminais de hoje. Para preservar registros históricos sem timestamp, há fallback seguro para `study_date`. Os demais estados continuam usando `study_date`. Os badges aplicam um `CASE` equivalente por registro, garantindo que o contador de cada situação represente a mesma coorte do filtro. O badge **ASSINADO** representa somente `situacao = assinado`; ele não soma `liberado`, pois essa agregação impediria equivalência com o filtro literal.
 
 ## Última análise
 2026-08-14

@@ -31,6 +31,8 @@ $rules = [
         && str_contains($header, "return '/api/estudos/contadores'"),
     'rodapé encaminha período ao endpoint' => str_contains($footer, "['periodo', 'dt_inicio', 'dt_fim']")
         && str_contains($footer, "return '/api/estudos/contadores'"),
+    'badge Assinado não agrega Liberado' => str_contains($header, "'cnt-assinado':   (d.assinado || 0)")
+        && !str_contains($header, "'cnt-assinado':   ((d.assinado  || 0) + (d.liberado || 0))"),
 ];
 
 $failures = array_keys(array_filter($rules, static fn(bool $ok): bool => !$ok));
