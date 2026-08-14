@@ -50,6 +50,34 @@ final class ReportAccessService
         return $report;
     }
 
+    /**
+     * Resolve a URL pública /reports/r/{token}. O formato fixo impede que a
+     * rota aceite ids sequenciais, Study UID ou outros identificadores legados.
+     */
+    public function findAuthorizedReportByPublicToken(string $token, bool $requireOwnership = true): ?object
+    {
+        if (!preg_match('/^[a-f0-9]{48}$/', $token) || !Auth::check()) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+                    e.study_instance_uid, e.situacao AS estudo_situacao
+             FROM reports r
+             INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
+             WHERE r.public_token = :token
+             LIMIT 1"
+        );
+        $stmt->execute(['token' => $token]);
+        $report = $stmt->fetch();
+
+        if (!$report || !$this->isAllowed($report, $requireOwnership)) {
+            return null;
+        }
+
+        return $report;
+    }
+
     public function findAuthorizedReportByEstudoId(int $estudoId, bool $requireOwnership = true): ?object
     {
         if ($estudoId <= 0 || !Auth::check()) {

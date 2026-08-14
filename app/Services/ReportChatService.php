@@ -203,7 +203,7 @@ class ReportChatService
             $destinatarioUserId,
             $assunto,
             $corpo,
-            (string) ($context['study_instance_uid'] ?? '')
+            (string) ($context['public_token'] ?? '')
         );
 
         Logger::info('[ReportChatService::send] interação registrada', [
@@ -275,14 +275,19 @@ class ReportChatService
         ?int $destinatarioUserId,
         string $assunto,
         string $corpo,
-        string $studyUid
+        string $publicToken
     ): void {
         $recipients = $tipo === 'usuario'
             ? array_filter([$this->repo->findActiveUser((int) $destinatarioUserId, $tenantId)])
             : $this->repo->listUsersByGroup((int) $destinatarioGrupoId, $tenantId);
 
+        if (!preg_match('/^[a-f0-9]{48}$/', $publicToken)) {
+            Logger::warning('[ReportChatService::notifyRecipients] token público ausente', ['report_id' => $reportId]);
+            return;
+        }
+
         $baseUrl = rtrim((string) (getenv('APP_URL') ?: 'https://server.voxelpacs.com.br'), '/');
-        $url = $baseUrl . '/reports/' . rawurlencode($studyUid);
+        $url = $baseUrl . '/reports/r/' . rawurlencode($publicToken);
         $subject = '[VOXEL PACS] Pendência no laudo — ' . $assunto;
         $body = '<p>Uma nova interação foi registrada no CHAT do laudo.</p>'
             . '<p><strong>Assunto:</strong> ' . htmlspecialchars($assunto, ENT_QUOTES, 'UTF-8') . '</p>'

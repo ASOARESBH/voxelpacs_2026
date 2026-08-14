@@ -13,15 +13,17 @@ Editor de laudo médico (Quill.js, documento único contínuo) usado a partir do
 | `public/assets/js/reports/reports-editor.js` | `loadSecoes()`/`extractSecoes()` — round-trip do conteúdo do Quill com o backend. **Ponto único de falha do módulo** (ver "Achado crítico" abaixo). |
 | `public/assets/js/reports/reports-autosave.js` | Autosave a cada 30s + `Ctrl+S` + botão "Salvar Rascunho", chama `extractSecoes()` e faz `POST /reports/save`. |
 | `database/migrations/2026-07-05_reports_module.sql` | Schema operacional: `reports.secao_*` (colunas separadas, não JSON). |
+| `database/migrations/2026-08-14_reports_public_token_url_segura.sql` | Cria e retropreenche `reports.public_token`, obrigatório para URLs públicas opacas. |
 
 ## Rotas
 ```
-GET  /reports/{study_uid}              show   — abre o editor
+GET  /reports/r/{token}                showByToken — abre o editor por token opaco
+GET  /reports/r/{token}/pdf            pdfByToken — visualiza ou baixa PDF por token opaco
+GET  /reports/r/{token}/assinatura     assinaturaImagemByToken — assinatura visual por token opaco
 POST /reports/save                      save   — autosave (modo=auto) / rascunho / salvar manual
 POST /reports/sign                      sign   — assina (modo=somente|fechar)
 GET  /reports/history                   history
 POST /reports/history/restore           restoreHistory
-GET  /reports/pdf?report_id=X           pdf
 GET  /reports/template?id=X             template
 GET  /reports/templates?modalidade=X    templates
 POST /reports/assumir                   assumir  (chamado a partir da worklist)
@@ -75,6 +77,12 @@ O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `Rep
 `bi_pacs_estudos` é isolada por `institution_name`, não por `tenant_id`. Por isso, `ReportPeerReviewRepository` restringe o estudo com `InstitutionResolverService::getInstitutionNamesByTenant()` tanto na leitura do contexto como na atualização da situação. Não reintroduzir `e.tenant_id` ou `WHERE ... tenant_id` nesse fluxo.
 
 O contrato de `ReportRepository::findReportById()` usa os campos canônicos `reports.estudo_id` e `reports.situacao`. `ReportMeasurementService` e `ViewerMeasurementRepository` devem consumir exclusivamente esses nomes; o uso legado de `bi_pacs_estudos_id` e `status` gerava avisos de `stdClass` e impedia o card de Medidas de consultar seu estudo corretamente. Os botões textuais do Laudário, inclusive **Liberar Peer Review**, usam `btn-pacs-primary`, `btn-pacs-success` ou `btn-pacs-outline`; `pacs-btn` permanece apenas em controles estritamente compactos/de ícone.
+
+### URLs opacas de Laudo (2026-08-14)
+
+As URLs públicas do Laudário não podem conter `reports.id`, `report_id`, `study_instance_uid` ou qualquer outro identificador clínico sequencial. A única forma permitida é `/reports/r/{public_token}`, em que `public_token` possui 48 caracteres hexadecimais aleatórios (192 bits), é único em `reports` e é resolvido por `ReportAccessService::findAuthorizedReportByPublicToken()` antes de abrir editor, PDF ou assinatura visual.
+
+A migration `2026-08-14_reports_public_token_url_segura.sql` deve ser executada **antes** de publicar o código que exige tokens. Ela retropreenche todos os laudos existentes com `RANDOM_BYTES(24)` e cria `idx_reports_public_token`. Worklist, Gestão de Exames, notificações de CHAT e templates PDF devem montar links exclusivamente com esse token. Rotas legadas `/reports/{study_uid}`, `/reports/pdf?report_id=` e `/reports/assinatura-imagem?report_id=` não são públicas e não devem ser recriadas.
 
 ### Autorização de report_id e defesa IDOR (2026-08-14)
 

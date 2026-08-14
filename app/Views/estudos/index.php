@@ -664,8 +664,8 @@ $periodoLabel = [
                         </button>
                         <?php endif; ?>
                     <?php else: ?>
-                        <?php if ($podePeerReview): ?>
-                        <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                        <?php if ($podePeerReview && !empty($e['report_public_token'])): ?>
+                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="_blank"
                            class="wl-btn-peer-review" title="<?= htmlspecialchars(t('peer_review.abrir_worklist')) ?>">
                             <i class="fa fa-rotate"></i> <?= htmlspecialchars(t('peer_review.botao_worklist')) ?>
                         </a>
@@ -679,9 +679,9 @@ $periodoLabel = [
                             <i class="fa fa-hand-holding-medical"></i> Assumir
                         </button>
                         <?php elseif ($podeLaudar): ?>
-                        <?php if (!$workspaceLaudoHabilitado && !empty($e['study_instance_uid'])): ?>
-                        <!-- Laudário Interno: workspace desabilitado = botão ativo -->
-                        <a href="/reports/<?= urlencode($e['study_instance_uid']) ?>" target="_blank"
+                        <?php if (!$workspaceLaudoHabilitado && !empty($e['report_public_token'])): ?>
+                        <!-- Laudário Interno: URL pública usa somente token opaco -->
+                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="_blank"
                            class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
                             <i class="fa fa-file-medical"></i> Laudo
                         </a>
@@ -1556,11 +1556,11 @@ document.addEventListener('click', function(e) {
             // Nova lógica: desabilitado = Laudário Interno (botão ativo)
             //              habilitado  = VOXEL Copilot (botão oculto)
             const wlHabilitado = (typeof window._workspaceLaudoHabilitado !== 'undefined') ? window._workspaceLaudoHabilitado : false;
-            const studyUid = btn.dataset.studyUid || '';
+            const reportUrl = data.url || '';
             let novoBotao;
-            if (!wlHabilitado && studyUid) {
-                // Laudário Interno: exibe botão ativo
-                novoBotao = `<a href="/reports/${encodeURIComponent(studyUid)}" target="_blank" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
+            if (!wlHabilitado && reportUrl) {
+                // Laudário Interno: endpoint retorna URL com token opaco.
+                novoBotao = `<a href="${reportUrl}" target="_blank" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
             } else {
                 // VOXEL Copilot ativo: não exibe botão (médico lauda externamente)
                 novoBotao = '';

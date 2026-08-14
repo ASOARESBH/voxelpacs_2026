@@ -74,7 +74,7 @@
     <!-- Ações -->
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-        <a href="/reports/pdf?report_id=<?= (int)($r['id'] ?? 0) ?>&download=1" class="btn-back">⬇️ Baixar PDF</a>
+        <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
         <a href="/estudos" class="btn-back">← Worklist</a>
     </div>
 
@@ -115,7 +115,7 @@
     <div class="pdf-signature">
         <div class="pdf-sig-info">
             <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-            <img src="/reports/assinatura-imagem?report_id=<?= (int) ($r['id'] ?? 0) ?>"
+            <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
                  alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
                  style="max-width:220px;max-height:70px;display:block;margin-bottom:.35rem;">
             <?php endif; ?>
@@ -137,7 +137,7 @@
     <!-- Rodapé -->
     <div class="pdf-footer">
         <span>VOXEL PACS — Sistema de Laudos Médicos</span>
-        <span>Laudo ID: <?= (int)($r['id'] ?? 0) ?></span>
+        <span>Laudo médico digital</span>
         <span>Gerado em: <?= date('d/m/Y H:i') ?></span>
     </div>
 

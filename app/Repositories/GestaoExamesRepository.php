@@ -41,6 +41,7 @@ class GestaoExamesRepository
                 COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                 e.dicom_priority_override,
                 r.id AS report_id,
+                r.public_token AS report_public_token,
                 r.situacao AS report_situacao,
                 c.id AS chat_id,
                 c.status AS chat_status,
@@ -72,7 +73,7 @@ class GestaoExamesRepository
                     COALESCE(e.dicom_priority, '') AS dicom_priority,
                     COALESCE(e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                     NULL AS dicom_priority_override,
-                    r.id AS report_id, r.situacao AS report_situacao,
+                    r.id AS report_id, r.public_token AS report_public_token, r.situacao AS report_situacao,
                     c.id AS chat_id, c.status AS chat_status,
                     c.assunto AS chat_assunto
                 FROM bi_pacs_estudos e

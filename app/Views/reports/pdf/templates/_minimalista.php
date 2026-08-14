@@ -59,7 +59,7 @@ $unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['
 
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-        <a href="/reports/pdf?report_id=<?= (int)($r['id'] ?? 0) ?>&download=1" class="btn-back">⬇️ Baixar PDF</a>
+        <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
         <a href="/estudos" class="btn-back">← Worklist</a>
     </div>
 
@@ -89,7 +89,7 @@ $unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['
 
     <div class="pdf-signature">
         <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-        <img class="pdf-sig-img" src="/reports/assinatura-imagem?report_id=<?= (int) ($r['id'] ?? 0) ?>"
+        <img class="pdf-sig-img" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
              alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>">
         <?php else: ?>
         <div class="pdf-sig-line"></div>

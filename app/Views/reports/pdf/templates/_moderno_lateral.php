@@ -68,7 +68,7 @@ if (!empty($r['unidade_cnpj']) && strlen($r['unidade_cnpj']) === 14) {
 
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-        <a href="/reports/pdf?report_id=<?= (int)($r['id'] ?? 0) ?>&download=1" class="btn-back">⬇️ Baixar PDF</a>
+        <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
         <a href="/estudos" class="btn-back">← Worklist</a>
     </div>
 
@@ -111,7 +111,7 @@ if (!empty($r['unidade_cnpj']) && strlen($r['unidade_cnpj']) === 14) {
     <div class="pdf-signature">
         <div class="pdf-sig-info">
             <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-            <img src="/reports/assinatura-imagem?report_id=<?= (int) ($r['id'] ?? 0) ?>"
+            <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
                  alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
                  style="max-width:220px;max-height:70px;display:block;margin:0 auto .35rem;">
             <?php endif; ?>

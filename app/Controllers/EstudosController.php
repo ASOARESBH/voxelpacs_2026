@@ -355,6 +355,7 @@ class EstudosController extends Controller
                     p.tamanho_bytes                               AS pedido_tamanho_bytes,
                     p.caminho_arquivo                             AS pedido_caminho_arquivo,
                     r.id                                           AS report_id,
+                    COALESCE(r.public_token, '')                   AS report_public_token,
                     COALESCE(r.situacao, '')                       AS report_situacao,
                     COALESCE(c.status, '')                         AS chat_status
                 FROM bi_pacs_estudos e

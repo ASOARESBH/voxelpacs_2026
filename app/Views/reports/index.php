@@ -7,6 +7,7 @@
 $e = $estudo ?? [];
 $r = $report ?? null;
 $reportId    = $r ? (int)$r->id : 0;
+$reportToken = $r ? (string)($r->public_token ?? '') : '';
 $estudoId    = (int)($e['id'] ?? 0);
 $studyUid    = htmlspecialchars($e['study_instance_uid'] ?? '', ENT_QUOTES);
 $paciente    = htmlspecialchars($e['patient_name_display'] ?? $e['patient_name'] ?? 'Paciente', ENT_QUOTES);
@@ -239,19 +240,19 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
                 <i class="bi bi-pen-fill me-1"></i> Assinar Laudo
             </button>
             <?php endif; ?>
-            <?php if ($reportId): ?>
-            <a href="/reports/pdf?report_id=<?= $reportId ?>" target="_blank" class="btn btn-outline-info btn-sm">
+            <?php if ($reportToken !== ''): ?>
+            <a href="/reports/r/<?= rawurlencode($reportToken) ?>/pdf" target="_blank" class="btn btn-outline-info btn-sm">
                 <i class="bi bi-file-pdf me-1"></i> PDF
             </a>
             <?php endif; ?>
         </div>
         <?php else: ?>
         <div id="report-actions">
-            <?php if ($reportId): ?>
-            <a href="/reports/pdf?report_id=<?= $reportId ?>" target="_blank" class="btn btn-outline-info btn-sm">
+            <?php if ($reportToken !== ''): ?>
+            <a href="/reports/r/<?= rawurlencode($reportToken) ?>/pdf" target="_blank" class="btn btn-outline-info btn-sm">
                 <i class="bi bi-file-pdf me-1"></i> Visualizar PDF
             </a>
-            <a href="/reports/pdf?report_id=<?= $reportId ?>&download=1" class="btn btn-secondary btn-sm">
+            <a href="/reports/r/<?= rawurlencode($reportToken) ?>/pdf?download=1" class="btn btn-secondary btn-sm">
                 <i class="bi bi-download me-1"></i> Baixar PDF
             </a>
             <?php endif; ?>

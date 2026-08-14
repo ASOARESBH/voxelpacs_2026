@@ -4,12 +4,12 @@
  * (editor primeiro, os demais dependem dele) e liga os botões do topo.
  */
 window.VoxelReports = window.VoxelReports || {};
-
 window.VoxelReports.main = (function () {
     function readConfig() {
         const app = document.getElementById('reports-app');
         return {
-            reportId: parseInt(app.dataset.reportId, 10),
+                        reportId: parseInt(app.dataset.reportId, 10),
+            reportToken: app.dataset.reportToken || '',
             estudoId: parseInt(app.dataset.estudoId, 10),
             studyUid: app.dataset.studyUid,
             modalidade: app.dataset.modalidade || '',
@@ -19,25 +19,26 @@ window.VoxelReports.main = (function () {
             csrf: app.dataset.csrf,
         };
     }
-
     function wireTopButtons(config) {
-        const pdfUrl = `/reports/pdf?report_id=${encodeURIComponent(config.reportId)}`;
-
+        const pdfUrl = config.reportToken
+            ? `/reports/r/${encodeURIComponent(config.reportToken)}/pdf`
+            : null;
         const btnViewPdf = document.getElementById('btn-view-pdf');
-        if (btnViewPdf) btnViewPdf.addEventListener('click', () => window.open(pdfUrl, '_blank'));
+        if (btnViewPdf) btnViewPdf.addEventListener('click', () => {
+            if (pdfUrl) window.open(pdfUrl, '_blank');
+        });
 
         const btnPrint = document.getElementById('btn-print');
-        if (btnPrint) btnPrint.addEventListener('click', () => window.open(pdfUrl, '_blank'));
+        if (btnPrint) btnPrint.addEventListener('click', () => {
+            if (pdfUrl) window.open(pdfUrl, '_blank');
+        });
 
         const btnViewer = document.getElementById('btn-open-viewer');
         if (btnViewer) btnViewer.addEventListener('click', () => window.open(`/estudos/${config.estudoId}/abrir`, '_blank'));
-
         const btnTimeline = document.getElementById('btn-timeline');
         if (btnTimeline) btnTimeline.addEventListener('click', () => alert('Timeline de exames anteriores — em breve.'));
-
         const btnComparativos = document.getElementById('btn-comparativos');
         if (btnComparativos) btnComparativos.addEventListener('click', () => alert('Comparativos entre exames — em breve.'));
-
         const btnLiberar = document.getElementById('btn-liberar');
         if (btnLiberar) {
             btnLiberar.addEventListener('click', () => {
@@ -82,10 +83,8 @@ window.VoxelReports.main = (function () {
             });
         }
     }
-
     function init() {
         const config = readConfig();
-
         window.VoxelReports.editor.init(config);
         window.VoxelReports.autosave.init(config);
         window.VoxelReports.templates.init(config);
@@ -101,6 +100,5 @@ window.VoxelReports.main = (function () {
 
         wireTopButtons(config);
     }
-
     return { init };
 })();
