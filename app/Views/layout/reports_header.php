@@ -93,27 +93,27 @@ $chatPendente = !empty($chat['pendente']);
             <span id="autosave-status" class="autosave-status"></span>
 
             <?php if (!$readonly): ?>
-            <button type="button" class="pacs-btn" id="btn-template" title="Templates">
+            <button type="button" class="btn-pacs-outline" id="btn-template" title="Templates">
                 <i class="fa fa-file-lines"></i> Template
             </button>
-            <button type="button" class="pacs-btn" id="btn-ai-generate" title="Gerar texto com IA (em breve)">
+            <button type="button" class="btn-pacs-outline" id="btn-ai-generate" title="Gerar texto com IA (em breve)">
                 <i class="fa fa-wand-magic-sparkles"></i> Gerar Texto
             </button>
-            <button type="button" class="pacs-btn" id="btn-save-draft" title="Salvar rascunho (Ctrl+S)">
+            <button type="button" class="btn-pacs-outline" id="btn-save-draft" title="Salvar rascunho (Ctrl+S)">
                 <i class="fa fa-floppy-disk"></i> Salvar Rascunho
             </button>
             <?php endif; ?>
 
             <?php if ($situacao === 'assinado'): ?>
             <!-- Laudo assinado, mas ainda não liberado: permite finalizar. -->
-            <button type="button" class="pacs-btn btn-pacs-success" id="btn-liberar"
+            <button type="button" class="btn-pacs-success" id="btn-liberar"
                     title="<?= $chatPendente ? 'Conclua o CHAT antes de liberar' : 'Liberar laudo e fechar' ?>"
                     <?= $chatPendente ? 'disabled' : '' ?>>
                 <i class="fa fa-paper-plane"></i> Liberar
             </button>
             <?php elseif (!$readonly): ?>
             <!-- Laudo não assinado: mostra Assinar -->
-            <button type="button" class="pacs-btn btn-pacs-primary" id="btn-sign"
+            <button type="button" class="btn-pacs-primary" id="btn-sign"
                     title="<?= $chatPendente ? 'Conclua o CHAT antes de assinar' : 'Assinar laudo (Ctrl+Enter)' ?>"
                     <?= $chatPendente ? 'disabled' : '' ?>>
                 <i class="fa fa-signature"></i> Assinar
@@ -121,15 +121,15 @@ $chatPendente = !empty($chat['pendente']);
             <?php endif; ?>
 
             <?php if (!empty($pedido) && !empty($pedido['visualizar_url'])): ?>
-            <a href="<?= htmlspecialchars($pedido['visualizar_url']) ?>" class="pacs-btn" id="btn-pedido" target="_blank" rel="noopener"
+            <a href="<?= htmlspecialchars($pedido['visualizar_url']) ?>" class="btn-pacs-outline" id="btn-pedido" target="_blank" rel="noopener"
                title="<?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>">
                 <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?>
             </a>
             <?php endif; ?>
-            <button type="button" class="pacs-btn" id="btn-history" title="Histórico de versões">
+            <button type="button" class="btn-pacs-outline" id="btn-history" title="Histórico de versões">
                 <i class="fa fa-clock-rotate-left"></i> Histórico
             </button>
-            <button type="button" class="pacs-btn" id="btn-view-pdf" title="Visualizar PDF">
+            <button type="button" class="btn-pacs-outline" id="btn-view-pdf" title="Visualizar PDF">
                 <i class="fa fa-file-pdf"></i> PDF
             </button>
             <button type="button" class="pacs-btn" id="btn-print" title="Imprimir">

@@ -109,7 +109,7 @@ class ReportMeasurementService
                     (int) $report->id,
                     $measurement,
                     $report->tenant_id === null ? null : (int) $report->tenant_id,
-                    (int) $report->bi_pacs_estudos_id,
+                    (int) $report->estudo_id,
                     $section,
                     $text,
                     (int) Auth::userId()
@@ -138,8 +138,8 @@ class ReportMeasurementService
             // Captura a próxima versão antes do UPDATE, que incrementa versao_atual.
             $version = $this->reportRepository->proximaVersao((int) $report->id);
             $this->reportRepository->atualizarConteudo((int) $report->id, $content, 'rascunho');
-            $this->reportRepository->marcarHeartbeat((int) $report->bi_pacs_estudos_id);
-            $this->reportRepository->atualizarSituacaoEstudo((int) $report->bi_pacs_estudos_id, 'rascunho');
+            $this->reportRepository->marcarHeartbeat((int) $report->estudo_id);
+            $this->reportRepository->atualizarSituacaoEstudo((int) $report->estudo_id, 'rascunho');
 
             $this->reportRepository->createVersion(
                 (int) $report->id,
@@ -151,14 +151,14 @@ class ReportMeasurementService
             $this->measurementRepository->commit();
 
             AuditLogger::log('report.medidas_inseridas', 'reports', (int) $report->id, [
-                'estudo_id' => (int) $report->bi_pacs_estudos_id,
+                'estudo_id' => (int) $report->estudo_id,
                 'secao' => $section,
                 'measurement_ids' => array_column($insertedMeasurements, 'id'),
                 'quantidade' => count($insertedMeasurements),
             ]);
             $this->reportRepository->logAction(
                 (int) $report->id,
-                (int) $report->bi_pacs_estudos_id,
+                (int) $report->estudo_id,
                 (int) ($report->tenant_id ?? 0),
                 (int) Auth::userId(),
                 Auth::user()?->name ?? '',
@@ -207,12 +207,12 @@ class ReportMeasurementService
 
     private function isReadonly(object $report): bool
     {
-        return in_array((string) $report->status, ['assinado', 'liberado'], true);
+        return in_array((string) $report->situacao, ['assinado', 'liberado'], true);
     }
 
     private function currentUserOwnsStudyLock(object $report): bool
     {
-        $study = $this->reportRepository->findEstudoById((int) $report->bi_pacs_estudos_id);
+        $study = $this->reportRepository->findEstudoById((int) $report->estudo_id);
         if (!$study) {
             return false;
         }

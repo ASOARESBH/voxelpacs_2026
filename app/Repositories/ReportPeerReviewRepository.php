@@ -8,6 +8,7 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
+use App\Services\InstitutionResolverService;
 use PDO;
 use PDOException;
 
@@ -33,14 +34,39 @@ class ReportPeerReviewRepository
         $params = ['report_id' => $reportId];
         $tenantId = TenantContext::id();
         if ($tenantId) {
-            $sql .= " AND r.tenant_id = :tenant_id AND e.tenant_id = :tenant_id_e";
+            $sql .= " AND r.tenant_id = :tenant_id";
             $params['tenant_id'] = $tenantId;
-            $params['tenant_id_e'] = $tenantId;
+            $sql .= $this->institutionScope($tenantId, 'e', 'report_context_institution', $params);
         }
         $sql .= " LIMIT 1";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetch() ?: null;
+    }
+
+    /**
+     * Restringe o estudo às InstitutionNames ativas do tenant, pois
+     * bi_pacs_estudos não possui tenant_id no schema operacional.
+     *
+     * @param array<string, mixed> $params
+     */
+    private function institutionScope(int $tenantId, string $alias, string $prefix, array &$params): string
+    {
+        $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        $institutionNames = array_values(array_filter(array_map('trim', $institutionNames), static fn(string $name): bool => $name !== ''));
+        if (!$institutionNames) {
+            return ' AND 1 = 0';
+        }
+
+        $placeholders = [];
+        foreach ($institutionNames as $index => $institutionName) {
+            $placeholder = ':' . $prefix . '_' . $index;
+            $placeholders[] = $placeholder;
+            $params[$placeholder] = $institutionName;
+        }
+
+        $column = $alias === '' ? 'institution_name' : $alias . '.institution_name';
+        return ' AND ' . $column . ' IN (' . implode(', ', $placeholders) . ')';
     }
 
     public function findOpenByReportId(int $reportId): ?object
@@ -225,12 +251,15 @@ class ReportPeerReviewRepository
                 'report_id' => $reportId,
             ]);
 
-            $stmt = $this->pdo->prepare(
-                "UPDATE bi_pacs_estudos
-                 SET situacao = 'peer_review'
-                 WHERE id = :estudo_id AND tenant_id = :tenant_id"
-            );
-            $stmt->execute(['estudo_id' => $estudoId, 'tenant_id' => $tenantId]);
+            $studySql = "UPDATE bi_pacs_estudos
+                         SET situacao = 'peer_review'
+                         WHERE id = :estudo_id";
+            $studyParams = ['estudo_id' => $estudoId];
+            if ($tenantId) {
+                $studySql .= $this->institutionScope($tenantId, '', 'study_update_institution', $studyParams);
+            }
+            $stmt = $this->pdo->prepare($studySql);
+            $stmt->execute($studyParams);
 
             $this->pdo->commit();
             return $this->findById($reviewId) ?: (object) [

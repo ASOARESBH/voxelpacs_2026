@@ -43,7 +43,7 @@ if (!$mostrarPeerReview) return;
                           placeholder="<?= htmlspecialchars(t('peer_review.motivo_placeholder')) ?>"></textarea>
                 <div class="peer-review-counter"><span id="peer-review-motivo-count">0</span>/2000</div>
             </div>
-            <button type="button" class="pacs-btn btn-pacs-warning peer-review-open-btn" id="btn-open-peer-review">
+            <button type="button" class="btn-pacs-primary peer-review-open-btn" id="btn-open-peer-review">
                 <i class="fa fa-rotate"></i> <?= htmlspecialchars(t('peer_review.liberar_botao')) ?>
             </button>
             <div id="peer-review-error" class="reports-alert-erro d-none" role="alert"></div>
