@@ -91,10 +91,17 @@ class ViewerTokenController extends Controller
             error_log('[ViewerToken] Erro ao registrar uso: ' . $e->getMessage());
         }
 
-        // Emite credencial exclusiva do adapter de medições. O valor bruto é
-        // entregue apenas no fragmento (#), que não chega ao Nginx nem fica em logs.
+        // A integração de medições é opcional e só pode ser habilitada depois
+        // que o adapter correspondente estiver validado no viewer em produção.
+        // Enquanto estiver desabilitada, não criamos sessão nem anexamos qualquer
+        // credencial à URL clínica do exame.
         $adapterToken = null;
-        if (!empty($row['estudo_id'])) {
+        $measurementAdapterEnabled = filter_var(
+            getenv('VOXEL_MEASUREMENT_ADAPTER_ENABLED') ?: 'false',
+            FILTER_VALIDATE_BOOLEAN
+        );
+
+        if ($measurementAdapterEnabled && !empty($row['estudo_id'])) {
             try {
                 $adapterToken = (new ViewerMeasurementService())->createAdapterToken($row);
             } catch (\Throwable $e) {
