@@ -1211,7 +1211,7 @@ class EstudosController extends Controller
             $tParam = $tenantId ? [$estudoId, $tenantId] : [$estudoId];
 
             $stmtCheck = $pdo->prepare(
-                "SELECT id, situacao, assumido_por,
+                "SELECT id, tenant_id, situacao, assumido_por,
                         study_instance_uid, accession_number,
                         patient_name, patient_name_display, patient_id,
                         patient_birth_date, patient_sex, patient_age,
@@ -1271,6 +1271,13 @@ class EstudosController extends Controller
 
             \App\Core\Logger::info("[EstudosController::assumirEstudo] estudo_id={$estudoId} medico={$nomeMedico} user_id={$userId}");
 
+            // A URL pública do Laudário usa token opaco. Cria o report no mesmo
+            // ciclo de assunção para que tanto a atualização AJAX quanto o reload
+            // da Worklist encontrem report_public_token imediatamente.
+            $reportService = new \App\Services\ReportService();
+            $report = $reportService->getOrCreateReport((object) $estudo, (int) $userId);
+            $reportUrl = $reportService->urlPublica($report);
+
             // ── Notifica o VoxelCopilot sobre o evento estudo.assumido ──────────
             try {
                 $svc = new \App\Services\CopilotWebhookService();
@@ -1315,11 +1322,71 @@ class EstudosController extends Controller
                 'situacao'     => 'a_laudar',
                 'assumido_por' => $nomeMedico,
                 'assumido_em'  => date('Y-m-d H:i:s'),
+                'url'          => $reportUrl,
             ]);
 
         } catch (\Throwable $e) {
             \App\Core\Logger::error('[EstudosController::assumirEstudo] ' . $e->getMessage());
             echo json_encode(['ok' => false, 'msg' => 'Erro interno. Tente novamente.']);
+        }
+    }
+
+    /**
+     * Recupera a URL opaca do Laudário para um estudo já assumido pelo médico
+     * atual. É usado somente como recuperação de registros assumidos antes da
+     * criação obrigatória do token público na etapa de assunção.
+     *
+     * POST /api/estudos/laudo-url  body: { estudo_id: int }
+     */
+    public function obterUrlLaudoAssumido(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!Auth::check()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'msg' => 'Não autenticado.']);
+            return;
+        }
+
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $estudoId = (int) ($input['estudo_id'] ?? 0);
+        if ($estudoId <= 0) {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'msg' => 'Estudo inválido.']);
+            return;
+        }
+
+        try {
+            $reportService = new \App\Services\ReportService();
+            $repo = new \App\Repositories\ReportRepository();
+            $estudo = $repo->findEstudoById($estudoId);
+
+            // Retorna 404 genérico para não revelar existência fora do escopo.
+            if (!$estudo || !(new \App\Services\ReportAccessService())->isStudyAllowed($estudo)) {
+                http_response_code(404);
+                echo json_encode(['ok' => false, 'msg' => 'Laudo não encontrado.']);
+                return;
+            }
+
+            $situacao = strtolower((string) ($estudo->situacao ?? ''));
+            if (!in_array($situacao, ['a_laudar', 'em_laudo', 'rascunho'], true)) {
+                http_response_code(409);
+                echo json_encode(['ok' => false, 'msg' => 'Este estudo não está disponível para laudo.']);
+                return;
+            }
+
+            $report = $reportService->getOrCreateReport($estudo, (int) Auth::userId());
+            echo json_encode([
+                'ok'  => true,
+                'url' => $reportService->urlPublica($report),
+            ]);
+        } catch (\Throwable $e) {
+            \App\Core\Logger::error('[EstudosController::obterUrlLaudoAssumido] ' . $e->getMessage(), [
+                'estudo_id' => $estudoId,
+                'usuario_id' => Auth::userId(),
+            ]);
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'msg' => 'Não foi possível preparar o laudo.']);
         }
     }
 
