@@ -29,7 +29,7 @@ use App\Services\PedidoMedicoService;
  *                   em nenhum fluxo, então este filtro nunca encontra nada; o que a
  *                   célula da tabela mostra de fato é o fallback referring_physician_name,
  *                   não filtrado aqui. Ver modules/worklist-estudos.md)
- *   situacao      → novo|aberto|em_laudo|rascunho|assinado|liberado
+ *   situacao      → novo|aberto|pendente|a_laudar|em_laudo|rascunho|assinado|liberado|peer_review
  *   prioridade    → normal|urgente|critico
  *   medico        → assumido_por LIKE
  *   ordenar       → whitelist de colunas
@@ -43,6 +43,61 @@ class EstudosController extends Controller
         'study_date','study_time','patient_name','institution_name',
         'modalities','especialidade','prioridade','situacao','study_description',
     ];
+
+    /**
+     * Define uma única vez a coorte clínica visível na Worklist.
+     *
+     * O mesmo escopo é usado pela tabela, pelos resumos e pelo endpoint dos
+     * badges para impedir que um contador represente estudos fora do resultado
+     * que o médico efetivamente pode abrir.
+     *
+     * @return array{where: string[], params: array<int, mixed>, institutionNames: string[], usaInstitutionFilter: bool, isMedicoFiltro: bool}
+     */
+    private function resolverEscopoWorklist(?int $tenantId, bool $bypassGlobal, int $usuarioLogadoId): array
+    {
+        $where                = ['1=1'];
+        $params               = [];
+        $institutionNames     = [];
+        $usaInstitutionFilter = false;
+        $isMedicoFiltro       = MedicoAccess::isRestricted();
+
+        if ($tenantId && !$bypassGlobal) {
+            $institutionNames     = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+            $usaInstitutionFilter = true;
+        }
+
+        if ($isMedicoFiltro) {
+            $institutionNames     = MedicoAccess::allowedInstitutionNames();
+            $usaInstitutionFilter = true;
+        }
+
+        if ($usaInstitutionFilter) {
+            if (!empty($institutionNames)) {
+                $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
+                $where[]      = "e.institution_name IN ({$placeholders})";
+                foreach ($institutionNames as $institutionName) {
+                    $params[] = $institutionName;
+                }
+            } elseif ($isMedicoFiltro) {
+                // Médico sem Unidade vinculada não pode herdar a visão do tenant.
+                $where[] = '1=0';
+            } else {
+                // Preserva o fallback histórico para tenant sem InstitutionName.
+                $where[]  = 'e.tenant_id = ?';
+                $params[] = $tenantId;
+            }
+        } elseif (!$bypassGlobal) {
+            $where[] = '1=0';
+        }
+
+        // Posse exclusiva: médico vê a fila livre e os estudos que assumiu.
+        if ($isMedicoFiltro && $usuarioLogadoId > 0) {
+            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?)";
+            $params[] = $usuarioLogadoId;
+        }
+
+        return compact('where', 'params', 'institutionNames', 'usaInstitutionFilter', 'isMedicoFiltro');
+    }
 
     public function index(): void
     {
@@ -147,56 +202,15 @@ class EstudosController extends Controller
         // Identidade usada na posse exclusiva do estudo. A FK operacional é
         // bi_pacs_estudos.usuario_responsavel_id -> bi_users.id.
         $usuarioLogadoId = (int) Auth::userId();
-        $isMedicoFiltro  = false;
-
-        // ── Resolução de InstitutionNames (fonte única da verdade multi-tenant) ──────────
-        // Retorna array de nomes de unidades vinculadas ao tenant.
-        // Usado tanto no WHERE principal quanto nos contadores/resumo para consistência.
-        $institutionNames     = [];
-        $usaInstitutionFilter = false;
-        if ($tenantId && !$bypassGlobal) {
-            $institutionNames     = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
-            $usaInstitutionFilter = true;
-        }
-
-        // ── Filtro RBAC por Unidades do médico ────────────────────────────────────────────
-        // Médicos restritos usam exatamente a mesma fonte dos vínculos clínicos
-        // (bi_medico_unidades via MedicoAccess), sem rederivar a lista em outra query.
-        // Admin, superadmin, analista e viewer mantêm a visão operacional do tenant.
-        $isMedicoFiltro = MedicoAccess::isRestricted();
-        if ($isMedicoFiltro) {
-            $institutionNames     = MedicoAccess::allowedInstitutionNames();
-            $usaInstitutionFilter = true;
-        }
+        $escopoWorklist  = $this->resolverEscopoWorklist($tenantId, $bypassGlobal, $usuarioLogadoId);
+        $institutionNames     = $escopoWorklist['institutionNames'];
+        $usaInstitutionFilter = $escopoWorklist['usaInstitutionFilter'];
+        $isMedicoFiltro       = $escopoWorklist['isMedicoFiltro'];
 
         // ── WHERE dinâmico ────────────────────────────────────────────────────────────────
         // REGRA CRÍTICA: TODOS os parâmetros são posicionais (?) — nunca misturar com :nome
-        // Nota: sem filtro por servidor_id — um negócio pode receber estudos de mais de
-        // um servidor Orthanc (N:N); o isolamento é por tenant_id/institution_name, não por servidor.
-        $where  = ['1=1'];
-        $params = [];
-
-        if ($usaInstitutionFilter) {
-            if (!empty($institutionNames)) {
-                // Filtro por InstitutionName: fonte única da verdade para multi-tenant
-                $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
-                $where[]      = "e.institution_name IN ({$placeholders})";
-                foreach ($institutionNames as $iName) {
-                    $params[] = $iName;
-                }
-            } elseif ($isMedicoFiltro) {
-                // Médico sem Unidade vinculada não pode herdar a visão inteira do tenant.
-                $where[] = '1=0';
-            } else {
-                // Tenant sem InstitutionNames cadastradas — fallback por tenant_id
-                $where[]  = 'e.tenant_id = ?';
-                $params[] = $tenantId;
-                error_log('[EstudosController::index] Tenant ' . $tenantId . ' sem InstitutionNames — fallback tenant_id');
-            }
-        } elseif (!$bypassGlobal) {
-            // Sem tenant e sem bypass: não mostra nada
-            $where[] = '1=0';
-        }
+        $where  = $escopoWorklist['where'];
+        $params = $escopoWorklist['params'];
 
         // Pesquisa global (6 campos) — todos com parâmetros posicionais
         if ($filtros['q'] !== '') {
@@ -259,14 +273,6 @@ class EstudosController extends Controller
         if ($filtros['medico'] !== '') {
             $where[]  = 'e.assumido_por LIKE ?';
             $params[] = '%' . $filtros['medico'] . '%';
-        }
-
-        // Regra de posse exclusiva: o médico vê a fila livre (NOVO/ABERTO),
-        // mas estudos já assumidos só aparecem para o próprio responsável.
-        // Admins e demais perfis do tenant preservam a visão operacional completa.
-        if ($isMedicoFiltro && $usuarioLogadoId > 0) {
-            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?)";
-            $params[] = $usuarioLogadoId;
         }
 
         $whereStr = implode(' AND ', $where);
@@ -464,35 +470,30 @@ class EstudosController extends Controller
             $medicos = [];
         }
 
-        // ── Contadores topbar (usa InstitutionNames para consistência com a tabela) ───────
-        $contadores = ['novo'=>0,'aberto'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'urgente'=>0];
+        // ── Contadores do carregamento inicial (mesma coorte da tabela) ───────────────────
+        $contadores = [
+            'novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,
+            'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0,
+        ];
         try {
-            $cWhere  = ['1=1'];
-            $cParams = [];
-            if ($usaInstitutionFilter) {
-                if (!empty($institutionNames)) {
-                    $cPh      = implode(',', array_fill(0, count($institutionNames), '?'));
-                    $cWhere[] = "institution_name IN ({$cPh})";
-                    foreach ($institutionNames as $iName) { $cParams[] = $iName; }
-                } elseif ($isMedicoFiltro) {
-                    $cWhere[] = '1=0';
-                } else {
-                    $cWhere[]  = 'tenant_id = ?';
-                    $cParams[] = $tenantId;
-                }
-            } elseif (!$bypassGlobal) {
-                $cWhere[] = '1=0';
-            }
-            $cBase = implode(' AND ', $cWhere);
-
-            $cStmt = $pdo->prepare("SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total FROM bi_pacs_estudos WHERE {$cBase} GROUP BY situacao");
+            $cBase   = implode(' AND ', $escopoWorklist['where']);
+            $cParams = $escopoWorklist['params'];
+            $cStmt   = $pdo->prepare(
+                "SELECT COALESCE(e.situacao,'novo') AS situacao, COUNT(*) AS total
+                 FROM bi_pacs_estudos e WHERE {$cBase} GROUP BY e.situacao"
+            );
             $cStmt->execute($cParams);
             foreach ($cStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
-                if (isset($contadores[$r['situacao']])) $contadores[$r['situacao']] = (int)$r['total'];
+                if (isset($contadores[$r['situacao']])) {
+                    $contadores[$r['situacao']] = (int) $r['total'];
+                }
             }
-            $uStmt = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$cBase} AND prioridade IN ('urgente','critico')");
+            $uStmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM bi_pacs_estudos e
+                 WHERE {$cBase} AND e.prioridade IN ('urgente','critico')"
+            );
             $uStmt->execute($cParams);
-            $contadores['urgente'] = (int)$uStmt->fetchColumn();
+            $contadores['urgente'] = (int) $uStmt->fetchColumn();
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] contadores: ' . $ex->getMessage());
         }
@@ -1049,64 +1050,20 @@ class EstudosController extends Controller
 
     public function contadores(): void
     {
-        $pdo          = Database::getInstance();
-                $tenantId     = Auth::tenantId();
-        $isAdmin      = Auth::isPlatformAdmin();
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
-        $usuarioLogadoId = (int) Auth::userId();
-        // Administradores mantêm a visão total do tenant, mesmo que também
-        // possuam cadastro em bi_medicos por razões administrativas.
-        $perfilAdministrativo = Auth::isPlatformAdmin()
-            || in_array(Auth::perfilAtual(), ['admin', 'administrador'], true);
-        $isMedicoFiltro = false;
-        // ── Mesmo padrão de filtro multi-tenant da worklist ──────────────────────
-        // bi_pacs_estudos não tem tenant_id — é filtrado por institution_name
-        // via InstitutionResolverService (fonte única da verdade)
-        $where  = ['1=1'];
-        $params = [];
+        $pdo              = Database::getInstance();
+        $tenantId         = Auth::tenantId();
+        $bypassGlobal     = Auth::isPlatformAdmin() && !Auth::isImpersonating();
+        $usuarioLogadoId  = (int) Auth::userId();
+        $escopoWorklist   = $this->resolverEscopoWorklist($tenantId, $bypassGlobal, $usuarioLogadoId);
+        $where            = $escopoWorklist['where'];
+        $params           = $escopoWorklist['params'];
 
-        if ($tenantId && !$bypassGlobal) {
-            $institutionNames = \App\Services\InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
-            if (!empty($institutionNames)) {
-                $ph       = implode(',', array_fill(0, count($institutionNames), '?'));
-                $where[]  = "institution_name IN ({$ph})";
-                foreach ($institutionNames as $n) { $params[] = $n; }
-            } else {
-                // Tenant sem institution_names vinculados — retorna zeros
-                $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
-                return;
-            }
-        } elseif (!$bypassGlobal) {
-            // Sem tenant e sem bypass — não mostra nada
-            $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
-            return;
-        }
-                // bypassGlobal (superadmin fora de impersonation) = sem filtro de institution
-
-        // Os badges precisam representar a mesma fila da worklist. Para o
-        // perfil médico, estudos em fluxo de laudo pertencem exclusivamente ao
-        // usuário que os assumiu; NOVO/ABERTO permanecem disponíveis na fila.
-        if ($tenantId && !$bypassGlobal && !$perfilAdministrativo && $usuarioLogadoId > 0) {
-            try {
-                $stmtMedico = $pdo->prepare(
-                    'SELECT id FROM bi_medicos WHERE tenant_id = ? AND usuario_id = ? AND ativo = 1 LIMIT 1'
-                );
-                $stmtMedico->execute([(int) $tenantId, $usuarioLogadoId]);
-                $isMedicoFiltro = (bool) $stmtMedico->fetchColumn();
-            } catch (\Throwable $ex) {
-                error_log('[EstudosController::contadores] identificação do médico: ' . $ex->getMessage());
-            }
-        }
-        if ($isMedicoFiltro) {
-            $where[]  = "(COALESCE(situacao, 'novo') IN ('novo', 'aberto') OR usuario_responsavel_id = ?)";
-            $params[] = $usuarioLogadoId;
-        }
 
         try {
             $wBase = implode(' AND ', $where);
             $stmt  = $pdo->prepare(
-                "SELECT COALESCE(situacao,'novo') AS situacao, COUNT(*) AS total
-                 FROM bi_pacs_estudos WHERE {$wBase} GROUP BY situacao"
+                "SELECT COALESCE(e.situacao,'novo') AS situacao, COUNT(*) AS total
+                 FROM bi_pacs_estudos e WHERE {$wBase} GROUP BY e.situacao"
             );
             $stmt->execute($params);
 
@@ -1129,7 +1086,7 @@ class EstudosController extends Controller
             }
 
             // Urgentes (prioridade)
-            $u = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$wBase} AND prioridade IN ('urgente','critico')");
+            $u = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$wBase} AND e.prioridade IN ('urgente','critico')");
             $u->execute($params);
             $data['urgente'] = (int)$u->fetchColumn();
 

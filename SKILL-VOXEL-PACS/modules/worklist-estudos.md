@@ -145,5 +145,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Exceções deliberadas**: nomenclatura de integração continua técnica em classes, colunas, endpoints, URLs, logs e no CSS. As telas administrativas de configuração de servidor — `/platform/servidor-pacs/configurar`, Configurações PACS e o cadastro legado de servidores — podem mencionar Orthanc para que o administrador identifique corretamente o protocolo, credenciais e arquivo de configuração usados pela integração. Nenhum comportamento de sincronização, ping ou download foi alterado nesta troca visual.
 
+## Equivalência entre badges e filtro de Situação — 2026-08-13
+
+**Taxonomia confirmada**: `bi_pacs_estudos.situacao` armazena valores literais, incluindo `novo`, `aberto`, `pendente`, `a_laudar`, `em_laudo`, `rascunho`, `revisao`, `assinado`, `liberado`, `urgente` e `peer_review`. Nesta versão, `A LAUDAR`, `PENDENTE` e `PEER REVIEW` não são buckets compostos: cada um corresponde ao próprio valor gravado na coluna. A hipótese de `a_laudar` representar um grupo foi descartada; `assumirEstudo()` grava literalmente `a_laudar`.
+
+**Causa raiz**: a tabela usava `MedicoAccess` para restringir médico às Unidades vinculadas e à própria posse de estudos em laudo, enquanto `/api/estudos/contadores` reconstruía esse escopo com outra regra: usava InstitutionNames do tenant e inferia médico apenas por consulta direta em `bi_medicos`. Assim, o badge podia contar uma coorte diferente daquela consultada pelo filtro `situacao=a_laudar`.
+
+**Correção**: `EstudosController::resolverEscopoWorklist()` passou a ser a fonte única do `WHERE` base. A tabela, os contadores de carregamento inicial e o endpoint dos badges reutilizam a mesma lista de Unidades, o mesmo fallback seguro e a mesma regra de posse. Consequentemente, para médico restrito, um badge de situação e a Worklist filtrada pela mesma situação representam exatamente os mesmos estudos; administradores e superadmin mantêm a visão operacional correspondente ao próprio escopo.
+
 ## Última análise
 2026-08-13
