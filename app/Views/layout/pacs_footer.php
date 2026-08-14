@@ -58,7 +58,7 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootst
 
 // ── CONTADORES TOPBAR ──────────────────────────────────────
 (function loadCounters() {
-    fetch('/api/estudos/contadores', { signal: AbortSignal.timeout(5000) })
+    fetch((function () { const url = new URL(window.location.href); const query = new URLSearchParams(); ['periodo', 'dt_inicio', 'dt_fim'].forEach((key) => { if (url.searchParams.has(key)) query.set(key, url.searchParams.get(key)); }); return '/api/estudos/contadores' + (query.toString() ? '?' + query.toString() : ''); })(), { signal: AbortSignal.timeout(5000) })
         .then(r => r.json())
         .then(data => {
             if (data) {

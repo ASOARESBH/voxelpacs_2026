@@ -166,38 +166,11 @@ class EstudosController extends Controller
         }
 
         // ── Calcular datas do período ──────────────────────────────────────────────────────
-        $today = date('Y-m-d');
-        switch ($filtros['periodo']) {
-            case 'hoje':
-                $filtros['dt_inicio'] = $today;
-                $filtros['dt_fim']    = $today;
-                break;
-            case 'ontem':
-                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-1 day'));
-                $filtros['dt_fim']    = date('Y-m-d', strtotime('-1 day'));
-                break;
-            case '7dias':
-                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-6 days'));
-                $filtros['dt_fim']    = $today;
-                break;
-            case '30dias':
-                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-29 days'));
-                $filtros['dt_fim']    = $today;
-                break;
-            case '90dias':
-                $filtros['dt_inicio'] = date('Y-m-d', strtotime('-89 days'));
-                $filtros['dt_fim']    = $today;
-                break;
-            case 'ano':
-                $filtros['dt_inicio'] = date('Y-01-01');
-                $filtros['dt_fim']    = $today;
-                break;
-            case 'todos':
-                $filtros['dt_inicio'] = '';
-                $filtros['dt_fim']    = '';
-                break;
-            // 'personalizado': usa dt_inicio e dt_fim do GET
-        }
+        [$filtros['dt_inicio'], $filtros['dt_fim']] = $this->resolverIntervaloPeriodo(
+            $filtros['periodo'],
+            $filtros['dt_inicio'],
+            $filtros['dt_fim']
+        );
 
         // Identidade usada na posse exclusiva do estudo. A FK operacional é
         // bi_pacs_estudos.usuario_responsavel_id -> bi_users.id.
@@ -227,12 +200,13 @@ class EstudosController extends Controller
             $where[]  = 'e.patient_name LIKE ?';
             $params[] = '%' . $filtros['paciente'] . '%';
         }
+        $campoDataPeriodo = $this->campoDataPeriodoParaSituacao($filtros['situacao']);
         if ($filtros['dt_inicio'] !== '') {
-            $where[]  = 'e.study_date >= ?';
+            $where[]  = $campoDataPeriodo . ' >= ?';
             $params[] = $filtros['dt_inicio'];
         }
         if ($filtros['dt_fim'] !== '') {
-            $where[]  = 'e.study_date <= ?';
+            $where[]  = $campoDataPeriodo . ' <= ?';
             $params[] = $filtros['dt_fim'];
         }
         // Filtro de unidade: match exato (não LIKE) pois o valor vem do dropdown
@@ -477,9 +451,19 @@ class EstudosController extends Controller
             'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0,
         ];
         try {
-            $cBase   = implode(' AND ', $escopoWorklist['where']);
+            $cWhere  = $escopoWorklist['where'];
             $cParams = $escopoWorklist['params'];
-            $cStmt   = $pdo->prepare(
+            $campoDataBadge = $this->campoDataPeriodoPorRegistro();
+            if ($filtros['dt_inicio'] !== '') {
+                $cWhere[]  = $campoDataBadge . ' >= ?';
+                $cParams[] = $filtros['dt_inicio'];
+            }
+            if ($filtros['dt_fim'] !== '') {
+                $cWhere[]  = $campoDataBadge . ' <= ?';
+                $cParams[] = $filtros['dt_fim'];
+            }
+            $cBase = implode(' AND ', $cWhere);
+            $cStmt = $pdo->prepare(
                 "SELECT COALESCE(e.situacao,'novo') AS situacao, COUNT(*) AS total
                  FROM bi_pacs_estudos e WHERE {$cBase} GROUP BY e.situacao"
             );
@@ -1059,6 +1043,24 @@ class EstudosController extends Controller
         $where            = $escopoWorklist['where'];
         $params           = $escopoWorklist['params'];
 
+        $periodo = trim((string) ($_GET['periodo'] ?? '30dias'));
+        if (!in_array($periodo, ['hoje', 'ontem', '7dias', '30dias', '90dias', 'ano', 'todos', 'personalizado'], true)) {
+            $periodo = '30dias';
+        }
+        [$dtInicio, $dtFim] = $this->resolverIntervaloPeriodo(
+            $periodo,
+            trim((string) ($_GET['dt_inicio'] ?? '')),
+            trim((string) ($_GET['dt_fim'] ?? ''))
+        );
+        $campoDataBadge = $this->campoDataPeriodoPorRegistro();
+        if ($dtInicio !== '') {
+            $where[]  = $campoDataBadge . ' >= ?';
+            $params[] = $dtInicio;
+        }
+        if ($dtFim !== '') {
+            $where[]  = $campoDataBadge . ' <= ?';
+            $params[] = $dtFim;
+        }
 
         try {
             $wBase = implode(' AND ', $where);
@@ -1095,6 +1097,46 @@ class EstudosController extends Controller
         } catch (\Throwable $ex) {
             error_log('[EstudosController::contadores] ' . $ex->getMessage());
             $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+        }
+    }
+
+    /** Data de referência da lista: assinatura/liberação usam a data do ato médico. */
+    private function campoDataPeriodoParaSituacao(string $situacao): string
+    {
+        return in_array($situacao, ['assinado', 'liberado'], true)
+            ? 'COALESCE(DATE(e.laudo_assinado_em), e.study_date)'
+            : 'e.study_date';
+    }
+
+    /** Data de referência por registro para badges que agregam várias situações. */
+    private function campoDataPeriodoPorRegistro(): string
+    {
+        return "CASE WHEN COALESCE(e.situacao, 'novo') IN ('assinado', 'liberado')\n"
+            . 'THEN COALESCE(DATE(e.laudo_assinado_em), e.study_date) ELSE e.study_date END';
+    }
+
+    /** Retorna o mesmo intervalo de estudo usado pela lista e pelos badges. */
+    private function resolverIntervaloPeriodo(string $periodo, string $dtInicio = '', string $dtFim = ''): array
+    {
+        $today = date('Y-m-d');
+        switch ($periodo) {
+            case 'hoje':
+                return [$today, $today];
+            case 'ontem':
+                $yesterday = date('Y-m-d', strtotime('-1 day'));
+                return [$yesterday, $yesterday];
+            case '7dias':
+                return [date('Y-m-d', strtotime('-6 days')), $today];
+            case '30dias':
+                return [date('Y-m-d', strtotime('-29 days')), $today];
+            case '90dias':
+                return [date('Y-m-d', strtotime('-89 days')), $today];
+            case 'ano':
+                return [date('Y-01-01'), $today];
+            case 'todos':
+                return ['', ''];
+            default:
+                return [$dtInicio, $dtFim];
         }
     }
 

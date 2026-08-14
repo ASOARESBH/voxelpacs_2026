@@ -27,8 +27,11 @@ $regras = [
     ),
     'contadores iniciais usam o escopo compartilhado' => str_contains(
         $controller,
-        '$cBase   = implode(\' AND \', $escopoWorklist[\'where\']);'
-    ),
+        '$cWhere  = $escopoWorklist[\'where\'];'
+    ) && str_contains(
+        $controller,
+        '$cParams = $escopoWorklist[\'params\'];'
+    ) && str_contains($controller, '$cBase = implode(\' AND \', $cWhere);'),
     'taxonomia atual cobre os badges novos' => str_contains(
         $controller,
         "'novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,"

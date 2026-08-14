@@ -153,5 +153,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Correção**: `EstudosController::resolverEscopoWorklist()` passou a ser a fonte única do `WHERE` base. A tabela, os contadores de carregamento inicial e o endpoint dos badges reutilizam a mesma lista de Unidades, o mesmo fallback seguro e a mesma regra de posse. Consequentemente, para médico restrito, um badge de situação e a Worklist filtrada pela mesma situação representam exatamente os mesmos estudos; administradores e superadmin mantêm a visão operacional correspondente ao próprio escopo.
 
+## Período compartilhado entre lista e badges — 2026-08-14
+
+**Sintoma**: o badge **ASSINADO** podia mostrar estudos históricos enquanto o filtro Situação=Assinado retornava vazio no período padrão de 30 dias. A comparação literal de `situacao = 'assinado'` estava correta nos dois lados; a divergência vinha do recorte temporal. A lista sempre restringia período, mas os contadores usavam apenas o escopo clínico, sem data.
+
+**Correção obrigatória**: `resolverIntervaloPeriodo()` é a fonte única dos períodos Hoje, Ontem, 7, 30 e 90 dias, Ano, Todos e Personalizado. A tabela, os contadores iniciais e `/api/estudos/contadores` aplicam o mesmo intervalo. Cabeçalho e rodapé encaminham `periodo`, `dt_inicio` e `dt_fim` atuais ao endpoint de badges, inclusive após a atualização automática.
+
+**Decisão confirmada pelo usuário**: para `assinado` e `liberado`, a lista usa `DATE(laudo_assinado_em)` como data de referência. Assim, um exame antigo liberado hoje aparece no filtro de estados terminais de hoje. Para preservar registros históricos sem timestamp, há fallback seguro para `study_date`. Os demais estados continuam usando `study_date`. Os badges aplicam um `CASE` equivalente por registro, garantindo que o contador de cada situação represente a mesma coorte do filtro.
+
 ## Última análise
-2026-08-13
+2026-08-14
