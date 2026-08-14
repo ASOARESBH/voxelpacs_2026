@@ -170,7 +170,7 @@ class ViewerMeasurementRepository
                 FROM pacs_viewer_measurements m
                 WHERE m.estudo_id = :estudo_id
                   AND m.is_removed = 0';
-        $params = [':estudo_id' => (int) $report->bi_pacs_estudos_id];
+        $params = [':estudo_id' => (int) $report->estudo_id];
 
         if ($report->tenant_id === null) {
             $sql .= ' AND m.tenant_id IS NULL';
@@ -194,7 +194,7 @@ class ViewerMeasurementRepository
         }
 
         $placeholders = [];
-        $params = [':estudo_id' => (int) $report->bi_pacs_estudos_id];
+        $params = [':estudo_id' => (int) $report->estudo_id];
         foreach ($measurementIds as $index => $measurementId) {
             $placeholder = ':measurement_' . $index;
             $placeholders[] = $placeholder;

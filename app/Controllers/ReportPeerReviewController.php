@@ -72,6 +72,7 @@ class ReportPeerReviewController extends Controller
                 'situacao_nao_elegivel' => 'O Peer Review só pode ser aberto para laudos assinados ou liberados.',
                 'peer_review_ja_aberto' => 'Já existe uma revisão aberta para este laudo.',
                 'medico_nao_vinculado' => 'Sua conta não está vinculada a um médico ativo neste tenant.',
+                'peer_review_schema_ausente' => 'Peer Review indisponível: aplique a migration 2026-08-10_reports_peer_review.sql.',
                 'peer_review_persistencia_falhou' => 'Não foi possível abrir o Peer Review. Verifique o log e tente novamente.',
                 'tenant_ou_usuario_invalido' => 'Tenant ou usuário inválido para esta operação.',
             ];

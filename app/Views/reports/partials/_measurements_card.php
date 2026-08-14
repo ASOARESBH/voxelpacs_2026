@@ -11,7 +11,7 @@
 >
     <div class="pacs-card-header viewer-measurements-header">
         <span id="viewer-measurements-title"><i class="fa fa-ruler"></i> Medidas disponíveis do viewer</span>
-        <button id="btn-refresh-measurements" type="button" class="btn btn-sm btn-outline-secondary" title="Atualizar medidas">
+        <button id="btn-refresh-measurements" type="button" class="btn-pacs-outline reports-measurements-refresh-btn" title="Atualizar medidas">
             <i class="fa fa-refresh" aria-hidden="true"></i><span class="sr-only">Atualizar medidas</span>
         </button>
     </div>
@@ -36,10 +36,10 @@
     </div>
 
         <div class="viewer-measurements-actions">
-            <button id="btn-copy-measurements" type="button" class="btn btn-sm btn-outline-secondary" disabled>
+            <button id="btn-copy-measurements" type="button" class="btn-pacs-outline reports-measurements-action-btn" disabled>
                 <i class="fa fa-copy" aria-hidden="true"></i> Copiar
             </button>
-            <button id="btn-insert-measurements" type="button" class="btn btn-sm btn-primary" disabled <?= $readonly ? 'disabled' : '' ?> >
+            <button id="btn-insert-measurements" type="button" class="btn-pacs-primary reports-measurements-action-btn" disabled <?= $readonly ? 'disabled' : '' ?> >
                 <i class="fa fa-plus-circle" aria-hidden="true"></i> Inserir no laudo
             </button>
         </div>

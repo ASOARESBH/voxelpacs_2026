@@ -68,5 +68,13 @@ A regra visual vive em `public/assets/css/reports.css`: `.reports-col-left` deve
 
 O envio preserva `id="reportChatForm"` e `id="btn-chat-send"`, usados por `public/assets/js/reports/reports-chat.js`. Seus botões usam `btn-pacs-primary` e `btn-pacs-outline`, nunca `pacs-btn`, para evitar a divergência histórica de estilos dessa classe. O badge do cabeçalho informa **Pendente**, nenhuma interação ou a contagem localizada de mensagens; a mesma contagem é atualizada após o `fetch` de envio sem alterar destinatários, assunto ou notificações.
 
+### Peer Review e Medidas do viewer (2026-08-14)
+
+O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `ReportPeerReviewRepository`, com persistência transacional em `pacs_report_peer_reviews` e snapshot imutável em `pacs_report_peer_review_originais`. Antes de disponibilizar o fluxo em produção, é obrigatório aplicar `database/migrations/2026-08-10_reports_peer_review.sql`; a migration foi ajustada para MySQL 5.7/HostGator, sem consultas ao catálogo de metadados, e requer conferência prévia das colunas no phpMyAdmin.
+
+`bi_pacs_estudos` é isolada por `institution_name`, não por `tenant_id`. Por isso, `ReportPeerReviewRepository` restringe o estudo com `InstitutionResolverService::getInstitutionNamesByTenant()` tanto na leitura do contexto como na atualização da situação. Não reintroduzir `e.tenant_id` ou `WHERE ... tenant_id` nesse fluxo.
+
+O contrato de `ReportRepository::findReportById()` usa os campos canônicos `reports.estudo_id` e `reports.situacao`. `ReportMeasurementService` e `ViewerMeasurementRepository` devem consumir exclusivamente esses nomes; o uso legado de `bi_pacs_estudos_id` e `status` gerava avisos de `stdClass` e impedia o card de Medidas de consultar seu estudo corretamente. Os botões textuais do Laudário, inclusive **Liberar Peer Review**, usam `btn-pacs-primary`, `btn-pacs-success` ou `btn-pacs-outline`; `pacs-btn` permanece apenas em controles estritamente compactos/de ícone.
+
 ## Última análise
 2026-08-13

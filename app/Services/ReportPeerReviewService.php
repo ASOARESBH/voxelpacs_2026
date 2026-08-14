@@ -88,11 +88,15 @@ class ReportPeerReviewService
             ]);
             return ['ok' => false, 'error' => 'peer_review_persistencia_falhou'];
         } catch (\Throwable $e) {
+            $schemaAusente = $this->isPeerReviewSchemaMissing($e);
             Logger::error('[ReportPeerReviewService::abrir] falha atômica', [
                 'report_id' => $reportId, 'tenant_id' => $tenantId, 'usuario_id' => $userId,
                 'error' => $e->getMessage(),
+                'schema_peer_review_ausente' => $schemaAusente,
             ]);
-            return ['ok' => false, 'error' => 'peer_review_persistencia_falhou'];
+            return ['ok' => false, 'error' => $schemaAusente
+                ? 'peer_review_schema_ausente'
+                : 'peer_review_persistencia_falhou'];
         }
 
         AuditLogger::log('report.peer_review_aberto', 'reports', $reportId, [
@@ -110,6 +114,15 @@ class ReportPeerReviewService
             'situacao' => 'peer_review',
             'motivo' => $motivo,
         ];
+    }
+
+    private function isPeerReviewSchemaMissing(\Throwable $error): bool
+    {
+        $sqlState = (string) $error->getCode();
+        $message = strtolower($error->getMessage());
+        return in_array($sqlState, ['42S02', '42S22'], true)
+            || str_contains($message, 'pacs_report_peer_review')
+            || str_contains($message, 'peer_review_');
     }
 
     public function contexto(int $reportId): array
