@@ -35,6 +35,11 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="webhook-tab" data-bs-toggle="tab" data-bs-target="#webhook" type="button" role="tab"><i class="fa fa-plug me-1"></i> Webhooks HUB</button>
             </li>
+            <?php if (isset($negocio) && !empty($negocio['id'])): ?>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/report-delivery"><i class="fa fa-paper-plane me-1"></i> Devolutiva de Laudos</a>
+                </li>
+            <?php endif; ?>
         </ul>
     </div>
     

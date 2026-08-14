@@ -448,6 +448,24 @@ class ReportService {
 
             $versaoNumero = $this->repo->proximaVersao($reportId) - 1;
             $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+
+            // A outbox é gravada no mesmo commit clínico. A rotina não abre
+            // conexões externas e permanece inativa enquanto a feature flag
+            // estiver desligada no ambiente de produção.
+            if ($modo === 'fechar') {
+                (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
+                    (int) $tenantId,
+                    $reportId,
+                    $estudoId,
+                    $versaoNumero,
+                    $report,
+                    $estudo,
+                    (int) $userId,
+                    $assinadoEm,
+                    $hash
+                );
+            }
+
             if ($peerReviewAberto && $peerReviewService) {
                 $peerReviewService->concluirNaTransacao(
                     (int) $peerReviewAberto->id,
