@@ -18,6 +18,18 @@ class ReportPeerReviewController extends Controller
         $this->service = new ReportPeerReviewService();
     }
 
+    private function getJsonInput(): array
+    {
+        $raw = file_get_contents('php://input');
+        $data = json_decode($raw ?: '', true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function validarCsrf(string $token): bool
+    {
+        return $token !== '' && hash_equals((string) ($_SESSION['csrf_token'] ?? ''), $token);
+    }
+
     /** GET /api/reports/peer-review/context?report_id=123 */
     public function context(): void
     {
