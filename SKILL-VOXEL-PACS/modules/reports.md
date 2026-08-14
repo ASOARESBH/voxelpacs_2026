@@ -76,5 +76,13 @@ O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `Rep
 
 O contrato de `ReportRepository::findReportById()` usa os campos canônicos `reports.estudo_id` e `reports.situacao`. `ReportMeasurementService` e `ViewerMeasurementRepository` devem consumir exclusivamente esses nomes; o uso legado de `bi_pacs_estudos_id` e `status` gerava avisos de `stdClass` e impedia o card de Medidas de consultar seu estudo corretamente. Os botões textuais do Laudário, inclusive **Liberar Peer Review**, usam `btn-pacs-primary`, `btn-pacs-success` ou `btn-pacs-outline`; `pacs-btn` permanece apenas em controles estritamente compactos/de ícone.
 
+### Autorização de report_id e defesa IDOR (2026-08-14)
+
+`App\Services\ReportAccessService` é a fonte única de autorização para recursos de laudo recebidos por `report_id` ou `estudo_id`. Ele carrega o report com o estudo e, antes de qualquer retorno ou escrita, valida `reports.tenant_id`, a `institution_name` permitida pelo `MedicoAccess` e, para médico restrito, a posse em `bi_pacs_estudos.usuario_responsavel_id`. Médico sem cadastro ativo vinculado falha fechado. Superadmin preserva o acesso global previsto pela plataforma.
+
+A regra vale para editor, `save`, `sign`, histórico, restauração de versão, PDF, assinatura visual, busca por estudo, mudança de situação, CHAT, Peer Review e Medidas. Um recurso não autorizado deve responder como inexistente (`404`/payload sem ID), nunca como `403` com confirmação de existência. A tentativa fica registrada em `Logger::warning` sem conteúdo clínico.
+
+Não use `ReportRepository::findReportById()` diretamente em um endpoint: ele é um acesso de dados e não substitui a política clínica. Todo novo endpoint que receba um identificador de laudo deve chamar `ReportAccessService` antes de consultar conteúdo, criar versão, alterar status ou devolver metadados.
+
 ## Última análise
-2026-08-13
+2026-08-14

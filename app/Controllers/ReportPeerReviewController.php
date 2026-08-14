@@ -7,7 +7,9 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Logger;
+use App\Repositories\ReportPeerReviewRepository;
 use App\Services\ReportPeerReviewService;
+use App\Services\ReportAccessService;
 
 class ReportPeerReviewController extends Controller
 {
@@ -45,6 +47,10 @@ class ReportPeerReviewController extends Controller
         }
 
         try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             $this->json(['ok' => true] + $this->service->contexto($reportId));
         } catch (\Throwable $e) {
             Logger::error('ReportPeerReviewController::context error', [
@@ -77,6 +83,10 @@ class ReportPeerReviewController extends Controller
         }
 
         try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             $result = $this->service->abrir($reportId, $motivo);
             $messages = [
                 'motivo_curto' => 'Informe o motivo da revisão com pelo menos 20 caracteres.',
@@ -119,6 +129,12 @@ class ReportPeerReviewController extends Controller
         }
 
         try {
+            $review = (new ReportPeerReviewRepository())->findById($reviewId);
+            if (!$review || !(new ReportAccessService())->findAuthorizedReport((int) $review->report_id)) {
+                $this->json(['ok' => false, 'msg' => 'Snapshot original não encontrado.'], 404);
+                return;
+            }
+
             $original = $this->service->original($reviewId);
             if (!$original) {
                 $this->json(['ok' => false, 'msg' => 'Snapshot original não encontrado.'], 404);

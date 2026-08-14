@@ -6,6 +6,8 @@ use App\Core\Controller;
 use App\Core\Auth;
 use App\Core\Logger;
 use App\Services\ReportService;
+use App\Services\ReportAccessService;
+
 use App\Repositories\ReportRepository;
 use App\Repositories\EstudosRepository;
 use App\Services\ReportChatService;
@@ -268,12 +270,13 @@ class ReportsController extends Controller
             return;
         }
 
-        try {
-            if (!$this->reportRepo->findReportById($reportId)) {
+                try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
             $versoes = $this->reportRepo->listVersions($reportId);
+
             $this->json(['ok' => true, 'versions' => $versoes]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::history error', ['msg' => $e->getMessage()]);
@@ -318,11 +321,18 @@ class ReportsController extends Controller
             return;
         }
 
-        $reportId = (int) ($_GET['report_id'] ?? 0);
+                $reportId = (int) ($_GET['report_id'] ?? 0);
         $download = ($_GET['download'] ?? '0') === '1';
         $tenantId = Auth::tenantId();
 
+        if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+            http_response_code(404);
+            echo 'Laudo não encontrado.';
+            return;
+        }
+
         try {
+
             $pdo = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
                 "SELECT r.*, e.patient_name_display, e.patient_name, e.patient_id,
@@ -347,7 +357,8 @@ class ReportsController extends Controller
                         COALESCE(NULLIF(bnin.cidade, ''), un.cidade)                 AS unidade_cidade,
                         COALESCE(NULLIF(bnin.estado, ''), un.estado)                 AS unidade_estado
                  FROM reports r
-                 JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+                                  JOIN bi_pacs_estudos e ON e.id = r.estudo_id
+
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
@@ -359,10 +370,11 @@ class ReportsController extends Controller
                         ON bnin.tenant_id = r.tenant_id
                        AND bnin.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = r.tenant_id
-                 WHERE r.id = :id AND r.tenant_id = :tenant_id
+                                  WHERE r.id = :id
                  LIMIT 1"
             );
-            $stmt->execute([':id' => $reportId, ':tenant_id' => $tenantId]);
+            $stmt->execute([':id' => $reportId]);
+
             $data = $stmt->fetch(\PDO::FETCH_ASSOC);
 
             if (!$data) {
@@ -412,9 +424,10 @@ class ReportsController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
-                "SELECT id FROM reports WHERE study_instance_uid = :uid AND tenant_id = :tenant_id LIMIT 1"
+                                "SELECT id FROM reports WHERE study_instance_uid = :uid LIMIT 1"
             );
-            $stmt->execute([':uid' => $studyUid, ':tenant_id' => Auth::tenantId()]);
+            $stmt->execute([':uid' => $studyUid]);
+
             $reportId = (int) ($stmt->fetchColumn() ?: 0);
             if (!$reportId) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
             $_GET['report_id'] = $reportId;
@@ -430,23 +443,28 @@ class ReportsController extends Controller
     // GET /reports/assinatura-imagem?report_id=X
     // Proxy autenticado da assinatura visual CONGELADA deste laudo (ver
     // ReportService::congelarAssinaturaVisual) — arquivo fica fora de public/,
-    // nunca exposto direto. Diferente de pdf() acima, esta rota nova CONFERE
-    // tenant_id explicitamente (pdf() não confere — achado registrado em
-    // diagnostics/pendencias-conhecidas.md, fora do escopo desta tarefa corrigir).
+        // nunca exposto direto. A rota usa ReportAccessService, a mesma defesa de
+    // tenant, InstitutionName e posse médica aplicada ao PDF e ao editor.
+
     // ══════════════════════════════════════════════════════════════════════════
     public function assinaturaImagem(): void
     {
         if (!Auth::check()) { http_response_code(401); return; }
-        $reportId = (int) ($_GET['report_id'] ?? 0);
+                $reportId = (int) ($_GET['report_id'] ?? 0);
         $tenantId = Auth::tenantId();
-        if (!$reportId || !$tenantId) { http_response_code(404); return; }
+        if (!$reportId || !$tenantId || !(new ReportAccessService())->findAuthorizedReport($reportId)) {
+            http_response_code(404);
+            return;
+        }
 
         try {
+
             $pdo  = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
-                "SELECT assinatura_tipo, assinatura_caminho_arquivo FROM reports WHERE id = :id AND tenant_id = :tenant_id LIMIT 1"
+                                "SELECT assinatura_tipo, assinatura_caminho_arquivo FROM reports WHERE id = :id LIMIT 1"
             );
-            $stmt->execute(['id' => $reportId, 'tenant_id' => $tenantId]);
+            $stmt->execute(['id' => $reportId]);
+
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
             if (!$row || empty($row['assinatura_caminho_arquivo'])) { http_response_code(404); return; }
@@ -748,15 +766,10 @@ class ReportsController extends Controller
             return;
         }
 
-        try {
-            $pdo  = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare(
-                "SELECT id FROM reports WHERE estudo_id = :eid AND tenant_id = :tenant_id ORDER BY id DESC LIMIT 1"
-            );
-            $stmt->execute([':eid' => $estudoId, ':tenant_id' => Auth::tenantId()]);
-            $id = $stmt->fetchColumn();
+                try {
+            $report = (new ReportAccessService())->findAuthorizedReportByEstudoId($estudoId);
+            $this->json(['report_id' => $report ? (int) $report->id : null]);
 
-            $this->json(['report_id' => $id ?: null]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::byEstudo error', ['msg' => $e->getMessage()]);
             $this->json(['report_id' => null]);
@@ -784,12 +797,13 @@ class ReportsController extends Controller
             return;
         }
         try {
-            $tenantId = (int) Auth::tenantId();
-            $report = $this->reportRepo->findReportById($reportId);
+                        $tenantId = (int) Auth::tenantId();
+            $report = (new ReportAccessService())->findAuthorizedReport($reportId);
             if (!$report) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
+
             if ((new ReportChatService())->hasPending($reportId, $tenantId)) {
                 Logger::warning('ReportsController::atualizarStatus bloqueado por CHAT pendente', [
                     'report_id' => $reportId, 'tenant_id' => $tenantId, 'situacao_solicitada' => $situacao,
@@ -797,16 +811,14 @@ class ReportsController extends Controller
                 $this->json(['ok' => false, 'msg' => 'Conclua a pendência do CHAT antes de alterar a situação do laudo.'], 422);
                 return;
             }
-            $pdo = \App\Core\Database::getInstance();
-            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id AND tenant_id = :tenant_id")
-                ->execute(['sit' => $situacao, 'id' => $reportId, 'tenant_id' => $tenantId]);
-            // Espelha em bi_pacs_estudos
-            $pdo->prepare(
-                "UPDATE bi_pacs_estudos e
-                 JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
-                 SET e.situacao = :sit
-                 WHERE r.id = :rid"
-            )->execute(['sit' => $situacao, 'rid' => $reportId, 'tenant_id' => $tenantId]);
+                        $pdo = \App\Core\Database::getInstance();
+            $pdo->prepare("UPDATE reports SET situacao = :sit WHERE id = :id")
+                ->execute(['sit' => $situacao, 'id' => $reportId]);
+            // O report já foi autorizado; espelha pelo estudo canônico sem
+            // depender de uma coluna tenant_id em bi_pacs_estudos.
+            $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = :sit WHERE id = :estudo_id")
+                ->execute(['sit' => $situacao, 'estudo_id' => (int) $report->estudo_id]);
+
             Logger::info('ReportsController::atualizarStatus', [
                 'report_id' => $reportId, 'situacao' => $situacao, 'usuario' => Auth::userId(),
             ]);
@@ -832,8 +844,9 @@ class ReportsController extends Controller
         if (!$reportId) { $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422); return; }
 
         try {
-            $report = $this->reportRepo->findReportById($reportId);
+                        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
             if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
+
             if ((new ReportChatService())->hasPending($reportId, (int) Auth::tenantId())) {
                 Logger::warning('ReportsController::liberar bloqueado por CHAT pendente', [
                     'report_id' => $reportId, 'tenant_id' => Auth::tenantId(), 'usuario_id' => Auth::userId(),
@@ -869,28 +882,24 @@ class ReportsController extends Controller
             }
 
             // Laudo já assinado: liberar não cria uma segunda assinatura.
-            $pdo = \App\Core\Database::getInstance();
+                        $pdo = \App\Core\Database::getInstance();
             $pdo->prepare(
                 "UPDATE reports SET situacao = 'liberado', liberado_em = NOW(), liberado_por = :uid
-                 WHERE id = :id AND tenant_id = :tenant_id"
-            )->execute(['uid' => Auth::userId(), 'id' => $reportId, 'tenant_id' => Auth::tenantId()]);
+                 WHERE id = :id"
+            )->execute(['uid' => Auth::userId(), 'id' => $reportId]);
             try {
                 $pdo->prepare(
-                    "UPDATE bi_pacs_estudos e
-                     JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
-                     SET e.situacao = 'liberado', e.laudo_assinado_em = NOW()
-                     WHERE r.id = :rid"
-                )->execute(['rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
+                    "UPDATE bi_pacs_estudos
+                     SET situacao = 'liberado', laudo_assinado_em = NOW()
+                     WHERE id = :estudo_id"
+                )->execute(['estudo_id' => (int) $report->estudo_id]);
             } catch (\PDOException $studyError) {
                 if (stripos($studyError->getMessage(), 'laudo_assinado_em') === false) throw $studyError;
                 Logger::warning('ReportsController::liberar sem laudo_assinado_em — migration pendente', ['error' => $studyError->getMessage()]);
-                $pdo->prepare(
-                    "UPDATE bi_pacs_estudos e
-                     JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = :tenant_id
-                     SET e.situacao = 'liberado'
-                     WHERE r.id = :rid"
-                )->execute(['rid' => $reportId, 'tenant_id' => Auth::tenantId()]);
+                $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = 'liberado' WHERE id = :estudo_id")
+                    ->execute(['estudo_id' => (int) $report->estudo_id]);
             }
+
             Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
             $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
         } catch (\Throwable $e) {
