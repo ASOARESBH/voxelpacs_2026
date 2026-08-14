@@ -41,7 +41,7 @@ $chatController = $read('app/Controllers/ReportChatController.php');
 $expect(str_contains($routes, "Router::get('/gestao-exames'") , 'Rota da Gestão de Exames ausente.');
 $expect(str_contains($routes, "Router::get('/api/gestao-exames/estudos/{id}/gerenciar'") && str_contains($routes, 'GestaoExamesController@gerenciarContext'), 'Rota do submenu Gerenciar ausente.');
 $expect(str_contains($routes, "Router::post('/api/gestao-exames/estudos/{id}/prioridade'") && str_contains($routes, 'GestaoExamesController@alterarPrioridade'), 'Rota de alteração de prioridade ausente.');
-$expect(str_contains($header, "fetch('/api/estudos/contadores'") && !str_contains($header, "fetch('/estudos/contadores'"), 'Sidebar chama rota inválida de contadores.');
+$expect(str_contains($header, "'/api/estudos/contadores'") && !str_contains($header, "'/estudos/contadores'"), 'Sidebar chama rota inválida de contadores.');
 $expect(str_contains($routes, "GestaoExamesController@anexar") , 'Rota de anexação ausente.');
 $expect(str_contains($routes, "GestaoExamesController@remover") , 'Rota de remoção ausente.');
 $expect(str_contains($routes, "GestaoExamesController@arquivo") , 'Rota do proxy ausente.');

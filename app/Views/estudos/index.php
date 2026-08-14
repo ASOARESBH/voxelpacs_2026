@@ -117,6 +117,17 @@ function prioridadeInternaBadge(string $p): string {
     return '';
 }
 
+/* ─── badge de achado crítico: atributo clínico independente de prioridade ───── */
+function achadoCriticoBadge(?string $achadoCriticoEm, ?string $assunto): string {
+    if (empty($achadoCriticoEm)) return '';
+    $title = 'Achado Crítico comunicado em ' . date('d/m/Y H:i', strtotime($achadoCriticoEm));
+    if (trim((string) $assunto) !== '') $title .= ': ' . trim((string) $assunto);
+    return sprintf(
+        '<span class="achado-critico-badge" title="%s"><i class="fa fa-notes-medical"></i> Achado crítico</span>',
+        htmlspecialchars($title, ENT_QUOTES, 'UTF-8')
+    );
+}
+
 /* ─── formatar idade ─────────────────────────────────────────────────────── */
 function formatarIdade(array $e): string {
     $age = $e['patient_age'] ?? '';
@@ -220,7 +231,7 @@ $periodoLabel = [
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
-<div class="wl-resumo" style="display:none;">
+<div class="wl-resumo" style="<?= ($resumo['achados_criticos'] ?? 0) > 0 ? '' : 'display:none;' ?>">
     <div class="wl-resumo-cards">
         <div class="wl-card" onclick="setPeriodo('hoje')" title="Hoje">
             <span class="wl-card-num"><?= number_format($resumo['hoje']) ?></span>
@@ -238,6 +249,12 @@ $periodoLabel = [
         <div class="wl-card wl-card-urgente" onclick="setFiltroRapido('prioridade','urgente')" title="Urgentes">
             <span class="wl-card-num"><?= number_format($resumo['urgentes']) ?></span>
             <span class="wl-card-lbl"><i class="fa fa-triangle-exclamation"></i> Urgentes</span>
+        </div>
+        <?php endif; ?>
+        <?php if (($resumo['achados_criticos'] ?? 0) > 0): ?>
+        <div class="wl-card wl-card-achado-critico" title="Achados Críticos comunicados pelo CHAT">
+            <span class="wl-card-num"><?= number_format($resumo['achados_criticos']) ?></span>
+            <span class="wl-card-lbl"><i class="fa fa-notes-medical"></i> Achados Críticos</span>
         </div>
         <?php endif; ?>
     </div>
@@ -498,6 +515,7 @@ $periodoLabel = [
             <!-- Data/Hora -->
             <td class="col-dt">
                 <?= prioridadeInternaBadge($prio) ?>
+                <?= achadoCriticoBadge($e['achado_critico_em'] ?? null, $e['achado_critico_assunto'] ?? null) ?>
                 <div class="wl-date"><?= $dtFmt ?></div>
                 <?php if ($hrFmt): ?><div class="wl-time"><?= $hrFmt ?></div><?php endif; ?>
             </td>

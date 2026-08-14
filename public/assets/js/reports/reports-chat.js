@@ -15,6 +15,7 @@ window.VoxelReports.chat = (function () {
         required: 'Digite a interação antes de enviar.',
         error: 'Não foi possível processar a interação.',
         confirm: 'Concluir esta pendência? O estudo voltará à situação anterior.',
+        criticalConfirm: 'Confirmar o registro de ACHADO CRÍTICO? A sinalização será gravada no estudo e os administradores do tenant serão notificados por e-mail.',
     };
 
     function text(key) {
@@ -94,6 +95,11 @@ window.VoxelReports.chat = (function () {
         document.dispatchEvent(new CustomEvent('reports:chat-status', { detail: { pending: state.pending } }));
     }
 
+    function updateCriticalAlert() {
+        const isCritical = document.getElementById('chatAssuntoCodigo')?.value === 'achado_critico';
+        document.getElementById('chat-critical-alert')?.classList.toggle('d-none', !isCritical);
+    }
+
     function updateRecipientFields() {
         const type = document.getElementById('chatDestinatarioTipo')?.value || 'grupo';
         const group = document.getElementById('chatGrupoField');
@@ -128,11 +134,13 @@ window.VoxelReports.chat = (function () {
         if (busy) return;
         const message = document.getElementById('chatMensagem');
         const body = (message?.value || '').trim();
+        const isCritical = document.getElementById('chatAssuntoCodigo')?.value === 'achado_critico';
         if (!body) {
             setFeedback(text('required'), true);
             message?.focus();
             return;
         }
+        if (isCritical && !window.confirm(text('criticalConfirm'))) return;
 
         busy = true;
         setFeedback('');
@@ -157,7 +165,7 @@ window.VoxelReports.chat = (function () {
             const data = await response.json();
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             if (message) message.value = '';
-            setFeedback('Interação registrada e destinatários notificados.');
+            setFeedback(data.email_warning || 'Interação registrada e destinatários notificados.', Boolean(data.email_warning));
             await load();
         } catch (error) {
             setFeedback(error.message || text('error'), true);
@@ -197,8 +205,10 @@ window.VoxelReports.chat = (function () {
         config = cfg;
         const form = document.getElementById('reportChatForm');
         document.getElementById('chatDestinatarioTipo')?.addEventListener('change', updateRecipientFields);
+        document.getElementById('chatAssuntoCodigo')?.addEventListener('change', updateCriticalAlert);
         document.getElementById('btn-chat-complete')?.addEventListener('click', complete);
         if (form) form.addEventListener('submit', send);
+        updateCriticalAlert();
         load();
     }
 

@@ -40,9 +40,9 @@ $design = source('docs/CHAT_REPORTS_DESIGN.md');
 mustContain($routes, "Router::get('/api/reports/chat'", 'Rota GET do CHAT ausente.');
 mustContain($routes, "Router::post('/api/reports/chat/send'", 'Rota de envio do CHAT ausente.');
 mustContain($routes, "Router::post('/api/reports/chat/complete'", 'Rota de conclusão do CHAT ausente.');
-mustContain($routes, "Router::get('/reports/{study_uid}'", 'Rota dinâmica do Report ausente.');
-if (strpos($routes, "Router::get('/api/reports/chat'") > strpos($routes, "Router::get('/reports/{study_uid}'")) {
-    throw new RuntimeException('Rota estática do CHAT deve preceder o wildcard do Report.');
+mustContain($routes, "Router::get('/reports/r/{token}'", 'Rota pública opaca do Report ausente.');
+if (strpos($routes, "Router::get('/api/reports/chat'") > strpos($routes, "Router::get('/reports/r/{token}'")) {
+    throw new RuntimeException('Rota estática do CHAT deve preceder a rota pública do Report.');
 }
 
 mustContain($migration, 'pacs_report_chats', 'Tabela de cabeçalho do CHAT ausente na migration.');

@@ -41,6 +41,14 @@ Em paralelo, `EstudosController` (Worklist) tinha o mesmo problema com sintaxe d
 - Modelo: RBAC simples por `bi_users.role`, checado via `App\Core\Permission::can($role, $permissao)` (`Auth::can()`) — infraestrutura existe mas **não é chamada por nenhum Controller hoje** (débito conhecido, `docs/MANUAL_TECNICO.md` §15.5).
 - Acesso a estudo e laudo: nunca confiar apenas em um ID numérico ou em `tenant_id` de forma isolada. `ReportAccessService` resolve o laudo com seu estudo e aplica, no backend, tenant do report, `InstitutionName` permitido e posse exclusiva quando o perfil é médico restrito. No schema que não possui `bi_pacs_estudos.tenant_id`, o vínculo ao tenant é validado por `InstitutionResolverService::getInstitutionNamesByTenant()`.
 
+### Achado Crítico — permissão clínica e escopo (2026-08-14)
+
+**Urgência/prioridade** e **Achado Crítico** são conceitos independentes. `bi_pacs_estudos.prioridade` continua sendo a classificação operacional/DICOM da Worklist; a comunicação de achado crítico grava somente `achado_critico_em`, `achado_critico_por` e `achado_critico_assunto`. Os dois indicadores podem coexistir e nenhum endpoint de CHAT pode atualizar `prioridade` como efeito colateral do tema `achado_critico`.
+
+A marcação é permitida exclusivamente ao perfil de tenant `medico`, validado no backend por `ReportChatService::send()` com `Auth::perfilAtual()`. A interface pode ocultar a opção para perfis não médicos, mas a regra de autorização válida é a do serviço. `ReportChatController` deve continuar validando CSRF e `ReportAccessService` antes de delegar a ação; a Gestão de Exames usa o mesmo endpoint e não pode ter um caminho alternativo de gravação.
+
+A escrita em `bi_pacs_estudos` deve usar `InstitutionResolverService::getInstitutionNamesByTenant()` e falhar fechada quando o tenant não possuir InstitutionName autorizada. Não usar `bi_pacs_estudos.tenant_id`, pois esse campo não integra o schema operacional. Após a persistência, `AuditLogger::log('estudo.achado_critico_marcado', ...)` registra usuário, estudo, momento, destinatários lógicos e resultado dos e-mails. Os administradores ativos do tenant devem ser destinatários obrigatórios além do público selecionado pelo CHAT; falha de e-mail precisa voltar ao médico como aviso visível, sem apagar a comunicação clínica.
+
 ## Perguntas que toda alteração nesta área deve responder
 
 Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
