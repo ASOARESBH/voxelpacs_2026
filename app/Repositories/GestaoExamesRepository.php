@@ -35,7 +35,9 @@ class GestaoExamesRepository
                 e.tenant_id,
                 e.study_instance_uid,
                 e.patient_name,
+                e.modalities,
                 e.study_description,
+                e.study_description_manual,
                 e.situacao,
                 COALESCE(e.dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
@@ -69,7 +71,7 @@ class GestaoExamesRepository
             $fallback = $this->pdo->prepare("
                 SELECT
                     e.id, e.tenant_id, e.study_instance_uid, e.patient_name,
-                    e.study_description, e.situacao,
+                    e.modalities, e.study_description, 0 AS study_description_manual, e.situacao,
                     COALESCE(e.dicom_priority, '') AS dicom_priority,
                     COALESCE(e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                     NULL AS dicom_priority_override,

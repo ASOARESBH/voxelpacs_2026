@@ -44,6 +44,14 @@
         element.style.display = message ? 'block' : 'none';
     }
 
+    function showDescriptionStatus(message, type = 'danger') {
+        const element = $('#gerenciarDescricaoStatus');
+        if (!element) return;
+        element.className = `alert alert-${type} py-2 small`;
+        element.textContent = message || '';
+        element.style.display = message ? 'block' : 'none';
+    }
+
     function priorityLabel(option) {
         const value = String(option?.value || '').toUpperCase();
         const labels = {
@@ -153,6 +161,7 @@
         }
 
         const chatButton = $('#gerenciarChat');
+        const descriptionButton = $('#gerenciarDescricao');
         const priorityButton = $('#gerenciarPrioridade');
         const badge = $('#gerenciarChatBadge');
         const lockNotice = $('#gerenciarLockNotice');
@@ -161,6 +170,9 @@
         if (priorityButton) priorityButton.disabled = pending;
         if (lockNotice) lockNotice.style.display = pending ? 'block' : 'none';
         if (chatButton) chatButton.disabled = !state.reportId;
+        if (descriptionButton) descriptionButton.disabled = !context?.modalidade;
+        const descriptionDetail = $('#gerenciarDescricaoDesc');
+        if (descriptionDetail) descriptionDetail.textContent = context?.modalidade || text('erroOperacao');
         $('#gerenciarPrioridadeDesc').textContent = context?.priority?.effective
             ? priorityLabel(context.priority)
             : text('prioridade');
@@ -238,6 +250,81 @@
         showChatStatus(text('concluido'), 'success');
     }
 
+    function renderDescriptionSuggestions(suggestions) {
+        const datalist = $('#gerenciarDescricaoSugestoes');
+        const list = $('#gerenciarDescricaoSugestoesLista');
+        const values = Array.isArray(suggestions) ? suggestions : [];
+        if (datalist) datalist.innerHTML = values.map((item) => `<option value="${escapeHtml(item.descricao)}"></option>`).join('');
+        if (!list) return;
+        if (!values.length) {
+            list.innerHTML = `<small class="text-muted">${escapeHtml(text('descricaoSemSugestoes'))}</small>`;
+            return;
+        }
+        list.innerHTML = values.map((item) => `<button type="button" class="btn btn-outline-secondary btn-sm gerenciar-descricao-sugestao" data-descricao="${escapeHtml(item.descricao)}">${escapeHtml(item.descricao)}</button>`).join('');
+        list.querySelectorAll('.gerenciar-descricao-sugestao').forEach((button) => {
+            button.addEventListener('click', () => { $('#gerenciarDescricaoInput').value = button.dataset.descricao || ''; });
+        });
+    }
+
+    async function openDescriptionModal() {
+        const modalidade = String(state.context?.modalidade || '').trim();
+        if (!state.studyId || !modalidade) return;
+        $('#gerenciarDescricaoInput').value = state.context?.study_description || '';
+        $('#gerenciarDescricaoModalidade').textContent = format(text('descricaoModalidade'), modalidade);
+        $('#gerenciarDescricaoLote').style.display = state.context?.can_apply_description_batch ? 'inline-flex' : 'none';
+        renderDescriptionSuggestions([]);
+        showDescriptionStatus('', 'info');
+        modal('gerenciarDescricaoModal')?.show();
+        try {
+            const response = await fetch(`/api/gestao-exames/descricoes-por-modalidade?modalidade=${encodeURIComponent(modalidade)}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            renderDescriptionSuggestions(payload.sugestoes || []);
+        } catch (error) {
+            showDescriptionStatus(error.message || text('erroOperacao'), 'danger');
+        }
+    }
+
+    async function applyDescription(batch) {
+        const descricao = String($('#gerenciarDescricaoInput').value || '').trim();
+        if (!state.studyId || descricao.length < 3) {
+            showDescriptionStatus(text('erroOperacao'), 'danger');
+            return;
+        }
+        const baseUrl = `/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/descricao`;
+        if (!batch) {
+            const response = await fetch(baseUrl, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
+                body: JSON.stringify({ descricao, csrf: state.csrf })
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            modal('gerenciarDescricaoModal')?.hide();
+            window.location.reload();
+            return;
+        }
+
+        const previewResponse = await fetch(`${baseUrl}/previa-lote`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
+            body: JSON.stringify({ descricao, csrf: state.csrf })
+        });
+        const previewPayload = await previewResponse.json();
+        if (!previewResponse.ok || !previewPayload.ok) throw new Error(previewPayload.msg || text('erroOperacao'));
+        const preview = previewPayload.previa || {};
+        if (!window.confirm(format(text('confirmarDescricaoLote'), preview.total || 0, preview.modalidade || ''))) return;
+
+        const response = await fetch(`${baseUrl}/lote`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
+            body: JSON.stringify({ descricao, confirmar: true, csrf: state.csrf })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+        modal('gerenciarDescricaoModal')?.hide();
+        window.location.reload();
+    }
+
     function openPriorityModal() {
         if (!state.context || state.context.chat_pending) return;
         const priority = state.context.priority || {};
@@ -293,6 +380,7 @@
             modal('gerenciarChatModal')?.show();
             renderChatHistory(state.context?.chat || null);
         });
+        $('#gerenciarDescricao')?.addEventListener('click', () => { openDescriptionModal(); });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
         $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
@@ -300,6 +388,13 @@
         });
         $('#gerenciarChatConcluir')?.addEventListener('click', () => {
             completeChat().catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarDescricaoForm')?.addEventListener('submit', (event) => {
+            event.preventDefault();
+            applyDescription(false).catch((error) => showDescriptionStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarDescricaoLote')?.addEventListener('click', () => {
+            applyDescription(true).catch((error) => showDescriptionStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarPrioridadeForm')?.addEventListener('submit', (event) => {
             savePriority(event).catch((error) => {

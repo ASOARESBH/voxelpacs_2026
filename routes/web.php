@@ -36,6 +36,10 @@ Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopil
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar
 // ============================================================
 Router::get('/api/gestao-exames/estudos/{id}/gerenciar',        'GestaoExamesController@gerenciarContext');
+Router::get('/api/gestao-exames/descricoes-por-modalidade',     'GestaoExamesController@descricoesPorModalidade');
+Router::post('/api/gestao-exames/estudos/{id}/descricao',       'GestaoExamesController@alterarDescricao');
+Router::post('/api/gestao-exames/estudos/{id}/descricao/previa-lote', 'GestaoExamesController@previaDescricaoLote');
+Router::post('/api/gestao-exames/estudos/{id}/descricao/lote',  'GestaoExamesController@alterarDescricaoLote');
 Router::post('/api/gestao-exames/estudos/{id}/prioridade',      'GestaoExamesController@alterarPrioridade');
 Router::post('/api/gestao-exames/estudos/{id}/pedido',          'GestaoExamesController@anexar');
 Router::post('/api/gestao-exames/estudos/{id}/pedido/remover',  'GestaoExamesController@remover');
