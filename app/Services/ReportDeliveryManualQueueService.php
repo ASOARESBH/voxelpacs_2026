@@ -77,7 +77,8 @@ final class ReportDeliveryManualQueueService
                 $row,
                 $releasedBy,
                 $releasedAt,
-                $reportHash
+                $reportHash,
+                true
             );
             $this->pdo->commit();
 

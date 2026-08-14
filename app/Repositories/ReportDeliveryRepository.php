@@ -315,6 +315,31 @@ class ReportDeliveryRepository
         return $created;
     }
 
+    /**
+     * Reativa exclusivamente jobs que foram concluídos pela simulação local.
+     * Não reenvia entregas clínicas reais nem jobs concluídos por conectores externos.
+     */
+    public function requeueDryRunJobs(int $outboxId, int $tenantId): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_jobs
+             SET status = 'queued',
+                 delivered_at = NULL,
+                 remote_reference = NULL,
+                 last_error = 'Reenfileirado após validação em DRY_RUN',
+                 next_attempt_at = NOW(),
+                 locked_at = NULL,
+                 locked_by = NULL
+             WHERE outbox_id = :outbox_id
+               AND tenant_id = :tenant_id
+               AND status = 'delivered'
+               AND remote_reference LIKE 'dry-run:%'"
+        );
+        $stmt->execute([':outbox_id' => $outboxId, ':tenant_id' => $tenantId]);
+
+        return $stmt->rowCount();
+    }
+
     public function markOutboxWithoutDestination(int $outboxId): void
     {
         $stmt = $this->pdo->prepare(

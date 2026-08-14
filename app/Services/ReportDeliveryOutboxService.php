@@ -31,7 +31,8 @@ class ReportDeliveryOutboxService
         object $estudo,
         int $releasedBy,
         string $releasedAt,
-        string $reportHash
+        string $reportHash,
+        bool $reactivateDryRun = false
     ): array {
         if (!$this->enabled()) {
             return ['created' => false, 'outbox_id' => null, 'job_count' => 0, 'reason' => 'feature_disabled'];
@@ -93,6 +94,9 @@ class ReportDeliveryOutboxService
                 ? $repository->findActiveDestinations($tenantId, $estabelecimentoId, $institutionName)
                 : [];
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations);
+            if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
+                $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);
+            }
 
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
