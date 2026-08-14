@@ -69,6 +69,13 @@ window.VoxelReports.chat = (function () {
         if (el && value !== null && value !== undefined && value !== '') el.value = String(value);
     }
 
+    function interactionCountText(messages) {
+        const count = Array.isArray(messages) ? messages.length : 0;
+        if (count === 0) return text('clear');
+        const pattern = count === 1 ? text('countSingular') : text('countPlural');
+        return pattern.replace(':count', String(count));
+    }
+
     function renderStatus(chat) {
         state = { ...state, ...chat, pending: chat.status === 'pendente' };
         const card = document.getElementById('card-chat');
@@ -77,7 +84,7 @@ window.VoxelReports.chat = (function () {
         const complete = document.getElementById('btn-chat-complete');
         if (card) card.dataset.chatPending = state.pending ? '1' : '0';
         if (badge) {
-            badge.textContent = state.pending ? text('pending') : text('clear');
+            badge.textContent = state.pending ? text('pending') : interactionCountText(state.messages);
             badge.classList.toggle('is-pending', state.pending);
             badge.classList.toggle('is-clear', !state.pending);
         }

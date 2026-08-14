@@ -483,6 +483,8 @@ return [
     'report_chat.concluido'              => 'Concluído',
     'report_chat.pendente'               => 'Pendente',
     'report_chat.sem_mensagens'          => 'Nenhuma interação registrada.',
+    'report_chat.interacao_count_singular' => ':count interação',
+    'report_chat.interacao_count_plural'   => ':count interações',
     'report_chat.aviso_pendente'         => 'Existe uma pendência aberta. Conclua o CHAT antes de assinar ou finalizar o laudo.',
     'report_chat.aviso_email'            => 'Os destinatários receberão uma notificação por e-mail.',
     'report_chat.erro_migration'         => 'CHAT indisponível: execute a migration do módulo no banco.',

@@ -45,7 +45,7 @@ $regras = [
         && str_contains($measurements, 'class="pacs-card-header viewer-measurements-header"')
         && str_contains($measurements, 'class="pacs-card-body reports-card-body viewer-measurements-body"'),
     'chat usa card padrão' => str_contains($chat, 'class="pacs-card reports-card reports-chat-card"')
-        && str_contains($chat, 'class="pacs-card-header reports-chat-header"')
+        && str_contains($chat, 'class="pacs-card-header reports-chat-header reports-chat-toggle"')
         && str_contains($chat, 'class="pacs-card-body reports-card-body reports-chat-body"'),
 ];
 

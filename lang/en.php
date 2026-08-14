@@ -480,6 +480,8 @@ return [
     'report_chat.concluido'              => 'Completed',
     'report_chat.pendente'               => 'Pending',
     'report_chat.sem_mensagens'          => 'No interaction recorded.',
+    'report_chat.interacao_count_singular' => ':count interaction',
+    'report_chat.interacao_count_plural'   => ':count interactions',
     'report_chat.aviso_pendente'         => 'There is an open pending item. Complete the CHAT before signing or finalizing the report.',
     'report_chat.aviso_email'            => 'Recipients will receive an email notification.',
     'report_chat.erro_migration'         => 'CHAT unavailable: run the module migration in the database.',

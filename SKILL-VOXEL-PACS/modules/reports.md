@@ -62,5 +62,11 @@ A coluna esquerda de `app/Views/reports/show.php` é uma sequência clínica ún
 
 A regra visual vive em `public/assets/css/reports.css`: `.reports-col-left` deve permanecer `display:flex`, `flex-direction:column` e com seus filhos diretos em `width:100%`. Não criar um breakpoint de duas colunas para Paciente/Exame: eles devem estar sempre empilhados. O layout geral continua responsivo e transforma `.reports-body-grid` em uma coluna em larguras de até 980px. Os cards Medidas e Chat usam o mesmo contrato estrutural `pacs-card reports-card`, `pacs-card-header` e `pacs-card-body reports-card-body`; qualquer card novo deve reutilizar esse padrão.
 
+### Chat recolhível e envio (2026-08-13)
+
+`partials/_chat_card.php` inicia recolhido por meio do Collapse Bootstrap, com alvo único `#chat-laudo-body`; o cabeçalho é o controle acessível (`button`, `aria-expanded` e `aria-controls`) e a seta `.chat-toggle-icon` gira no estado aberto. Não há JavaScript próprio para abrir ou fechar o card: `reports_footer.php` já carrega `bootstrap.bundle.min.js`.
+
+O envio preserva `id="reportChatForm"` e `id="btn-chat-send"`, usados por `public/assets/js/reports/reports-chat.js`. Seus botões usam `btn-pacs-primary` e `btn-pacs-outline`, nunca `pacs-btn`, para evitar a divergência histórica de estilos dessa classe. O badge do cabeçalho informa **Pendente**, nenhuma interação ou a contagem localizada de mensagens; a mesma contagem é atualizada após o `fetch` de envio sem alterar destinatários, assunto ou notificações.
+
 ## Última análise
 2026-08-13

@@ -7,6 +7,14 @@ $chatSubjects = is_array($chat['subjects'] ?? null) ? $chat['subjects'] : [];
 $chatGroups = is_array($chat['groups'] ?? null) ? $chat['groups'] : [];
 $chatUsers = is_array($chat['users'] ?? null) ? $chat['users'] : [];
 $chatPending = ($chat['status'] ?? '') === 'pendente';
+$chatCount = count($chatMessages);
+$chatStatusText = $chatPending
+    ? t('report_chat.pendente')
+    : ($chatCount === 0
+        ? t('report_chat.sem_mensagens')
+        : str_replace(':count', (string) $chatCount, t($chatCount === 1
+            ? 'report_chat.interacao_count_singular'
+            : 'report_chat.interacao_count_plural')));
 $recipientType = $chat['destinatario_tipo'] ?? 'grupo';
 $recipientGroupId = (int) ($chat['destinatario_grupo_id'] ?? $chat['destinatario_grupo'] ?? 0);
 $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
@@ -14,13 +22,19 @@ $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
 <div class="pacs-card reports-card reports-chat-card" id="card-chat"
      data-chat-report-id="<?= (int) ($chat['report_id'] ?? ($report->id ?? 0)) ?>"
      data-chat-pending="<?= $chatPending ? '1' : '0' ?>">
-    <div class="pacs-card-header reports-chat-header">
+    <button type="button" class="pacs-card-header reports-chat-header reports-chat-toggle"
+            data-bs-toggle="collapse" data-bs-target="#chat-laudo-body"
+            aria-expanded="false" aria-controls="chat-laudo-body">
         <span><i class="fa fa-comments"></i> <?= htmlspecialchars(t('report_chat.titulo')) ?></span>
-        <span id="chat-status-badge" class="chat-status-badge <?= $chatPending ? 'is-pending' : 'is-clear' ?>">
-            <?= htmlspecialchars($chatPending ? t('report_chat.pendente') : t('report_chat.sem_mensagens')) ?>
+        <span class="reports-chat-header-meta">
+            <span id="chat-status-badge" class="chat-status-badge <?= $chatPending ? 'is-pending' : 'is-clear' ?>">
+                <?= htmlspecialchars($chatStatusText) ?>
+            </span>
+            <i class="fa fa-chevron-down chat-toggle-icon" aria-hidden="true"></i>
         </span>
-    </div>
-    <div class="pacs-card-body reports-card-body reports-chat-body">
+    </button>
+    <div class="collapse reports-chat-collapse" id="chat-laudo-body">
+        <div class="pacs-card-body reports-card-body reports-chat-body">
         <p class="reports-chat-subtitle"><?= htmlspecialchars(t('report_chat.subtitulo')) ?></p>
 
         <div id="chat-pending-alert" class="reports-chat-alert <?= $chatPending ? '' : 'd-none' ?>">
@@ -112,15 +126,16 @@ $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
             </div>
 
             <div class="reports-chat-actions">
-                <button type="submit" class="pacs-btn pacs-btn-primary" id="btn-chat-send">
+                <button type="submit" class="btn-pacs-primary reports-chat-send-btn" id="btn-chat-send">
                     <i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('report_chat.enviar')) ?>
                 </button>
-                <button type="button" class="pacs-btn pacs-btn-success" id="btn-chat-complete" <?= $chatPending ? '' : 'style="display:none"' ?>>
+                <button type="button" class="btn-pacs-outline reports-chat-complete-btn" id="btn-chat-complete" <?= $chatPending ? '' : 'style="display:none"' ?>>
                     <i class="fa fa-check"></i> <?= htmlspecialchars(t('report_chat.concluido')) ?>
                 </button>
             </div>
             <small class="reports-chat-email-hint"><i class="fa fa-envelope"></i> <?= htmlspecialchars(t('report_chat.aviso_email')) ?></small>
         </form>
         <?php endif; ?>
+        </div>
     </div>
 </div>

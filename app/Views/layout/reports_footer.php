@@ -10,6 +10,8 @@
     window.VoxelReports.chatI18n = <?= json_encode([
         'pending' => t('report_chat.pendente'),
         'clear' => t('report_chat.sem_mensagens'),
+        'countSingular' => t('report_chat.interacao_count_singular'),
+        'countPlural' => t('report_chat.interacao_count_plural'),
         'required' => t('report_chat.mensagem') . ': ' . t('report_chat.erro_generico'),
         'error' => t('report_chat.erro_generico'),
         'confirm' => t('report_chat.confirmar_conclusao'),
