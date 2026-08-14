@@ -235,6 +235,7 @@ class ReportsController extends Controller
                     'medico_nao_vinculado'           => 'Sua conta não está vinculada a um médico ativo neste tenant. Solicite a vinculação antes de assinar laudos.',
                     'estudo_nao_encontrado'          => 'O estudo vinculado ao laudo não foi encontrado no tenant atual.',
                     'estudo_assumido_por_outro'      => 'Este estudo foi assumido por outro médico e não pode ser assinado por sua conta.',
+                    'devolutiva_dados_insuficientes' => 'A assinatura não foi concluída porque a devolutiva do laudo não recebeu todos os dados obrigatórios. Tente novamente; se persistir, informe o suporte técnico.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     default                           => 'Erro ao assinar.',
                 };
