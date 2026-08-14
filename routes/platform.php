@@ -41,6 +41,7 @@ Router::get('/platform/negocios/{id}/report-delivery',                'Platform\
 Router::post('/platform/negocios/{id}/report-delivery/destinations',  'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}', 'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
+Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 
 // Token de acesso para admin (Etapa 4)
 Router::post('/platform/negocios/{id}/enviar-token',                   'Platform\NegociosController@enviarTokenAcesso');
