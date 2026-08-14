@@ -318,6 +318,9 @@ class EstudosController extends Controller
                     e.assumido_em,
                     e.laudo_assinado_em,
                     e.urgente_em,
+                    e.achado_critico_em,
+                    e.achado_critico_por,
+                    e.achado_critico_assunto,
                     e.importado_em,
                     e.atualizado_em,
                     COALESCE(e.recebido_em, e.importado_em) AS recebido_em,
@@ -448,7 +451,7 @@ class EstudosController extends Controller
         // ── Contadores do carregamento inicial (mesma coorte da tabela) ───────────────────
         $contadores = [
             'novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,
-            'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0,
+            'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0,'achado_critico'=>0,
         ];
         try {
             $cWhere  = $escopoWorklist['where'];
@@ -479,12 +482,26 @@ class EstudosController extends Controller
             );
             $uStmt->execute($cParams);
             $contadores['urgente'] = (int) $uStmt->fetchColumn();
+
+            $aStmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM bi_pacs_estudos e
+                 WHERE {$cBase} AND e.achado_critico_em IS NOT NULL"
+            );
+            $aStmt->execute($cParams);
+            $contadores['achado_critico'] = (int) $aStmt->fetchColumn();
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] contadores: ' . $ex->getMessage());
         }
 
         // ── Painel de resumo (usa InstitutionNames para consistência com a tabela) ────────
-        $resumo = ['hoje'=>0,'semana'=>0,'mes'=>0,'urgentes'=>$contadores['urgente'],'total'=>0];
+        $resumo = [
+            'hoje'=>0,
+            'semana'=>0,
+            'mes'=>0,
+            'urgentes'=>$contadores['urgente'],
+            'achados_criticos'=>$contadores['achado_critico'],
+            'total'=>0,
+        ];
         try {
             $rWhere  = ['1=1'];
             $rBase_p = []; // params base sem data
@@ -1076,11 +1093,9 @@ class EstudosController extends Controller
                 'pendente'    => 0,
                 'a_laudar'    => 0,
                 'em_laudo'    => 0,
-                'rascunho'    => 0,
-                'assinado'    => 0,
-                'liberado'    => 0,
-                'peer_review' => 0,
-                'urgente'     => 0,
+                                'rascunho'    => 0, 'assinado' => 0, 'liberado' => 0,
+                'peer_review'  => 0, 'urgente'  => 0, 'achado_critico' => 0,
+
             ];
             foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
                 if (isset($data[$r['situacao']])) {
@@ -1093,10 +1108,14 @@ class EstudosController extends Controller
             $u->execute($params);
             $data['urgente'] = (int)$u->fetchColumn();
 
+            $a = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$wBase} AND e.achado_critico_em IS NOT NULL");
+            $a->execute($params);
+            $data['achado_critico'] = (int)$a->fetchColumn();
+
             $this->json($data);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::contadores] ' . $ex->getMessage());
-            $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0]);
+            $this->json(['novo'=>0,'aberto'=>0,'pendente'=>0,'a_laudar'=>0,'em_laudo'=>0,'rascunho'=>0,'assinado'=>0,'liberado'=>0,'peer_review'=>0,'urgente'=>0,'achado_critico'=>0]);
         }
     }
 

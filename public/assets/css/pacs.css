@@ -1425,3 +1425,17 @@ body {
 .dicom-modality:hover {
     filter: brightness(0.92);
 }
+
+/* Achado Crítico — atributo clínico independente de prioridade/urgência. */
+.achado-critico-badge {
+    display: inline-block;
+    margin-right: .2rem;
+    color: #d946ef;
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.wl-card-achado-critico { border-color: #d946ef; }
+.wl-card-achado-critico:hover { background: rgba(217, 70, 239, .08); }
+.wl-card-achado-critico .wl-card-num { color: #d946ef; }

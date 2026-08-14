@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Core\Audit\AuditLogger;
+use App\Core\Auth;
 use App\Core\Logger;
 use App\Core\Mailer;
 use App\Repositories\ReportChatRepository;
@@ -19,6 +21,7 @@ class ReportChatService
         'contraste' => 'Contraste',
         'exames_complementares' => 'Exames complementares',
         'duvida_administrativa' => 'Dúvida administrativa',
+        'achado_critico' => 'ACHADO CRÍTICO',
         'outro' => 'Outro',
     ];
 
@@ -69,6 +72,14 @@ class ReportChatService
             ];
         }
 
+        $subjects = $this->subjects();
+        if (Auth::perfilAtual() !== 'medico') {
+            $subjects = array_values(array_filter(
+                $subjects,
+                static fn(array $subject): bool => ($subject['codigo'] ?? '') !== 'achado_critico'
+            ));
+        }
+
         return [
             'report_id' => $reportId,
             'estudo_id' => (int) $report['estudo_id'],
@@ -86,7 +97,7 @@ class ReportChatService
             'atualizado_em' => $chat['atualizado_em'] ?? null,
             'concluido_em' => $chat['concluido_em'] ?? null,
             'messages' => $messages,
-            'subjects' => $this->subjects(),
+            'subjects' => $subjects,
             'groups' => $groupOptions,
             'users' => $this->repo->listActiveUsers($tenantId, $currentUserId),
             'last_message_author_id' => $lastAuthorId,
@@ -148,6 +159,11 @@ class ReportChatService
         $assunto = preg_replace('/[\r\n]+/', ' ', $assunto) ?? $assunto;
         if (mb_strlen($assunto, 'UTF-8') > 180) $assunto = mb_substr($assunto, 0, 180, 'UTF-8');
 
+        $isAchadoCritico = $assuntoCodigo === 'achado_critico';
+        if ($isAchadoCritico && Auth::perfilAtual() !== 'medico') {
+            return ['ok' => false, 'error' => 'achado_critico_restrito_medico'];
+        }
+
         $situacaoAtual = (string) ($context['situacao'] ?? 'em_laudo');
         $origemGestao = (string) ($input['origem'] ?? '') === 'gestao_exames';
         if (in_array($situacaoAtual, ['assinado', 'liberado'], true) && !$origemGestao) {
@@ -183,6 +199,9 @@ class ReportChatService
                 $userId
             );
             $messageId = $this->repo->addMessage($chatId, $tenantId, $userId, $corpo);
+            if ($isAchadoCritico && !$this->repo->markCriticalFinding((int) $context['estudo_id'], $tenantId, $userId, $assunto)) {
+                throw new \RuntimeException('Não foi possível marcar o achado crítico no estudo autorizado.');
+            }
             $this->repo->updateStudySituation((int) $context['estudo_id'], $tenantId, 'pendente');
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -194,25 +213,58 @@ class ReportChatService
             return ['ok' => false, 'error' => 'persistencia_falhou'];
         }
 
-        $this->notifyRecipients(
-            $reportId,
-            $tenantId,
-            $userId,
-            $tipo,
-            $destinatarioGrupoId,
-            $destinatarioUserId,
-            $assunto,
-            $corpo,
-            (string) ($context['public_token'] ?? '')
-        );
+        $notification = $isAchadoCritico
+            ? $this->notifyCriticalRecipients(
+                $reportId,
+                $tenantId,
+                $tipo,
+                $destinatarioGrupoId,
+                $destinatarioUserId,
+                $assunto,
+                $corpo,
+                (string) ($context['public_token'] ?? ''),
+                (string) ($context['patient_name'] ?? ''),
+                (string) ($context['study_description'] ?? '')
+            )
+            : $this->notifyRecipients(
+                $reportId,
+                $tenantId,
+                $tipo,
+                $destinatarioGrupoId,
+                $destinatarioUserId,
+                $assunto,
+                $corpo,
+                (string) ($context['public_token'] ?? '')
+            );
+
+        if ($isAchadoCritico) {
+            AuditLogger::log('estudo.achado_critico_marcado', 'bi_pacs_estudos', (int) $context['estudo_id'], [
+                'usuario_id' => $userId,
+                'marcado_em' => date('Y-m-d H:i:s'),
+                'assunto' => $assunto,
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'destinatarios_ids' => $notification['recipient_ids'],
+                'emails_enviados' => $notification['sent'],
+                'emails_falhos' => $notification['failed'],
+            ], $tenantId);
+        }
 
         Logger::info('[ReportChatService::send] interação registrada', [
             'report_id' => $reportId, 'chat_id' => $chatId, 'message_id' => $messageId,
             'tenant_id' => $tenantId, 'user_id' => $userId, 'destinatario_tipo' => $tipo,
             'destinatario_grupo_id' => $destinatarioGrupoId, 'destinatario_user_id' => $destinatarioUserId,
+            'achado_critico' => $isAchadoCritico,
+            'emails_enviados' => $notification['sent'], 'emails_falhos' => $notification['failed'],
         ]);
 
-        return ['ok' => true, 'chat_id' => $chatId, 'message_id' => $messageId, 'status' => 'pendente'];
+        $result = ['ok' => true, 'chat_id' => $chatId, 'message_id' => $messageId, 'status' => 'pendente'];
+        if ($isAchadoCritico && $notification['failed'] > 0) {
+            $result['email_warning'] = !empty($notification['admin_delivery_issue'])
+                ? 'Achado crítico registrado, mas não há administrador ativo com e-mail válido para notificação obrigatória.'
+                : 'Achado crítico registrado, mas ' . $notification['failed'] . ' notificação(ões) de e-mail não foram enviadas.';
+        }
+        return $result;
     }
 
     public function complete(int $reportId, int $tenantId, int $userId): array
@@ -269,35 +321,98 @@ class ReportChatService
     private function notifyRecipients(
         int $reportId,
         int $tenantId,
-        int $authorId,
         string $tipo,
         ?int $destinatarioGrupoId,
         ?int $destinatarioUserId,
         string $assunto,
         string $corpo,
         string $publicToken
-    ): void {
-        $recipients = $tipo === 'usuario'
-            ? array_filter([$this->repo->findActiveUser((int) $destinatarioUserId, $tenantId)])
-            : $this->repo->listUsersByGroup((int) $destinatarioGrupoId, $tenantId);
+    ): array {
+        $recipients = $this->selectedRecipients($tenantId, $tipo, $destinatarioGrupoId, $destinatarioUserId);
+        return $this->sendNotificationEmails($reportId, $recipients, $assunto, $corpo, $publicToken, false, '', '');
+    }
 
+    private function notifyCriticalRecipients(
+        int $reportId,
+        int $tenantId,
+        string $tipo,
+        ?int $destinatarioGrupoId,
+        ?int $destinatarioUserId,
+        string $assunto,
+        string $corpo,
+        string $publicToken,
+        string $patientName,
+        string $studyDescription
+    ): array {
+        $admins = $this->repo->listActiveTenantAdmins($tenantId);
+        $recipients = array_merge(
+            $this->selectedRecipients($tenantId, $tipo, $destinatarioGrupoId, $destinatarioUserId),
+            $admins
+        );
+        $result = $this->sendNotificationEmails($reportId, $recipients, $assunto, $corpo, $publicToken, true, $patientName, $studyDescription);
+        $validAdminEmails = array_filter($admins, static fn(array $admin): bool => trim((string) ($admin['email'] ?? '')) !== '');
+        if (!$validAdminEmails) {
+            $result['failed']++;
+            $result['admin_delivery_issue'] = true;
+            Logger::warning('[ReportChatService::notifyCriticalRecipients] administrador sem e-mail notificável', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'administradores_ativos' => count($admins),
+            ]);
+        }
+        return $result;
+    }
+
+    private function selectedRecipients(int $tenantId, string $tipo, ?int $groupId, ?int $userId): array
+    {
+        return $tipo === 'usuario'
+            ? array_filter([$this->repo->findActiveUser((int) $userId, $tenantId)])
+            : $this->repo->listUsersByGroup((int) $groupId, $tenantId);
+    }
+
+    private function sendNotificationEmails(
+        int $reportId,
+        array $recipients,
+        string $assunto,
+        string $corpo,
+        string $publicToken,
+        bool $isCritical,
+        string $patientName,
+        string $studyDescription
+    ): array {
+        $result = ['sent' => 0, 'failed' => 0, 'recipient_ids' => []];
         if (!preg_match('/^[a-f0-9]{48}$/', $publicToken)) {
-            Logger::warning('[ReportChatService::notifyRecipients] token público ausente', ['report_id' => $reportId]);
-            return;
+            Logger::warning('[ReportChatService::sendNotificationEmails] token público ausente', ['report_id' => $reportId]);
+            return ['sent' => 0, 'failed' => 1, 'recipient_ids' => []];
         }
 
-        $baseUrl = rtrim((string) (getenv('APP_URL') ?: 'https://server.voxelpacs.com.br'), '/');
+        $unique = [];
+        foreach ($recipients as $recipient) {
+            $email = strtolower(trim((string) ($recipient['email'] ?? '')));
+            if ($email !== '') $unique[$email] = $recipient;
+        }
+        $baseUrl = rtrim((string) (getenv('VIEWER_ERP_URL') ?: 'https://server.voxelpacs.com.br'), '/');
         $url = $baseUrl . '/reports/r/' . rawurlencode($publicToken);
-        $subject = '[VOXEL PACS] Pendência no laudo — ' . $assunto;
-        $body = '<p>Uma nova interação foi registrada no CHAT do laudo.</p>'
+        $subject = $isCritical
+            ? '[VOXEL PACS] ACHADO CRÍTICO — ' . ($patientName !== '' ? $patientName : 'Paciente') . ' — ' . ($studyDescription !== '' ? $studyDescription : $assunto)
+            : '[VOXEL PACS] Pendência no laudo — ' . $assunto;
+        $intro = $isCritical
+            ? '<p><strong style="color:#b91c1c">ACHADO CRÍTICO COMUNICADO PELO MÉDICO</strong></p>'
+            : '<p>Uma nova interação foi registrada no CHAT do laudo.</p>';
+        $body = $intro
             . '<p><strong>Assunto:</strong> ' . htmlspecialchars($assunto, ENT_QUOTES, 'UTF-8') . '</p>'
             . '<p><strong>Mensagem:</strong><br>' . nl2br(htmlspecialchars($corpo, ENT_QUOTES, 'UTF-8')) . '</p>'
             . '<p><a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">Abrir o laudo no VOXEL PACS</a></p>';
 
-        foreach ($recipients as $recipient) {
-            $email = trim((string) ($recipient['email'] ?? ''));
-            if ($email === '') continue;
-            Mailer::send($email, $subject, $body);
+        foreach ($unique as $recipient) {
+            $result['recipient_ids'][] = (int) ($recipient['id'] ?? 0);
+            if (Mailer::send((string) $recipient['email'], $subject, $body)) {
+                $result['sent']++;
+            } else {
+                $result['failed']++;
+            }
         }
+        $result['recipient_ids'] = array_values(array_unique(array_filter($result['recipient_ids'])));
+        return $result;
     }
 }

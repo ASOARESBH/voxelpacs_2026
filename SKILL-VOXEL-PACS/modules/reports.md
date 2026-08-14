@@ -70,6 +70,18 @@ A regra visual vive em `public/assets/css/reports.css`: `.reports-col-left` deve
 
 O envio preserva `id="reportChatForm"` e `id="btn-chat-send"`, usados por `public/assets/js/reports/reports-chat.js`. Seus botões usam `btn-pacs-primary` e `btn-pacs-outline`, nunca `pacs-btn`, para evitar a divergência histórica de estilos dessa classe. O badge do cabeçalho informa **Pendente**, nenhuma interação ou a contagem localizada de mensagens; a mesma contagem é atualizada após o `fetch` de envio sem alterar destinatários, assunto ou notificações.
 
+### Achado Crítico comunicado pelo CHAT (2026-08-14)
+
+`achado_critico` é um tema clínico do CHAT compartilhado entre o Laudário e o modal **Gerenciar estudo** da Gestão de Exames. Ele é um atributo independente de `bi_pacs_estudos.prioridade`: comunicar um achado crítico nunca altera a prioridade DICOM, a prioridade de triagem ou qualquer outro marcador de urgência. Portanto, o mesmo estudo pode exibir simultaneamente um badge de Urgência e o badge magenta de Achado Crítico.
+
+Somente o perfil de tenant `medico` pode enviar esse tema. A proteção é aplicada no servidor em `ReportChatService::send()` e a opção também é omitida do contexto do CHAT para outros perfis; esconder o item da interface não substitui a validação de backend. A comunicação cria/atualiza a pendência normal do CHAT, grava `achado_critico_em`, `achado_critico_por` e `achado_critico_assunto` em `bi_pacs_estudos`, e registra `estudo.achado_critico_marcado` em `bi_audit_logs` com médico, data/hora, CHAT, mensagem e resultado de notificação.
+
+A migration obrigatória é `database/migrations/2026-08-14_bi_pacs_estudos_achado_critico.sql`. Ela deve ser aplicada antes do código em produção e contém validações, índices e rollback compatíveis com MySQL 5.7/HostGator. Como `bi_pacs_estudos` é isolada por `institution_name`, `ReportChatRepository` usa `InstitutionResolverService::getInstitutionNamesByTenant()` nas leituras e escritas clínicas; não introduzir `tenant_id` nessa tabela para este fluxo.
+
+No envio crítico, os destinatários selecionados no CHAT e **todos os administradores ativos do tenant** são unidos e desduplicados por e-mail. `Mailer::send()` tem seu retorno verificado por destinatário. Falha de notificação não desfaz o registro clínico já persistido, mas retorna `email_warning` ao cliente, mostra aviso destacado ao médico e fica registrada na auditoria. O e-mail sempre aponta para `/reports/r/{public_token}` usando `VIEWER_ERP_URL` e nunca usa identificadores numéricos de paciente ou estudo na URL.
+
+A Worklist projeta os campos no mesmo escopo de Unidade/tenant usado pela tabela e por `/api/estudos/contadores`. O badge `.achado-critico-badge` é magenta (`#d946ef`) e o card `wl-card-achado-critico` aparece no resumo apenas quando há achados críticos, preservando a economia de espaço vertical em filas sem alerta.
+
 ### Peer Review e Medidas do viewer (2026-08-14)
 
 O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `ReportPeerReviewRepository`, com persistência transacional em `pacs_report_peer_reviews` e snapshot imutável em `pacs_report_peer_review_originais`. Antes de disponibilizar o fluxo em produção, é obrigatório aplicar `database/migrations/2026-08-10_reports_peer_review.sql`; a migration foi ajustada para MySQL 5.7/HostGator, sem consultas ao catálogo de metadados, e requer conferência prévia das colunas no phpMyAdmin.

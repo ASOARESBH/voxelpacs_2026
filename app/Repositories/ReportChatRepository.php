@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Core\Database;
+use App\Services\InstitutionResolverService;
 
 /**
  * Persistência do CHAT contextual de Reports.
@@ -43,17 +44,18 @@ class ReportChatRepository
 
     public function findReportContext(int $reportId, int $tenantId): ?array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT r.id AS report_id, r.estudo_id, r.public_token,
-                    COALESCE(r.situacao, e.situacao, "novo") AS situacao,
-                    r.situacao AS report_situacao
-               FROM reports r
-               INNER JOIN bi_pacs_estudos e
-                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
-              WHERE r.id = :report_id AND r.tenant_id = :tenant_id
-              LIMIT 1'
-        );
-        $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
+        $params = ['report_id' => $reportId, 'tenant_id' => $tenantId];
+        $sql = 'SELECT r.id AS report_id, r.estudo_id, r.public_token,
+                       e.patient_name, e.study_description,
+                       COALESCE(r.situacao, e.situacao, "novo") AS situacao,
+                       r.situacao AS report_situacao
+                  FROM reports r
+                  INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
+                 WHERE r.id = :report_id AND r.tenant_id = :tenant_id';
+        $sql .= $this->institutionScope($tenantId, 'e', 'report_context_institution', $params);
+        $sql .= ' LIMIT 1';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row ?: null;
     }
@@ -102,6 +104,23 @@ class ReportChatRepository
         $sql .= ' ORDER BY u.name ASC';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /** Administradores ativos do tenant, destinatários obrigatórios de achado crítico. */
+    public function listActiveTenantAdmins(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT DISTINCT u.id, u.name, u.email, ut.perfil
+               FROM bi_users u
+               INNER JOIN bi_user_tenants ut
+                       ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
+              WHERE ut.ativo = 1
+                AND u.status = "ativo"
+                AND ut.perfil = "admin"
+              ORDER BY u.name ASC'
+        );
+        $stmt->execute(['tenant_id' => $tenantId]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
@@ -275,14 +294,56 @@ class ReportChatRepository
         return (int) $this->pdo->lastInsertId();
     }
 
+    /** Marca o alerta clínico sem alterar prioridade, situação ou demais tags DICOM. */
+    public function markCriticalFinding(int $estudoId, int $tenantId, int $userId, string $assunto): bool
+    {
+        $params = [
+            'user_id' => $userId,
+            'assunto' => $assunto,
+            'estudo_id' => $estudoId,
+        ];
+        $sql = 'UPDATE bi_pacs_estudos
+                   SET achado_critico_em = NOW(),
+                       achado_critico_por = :user_id,
+                       achado_critico_assunto = :assunto
+                 WHERE id = :estudo_id';
+        $sql .= $this->institutionScope($tenantId, '', 'critical_institution', $params);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount() === 1;
+    }
+
     public function updateStudySituation(int $estudoId, int $tenantId, string $situacao): void
     {
-        $stmt = $this->pdo->prepare(
-            'UPDATE bi_pacs_estudos
-                SET situacao = :situacao
-              WHERE id = :estudo_id AND tenant_id = :tenant_id'
-        );
-        $stmt->execute(['situacao' => $situacao, 'estudo_id' => $estudoId, 'tenant_id' => $tenantId]);
+        $params = ['situacao' => $situacao, 'estudo_id' => $estudoId];
+        $sql = 'UPDATE bi_pacs_estudos SET situacao = :situacao WHERE id = :estudo_id';
+        $sql .= $this->institutionScope($tenantId, '', 'situation_institution', $params);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+    }
+
+    /**
+     * bi_pacs_estudos é isolada por InstitutionName, não por tenant_id.
+     * Mantém o deny-by-default para tenant sem Unidade vinculada.
+     *
+     * @param array<string, mixed> $params
+     */
+    private function institutionScope(int $tenantId, string $alias, string $prefix, array &$params): string
+    {
+        $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        $institutionNames = array_values(array_filter(array_map('trim', $institutionNames), static fn(string $name): bool => $name !== ''));
+        if (!$institutionNames) {
+            return ' AND 1 = 0';
+        }
+
+        $placeholders = [];
+        foreach ($institutionNames as $index => $institutionName) {
+            $placeholder = ':' . $prefix . '_' . $index;
+            $placeholders[] = $placeholder;
+            $params[$placeholder] = $institutionName;
+        }
+        $column = $alias === '' ? 'institution_name' : $alias . '.institution_name';
+        return ' AND ' . $column . ' IN (' . implode(', ', $placeholders) . ')';
     }
 
     public function complete(int $chatId, int $reportId, int $tenantId, int $userId): ?array

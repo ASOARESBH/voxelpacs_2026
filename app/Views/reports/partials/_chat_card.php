@@ -109,11 +109,16 @@ $recipientUser = (int) ($chat['destinatario_user_id'] ?? 0);
                             <?= htmlspecialchars((string) ($subject['label'] ?? 'Outro')) ?>
                         </option>
                     <?php endforeach; ?>
-                </select>
+                                </select>
+                <div id="chat-critical-alert" class="reports-chat-critical-alert d-none" role="alert">
+                    <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span><strong>Achado Crítico:</strong> esta comunicação será registrada no estudo e os administradores do tenant receberão notificação por e-mail.</span>
+                </div>
             </div>
 
             <div class="reports-chat-field">
-                <label for="chatAssunto"><?= htmlspecialchars(t('report_chat.assunto')) ?></label>
+                <label for="chatAssunto">
+<?= htmlspecialchars(t('report_chat.assunto')) ?></label>
                 <input id="chatAssunto" class="form-control form-control-sm" maxlength="180"
                        placeholder="<?= htmlspecialchars(t('report_chat.assunto_placeholder')) ?>"
                        value="<?= htmlspecialchars((string) ($chat['assunto'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">

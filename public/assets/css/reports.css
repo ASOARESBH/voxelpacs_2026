@@ -444,6 +444,13 @@ body.reports-body {
     border-radius: 7px; font-size: .72rem; line-height: 1.35;
 }
 .reports-chat-alert.d-none { display: none !important; }
+.reports-chat-critical-alert {
+    display: flex; align-items: flex-start; gap: .45rem; margin-top: .45rem; padding: .55rem .65rem;
+    color: #f5d0fe; background: rgba(217,70,239,.12); border: 1px solid rgba(217,70,239,.5);
+    border-radius: 7px; font-size: .72rem; line-height: 1.35;
+}
+.reports-chat-critical-alert i { color: #d946ef; margin-top: .1rem; }
+.reports-chat-critical-alert.d-none { display: none !important; }
 .reports-chat-messages {
     max-height: none;
     overflow: visible;

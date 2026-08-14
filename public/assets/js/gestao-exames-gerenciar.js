@@ -70,6 +70,7 @@
             contraste: text('temaContraste'),
             exames_complementares: text('temaExamesComplementares'),
             duvida_administrativa: text('temaDuvidaAdministrativa'),
+            achado_critico: 'ACHADO CRÍTICO',
             outro: text('temaOutro'),
         };
         return labels[String(option?.codigo || '')] || option?.label || option?.codigo || '';
@@ -218,6 +219,7 @@
         const data = Object.fromEntries(new FormData(form).entries());
         data.report_id = state.reportId;
         data.csrf = state.csrf;
+        if (data.assunto_codigo === 'achado_critico' && !window.confirm('Confirmar o registro de ACHADO CRÍTICO? A sinalização será gravada no estudo e os administradores do tenant serão notificados por e-mail.')) return;
         showChatStatus(text('enviando'), 'info');
         const response = await fetch('/api/reports/chat/send', {
             method: 'POST',
@@ -230,7 +232,7 @@
         if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
         $('#gerenciarChatMensagem').value = '';
         await loadContext(state.studyId);
-        showChatStatus(text('enviado'), 'success');
+        showChatStatus(payload.email_warning || text('enviado'), payload.email_warning ? 'warning' : 'success');
     }
 
     async function completeChat() {
