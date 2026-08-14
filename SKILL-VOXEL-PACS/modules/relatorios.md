@@ -71,7 +71,9 @@ Achados durante a análise que não batiam com dados reais do schema — resolvi
 
 ## Exportação
 
-- **Formato confirmado com o usuário**: XLS (`.xlsx`, `phpoffice/phpspreadsheet`), não XML. PDF via `dompdf/dompdf` — ambos já estavam instalados no projeto (`composer.lock`), o segundo já usado por `ReportPdfService` (laudo). `RelatorioExportService` segue o mesmo mecanismo HTML→Dompdf.
+- **Formato confirmado com o usuário**: XLS (`.xlsx`, `phpoffice/phpspreadsheet`), não XML. PDF via `dompdf/dompdf`, declarado em `composer.json` e bloqueado em `composer.lock`. `RelatorioExportService` segue o mesmo mecanismo HTML→Dompdf usado no laudário.
+- **Disponibilidade controlada de PDF**: `RelatorioExportService::pdfDisponivel()` valida a classe `Dompdf` antes de iniciar a exportação. Exames e SLA retornam uma tela HTTP 503 orientando o usuário a usar XLSX ou atualizar o pacote quando a biblioteca não estiver disponível, em vez de produzir erro 500.
+- **Deploy HostGator**: `scripts/build.sh` instala dependências de produção, mantém `vendor/` dentro do ZIP e falha o build se `vendor/dompdf/dompdf/src/Dompdf.php` não estiver presente. Isso é obrigatório porque Composer pode não estar disponível no servidor publicado.
 - Nome de arquivo: `RELATORIO_EXAMES_<AAAAMMDD_HHmm>.{pdf,xlsx}`, `RELATORIO_SLA_MEDICOS_<AAAAMMDD_HHmm>.{pdf,xlsx}`.
 - PDF usa `isPhpEnabled: true` no Dompdf só pra rodar o `<script type="text/php">` do rodapé de paginação (`page_text`) — seguro porque os templates são arquivos próprios (não HTML de terceiros) e todo dado dinâmico neles passa por `htmlspecialchars()`.
 - XLSX usa `PhpSpreadsheet` diretamente (não o `ExportService::exportarXlsx()` genérico já existente, que só faz array→planilha sem nenhuma formatação — insuficiente pro padrão pedido: cabeçalho/tenant, resumo de filtros, zebra, cor de status SLA).
@@ -81,7 +83,8 @@ Achados durante a análise que não batiam com dados reais do schema — resolvi
 - `php -l` em todos os 15 arquivos novos/alterados — limpo.
 - Script de paridade de chaves i18n (`diagnostics/i18n.md`) — OK, 300 chaves nos 3 idiomas.
 - Testes isolados (sem DB) de `RelatorioSlaCalcService`: resolução de regra por especificidade (4 cenários + sem-regra), congelamento de tempo decorrido em estudo concluído vs. aberto, classificação verde/vermelho, filtro "tempo maior que" isolado, ordenação por maior tempo decorrido, agregação por médico incluindo bucket `sem_sla`, e resolução de período (`hoje`/`7dias`/`mensal`) — todos passaram.
-- **Não testado nesta sessão** (sem MySQL/navegador ao vivo neste ambiente): as queries reais do repositório contra `bi_pacs_estudos`/`bi_sla_regras`/`reports`, renderização visual das duas telas e do sidebar, geração real dos arquivos PDF/XLSX, e isolamento multi-tenant fim-a-fim com dados de dois tenants distintos. Precisa de validação manual num ambiente com banco antes de produção.
+- **Não testado nesta sessão** (sem MySQL/navegador ao vivo neste ambiente): as queries reais do repositório contra `bi_pacs_estudos`/`bi_sla_regras`/`reports`, renderização visual das duas telas e do sidebar, e isolamento multi-tenant fim-a-fim com dados de dois tenants distintos. Precisa de validação manual num ambiente com banco antes de produção.
+- **Validado em 2026-08-13**: Dompdf foi carregado pelo autoloader e gerou um PDF com assinatura `%PDF`; o ZIP de deploy foi inspecionado e contém `vendor/autoload.php` e `vendor/dompdf/dompdf/src/Dompdf.php`.
 
 ## Última análise
 2026-08-07
