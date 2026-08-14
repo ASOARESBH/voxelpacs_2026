@@ -685,6 +685,12 @@ $periodoLabel = [
                            class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
                             <i class="fa fa-file-medical"></i> Laudo
                         </a>
+                        <?php elseif (!$workspaceLaudoHabilitado): ?>
+                        <!-- Recuperação segura para estudos assumidos antes do token existir. -->
+                        <button type="button" class="wl-btn-laudo wl-btn-laudo-recuperar"
+                                data-id="<?= (int) $e['id'] ?>" title="Preparar Laudário Interno VOXEL PACS">
+                            <i class="fa fa-file-medical"></i> Laudo
+                        </button>
                         <?php elseif ($workspaceLaudoHabilitado): ?>
                         <!-- VOXEL Copilot ativo: botão oculto (lauda externamente) -->
                         <?php endif; ?>
@@ -1602,6 +1608,10 @@ document.addEventListener('click', function(e) {
             if (!wlHabilitado && reportUrl) {
                 // Laudário Interno: endpoint retorna URL com token opaco.
                 novoBotao = `<a href="${reportUrl}" target="_blank" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
+            } else if (!wlHabilitado) {
+                // Falha segura: mantém a ação disponível para recuperar o token
+                // do report já assumido, em vez de fazer o botão desaparecer.
+                novoBotao = `<button type="button" class="wl-btn-laudo wl-btn-laudo-recuperar" data-id="${estudoId}" title="Preparar Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</button>`;
             } else {
                 // VOXEL Copilot ativo: não exibe botão (médico lauda externamente)
                 novoBotao = '';
@@ -1625,6 +1635,44 @@ document.addEventListener('click', function(e) {
         alert('Erro de comunicação. Tente novamente.');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
+    });
+});
+
+// ── Recuperar URL opaca de Laudo para estudos assumidos legados ────────────
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.wl-btn-laudo-recuperar');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const estudoId = parseInt(btn.dataset.id || '0', 10);
+    if (!estudoId) return;
+
+    const aba = window.open('', '_blank');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Preparando...';
+
+    fetch('/api/estudos/laudo-url', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+        body: JSON.stringify({estudo_id: estudoId})
+    })
+    .then(r => r.json().then(data => ({ok: r.ok, data})))
+    .then(result => {
+        if (!result.ok || !result.data.ok || !result.data.url) {
+            throw new Error(result.data.msg || 'Não foi possível preparar o laudo.');
+        }
+        if (aba) {
+            aba.location.href = result.data.url;
+        } else {
+            window.location.href = result.data.url;
+        }
+    })
+    .catch(err => {
+        if (aba) aba.close();
+        alert(err.message || 'Não foi possível preparar o laudo.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-file-medical"></i> Laudo';
     });
 });
 

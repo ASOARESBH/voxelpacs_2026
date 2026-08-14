@@ -161,5 +161,13 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 **Decisão confirmada pelo usuário**: para `assinado` e `liberado`, a lista usa `DATE(laudo_assinado_em)` como data de referência. Assim, um exame antigo liberado hoje aparece no filtro de estados terminais de hoje. Para preservar registros históricos sem timestamp, há fallback seguro para `study_date`. Os demais estados continuam usando `study_date`. Os badges aplicam um `CASE` equivalente por registro, garantindo que o contador de cada situação represente a mesma coorte do filtro. O badge **ASSINADO** representa somente `situacao = assinado`; ele não soma `liberado`, pois essa agregação impediria equivalência com o filtro literal.
 
+## Botão Laudo após assumir estudo — token opaco obrigatório (2026-08-14)
+
+**Sintoma**: após a migração das URLs públicas de Laudo para `/reports/r/{public_token}`, estudos recém-assumidos podiam mudar corretamente para `a_laudar` e exibir o médico responsável, mas o botão **Laudo** desaparecia. Estudos assumidos antes continuavam exibindo o botão porque já possuíam um registro em `reports` com token preenchido.
+
+**Causa raiz**: `EstudosController::assumirEstudo()` gravava a posse em `bi_pacs_estudos`, porém não criava nem recuperava o `reports.public_token` exigido pela nova condição da Worklist. Após recarregar a página, o `LEFT JOIN reports` retornava token vazio; como a URL pública não pode mais usar Study UID ou `report_id`, o botão não era renderizado. A atualização AJAX sofria a mesma falha porque a API não retornava `url`.
+
+**Correção**: a assunção agora cria ou recupera o report com `ReportService::getOrCreateReport()` imediatamente após a atualização atômica da posse e devolve `url` opaca. A Worklist passa a renderizar o link diretamente para `/reports/r/{token}`. Para estudos assumidos no intervalo anterior ao hotfix e ainda sem report, o botão permanece visível como recuperação segura: `POST /api/estudos/laudo-url` valida tenant, Unidade e posse médica por `ReportAccessService`, cria/recupera o report e retorna a URL opaca. Outro médico continua recebendo 404 genérico, sem descoberta de recurso.
+
 ## Última análise
 2026-08-14

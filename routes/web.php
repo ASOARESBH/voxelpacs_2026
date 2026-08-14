@@ -30,6 +30,7 @@ Router::get('/estudos/{id}/abrir-weasis',       'EstudosController@abrirWeasis')
 Router::get('/estudos/{id}/abrir-voxel',        'EstudosController@abrirVoxelDesktop');
 Router::get('/api/estudos/contadores',  'EstudosController@contadores');
 Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
+Router::post('/api/estudos/laudo-url',  'EstudosController@obterUrlLaudoAssumido');
 Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
 
 // ============================================================
