@@ -13,6 +13,7 @@ $header = file_get_contents($raiz . '/app/Views/layout/reports_header.php');
 $measurementsCard = file_get_contents($raiz . '/app/Views/reports/partials/_measurements_card.php');
 $css = file_get_contents($raiz . '/public/assets/css/reports.css');
 $migration = file_get_contents($raiz . '/database/migrations/2026-08-10_reports_peer_review.sql');
+$peerReviewJs = file_get_contents($raiz . '/public/assets/js/reports/reports-peer-review.js');
 
 $regras = [
     'serviço de medidas usa estudo_id canônico' => str_contains($measurementService, '$report->estudo_id')
@@ -27,6 +28,12 @@ $regras = [
     'update do estudo Peer Review não depende de tenant_id inexistente' => !str_contains($peerRepository, 'WHERE id = :estudo_id AND tenant_id = :tenant_id'),
     'schema ausente produz orientação específica' => str_contains($peerService, 'peer_review_schema_ausente')
         && str_contains($peerController, '2026-08-10_reports_peer_review.sql'),
+    'endpoint de Peer Review possui leitores JSON e CSRF próprios' => str_contains($peerController, 'private function getJsonInput(): array')
+        && str_contains($peerController, 'private function validarCsrf(string $token): bool')
+        && str_contains($peerController, "file_get_contents('php://input')"),
+    'interface preserva resposta específica e diagnostica HTTP não JSON' => str_contains($peerReviewJs, 'const raw = await response.text();')
+        && str_contains($peerReviewJs, 'data.msg || fallback')
+        && str_contains($peerReviewJs, '[PeerReview] resposta não JSON'),
     'botão roxo usa componente primário' => str_contains($peerCard, 'class="btn-pacs-primary peer-review-open-btn"')
         && !str_contains($peerCard, 'pacs-btn btn-pacs-warning'),
     'botões textuais do cabeçalho não usam pacs-btn' => !str_contains($header, 'class="pacs-btn" id="btn-template"')

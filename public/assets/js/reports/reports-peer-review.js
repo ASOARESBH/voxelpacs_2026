@@ -54,9 +54,22 @@
                     },
                     body: JSON.stringify({ report_id: reportId, motivo: texto, csrf: csrf })
                 });
-                const data = await response.json().catch(function () { return {}; });
+                const raw = await response.text();
+                let data = {};
+                try {
+                    data = raw ? JSON.parse(raw) : {};
+                } catch (parseError) {
+                    console.error('[PeerReview] resposta não JSON', {
+                        status: response.status,
+                        responseType: response.headers.get('content-type') || '',
+                        parseError: parseError.message
+                    });
+                }
                 if (!response.ok || !data.ok) {
-                    throw new Error(data.msg || i18n.error || 'Não foi possível abrir o Peer Review.');
+                    const fallback = response.ok
+                        ? (i18n.error || 'Não foi possível abrir o Peer Review.')
+                        : 'Não foi possível abrir o Peer Review (HTTP ' + response.status + '). Verifique o log do servidor.';
+                    throw new Error(data.msg || fallback);
                 }
 
                 window.location.reload();
