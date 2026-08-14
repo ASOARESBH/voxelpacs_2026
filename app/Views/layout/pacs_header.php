@@ -235,7 +235,7 @@
             <script>
             (function() {
                 function atualizarBadgesTopbar() {
-                    fetch('/api/estudos/contadores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    fetch((function () { var url = new URL(window.location.href); var query = new URLSearchParams(); ['periodo', 'dt_inicio', 'dt_fim'].forEach(function (key) { if (url.searchParams.has(key)) query.set(key, url.searchParams.get(key)); }); return '/api/estudos/contadores' + (query.toString() ? '?' + query.toString() : ''); })(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(function(r) { return r.ok ? r.json() : null; })
                     .then(function(d) {
                         if (!d) return;
