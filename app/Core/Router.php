@@ -14,6 +14,8 @@ class Router {
         '/esqueci-senha',
         '/api/sla-regras/executar',
         '/api/servidor-pacs/sync-robo',
+        '/api/report-delivery/',
+
     ];
 
     public static function get(string $path, $handler): void {
