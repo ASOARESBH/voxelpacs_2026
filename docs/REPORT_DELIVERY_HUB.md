@@ -51,32 +51,16 @@ A tela administrativa fica em:
 /platform/negocios/{tenant_id}/report-delivery
 ```
 
-A tela aceita somente JSON público, como configuração de host, porta, AE Title ou URL. Senhas, tokens e chaves devem ser inseridos somente no campo **Configuração sensível**, que é cifrado e não é mostrado novamente.
+A tela usa **campos guiados**, sem exigir JSON do usuário. Ao selecionar o canal, o formulário exibe somente as informações pertinentes e gera a configuração interna automaticamente. Senhas, tokens e chaves devem ser inseridos nos respectivos campos de credencial; esses valores são cifrados e não são mostrados novamente.
 
-### Exemplos de configuração pública
+| Canal | Campos apresentados ao administrador |
+|---|---|
+| DICOM Encapsulated PDF / DICOM SR | Endereço do PACS, porta DICOM, AE Title do cliente, AE Title do VOXEL e TLS opcional. |
+| HL7 ORU^R01 | Servidor, porta MLLP, aplicação e instituição remetente/destinatária. |
+| HTTPS Webhook/API | URL HTTPS, tipo de autenticação e token Bearer opcional. |
+| SFTP/FTPS | Protocolo seguro, servidor, porta, pasta remota, usuário e senha/chave. |
 
-```json
-{
-  "host": "10.0.0.20",
-  "port": 104,
-  "called_ae": "CLIENTE_PACS",
-  "calling_ae": "VOXEL_PACS"
-}
-```
-
-```json
-{
-  "url": "https://integracao-cliente.exemplo.br/laudos"
-}
-```
-
-```json
-{
-  "host": "sftp.cliente.exemplo.br",
-  "port": 22,
-  "remote_directory": "/entrada/laudos"
-}
-```
+A validação ocorre tanto no navegador quanto no servidor. Destinos já existentes continuam compatíveis: ao clicar em **Editar**, as configurações internas conhecidas são convertidas novamente para os campos visuais.
 
 ## Variáveis de ambiente
 
