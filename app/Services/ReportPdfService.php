@@ -55,9 +55,10 @@ class ReportPdfService
             : null;
 
         $viewPath = __DIR__ . '/../Views/reports/pdf.php';
+        $reportForView = is_object($report) ? get_object_vars($report) : $report;
         extract([
             'estudo' => $estudo,
-            'report' => $report,
+            'report' => $reportForView,
             'secoes' => $secoes,
             'signature' => $signature,
             'qrDataUri' => $qrDataUri,
