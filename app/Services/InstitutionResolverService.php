@@ -59,6 +59,28 @@ class InstitutionResolverService
     }
 
     /**
+     * Retorna o InstitutionName canônico do tenant que corresponde a um valor
+     * recebido por DICOM. A comparação usa a mesma normalização central do
+     * roteamento de estudos, preservando no banco o nome cadastrado pelo negócio.
+     */
+    public static function canonicalForTenant(int $tenantId, string $institutionName): ?string
+    {
+        $candidate = trim($institutionName);
+        if ($tenantId <= 0 || $candidate === '') {
+            return null;
+        }
+
+        $normalized = self::normalize($candidate);
+        foreach (self::getInstitutionNamesByTenant($tenantId) as $registered) {
+            if (self::normalize((string) $registered) === $normalized) {
+                return (string) $registered;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Resolve qual tenant é o dono de um estudo baseado no InstitutionName.
      * Usado no momento da importação do Orthanc.
      * 

@@ -5,6 +5,7 @@
 /** @var array<string,int> $stats */
 /** @var string $csrfToken */
 /** @var array<int,string> $transports */
+/** @var array<int,string> $institutionNames */
 
 $escape = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $transportLabels = [
@@ -65,6 +66,25 @@ $transportLabels = [
                                     <option value="producao">Produção</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="border rounded-3 bg-light-subtle p-3 mt-3" id="institution-routing">
+                            <h3 class="h6 mb-1"><i class="fa fa-building-circle-check me-1"></i> PACS de origem dos estudos</h3>
+                            <p class="small text-muted mb-3">Selecione os <strong>InstitutionNames</strong> que este destino pode receber. Um laudo será devolvido somente quando o estudo vier de um PACS de origem selecionado.</p>
+                            <?php if (!$institutionNames): ?>
+                                <div class="alert alert-warning mb-0 small">Nenhum InstitutionName ativo foi encontrado neste negócio. Cadastre primeiro as Unidades/PACS de origem antes de criar um destino.</div>
+                            <?php else: ?>
+                                <div class="row g-2">
+                                    <?php foreach ($institutionNames as $institutionName): ?>
+                                        <?php $institutionInputId = 'destination-institution-' . substr(sha1((string) $institutionName), 0, 12); ?>
+                                        <div class="col-12 col-md-6">
+                                            <div class="form-check border rounded bg-white px-3 py-2 h-100">
+                                                <input class="form-check-input institution-selector" type="checkbox" name="institution_names[]" value="<?= $escape($institutionName) ?>" id="<?= $institutionInputId ?>">
+                                                <label class="form-check-label w-100" for="<?= $institutionInputId ?>"><?= $escape($institutionName) ?></label>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <input type="hidden" id="destination-config" name="configuration_json" value="{}">
                         <input type="hidden" id="destination-secret" name="configuration_secret" value="">
@@ -133,15 +153,17 @@ $transportLabels = [
                 <div class="card-header bg-white d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Destinos configurados</h2><span class="badge text-bg-secondary"><?= count($destinations) ?></span></div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th>Nome</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
+                        <thead><tr><th>Nome</th><th>PACS de origem</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
                         <tbody>
                             <?php if (!$destinations): ?>
-                                <tr><td colspan="5" class="text-center text-muted py-4">Nenhum destino cadastrado para este negócio.</td></tr>
+                                <tr><td colspan="6" class="text-center text-muted py-4">Nenhum destino cadastrado para este negócio.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($destinations as $destination): ?>
                                 <?php $json = htmlspecialchars(json_encode($destination, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>
                                 <tr>
                                     <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div></td>
+                                    <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
+                                    <td class="small"><?php if ($destinationInstitutions !== ''): ?><?= $escape($destinationInstitutions) ?><?php else: ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?></td>
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
@@ -189,6 +211,7 @@ $transportLabels = [
     const guide = document.getElementById('destination-guide');
     const configInput = document.getElementById('destination-config');
     const secretInput = document.getElementById('destination-secret');
+    const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const baseAction = form.action;
     const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
     const guideText = {
@@ -235,6 +258,11 @@ $transportLabels = [
         });
     }
 
+    function setSelectedInstitutions(rawNames) {
+        const selected = new Set(String(rawNames || '').split('||').filter(Boolean));
+        institutionSelectors.forEach((input) => { input.checked = selected.has(input.value); });
+    }
+
     function syncEnvironment() {
         const production = environment.value === 'producao';
         if (production) enabled.checked = false;
@@ -268,6 +296,7 @@ $transportLabels = [
         form.action = baseAction;
         configInput.value = '{}';
         secretInput.value = '';
+        setSelectedInstitutions('');
         title.textContent = 'Novo destino';
         cancel.classList.add('d-none');
         renderTransportFields();
@@ -299,6 +328,7 @@ $transportLabels = [
             document.getElementById('destination-attempts').value = item.max_attempts;
             document.getElementById('destination-release').checked = Number(item.disparar_na_liberacao) === 1;
             enabled.checked = Number(item.enabled) === 1;
+            setSelectedInstitutions(item.institution_names);
             cancel.classList.remove('d-none');
             renderTransportFields();
             syncEnvironment();
@@ -309,6 +339,12 @@ $transportLabels = [
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        if (!institutionSelectors.some((input) => input.checked)) {
+            feedback.className = 'alert alert-danger';
+            feedback.textContent = 'Selecione ao menos um PACS de origem (InstitutionName) para este destino.';
+            feedback.classList.remove('d-none');
+            return;
+        }
         serializeConfiguration();
         const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
         const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));

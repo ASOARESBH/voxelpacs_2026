@@ -9,6 +9,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Models\Tenant;
 use App\Repositories\ReportDeliveryRepository;
+use App\Services\InstitutionResolverService;
 use App\Services\ReportDeliveryCryptoService;
 use DomainException;
 use Throwable;
@@ -55,6 +56,7 @@ class ReportDeliveryController extends Controller
             'stats' => $this->repository->stats($tenantId),
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
+            'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
         ], 'platform');
     }
 
@@ -71,13 +73,14 @@ class ReportDeliveryController extends Controller
         }
 
         try {
-            $data = $this->validatedPayload();
+            $data = $this->validatedPayload($tenantId);
             $savedId = $this->repository->saveDestination($tenantId, $destinationId, $data, (int) Auth::userId());
             AuditLogger::log('report_delivery.destination_saved', 'pacs_report_delivery_destinations', $savedId, [
                 'tenant_id' => $tenantId,
                 'transport' => $data['transport'],
                 'ambiente' => $data['ambiente'],
                 'enabled' => $data['enabled'],
+                'institution_names' => $data['institution_names'],
             ]);
             $this->json([
                 'success' => true,
@@ -123,7 +126,7 @@ class ReportDeliveryController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function validatedPayload(): array
+    private function validatedPayload(int $tenantId): array
     {
         $name = trim((string) ($_POST['nome'] ?? ''));
         $transport = (string) ($_POST['transport'] ?? '');
@@ -131,6 +134,20 @@ class ReportDeliveryController extends Controller
         $configuration = trim((string) ($_POST['configuration_json'] ?? ''));
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
         $enabled = !empty($_POST['enabled']) ? 1 : 0;
+        $requestedInstitutions = $_POST['institution_names'] ?? [];
+        $requestedInstitutions = is_array($requestedInstitutions) ? $requestedInstitutions : [];
+        $institutionNames = [];
+        foreach ($requestedInstitutions as $requestedInstitution) {
+            $canonical = InstitutionResolverService::canonicalForTenant($tenantId, (string) $requestedInstitution);
+            if ($canonical === null) {
+                throw new DomainException('Selecione apenas InstitutionNames ativos deste negócio.');
+            }
+            $institutionNames[$canonical] = $canonical;
+        }
+
+        if (!$institutionNames) {
+            throw new DomainException('Selecione ao menos um PACS de origem (InstitutionName) para o destino.');
+        }
 
         if ($name === '' || mb_strlen($name) > 120) {
             throw new DomainException('Informe um nome de destino de até 120 caracteres.');
@@ -170,6 +187,7 @@ class ReportDeliveryController extends Controller
             'configuration_secret' => $secret,
             'timeout_seconds' => max(5, min(120, (int) ($_POST['timeout_seconds'] ?? 30))),
             'max_attempts' => max(1, min(10, (int) ($_POST['max_attempts'] ?? 5))),
+            'institution_names' => array_values($institutionNames),
         ];
     }
 

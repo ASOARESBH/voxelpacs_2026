@@ -42,6 +42,8 @@ class ReportDeliveryOutboxService
         }
 
         $estabelecimentoId = (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null;
+        $rawInstitutionName = trim((string) ($estudo->institution_name ?? ''));
+        $institutionName = InstitutionResolverService::canonicalForTenant($tenantId, $rawInstitutionName);
         $eventType = 'report.released';
         $eventKey = hash('sha256', implode('|', [
             $tenantId,
@@ -59,6 +61,8 @@ class ReportDeliveryOutboxService
             'report_id' => $reportId,
             'report_version' => $reportVersion,
             'estudo_id' => $estudoId,
+            'institution_name' => $institutionName,
+            'institution_name_received' => $rawInstitutionName,
             'study_instance_uid' => (string) ($estudo->study_instance_uid ?? $report->study_instance_uid ?? ''),
             'accession_number' => (string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''),
             'patient_id' => (string) ($estudo->patient_id ?? $estudo->paciente_id_externo ?? ''),
@@ -80,11 +84,19 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
-            $destinations = $repository->findActiveDestinations($tenantId, $estabelecimentoId);
+            $destinations = $institutionName !== null
+                ? $repository->findActiveDestinations($tenantId, $estabelecimentoId, $institutionName)
+                : [];
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations);
 
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
+                Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado ao InstitutionName do estudo', [
+                    'tenant_id' => $tenantId,
+                    'estudo_id' => $estudoId,
+                    'institution_name_received' => $rawInstitutionName,
+                    'institution_name_canonical' => $institutionName,
+                ]);
             }
 
             return [

@@ -100,3 +100,21 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 | SFTP/FTPS | Contrato e rastreabilidade prontos; requer geração de PDF, manifesto e credencial/chave por cliente. |
 
 Nenhum destino clínico é ativado automaticamente nesta entrega.
+
+## Roteamento por PACS de origem (InstitutionName)
+
+Um mesmo negócio pode receber estudos de vários PACS. Por isso, cada destino de devolutiva deve ser vinculado a um ou mais **InstitutionNames** ativos daquele tenant. O InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name` quando o estudo é importado.
+
+Ao liberar um laudo, o Hub normaliza o InstitutionName recebido e o compara com os InstitutionNames cadastrados no negócio. Ele cria jobs apenas para destinos que possuam vínculo explícito com a origem canônica do estudo. O snapshot da outbox registra tanto o valor recebido quanto o valor canônico usado no roteamento.
+
+| Situação | Resultado do Hub |
+|---|---|
+| Estudo `ORIX_ORTHO` e destino associado a `ORIX_ORTHO` | Cria job apenas para esse destino. |
+| Estudo `ORIX_RAIO_X` e outro destino associado a `ORIX_RAIO_X` | Cria job apenas para o segundo destino. |
+| Destino associado a vários InstitutionNames | Cria um job quando o estudo vier de qualquer origem associada. |
+| InstitutionName sem cadastro ativo no tenant | Não cria job externo; registra outbox como `no_destination` e log administrativo. |
+| Destino legado sem origem vinculada | Não recebe novos jobs até que a origem seja selecionada no painel. |
+
+No painel **Devolutiva de Laudos**, use a seção **PACS de origem dos estudos** para marcar uma ou mais origens antes de salvar o destino. Essa associação é obrigatória e fica visível na lista de destinos.
+
+> A seleção por InstitutionName é independente do canal de entrega. Um mesmo InstitutionName pode ter destinos distintos para DICOM, HTTPS, HL7 ou SFTP, desde que cada integração seja homologada e habilitada de forma explícita.

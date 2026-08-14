@@ -18,19 +18,28 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId): array
+    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, string $institutionName): array
     {
+        if (trim($institutionName) === '') {
+            return [];
+        }
+
         $stmt = $this->pdo->prepare(
-            "SELECT id, tenant_id, estabelecimento_id, nome, transport, ambiente, timeout_seconds, max_attempts,
-                    configuration_json, configuration_secret
-             FROM pacs_report_delivery_destinations
-             WHERE tenant_id = :tenant_id
-               AND enabled = 1
-               AND disparar_na_liberacao = 1
-               AND (estabelecimento_id IS NULL OR estabelecimento_id = :estabelecimento_id)
-             ORDER BY id ASC"
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.timeout_seconds, d.max_attempts,
+                    d.configuration_json, d.configuration_secret
+             FROM pacs_report_delivery_destinations d
+             INNER JOIN pacs_report_delivery_destination_institutions di
+                     ON di.destination_id = d.id
+                    AND di.tenant_id = d.tenant_id
+             WHERE d.tenant_id = :tenant_id
+               AND di.institution_name = :institution_name
+               AND d.enabled = 1
+               AND d.disparar_na_liberacao = 1
+               AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id = :estabelecimento_id)
+             ORDER BY d.id ASC"
         );
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
+        $stmt->bindValue(':institution_name', trim($institutionName), PDO::PARAM_STR);
         if ($estabelecimentoId === null) {
             $stmt->bindValue(':estabelecimento_id', null, PDO::PARAM_NULL);
         } else {
@@ -45,12 +54,15 @@ class ReportDeliveryRepository
     public function listDestinations(int $tenantId): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT id, tenant_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
-                    configuration_json, timeout_seconds, max_attempts, last_test_at,
-                    last_test_status, last_test_message, created_at, updated_at
-             FROM pacs_report_delivery_destinations
-             WHERE tenant_id = :tenant_id
-             ORDER BY id DESC"
+            "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
+                    d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
+                    COALESCE((SELECT GROUP_CONCAT(di.institution_name ORDER BY di.institution_name SEPARATOR '||')
+                              FROM pacs_report_delivery_destination_institutions di
+                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
+             FROM pacs_report_delivery_destinations d
+             WHERE d.tenant_id = :tenant_id
+             ORDER BY d.id DESC"
         );
         $stmt->execute([':tenant_id' => $tenantId]);
 
@@ -60,13 +72,17 @@ class ReportDeliveryRepository
     /** @return array<string, mixed>|null */
     public function findDestination(int $destinationId, int $tenantId, bool $includeSecret = false): ?array
     {
-        $columns = $includeSecret ? '*' :
-            'id, tenant_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
-             configuration_json, timeout_seconds, max_attempts, last_test_at,
-             last_test_status, last_test_message, created_at, updated_at';
+        $columns = $includeSecret ? 'd.*' :
+            'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+             d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
+             d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
         $stmt = $this->pdo->prepare(
-            "SELECT {$columns} FROM pacs_report_delivery_destinations
-             WHERE id = :id AND tenant_id = :tenant_id
+            "SELECT {$columns},
+                    COALESCE((SELECT GROUP_CONCAT(di.institution_name ORDER BY di.institution_name SEPARATOR '||')
+                              FROM pacs_report_delivery_destination_institutions di
+                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
+             FROM pacs_report_delivery_destinations d
+             WHERE d.id = :id AND d.tenant_id = :tenant_id
              LIMIT 1"
         );
         $stmt->execute([':id' => $destinationId, ':tenant_id' => $tenantId]);
@@ -77,6 +93,22 @@ class ReportDeliveryRepository
 
     /** @param array<string, mixed> $data */
     public function saveDestination(int $tenantId, ?int $destinationId, array $data, int $userId): int
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $savedId = $this->saveDestinationWithinTransaction($tenantId, $destinationId, $data, $userId);
+            $this->pdo->commit();
+            return $savedId;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /** @param array<string, mixed> $data */
+    private function saveDestinationWithinTransaction(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
         $name = trim((string) $data['nome']);
         if ($destinationId) {
@@ -126,6 +158,7 @@ class ReportDeliveryRepository
                 ':id' => $destinationId,
                 ':tenant_id' => $tenantId,
             ]);
+            $this->replaceDestinationInstitutions($destinationId, $tenantId, $data['institution_names'] ?? []);
 
             return $destinationId;
         }
@@ -161,7 +194,56 @@ class ReportDeliveryRepository
             ':created_by' => $userId,
         ]);
 
-        return (int) $this->pdo->lastInsertId();
+        $savedId = (int) $this->pdo->lastInsertId();
+        $this->replaceDestinationInstitutions($savedId, $tenantId, $data['institution_names'] ?? []);
+
+        return $savedId;
+    }
+
+    /** @param array<int, string> $institutionNames */
+    private function replaceDestinationInstitutions(int $destinationId, int $tenantId, array $institutionNames): void
+    {
+        $names = array_values(array_unique(array_filter(array_map(
+            static fn($name): string => trim((string) $name),
+            $institutionNames
+        ), static fn(string $name): bool => $name !== '')));
+
+        if (!$names) {
+            throw new DomainException('Selecione ao menos um InstitutionName de origem para o destino.');
+        }
+
+        $ownsTransaction = !$this->pdo->inTransaction();
+        if ($ownsTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $delete = $this->pdo->prepare(
+                'DELETE FROM pacs_report_delivery_destination_institutions
+                 WHERE destination_id = :destination_id AND tenant_id = :tenant_id'
+            );
+            $delete->execute([':destination_id' => $destinationId, ':tenant_id' => $tenantId]);
+
+            $insert = $this->pdo->prepare(
+                'INSERT INTO pacs_report_delivery_destination_institutions
+                    (destination_id, tenant_id, institution_name)
+                 VALUES (:destination_id, :tenant_id, :institution_name)'
+            );
+            foreach ($names as $name) {
+                $insert->execute([
+                    ':destination_id' => $destinationId,
+                    ':tenant_id' => $tenantId,
+                    ':institution_name' => $name,
+                ]);
+            }
+            if ($ownsTransaction) {
+                $this->pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     public function createOutboxIfAbsent(
