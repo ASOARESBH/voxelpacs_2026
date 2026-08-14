@@ -163,6 +163,15 @@ class ReportRepository {
     }
 
     /**
+     * Resolve a URL pública do laudário sem expor id sequencial ou Study UID.
+     */
+    public function findReportByPublicToken(string $token): ?object {
+        $stmt = $this->pdo->prepare("SELECT * FROM reports WHERE public_token = :token LIMIT 1");
+        $stmt->execute(['token' => $token]);
+        return $stmt->fetch() ?: null;
+    }
+
+    /**
      * Busca o laudo pelo id do estudo (FK estudo_id).
      */
     public function findReportByEstudoId(int $estudoId): ?object {
@@ -185,26 +194,46 @@ class ReportRepository {
     public function createReport(int $estudoId, ?int $tenantId, ?string $studyUid, int $medicoId, array $conteudo): object {
         // Extrai seções do array de conteúdo (compatibilidade com ReportService)
         $secoes = $conteudo['secoes'] ?? [];
-        $stmt = $this->pdo->prepare("
+        $sql = "
             INSERT INTO reports
-                (tenant_id, estudo_id, study_instance_uid, usuario_id, situacao,
+                (tenant_id, estudo_id, study_instance_uid, public_token, usuario_id, situacao,
                  secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao)
             VALUES
-                (:tenant_id, :estudo_id, :study_uid, :usuario_id, 'rascunho',
+                (:tenant_id, :estudo_id, :study_uid, :public_token, :usuario_id, 'rascunho',
                  :secao_exame, :secao_tecnica, :secao_achados, :secao_conclusao, :secao_recomendacao)
-        ");
-        $stmt->execute([
-            'tenant_id'         => $tenantId,
-            'estudo_id'         => $estudoId,
-            'study_uid'         => $studyUid,
-            'usuario_id'        => $medicoId,
-            'secao_exame'       => $secoes['exame']        ?? '',
-            'secao_tecnica'     => $secoes['tecnica']      ?? '',
-            'secao_achados'     => $secoes['achados']      ?? '',
-            'secao_conclusao'   => $secoes['conclusao']    ?? '',
-            'secao_recomendacao'=> $secoes['recomendacao'] ?? '',
-        ]);
-        return $this->findReportById((int) $this->pdo->lastInsertId());
+        ";
+
+        // A unicidade é garantida pelo índice. Uma colisão de 192 bits é
+        // improvável, mas a tentativa limitada preserva disponibilidade.
+        for ($tentativa = 1; $tentativa <= 3; $tentativa++) {
+            try {
+                $stmt = $this->pdo->prepare($sql);
+                $stmt->execute([
+                    'tenant_id'         => $tenantId,
+                    'estudo_id'         => $estudoId,
+                    'study_uid'         => $studyUid,
+                    'public_token'      => bin2hex(random_bytes(24)),
+                    'usuario_id'        => $medicoId,
+                    'secao_exame'       => $secoes['exame']        ?? '',
+                    'secao_tecnica'     => $secoes['tecnica']      ?? '',
+                    'secao_achados'     => $secoes['achados']      ?? '',
+                    'secao_conclusao'   => $secoes['conclusao']    ?? '',
+                    'secao_recomendacao'=> $secoes['recomendacao'] ?? '',
+                ]);
+                return $this->findReportById((int) $this->pdo->lastInsertId());
+            } catch (\PDOException $e) {
+                Logger::warning('ReportRepository::createReport falhou ao gerar token público', [
+                    'estudo_id' => $estudoId,
+                    'tentativa' => $tentativa,
+                    'error' => $e->getMessage(),
+                ]);
+                if ($tentativa === 3 || stripos($e->getMessage(), 'public_token') === false) {
+                    throw $e;
+                }
+            }
+        }
+
+        throw new \RuntimeException('Não foi possível gerar token público para o laudo.');
     }
 
     /**

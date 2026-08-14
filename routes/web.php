@@ -194,8 +194,8 @@ Router::get('/api/servidor-pacs/sync-robo', 'PacsSyncRoboController@executar');
 // Rotas estáticas vêm antes das rotas parametrizadas: o Router é first-match.
 Router::get('/reports/history',            'ReportsController@history');
 Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
-Router::get('/reports/pdf',                'ReportsController@pdf');
-Router::get('/reports/assinatura-imagem',  'ReportsController@assinaturaImagem');
+Router::get('/reports/r/{token}/pdf',         'ReportsController@pdfByToken');
+Router::get('/reports/r/{token}/assinatura',  'ReportsController@assinaturaImagemByToken');
 Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
 Router::get('/reports/autotext',           'ReportsController@autotextSearch');
@@ -221,10 +221,9 @@ Router::get('/api/reports/peer-review/original', 'ReportPeerReviewController@ori
 Router::options('/api/viewer/measurements', 'ViewerMeasurementsController@options');
 Router::post('/api/viewer/measurements',    'ViewerMeasurementsController@ingest');
 
-// Compatibilidade com o botão PDF antigo que usa /reports/{study_uid}/pdf.
-Router::get('/reports/{study_uid}/pdf',     'ReportsController@pdfByStudyUid');
-// Editor de laudo (GET /reports/{study_uid}) — deve ser o último GET dinâmico.
-Router::get('/reports/{study_uid}',         'ReportsController@show');
+// Editor de laudo por token opaco. Study UID e id sequencial não são aceitos
+// em URL pública para impedir enumeração e exposição de identificadores clínicos.
+Router::get('/reports/r/{token}',            'ReportsController@showByToken');
 
 // ============================================================
 // VIEWER — Abertura segura de exames via token temporário

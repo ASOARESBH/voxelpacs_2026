@@ -55,10 +55,8 @@ class GestaoExamesService
             'report_id' => (int) ($study['report_id'] ?? 0),
             'report_situacao' => $reportSituacao,
             'can_view_report' => in_array($reportSituacao, ['assinado', 'liberado'], true),
-            'report_url' => $this->reportUrl((string) ($study['study_instance_uid'] ?? '')),
-            'pdf_url' => (int) ($study['report_id'] ?? 0) > 0
-                ? '/reports/pdf?report_id=' . (int) $study['report_id']
-                : null,
+            'report_url' => $this->reportUrl((string) ($study['report_public_token'] ?? '')),
+            'pdf_url' => $this->pdfUrl((string) ($study['report_public_token'] ?? '')),
             'chat_pending' => $chatPending,
             'can_interact' => $chatCanInteract,
             'can_complete' => $chatCanComplete,
@@ -188,8 +186,19 @@ class GestaoExamesService
         ][$value] ?? 'Rotina (ROUTINE)';
     }
 
-    private function reportUrl(string $studyUid): ?string
+    private function reportUrl(string $publicToken): ?string
     {
-        return $studyUid !== '' ? '/reports/' . rawurlencode($studyUid) . '?origem=gestao' : null;
+        $publicToken = strtolower(trim($publicToken));
+        return preg_match('/^[a-f0-9]{48}$/', $publicToken)
+            ? '/reports/r/' . rawurlencode($publicToken) . '?origem=gestao'
+            : null;
+    }
+
+    private function pdfUrl(string $publicToken): ?string
+    {
+        $publicToken = strtolower(trim($publicToken));
+        return preg_match('/^[a-f0-9]{48}$/', $publicToken)
+            ? '/reports/r/' . rawurlencode($publicToken) . '/pdf'
+            : null;
     }
 }

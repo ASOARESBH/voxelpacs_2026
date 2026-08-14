@@ -1,55 +1,64 @@
 <?php
-
 namespace App\Controllers;
-
 use App\Core\Controller;
 use App\Core\Auth;
 use App\Core\Logger;
 use App\Services\ReportService;
 use App\Services\ReportAccessService;
-
 use App\Repositories\ReportRepository;
 use App\Repositories\EstudosRepository;
 use App\Services\ReportChatService;
-
 class ReportsController extends Controller
 {
     private ReportService $reportService;
     private ReportRepository $reportRepo;
     private EstudosRepository $estudosRepo;
-
     public function __construct()
     {
         $this->reportService = new ReportService();
         $this->reportRepo    = new ReportRepository();
         $this->estudosRepo   = new EstudosRepository();
     }
-
     // ══════════════════════════════════════════════════════════════════════════
-    // GET /reports/{study_uid}
-    // Abre o editor de laudo para um estudo
+    // GET /reports/r/{token}
+    // A única rota pública do editor. Não aceita Study UID nem id sequencial.
     // ══════════════════════════════════════════════════════════════════════════
-    public function show(string $studyUid): void
+    public function showByToken(string $token): void
     {
         if (!Auth::check()) {
             $this->redirect('/login');
             return;
         }
 
+        $reportAutorizado = (new ReportAccessService())->findAuthorizedReportByPublicToken($token);
+        if (!$reportAutorizado) {
+            http_response_code(404);
+            $this->view('reports/error', [
+                'mensagem' => 'Laudo não encontrado ou você não tem permissão de acesso.',
+            ], 'pacs');
+            return;
+        }
+
         try {
-            $data = $this->reportService->carregarParaEdicao($studyUid);
+            $data = $this->reportService->carregarParaEdicaoPorReport($reportAutorizado);
         } catch (\Throwable $e) {
-            Logger::error('ReportsController::show error', ['msg' => $e->getMessage(), 'uid' => $studyUid]);
+            Logger::error('ReportsController::showByToken error', [
+                'report_id' => (int) $reportAutorizado->id,
+                'msg' => $e->getMessage(),
+            ]);
             http_response_code(500);
             $this->view('reports/error', ['mensagem' => 'Erro ao abrir o laudo. Tente novamente.'], 'pacs');
             return;
         }
 
         if (!$data['ok']) {
-            Logger::warning('ReportsController::show estudo não encontrado', ['uid' => $studyUid, 'error' => $data['error'] ?? null]);
+            Logger::warning('ReportsController::showByToken laudo indisponível', [
+                'report_id' => (int) $reportAutorizado->id,
+                'error' => $data['error'] ?? null,
+            ]);
             http_response_code(404);
             $this->view('reports/error', [
-                'mensagem' => 'Estudo não encontrado ou você não tem permissão de acesso.',
+                'mensagem' => 'Laudo não encontrado ou você não tem permissão de acesso.',
             ], 'pacs');
             return;
         }
@@ -61,7 +70,6 @@ class ReportsController extends Controller
         $peerReview = $data['peerReview'] ?? null;
         $readonly = $data['readonly'];
         $lockInfo = $data['lockInfo'];
-
         // Exames anteriores do mesmo paciente
         $examesAnteriores = [];
         if (!empty($estudo->patient_id)) {
@@ -70,8 +78,9 @@ class ReportsController extends Controller
                 $stmt = $pdo->prepare(
                     "SELECT e.id, e.study_date, e.study_description, e.modalities,
                             COALESCE(e.situacao,'novo') AS situacao,
-                            e.study_instance_uid
+                                                        e.study_instance_uid, r.public_token
                      FROM bi_pacs_estudos e
+                     INNER JOIN reports r ON r.estudo_id = e.id
                      WHERE e.patient_id = :pid
                        AND e.study_instance_uid != :uid
                        AND e.tenant_id = :tenant_id
@@ -80,7 +89,7 @@ class ReportsController extends Controller
                 );
                 $stmt->execute([
                     ':pid' => $estudo->patient_id,
-                    ':uid' => $studyUid,
+                                        ':uid' => (string) ($estudo->study_instance_uid ?? ''),
                     ':tenant_id' => (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id()),
                 ]);
                 $examesAnteriores = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -88,7 +97,6 @@ class ReportsController extends Controller
                 Logger::error('Erro ao buscar exames anteriores', ['error' => $ex->getMessage()]);
             }
         }
-
         // Buscar medico_id do usuário logado (para auto-carregar template)
         $medicoIdLogado = 0;
         try {
@@ -97,7 +105,6 @@ class ReportsController extends Controller
             $stmt->execute(['uid' => Auth::userId(), 'tid' => \App\Core\TenantContext::id()]);
             $medicoIdLogado = (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable $ex) {}
-
         $this->view('reports/show', [
             'estudo'            => $estudo,
             'report'            => $report,
@@ -112,7 +119,6 @@ class ReportsController extends Controller
             'medicoIdLogado'    => $medicoIdLogado,
         ], 'reports');
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/save
     // Salva o laudo (autosave ou manual)
@@ -123,9 +129,7 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;
         }
-
         $input = $this->getJsonInput();
-
         // CSRF: reports-autosave.js manda o token só no header X-CSRF-Token, nunca
         // no corpo — sem o fallback de header aqui, validarCsrf('') falhava sempre
         // (ver diagnostics/pendencias-conhecidas.md).
@@ -134,7 +138,6 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403);
             return;
         }
-
         try {
             // O frontend envia modo=auto|salvar|rascunho; is_manual é legado.
             $modo = (string) ($input['modo'] ?? (($input['is_manual'] ?? false) ? 'salvar' : 'auto'));
@@ -165,7 +168,6 @@ class ReportsController extends Controller
                 ]);
             }
             $resultado = $this->reportService->salvar($reportId, $secoes, $modo, $templateId);
-
             $msg = match ($resultado['error'] ?? null) {
                 'report_nao_encontrado'           => 'Laudo não encontrado.',
                 'report_assinado_somente_leitura' => 'Este laudo já foi assinado e não pode mais ser editado.',
@@ -173,7 +175,6 @@ class ReportsController extends Controller
                 'estudo_assumido_por_outro'       => 'Este estudo foi assumido por outro médico e não pode ser alterado.',
                 default                            => null, // sucesso — sem erro
             };
-
             $this->json([
                 'ok' => $resultado['ok'],
                 'saved_at' => date('H:i:s'),
@@ -186,7 +187,6 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/sign
     // Assina o laudo — autenticação 100% por sessão, sem senha/CRM manual
@@ -198,16 +198,13 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;
         }
-
         $input = $this->getJsonInput();
-
         // Mesmo fallback de header aplicado em save() — ver comentário lá.
         $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
         if (!$this->validarCsrf($csrfToken)) {
             $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403);
             return;
         }
-
         // reports-signature.js manda report_id, não id.
         $reportId = (int) ($input['report_id'] ?? $input['id'] ?? 0);
         $modo     = ($input['modo'] ?? 'somente') === 'fechar' ? 'fechar' : 'somente';
@@ -226,7 +223,6 @@ class ReportsController extends Controller
                 }
             }
             $resultado = $this->reportService->assinar($reportId, $modo);
-
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
                     'report_nao_encontrado'          => 'Laudo não encontrado.',
@@ -245,14 +241,12 @@ class ReportsController extends Controller
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;
             }
-
             $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.', 'situacao' => $resultado['situacao']]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::sign error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // GET /reports/history?report_id=X
     // Retorna histórico de versões
@@ -263,27 +257,23 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;
         }
-
         $reportId = (int) ($_GET['report_id'] ?? 0);
         if (!$reportId) {
             $this->json(['ok' => false, 'msg' => 'ID inválido.'], 422);
             return;
         }
-
                 try {
             if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
             $versoes = $this->reportRepo->listVersions($reportId);
-
             $this->json(['ok' => true, 'versions' => $versoes]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::history error', ['msg' => $e->getMessage()]);
             $this->json(['ok' => false, 'msg' => 'Erro ao buscar histórico.'], 500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/history/restore
     // Restaura uma versão já pertencente ao tenant atual.
@@ -294,11 +284,9 @@ class ReportsController extends Controller
         $input = $this->getJsonInput();
         $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
         if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
-
         $reportId = (int) ($input['report_id'] ?? 0);
         $versionId = (int) ($input['version_id'] ?? 0);
         if (!$reportId || !$versionId) { $this->json(['ok' => false, 'msg' => 'Parâmetros inválidos.'], 422); return; }
-
         try {
             $resultado = $this->reportService->restoreVersion($reportId, $versionId);
             $this->json($resultado, $resultado['ok'] ? 200 : 422);
@@ -309,18 +297,26 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não foi possível restaurar a versão.'], 500);
         }
     }
+    // ══════════════════════════════════════════════════════════════════════════
+    // GET /reports/r/{token}/pdf
+    // Resolve o token opaco antes de reutilizar a geração interna de PDF.
+    // ══════════════════════════════════════════════════════════════════════════
+    public function pdfByToken(string $token): void
+    {
+        if (!Auth::check()) { $this->redirect('/login'); return; }
+        $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token);
+        if (!$report) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
+        $_GET['report_id'] = (int) $report->id;
+        $this->pdf();
+    }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // GET /reports/pdf?report_id=X
-    // Gera/exibe o PDF do laudo
-    // ══════════════════════════════════════════════════════════════════════════
+    /** Geração interna de PDF; não é exposta diretamente por rota pública. */
     public function pdf(): void
     {
         if (!Auth::check()) {
             $this->redirect('/login');
             return;
         }
-
                 $reportId = (int) ($_GET['report_id'] ?? 0);
         $download = ($_GET['download'] ?? '0') === '1';
         $tenantId = Auth::tenantId();
@@ -332,7 +328,6 @@ class ReportsController extends Controller
         }
 
         try {
-
             $pdo = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
                 "SELECT r.*, e.patient_name_display, e.patient_name, e.patient_id,
@@ -358,7 +353,6 @@ class ReportsController extends Controller
                         COALESCE(NULLIF(bnin.estado, ''), un.estado)                 AS unidade_estado
                  FROM reports r
                                   JOIN bi_pacs_estudos e ON e.id = r.estudo_id
-
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
@@ -374,15 +368,12 @@ class ReportsController extends Controller
                  LIMIT 1"
             );
             $stmt->execute([':id' => $reportId]);
-
             $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-
             if (!$data) {
                 http_response_code(404);
                 echo 'Laudo não encontrado.';
                 return;
             }
-
             // Log de visualização de PDF
             $userId = Auth::userId();
             $user = Auth::user();
@@ -391,13 +382,11 @@ class ReportsController extends Controller
                 $userId, $user->name ?? $user->nome ?? '', 'pdf',
                 $download ? 'Download PDF' : 'Visualização PDF'
             );
-
             // Template visual (camada de apresentação — ver App\Services\ReportLayoutService).
             // Unidade resolvida via institution_name; sem unidade vinculada ou sem
             // template escolhido, cai no padrão (classico_centralizado).
             $templateCodigo = (new \App\Services\ReportLayoutService())
                 ->resolverCodigo(isset($data['report_layout_template_id']) ? (int) $data['report_layout_template_id'] : null);
-
             // Renderizar a view de PDF
             $this->view('reports/pdf', [
                 'report'         => $data,
@@ -409,7 +398,6 @@ class ReportsController extends Controller
                     'data' => $data['assinado_em'] ?? ''
                 ]))
             ], 'pacs');
-
         } catch (\Throwable $e) {
             Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
             http_response_code(500);
@@ -417,61 +405,44 @@ class ReportsController extends Controller
         }
     }
 
-    /** Compatibilidade para /reports/{study_uid}/pdf. */
-    public function pdfByStudyUid(string $studyUid): void
-    {
-        if (!Auth::check()) { $this->redirect('/login'); return; }
-        try {
-            $pdo = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare(
-                                "SELECT id FROM reports WHERE study_instance_uid = :uid LIMIT 1"
-            );
-            $stmt->execute([':uid' => $studyUid]);
-
-            $reportId = (int) ($stmt->fetchColumn() ?: 0);
-            if (!$reportId) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
-            $_GET['report_id'] = $reportId;
-            $this->pdf();
-        } catch (\Throwable $e) {
-            Logger::error('ReportsController::pdfByStudyUid error', ['uid' => $studyUid, 'msg' => $e->getMessage()]);
-            http_response_code(500);
-            echo 'Erro ao gerar PDF.';
-        }
-    }
-
     // ══════════════════════════════════════════════════════════════════════════
-    // GET /reports/assinatura-imagem?report_id=X
+    // GET /reports/r/{token}/assinatura
     // Proxy autenticado da assinatura visual CONGELADA deste laudo (ver
     // ReportService::congelarAssinaturaVisual) — arquivo fica fora de public/,
-        // nunca exposto direto. A rota usa ReportAccessService, a mesma defesa de
+    // nunca exposto direto. A rota usa ReportAccessService, a mesma defesa de
     // tenant, InstitutionName e posse médica aplicada ao PDF e ao editor.
 
     // ══════════════════════════════════════════════════════════════════════════
+    public function assinaturaImagemByToken(string $token): void
+    {
+        if (!Auth::check()) { http_response_code(401); return; }
+        $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token);
+        if (!$report) { http_response_code(404); return; }
+        $_GET['report_id'] = (int) $report->id;
+        $this->assinaturaImagem();
+    }
+
+    /** Proxy interno, acionado somente após resolução de token opaco. */
     public function assinaturaImagem(): void
     {
         if (!Auth::check()) { http_response_code(401); return; }
-                $reportId = (int) ($_GET['report_id'] ?? 0);
-        $tenantId = Auth::tenantId();
-        if (!$reportId || !$tenantId || !(new ReportAccessService())->findAuthorizedReport($reportId)) {
+        $reportId = (int) ($_GET['report_id'] ?? 0);
+
+        if (!$reportId || !(new ReportAccessService())->findAuthorizedReport($reportId)) {
             http_response_code(404);
             return;
         }
 
         try {
-
             $pdo  = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
                                 "SELECT assinatura_tipo, assinatura_caminho_arquivo FROM reports WHERE id = :id LIMIT 1"
             );
             $stmt->execute(['id' => $reportId]);
-
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-
             if (!$row || empty($row['assinatura_caminho_arquivo'])) { http_response_code(404); return; }
-
             $caminho = BASE_PATH . '/storage/uploads/assinaturas_laudos/' . $row['assinatura_caminho_arquivo'];
             if (!is_file($caminho)) { http_response_code(404); return; }
-
             $mime = $row['assinatura_tipo'] === 'imagem' ? 'image/jpeg' : 'image/png';
             header("Content-Type: {$mime}");
             header('Cache-Control: private, no-store');
@@ -481,7 +452,6 @@ class ReportsController extends Controller
             http_response_code(500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // GET /reports/templates?modalidade=CT
     // Lista templates do tenant no formato único usado pelo editor Quill.
@@ -494,7 +464,6 @@ class ReportsController extends Controller
         $where = "WHERE ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
         $params = ['tenant_id' => $tenantId];
         if ($modalidade !== '') { $where .= " AND modalidade = :modalidade"; $params['modalidade'] = $modalidade; }
-
         try {
             $pdo = \App\Core\Database::getInstance();
             $rows = null;
@@ -519,7 +488,6 @@ class ReportsController extends Controller
                 }
             }
             if ($rows === null) throw new \RuntimeException('Nenhum schema de templates compatível.');
-
             $templates = array_map(fn(array $row): array => $this->normalizarTemplate($row), $rows);
             $this->json(['ok' => true, 'templates' => $templates]);
         } catch (\Throwable $e) {
@@ -527,7 +495,6 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'templates' => [], 'msg' => 'Erro ao listar templates.'], 500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // GET /reports/template?id=X
     // Retorna o conteúdo de um template (AJAX)
@@ -538,13 +505,11 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;
         }
-
         $templateId = (int) ($_GET['id'] ?? 0);
         if (!$templateId) {
             $this->json(['ok' => false, 'msg' => 'ID inválido.'], 422);
             return;
         }
-
         try {
             $pdo = \App\Core\Database::getInstance();
             $stmt = $pdo->prepare(
@@ -556,12 +521,10 @@ class ReportsController extends Controller
             $stmt->execute([':id' => $templateId, ':tenant_id' => Auth::tenantId()]);
             $tpl = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($tpl) $tpl = $this->normalizarTemplate($tpl);
-
             if (!$tpl) {
                 $this->json(['ok' => false, 'msg' => 'Template não encontrado.'], 404);
                 return;
             }
-
             // Incrementar contador quando a coluna existir; schemas mínimos não a possuem.
             try {
                 $pdo->prepare("UPDATE report_templates SET uso_count = uso_count + 1 WHERE id = :id")
@@ -569,14 +532,12 @@ class ReportsController extends Controller
             } catch (\PDOException $counterError) {
                 Logger::warning('ReportsController::template sem uso_count', ['error' => $counterError->getMessage()]);
             }
-
             $this->json(['ok' => true, 'template' => $tpl]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::template error', ['msg' => $e->getMessage()]);
             $this->json(['ok' => false, 'msg' => 'Erro ao buscar template.'], 500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/assumir
     // Botão "Assumir" na worklist — registra médico e abre editor
@@ -587,7 +548,6 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401);
             return;
         }
-
         $input = $this->getJsonInput();
         $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
         if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
@@ -596,44 +556,56 @@ class ReportsController extends Controller
         $user     = Auth::user();
         $tenantId = Auth::tenantId();
         $isAdmin  = Auth::isPlatformAdmin();
-
         if (!$estudoId) {
             $this->json(['ok' => false, 'msg' => 'ID do estudo inválido.'], 422);
             return;
         }
-
         // Buscar o estudo para obter o study_uid
         $estudo = $this->estudosRepo->getEstudoById($estudoId, $tenantId, $isAdmin);
         if (!$estudo) {
             $this->json(['ok' => false, 'msg' => 'Estudo não encontrado.'], 404);
             return;
         }
-
         // Assumir o estudo; não abrir o report se o lock não foi persistido.
         if (!$this->estudosRepo->assumirEstudo($estudoId, $userId)) {
             $this->json(['ok' => false, 'msg' => 'Não foi possível assumir o estudo. Tente novamente.'], 409);
             return;
         }
+                try {
+            $report = $this->reportRepo->findReportByEstudoId($estudoId)
+                ?: $this->reportRepo->createReport(
+                    $estudoId,
+                    (int) ($estudo['tenant_id'] ?? $tenantId),
+                    (string) ($estudo['study_instance_uid'] ?? ''),
+                    $userId,
+                    ['secoes' => []]
+                );
+            $url = $this->reportService->urlPublica($report);
+        } catch (\Throwable $e) {
+            Logger::error('ReportsController::assumir não gerou URL pública', [
+                'estudo_id' => $estudoId,
+                'usuario_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['ok' => false, 'msg' => 'Não foi possível preparar o Laudário. Verifique a migration de URL segura.'], 503);
+            return;
+        }
 
-        // Log de auditoria
+        // Log de auditoria sem incluir o token ou Study UID público.
         $this->reportRepo->logAction(
-            0, $estudoId, (int)($estudo['tenant_id'] ?? $tenantId),
+            (int) $report->id, $estudoId, (int)($estudo['tenant_id'] ?? $tenantId),
             $userId, $user->nome ?? '',
             'assumir',
             'Estudo assumido pelo médico'
         );
 
-        $studyUid = $estudo['study_instance_uid'] ?? '';
-
         $this->json([
             'ok'          => true,
             'msg'         => 'Estudo assumido com sucesso.',
-            'study_uid'   => $studyUid,
-            'url'         => '/reports/' . urlencode($studyUid),
+            'url'         => $url,
             'assumido_em' => date('c'),
         ]);
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /reports/ai-generate
     // Endpoint estável; a geração por IA ainda é um recurso futuro.
@@ -647,7 +619,6 @@ class ReportsController extends Controller
         $resultado = $this->reportService->aiGenerate();
         $this->json(['ok' => false, 'status' => $resultado['status'], 'message' => $resultado['message']], 501);
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // GET /api/reports/autotext?q=torax
     // Retorna autotextos para o autocomplete
@@ -658,14 +629,12 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'items' => []], 401);
             return;
         }
-
         $q = trim((string) ($_GET['q'] ?? ''));
         $modalidade = trim((string) ($_GET['modalidade'] ?? ''));
         $tenantId = Auth::tenantId();
         $userId = Auth::userId();
         $like = '%' . $q . '%';
         $items = [];
-
         try {
             $pdo = \App\Core\Database::getInstance();
             // Descobre o schema uma única vez. Assim, bancos com a versão
@@ -677,9 +646,7 @@ class ReportsController extends Controller
                 if ($field !== '') $columns[$field] = true;
             }
             $has = static fn (string $name): bool => isset($columns[$name]);
-
             if (!$has('id')) throw new \RuntimeException('Tabela report_autotext sem coluna id.');
-
             if ($has('gatilho') && $has('conteudo')) {
                 $triggerColumn = 'gatilho';
                 $titleColumn = $has('titulo') ? 'titulo' : 'gatilho';
@@ -700,7 +667,6 @@ class ReportsController extends Controller
             } else {
                 throw new \RuntimeException('Schema report_autotext sem colunas de conteúdo reconhecidas.');
             }
-
             $where = [];
             $params = [];
             if ($has('ativo')) $where[] = 'ativo = 1';
@@ -721,7 +687,6 @@ class ReportsController extends Controller
                 $params[':query_trigger'] = $like;
                 $params[':query_title'] = $like;
             }
-
             $sql = "SELECT id, {$triggerColumn} AS gatilho, {$titleColumn} AS titulo, {$contentColumn} AS conteudo"
                  . " FROM report_autotext"
                  . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
@@ -735,7 +700,6 @@ class ReportsController extends Controller
             ]);
             $items = [];
         }
-
         $items = array_map(static function (array $item): array {
             $texto = (string) ($item['texto_sugerido'] ?? $item['conteudo'] ?? $item['texto'] ?? '');
             return [
@@ -748,7 +712,6 @@ class ReportsController extends Controller
         }, $items);
         $this->json(['ok' => true, 'items' => $items]);
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // GET /api/reports/by-estudo?estudo_id=X
     // Retorna o report_id de um estudo (usado pelo botão PDF na worklist)
@@ -759,23 +722,19 @@ class ReportsController extends Controller
             $this->json(['ok' => false], 401);
             return;
         }
-
         $estudoId = (int) ($_GET['estudo_id'] ?? 0);
         if (!$estudoId) {
             $this->json(['report_id' => null]);
             return;
         }
-
                 try {
             $report = (new ReportAccessService())->findAuthorizedReportByEstudoId($estudoId);
             $this->json(['report_id' => $report ? (int) $report->id : null]);
-
         } catch (\Throwable $e) {
             Logger::error('ReportsController::byEstudo error', ['msg' => $e->getMessage()]);
             $this->json(['report_id' => null]);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /api/reports/status
     // Atualiza situacao do laudo: em_laudo (ao abrir) ou rascunho (ao fechar sem assinar)
@@ -803,7 +762,6 @@ class ReportsController extends Controller
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
-
             if ((new ReportChatService())->hasPending($reportId, $tenantId)) {
                 Logger::warning('ReportsController::atualizarStatus bloqueado por CHAT pendente', [
                     'report_id' => $reportId, 'tenant_id' => $tenantId, 'situacao_solicitada' => $situacao,
@@ -818,7 +776,6 @@ class ReportsController extends Controller
             // depender de uma coluna tenant_id em bi_pacs_estudos.
             $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = :sit WHERE id = :estudo_id")
                 ->execute(['sit' => $situacao, 'estudo_id' => (int) $report->estudo_id]);
-
             Logger::info('ReportsController::atualizarStatus', [
                 'report_id' => $reportId, 'situacao' => $situacao, 'usuario' => Auth::userId(),
             ]);
@@ -828,7 +785,6 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Erro interno.'], 500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // POST /api/reports/liberar
     // Libera o laudo: muda para liberado + atualiza estudo + fecha tela
@@ -839,14 +795,11 @@ class ReportsController extends Controller
         $input = $this->getJsonInput();
         $csrfToken = $input['csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
         if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
-
         $reportId = (int) ($input['report_id'] ?? 0);
         if (!$reportId) { $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422); return; }
-
         try {
                         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
             if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
-
             if ((new ReportChatService())->hasPending($reportId, (int) Auth::tenantId())) {
                 Logger::warning('ReportsController::liberar bloqueado por CHAT pendente', [
                     'report_id' => $reportId, 'tenant_id' => Auth::tenantId(), 'usuario_id' => Auth::userId(),
@@ -855,7 +808,6 @@ class ReportsController extends Controller
                 return;
             }
             $situacao = $report->situacao ?? $report->status ?? 'rascunho';
-
             // Se ainda não foi assinado, usa a mesma validação de conteúdo,
             // assinatura visual, hash e atualização de estudo do fluxo principal.
             if ($situacao !== 'assinado') {
@@ -880,7 +832,6 @@ class ReportsController extends Controller
                 $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.', 'pdf_url' => $resultado['pdf_url'] ?? null]);
                 return;
             }
-
             // Laudo já assinado: liberar não cria uma segunda assinatura.
                         $pdo = \App\Core\Database::getInstance();
             $pdo->prepare(
@@ -899,7 +850,6 @@ class ReportsController extends Controller
                 $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = 'liberado' WHERE id = :estudo_id")
                     ->execute(['estudo_id' => (int) $report->estudo_id]);
             }
-
             Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
             $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
         } catch (\Throwable $e) {
@@ -907,11 +857,9 @@ class ReportsController extends Controller
             $this->json(['ok' => false, 'msg' => 'Erro interno ao liberar laudo.'], 500);
         }
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // Helpers privados
     // ══════════════════════════════════════════════════════════════════════════
-
     private function normalizarTemplate(array $row): array
     {
         $secoesJson = [];
@@ -924,7 +872,6 @@ class ReportsController extends Controller
                 $secoesJson['exame'] = $conteudo;
             }
         }
-
         $secoes = [];
         foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
             $campo = 'secao_' . $chave;
@@ -933,7 +880,6 @@ class ReportsController extends Controller
                 : (string) ($secoesJson[$chave] ?? '');
             $secoes[$chave] = $valor;
         }
-
         $titulo = (string) ($row['nome'] ?? $row['titulo'] ?? ('Template #' . ($row['id'] ?? '')));
         return [
             'id' => (int) ($row['id'] ?? 0),
@@ -944,7 +890,6 @@ class ReportsController extends Controller
             'secoes' => $secoes,
         ];
     }
-
     private function getJsonInput(): array
     {
         $raw = file_get_contents('php://input');
@@ -956,7 +901,6 @@ class ReportsController extends Controller
         }
         return $_POST;
     }
-
     private function validarCsrf(string $token): bool
     {
         return !empty($token) && isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);

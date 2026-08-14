@@ -44,7 +44,7 @@ class ReportChatRepository
     public function findReportContext(int $reportId, int $tenantId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT r.id AS report_id, r.estudo_id, r.study_instance_uid,
+            'SELECT r.id AS report_id, r.estudo_id, r.public_token,
                     COALESCE(r.situacao, e.situacao, "novo") AS situacao,
                     r.situacao AS report_situacao
                FROM reports r

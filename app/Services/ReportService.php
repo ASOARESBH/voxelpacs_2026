@@ -61,14 +61,33 @@ class ReportService {
             'usuario_responsavel_id' => $userId,
             'usuario_responsavel_nome' => Auth::user()?->name,
             'data_inicio_laudo' => $estudo->data_inicio_laudo,
-            'hora_inicio_laudo' => $estudo->hora_inicio_laudo,
-            'study_instance_uid' => $estudo->study_instance_uid,
-            'reports_url' => '/reports/' . rawurlencode($estudo->study_instance_uid),
+                        'hora_inicio_laudo' => $estudo->hora_inicio_laudo,
+            'reports_url' => $this->urlPublica($report),
         ];
     }
 
     /**
-     * Carrega o estudo + laudo para a tela /reports/{studyUid}, decidindo
+     * Constrói a única URL pública permitida para o Laudário.
+     */
+    public function urlPublica(object $report): string {
+        $token = strtolower(trim((string) ($report->public_token ?? '')));
+        if (!preg_match('/^[a-f0-9]{48}$/', $token)) {
+            throw new \RuntimeException('Laudo sem token público; aplique a migration de URL segura.');
+        }
+        return '/reports/r/' . $token;
+    }
+
+    /**
+     * Carrega o editor a partir de um report previamente resolvido e autorizado
+     * por token público. O Study UID nunca é recebido da URL pública.
+     */
+    public function carregarParaEdicaoPorReport(object $report): array {
+        return $this->carregarParaEdicao((string) ($report->study_instance_uid ?? ''));
+    }
+
+    /**
+     * Carrega o estudo + laudo para uso interno, decidindo
+
      * se abre em modo edição ou somente-leitura (lock de outro usuário).
      */
     public function carregarParaEdicao(string $studyUid): array {
@@ -493,7 +512,7 @@ class ReportService {
             'situacao' => $situacaoFinal,
             'assinado_em' => $assinadoEm,
             'hash' => $hash,
-            'pdf_url' => '/reports/pdf?report_id=' . rawurlencode((string) $reportId),
+            'pdf_url' => $this->urlPublica($report) . '/pdf',
             'peer_review_concluido' => $peerReviewAberto !== null,
         ];
     }

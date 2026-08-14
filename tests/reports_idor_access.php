@@ -31,7 +31,9 @@ $regras = [
     'histórico protege report antes de listar versões' => str_contains($reports, 'public function history')
         && str_contains($reports, "if (!(new ReportAccessService())->findAuthorizedReport(\$reportId))"),
     'busca por estudo usa autorização central' => str_contains($reports, 'findAuthorizedReportByEstudoId($estudoId)'),
-    'proxy de assinatura visual é protegido' => str_contains($reports, "!\$reportId || !\$tenantId || !(new ReportAccessService())->findAuthorizedReport(\$reportId)"),
+    'proxy de assinatura visual é protegido' => str_contains($reports, 'public function assinaturaImagemByToken')
+        && str_contains($reports, 'findAuthorizedReportByPublicToken($token)')
+        && str_contains($reports, "!\$reportId || !(new ReportAccessService())->findAuthorizedReport(\$reportId)"),
     'CHAT exige acesso autorizado ao report' => substr_count($chat, '(new ReportAccessService())->findAuthorizedReport($reportId)') === 3,
     'Peer Review exige acesso autorizado ao report e snapshot' => substr_count($peer, '(new ReportAccessService())->findAuthorizedReport($reportId)') === 2
         && str_contains($peer, 'findAuthorizedReport((int) $review->report_id)'),
