@@ -139,39 +139,17 @@ body.reports-body {
     border-right: 1px solid var(--pacs-border, #1e3a5f);
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 1rem;
 }
 
-.reports-body-grid > * { min-width: 0; }
-
-@media (min-width: 1181px) {
-    .reports-col-left {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        align-items: start;
-    }
-    .reports-col-left > #card-paciente,
-    .reports-col-left > #card-exame {
-        min-width: 0;
-    }
-    .reports-col-left > #card-paciente {
-        grid-column: 1;
-        grid-row: 1;
-    }
-    .reports-col-left > #card-exame {
-        grid-column: 2;
-        grid-row: 1;
-    }
-    .reports-col-left > #card-peer-review {
-        grid-column: 1 / -1;
-        grid-row: 2;
-    }
-    .reports-col-left > #card-chat,
-    .reports-col-left > #card-historico-paciente,
-    .reports-col-left > .reports-card-actions {
-        grid-column: 1 / -1;
-    }
+/* Cada bloco clínico ocupa toda a largura da coluna lateral, em sequência vertical. */
+.reports-col-left > .reports-card,
+.reports-col-left > .reports-card-actions {
+    width: 100%;
 }
+
+.reports-body-grid > * { min-width: 0; }
 
 @media (max-width: 1180px) {
     .reports-body-grid {
@@ -646,10 +624,11 @@ body.reports-body {
 }
 
 /* ── Medidas disponíveis do VOXEL VIEW ───────────────────────────── */
-.viewer-measurements-card { display: flex; flex-direction: column; gap: .75rem; }
-.viewer-measurements-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
-.viewer-measurements-header h3 { margin: 0; color: var(--pacs-primary, #4fc3f7); font-size: .84rem; text-transform: uppercase; letter-spacing: .03em; }
-.viewer-measurements-status { margin: .2rem 0 0; color: var(--pacs-text-muted, #8fa3bf); font-size: .72rem; line-height: 1.35; }
+.viewer-measurements-card { min-width: 0; }
+.viewer-measurements-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.viewer-measurements-header > span { display: inline-flex; align-items: center; gap: .4rem; }
+.viewer-measurements-body { gap: .75rem; }
+.viewer-measurements-status { margin: 0; color: var(--pacs-text-muted, #8fa3bf); font-size: .72rem; line-height: 1.35; }
 .viewer-measurements-list { display: flex; flex-direction: column; gap: .4rem; max-height: 250px; overflow-y: auto; }
 .viewer-measurement-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .55rem; padding: .55rem; border: 1px solid var(--pacs-border, #1e3a5f); border-radius: 6px; cursor: pointer; transition: border-color .15s, background .15s; }
 .viewer-measurement-item:hover, .viewer-measurement-item:focus-within { border-color: var(--pacs-primary, #4fc3f7); background: rgba(79, 195, 247, .06); }

@@ -4,24 +4,23 @@
 ?>
 <section
     id="viewer-measurements-card"
-    class="pacs-card viewer-measurements-card"
+    class="pacs-card reports-card viewer-measurements-card"
     data-report-id="<?= (int) $report->id ?>"
     data-readonly="<?= $readonly ? '1' : '0' ?>"
     aria-labelledby="viewer-measurements-title"
 >
-    <div class="viewer-measurements-header">
-        <div>
-            <h3 id="viewer-measurements-title">Medidas disponíveis do viewer</h3>
-            <p id="viewer-measurements-status" class="viewer-measurements-status" aria-live="polite">
-                Aguardando medições do VOXEL VIEW.
-            </p>
-        </div>
+    <div class="pacs-card-header viewer-measurements-header">
+        <span id="viewer-measurements-title"><i class="fa fa-ruler"></i> Medidas disponíveis do viewer</span>
         <button id="btn-refresh-measurements" type="button" class="btn btn-sm btn-outline-secondary" title="Atualizar medidas">
             <i class="fa fa-refresh" aria-hidden="true"></i><span class="sr-only">Atualizar medidas</span>
         </button>
     </div>
+    <div class="pacs-card-body reports-card-body viewer-measurements-body">
+        <p id="viewer-measurements-status" class="viewer-measurements-status" aria-live="polite">
+            Aguardando medições do VOXEL VIEW.
+        </p>
 
-    <div id="viewer-measurements-list" class="viewer-measurements-list" role="group" aria-label="Medições disponíveis">
+        <div id="viewer-measurements-list" class="viewer-measurements-list" role="group" aria-label="Medições disponíveis">
         <div class="viewer-measurements-empty">Nenhuma medida sincronizada para este estudo.</div>
     </div>
 
@@ -36,12 +35,13 @@
         </select>
     </div>
 
-    <div class="viewer-measurements-actions">
-        <button id="btn-copy-measurements" type="button" class="btn btn-sm btn-outline-secondary" disabled>
-            <i class="fa fa-copy" aria-hidden="true"></i> Copiar
-        </button>
-        <button id="btn-insert-measurements" type="button" class="btn btn-sm btn-primary" disabled <?= $readonly ? 'disabled' : '' ?> >
-            <i class="fa fa-plus-circle" aria-hidden="true"></i> Inserir no laudo
-        </button>
+        <div class="viewer-measurements-actions">
+            <button id="btn-copy-measurements" type="button" class="btn btn-sm btn-outline-secondary" disabled>
+                <i class="fa fa-copy" aria-hidden="true"></i> Copiar
+            </button>
+            <button id="btn-insert-measurements" type="button" class="btn btn-sm btn-primary" disabled <?= $readonly ? 'disabled' : '' ?> >
+                <i class="fa fa-plus-circle" aria-hidden="true"></i> Inserir no laudo
+            </button>
+        </div>
     </div>
 </section>
