@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
+use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryCryptoService;
 use Throwable;
 
@@ -52,6 +53,28 @@ class ReportDeliveryWorkerController extends Controller
         } catch (Throwable $e) {
             Logger::error('[ReportDeliveryWorker::lease] Falha ao conceder job', ['error' => $e->getMessage()]);
             $this->json(['success' => false, 'message' => 'Falha interna ao consultar a fila.'], 500);
+        }
+    }
+
+    public function artifact(int $id): void
+    {
+        $workerId = $this->authenticate();
+        if ($workerId === null) {
+            return;
+        }
+
+        try {
+            $artifact = (new ReportDeliveryArtifactService())->buildPdfForLeasedJob($id, $workerId);
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $artifact['filename'] . '"');
+            header('Content-Length: ' . $artifact['size']);
+            header('Cache-Control: no-store, private');
+            header('X-Voxel-Artifact-SHA256: ' . $artifact['sha256']);
+            header('X-Voxel-Study-Instance-UID: ' . $artifact['study_instance_uid']);
+            echo $artifact['content'];
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryWorker::artifact] Falha ao gerar artefato', ['job_id' => $id, 'error' => $e->getMessage()]);
+            $this->json(['success' => false, 'message' => 'Falha ao gerar artefato do job.'], 500);
         }
     }
 

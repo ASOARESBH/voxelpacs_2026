@@ -18,13 +18,24 @@ class ReportPdfService {
     }
 
     public function stream(object $estudo, object $report): void {
-        $html = $this->buildHtml($estudo, $report);
+        $pdf = $this->renderBinary($estudo, $report);
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="laudo-' . ($estudo->accession_number ?: $report->id) . '.pdf"');
+        header('Content-Length: ' . strlen($pdf));
+        echo $pdf;
+    }
 
+    /**
+     * Gera o binário PDF sem produzir saída HTTP. Usado pelo Delivery Hub para
+     * encapsular exatamente a versão clínica do laudo em um objeto DICOM.
+     */
+    public function renderBinary(object $estudo, object $report): string {
+        $html = $this->buildHtml($estudo, $report);
         $dompdf = new Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true]);
         $dompdf->loadHtml($html, 'UTF-8');
         $dompdf->setPaper('A4');
         $dompdf->render();
-        $dompdf->stream('laudo-' . ($estudo->accession_number ?: $report->id) . '.pdf', ['Attachment' => false]);
+        return $dompdf->output();
     }
 
     private function buildHtml(object $estudo, object $report): string {

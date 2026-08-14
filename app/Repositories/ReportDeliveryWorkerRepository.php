@@ -139,6 +139,56 @@ class ReportDeliveryWorkerRepository
     }
 
     /** @return array<string,mixed>|null */
+    public function findLeasedJobContext(int $jobId, string $workerId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT j.id, j.outbox_id, j.tenant_id, j.estabelecimento_id, j.transport,
+                    o.report_id, o.report_version, o.estudo_id
+             FROM pacs_report_delivery_jobs j
+             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+             WHERE j.id = :id
+               AND j.status = 'processing'
+               AND j.locked_by = :worker_id
+             LIMIT 1"
+        );
+        $stmt->execute([':id' => $jobId, ':worker_id' => $workerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function recordArtifact(
+        int $outboxId,
+        int $tenantId,
+        ?int $estabelecimentoId,
+        string $artifactType,
+        string $storagePath,
+        string $sha256,
+        int $fileSize
+    ): void {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO pacs_report_delivery_artifacts
+                (outbox_id, tenant_id, estabelecimento_id, artifact_type, storage_path, sha256, file_size_bytes)
+             VALUES
+                (:outbox_id, :tenant_id, :estabelecimento_id, :artifact_type, :storage_path, :sha256, :file_size_bytes)
+             ON DUPLICATE KEY UPDATE
+                storage_path = VALUES(storage_path), sha256 = VALUES(sha256),
+                file_size_bytes = VALUES(file_size_bytes), created_at = NOW()"
+        );
+        $stmt->bindValue(':outbox_id', $outboxId, PDO::PARAM_INT);
+        $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
+        if ($estabelecimentoId === null) {
+            $stmt->bindValue(':estabelecimento_id', null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':artifact_type', $artifactType, PDO::PARAM_STR);
+        $stmt->bindValue(':storage_path', $storagePath, PDO::PARAM_STR);
+        $stmt->bindValue(':sha256', $sha256, PDO::PARAM_STR);
+        $stmt->bindValue(':file_size_bytes', $fileSize, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    /** @return array<string,mixed>|null */
     private function lockJob(int $jobId, string $workerId): ?array
     {
         $stmt = $this->pdo->prepare(
