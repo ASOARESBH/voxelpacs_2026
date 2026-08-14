@@ -8,6 +8,7 @@ use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\PedidoMedicoService;
 use App\Services\ReportChatService;
+use App\Services\ReportAccessService;
 
 class ReportChatController extends Controller
 {
@@ -32,6 +33,10 @@ class ReportChatController extends Controller
         }
 
         try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             $context = $this->service->context($reportId, $tenantId, (int) Auth::userId());
             if (!$context) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
@@ -72,6 +77,10 @@ class ReportChatController extends Controller
         }
 
         try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             $result = $this->service->send($reportId, $tenantId, (int) Auth::userId(), $input);
             if (!$result['ok']) {
                 $this->json(['ok' => false, 'msg' => $this->message($result['error'] ?? '')], 422);
@@ -105,6 +114,10 @@ class ReportChatController extends Controller
         }
 
         try {
+            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+                $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
+                return;
+            }
             $result = $this->service->complete($reportId, $tenantId, (int) Auth::userId());
             if (!$result['ok']) {
                 $this->json(['ok' => false, 'msg' => $this->message($result['error'] ?? '')], 422);

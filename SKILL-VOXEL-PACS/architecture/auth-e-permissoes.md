@@ -39,7 +39,7 @@ Em paralelo, `EstudosController` (Worklist) tinha o mesmo problema com sintaxe d
 ## Autorização / Permissões
 
 - Modelo: RBAC simples por `bi_users.role`, checado via `App\Core\Permission::can($role, $permissao)` (`Auth::can()`) — infraestrutura existe mas **não é chamada por nenhum Controller hoje** (débito conhecido, `docs/MANUAL_TECNICO.md` §15.5).
-- Acesso a um estudo específico: por `tenant_id` (`bi_pacs_estudos.tenant_id`, populado no sync a partir do roteamento InstitutionName → Negócio em `ServidorPacsController`) — não há controle adicional por médico/instituição individual dentro de um mesmo tenant (não existe tabela médico↔unidade de acesso restrito; se isso for necessário, é uma feature nova, não uma reaproveitável hoje).
+- Acesso a estudo e laudo: nunca confiar apenas em um ID numérico ou em `tenant_id` de forma isolada. `ReportAccessService` resolve o laudo com seu estudo e aplica, no backend, tenant do report, `InstitutionName` permitido e posse exclusiva quando o perfil é médico restrito. No schema que não possui `bi_pacs_estudos.tenant_id`, o vínculo ao tenant é validado por `InstitutionResolverService::getInstitutionNamesByTenant()`.
 
 ## Perguntas que toda alteração nesta área deve responder
 
@@ -71,7 +71,8 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 1. `/usuarios`, `/configuracoes`, `/sla-regras` e `/modalidades` ainda não aplicam uma política de autorização equivalente para perfil médico. Não foram alterados para limitar o raio desta correção.
 2. `App\Core\Permission`, `Auth::can()` e `PermissionMiddleware` continuam como infraestrutura RBAC não conectada ao despacho das rotas. Não foram removidos nem ativados nesta entrega, pois RBAC por role não substitui a regra de posse `usuário → médico`.
 3. Todo novo endpoint que receba `medicoId` pela rota ou querystring deve aplicar `MedicoAccess::currentMedicoId()` antes de consultar ou alterar dados do cadastro.
-4. A validação ponta a ponta deve ser executada manualmente com superadmin, administrador do tenant, analista/viewer e médico vinculado; não há suíte de integração autenticada no projeto.
+4. **Correção crítica IDOR de laudos — 2026-08-14:** endpoints que recebem `report_id` ou `estudo_id` não podem carregar, listar histórico, gerar PDF, exibir assinatura, consultar/inserir Medidas, operar CHAT, abrir Peer Review, salvar, assinar, restaurar versão ou alterar situação sem chamar `ReportAccessService`. O serviço é a fonte única de autorização de report/estudo e devolve ausência de recurso ao usuário não autorizado, sem confirmar a existência do ID. Tentativas negadas são registradas em `Logger::warning`.
+5. A validação ponta a ponta deve ser executada manualmente com superadmin, administrador do tenant, analista/viewer e médico vinculado; não há suíte de integração autenticada no projeto.
 
 ## Última análise
-2026-08-13
+2026-08-14

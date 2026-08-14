@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Services\ReportMeasurementService;
+use App\Services\ReportAccessService;
 
 /**
  * Endpoints autenticados do laudário para consulta e inserção de medições
@@ -28,6 +29,10 @@ class ReportMeasurementsController extends Controller
         }
 
         $reportId = (int) ($_GET['report_id'] ?? 0);
+        if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+            $this->json(['ok' => false, 'error' => 'laudo_nao_encontrado'], 404);
+            return;
+        }
         $result = $this->service->listAvailable($reportId);
         header('Cache-Control: no-store, private');
 
@@ -48,8 +53,14 @@ class ReportMeasurementsController extends Controller
             return;
         }
 
+        $reportId = (int) ($input['report_id'] ?? 0);
+        if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+            $this->json(['ok' => false, 'error' => 'laudo_nao_encontrado'], 404);
+            return;
+        }
+
         $result = $this->service->insert(
-            (int) ($input['report_id'] ?? 0),
+            $reportId,
             is_array($input['measurement_ids'] ?? null) ? $input['measurement_ids'] : [],
             (string) ($input['secao_destino'] ?? 'achados')
         );

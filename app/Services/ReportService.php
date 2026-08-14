@@ -81,15 +81,12 @@ class ReportService {
         $readonly = false;
         $lockInfo = null;
 
-        $donoId = $estudo->usuario_responsavel_id ? (int) $estudo->usuario_responsavel_id : null;
-
-        // A posse nasce no botão Assumir da worklist e é exclusiva. Não há
-        // reatribuição automática por expiração de lock: isso poderia transferir
-        // um laudo clínico a outro médico sem uma ação explícita e auditável.
-        if (!$donoId || $donoId !== $userId) {
-            AuditLogger::log('report.acesso_negado_posse', 'bi_pacs_estudos', $estudo->id, [
+        // A abertura do editor é um acesso clínico sensível. A autorização
+        // central confere tenant, InstitutionName permitido e posse exclusiva
+        // para médico restrito antes de criar ou carregar qualquer report.
+        if (!(new ReportAccessService())->isStudyAllowed($estudo)) {
+            AuditLogger::log('report.acesso_negado', 'bi_pacs_estudos', (int) $estudo->id, [
                 'usuario_tentativa_id' => $userId,
-                'usuario_responsavel_id' => $donoId,
                 'situacao' => $estudo->situacao ?? null,
             ]);
             return [
@@ -206,7 +203,7 @@ class ReportService {
      * POST /reports/save — autosave (modo=auto), salvar rascunho ou salvar explícito.
      */
     public function salvar(int $reportId, array $secoes, string $modo, ?int $templateId = null): array {
-        $report = $this->repo->findReportById($reportId);
+        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
@@ -311,7 +308,7 @@ class ReportService {
      * $modo: 'somente' → situação vai só até 'assinado'; 'fechar' → avança até 'liberado'.
      */
     public function assinar(int $reportId, string $modo): array {
-        $report = $this->repo->findReportById($reportId);
+        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
         // 4(b) — trava de re-assinatura, mas permite concluir um ciclo de Peer Review.
@@ -540,14 +537,15 @@ class ReportService {
         return $this->repo->listVersions($reportId);
     }
 
-    public function restoreVersion(int $reportId, int $versionId): array {
+        public function restoreVersion(int $reportId, int $versionId): array {
+        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
+        if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+
         $version = $this->repo->findVersion($versionId);
         if (!$version || (int) $version->report_id !== $reportId) {
             return ['ok' => false, 'error' => 'versao_nao_encontrada'];
         }
 
-        $report = $this->repo->findReportById($reportId);
-        if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
         $conteudo = [];
         if (isset($version->conteudo) && is_string($version->conteudo) && trim($version->conteudo) !== '') {
             $decoded = json_decode($version->conteudo, true);
