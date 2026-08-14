@@ -135,9 +135,9 @@ class ReportDeliveryRepository
                     enabled = :enabled,
                     disparar_na_liberacao = :disparar_na_liberacao,
                     configuration_json = :configuration_json,
-                    configuration_secret = CASE WHEN :configuration_secret = ''
+                    configuration_secret = CASE WHEN :configuration_secret_check = ''
                                                 THEN configuration_secret
-                                                ELSE :configuration_secret END,
+                                                ELSE :configuration_secret_value END,
                     timeout_seconds = :timeout_seconds,
                     max_attempts = :max_attempts,
                     created_by = COALESCE(created_by, :updated_by),
@@ -151,7 +151,8 @@ class ReportDeliveryRepository
                 ':enabled' => (int) $data['enabled'],
                 ':disparar_na_liberacao' => (int) $data['disparar_na_liberacao'],
                 ':configuration_json' => $data['configuration_json'],
-                ':configuration_secret' => $secret,
+                ':configuration_secret_check' => $secret,
+                ':configuration_secret_value' => $secret,
                 ':timeout_seconds' => (int) $data['timeout_seconds'],
                 ':max_attempts' => (int) $data['max_attempts'],
                 ':updated_by' => $userId,
