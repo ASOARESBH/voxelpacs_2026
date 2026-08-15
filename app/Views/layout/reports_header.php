@@ -100,6 +100,10 @@ $chatPendente = !empty($chat['pendente']);
             <button type="button" class="btn-pacs-outline" id="btn-ai-generate" title="Gerar texto com IA (em breve)">
                 <i class="fa fa-wand-magic-sparkles"></i> Gerar Texto
             </button>
+            <button type="button" class="btn-pacs-outline" id="btn-dictate" title="Iniciar ditado por voz" aria-pressed="false">
+                <i class="fa fa-microphone"></i> <span data-dictation-label>Ditar</span>
+            </button>
+            <span id="dictation-status" class="dictation-status" role="status" aria-live="polite"></span>
             <button type="button" class="btn-pacs-outline" id="btn-save-draft" title="Salvar rascunho (Ctrl+S)">
                 <i class="fa fa-floppy-disk"></i> Salvar Rascunho
             </button>

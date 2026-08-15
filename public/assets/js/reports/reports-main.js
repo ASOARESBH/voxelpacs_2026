@@ -86,6 +86,9 @@ window.VoxelReports.main = (function () {
     function init() {
         const config = readConfig();
         window.VoxelReports.editor.init(config);
+        if (window.VoxelReports.dictation) {
+            window.VoxelReports.dictation.init(config);
+        }
         window.VoxelReports.autosave.init(config);
         window.VoxelReports.templates.init(config);
         window.VoxelReports.autotext.init(config);
