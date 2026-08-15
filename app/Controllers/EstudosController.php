@@ -118,6 +118,8 @@ class EstudosController extends Controller
                     || in_array(Auth::perfilAtual(), ['admin', 'administrador']);
         // Bypass total (vê todos os tenants) só para superadmin fora de impersonação.
         $bypassGlobal = Auth::isPlatformAdmin() && !Auth::isImpersonating();
+        // Reutilizada pelo painel-resumo; deve existir independentemente do período filtrado.
+        $today = date('Y-m-d');
 
         // ── Filtros ───────────────────────────────────────────────────────────────────────
         // Padrão: 30dias (não "hoje") para mostrar dados relevantes ao abrir o módulo
