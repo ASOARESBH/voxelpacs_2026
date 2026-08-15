@@ -10,6 +10,7 @@ window.VoxelReports.main = (function () {
         return {
                         reportId: parseInt(app.dataset.reportId, 10),
             reportToken: app.dataset.reportToken || '',
+            templateId: parseInt(app.dataset.templateId || '0', 10) || 0,
             estudoId: parseInt(app.dataset.estudoId, 10),
             studyUid: app.dataset.studyUid,
             modalidade: app.dataset.modalidade || '',

@@ -56,6 +56,7 @@ $chatPendente = !empty($chat['pendente']);
 <div id="reports-app"
      data-report-id="<?= $reportId ?>"
      data-report-token="<?= htmlspecialchars((string) ($report->public_token ?? ''), ENT_QUOTES) ?>"
+     data-template-id="<?= (int) ($report->template_id ?? 0) ?>"
      data-estudo-id="<?= (int) $estudo->id ?>"
      data-study-uid="<?= htmlspecialchars($estudo->study_instance_uid ?? '') ?>"
      data-modalidade="<?= htmlspecialchars(explode('/', (string) ($estudo->modalities ?? ''))[0] ?? '') ?>"

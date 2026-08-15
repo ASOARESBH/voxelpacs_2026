@@ -35,7 +35,13 @@ window.VoxelReports.templates = (function () {
                 if (!isEditorVazio() && !confirm('Substituir o conteúdo atual do laudo por este template?')) return;
 
                 const conteudo = typeof template.conteudo === 'string' ? JSON.parse(template.conteudo) : template.conteudo;
-                editor.loadSecoes(conteudo.secoes || {});
+                const secoes = conteudo.secoes || {};
+                // A criação de Máscara disponibiliza somente TÉCNICA, ACHADOS e
+                // IMPRESSÃO. Não inserir marcadores vazios de Exame/Conclusão/
+                // Recomendação no editor clínico.
+                editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao']);
+                config.templateId = Number(template.id) || 0;
+                window.VoxelReports.autosave.setTemplateId(config.templateId);
                 window.VoxelReports.autosave.save('rascunho');
                 modal.hide();
             });

@@ -8,6 +8,7 @@ window.VoxelReports = window.VoxelReports || {};
 window.VoxelReports.autosave = (function () {
     const editor = window.VoxelReports.editor;
     let config = null;
+    let templateId = 0;
     let lastPayload = null;
     let lastSavedAt = null;
     let saving = false;
@@ -39,7 +40,12 @@ window.VoxelReports.autosave = (function () {
         const request = fetch('/reports/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
-            body: JSON.stringify({ report_id: config.reportId, secoes, modo }),
+            body: JSON.stringify({
+                report_id: config.reportId,
+                secoes,
+                modo,
+                template_id: templateId || null,
+            }),
         })
             .then((response) => response.json())
             .then((data) => {
@@ -86,6 +92,7 @@ window.VoxelReports.autosave = (function () {
 
     function init(cfg) {
         config = cfg;
+        templateId = Number(config.templateId) || 0;
         if (config.readonly) return;
 
         const status = statusEl();
@@ -105,5 +112,10 @@ window.VoxelReports.autosave = (function () {
         if (btnDraft) btnDraft.addEventListener('click', () => save('rascunho'));
     }
 
-    return { init, save, markSaved };
+    function setTemplateId(id) {
+        templateId = Number(id) || 0;
+        if (config) config.templateId = templateId;
+    }
+
+    return { init, save, markSaved, setTemplateId };
 })();

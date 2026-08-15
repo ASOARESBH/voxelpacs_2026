@@ -13,7 +13,8 @@ window.VoxelReports.editor = (function () {
         exame: 'Exame',
         tecnica: 'Técnica',
         achados: 'Achados',
-        conclusao: 'Conclusão',
+        conclusao: 'Impressão',
+
         recomendacao: 'Recomendação',
     };
 
@@ -49,13 +50,20 @@ window.VoxelReports.editor = (function () {
         return quill;
     }
 
-    /** Reconstrói o documento inteiro a partir de {exame, tecnica, achados, conclusao, recomendacao} */
-    function loadSecoes(secoes) {
+    /**
+     * Reconstrói o documento a partir das seções solicitadas. O padrão mantém
+     * compatibilidade com históricos; Máscaras usam explicitamente apenas
+     * técnica, achados e impressão.
+     */
+    function loadSecoes(secoes, chaves = SECOES) {
         let html = '';
-        SECOES.forEach((chave) => {
+        chaves.forEach((chave) => {
+            const conteudo = String(secoes[chave] || '');
+            if (conteudo.trim() === '') return;
             html += `<h4 data-secao="${chave}">${TITULOS[chave]}</h4>`;
-            html += secoes[chave] && secoes[chave].trim() !== '' ? secoes[chave] : '<p><br></p>';
+            html += conteudo;
         });
+        if (html === '') html = '<p><br></p>';
         quill.setText('');
         quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
     }

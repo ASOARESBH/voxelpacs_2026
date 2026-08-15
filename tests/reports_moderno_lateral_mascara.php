@@ -22,6 +22,11 @@ $dispatcher = (string) file_get_contents($root . '/app/Views/reports/pdf.php');
 $editorView = (string) file_get_contents($root . '/app/Views/reports/index.php');
 $templatePath = $root . '/app/Views/reports/pdf/templates/_moderno_lateral.php';
 $template = (string) file_get_contents($templatePath);
+$header = (string) file_get_contents($root . '/app/Views/layout/reports_header.php');
+$mainJs = (string) file_get_contents($root . '/public/assets/js/reports/reports-main.js');
+$editorJs = (string) file_get_contents($root . '/public/assets/js/reports/reports-editor.js');
+$autosaveJs = (string) file_get_contents($root . '/public/assets/js/reports/reports-autosave.js');
+$templatesJs = (string) file_get_contents($root . '/public/assets/js/reports/reports-templates.js');
 
 foreach ([
     [$controller, 'carregarMascaraParaPdf'],
@@ -36,6 +41,13 @@ foreach ([
     [$editorView, "<strong>' + secao.rotulo + '</strong>"],
     [$template, '$tituloLaudo'],
     [$template, 'pdf-clinical-section-title'],
+    [$header, 'data-template-id'],
+    [$mainJs, 'templateId: parseInt(app.dataset.templateId'],
+    [$autosaveJs, 'template_id: templateId || null'],
+    [$autosaveJs, 'function setTemplateId(id)'],
+    [$templatesJs, "editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao'])"],
+    [$templatesJs, 'window.VoxelReports.autosave.setTemplateId(config.templateId)'],
+    [$editorJs, "conclusao: 'Impressão'"],
 ] as [$source, $needle]) {
     mascaraPdfAssert(strpos($source, $needle) !== false, "Contrato de Máscara ausente: {$needle}");
 }
@@ -93,6 +105,8 @@ $download = false;
 ob_start();
 require $root . '/app/Views/reports/pdf.php';
 $dispatcherHtml = (string) ob_get_clean();
+mascaraPdfAssert(strpos($templatesJs, "['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao']") === false, 'O fluxo ativo da Máscara não pode carregar os cinco marcadores legados.');
+
 foreach ([
     'Técnica revisada pelo médico.',
     'Achados revisados pelo médico.',
