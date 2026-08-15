@@ -7,6 +7,20 @@ return [
     'comum.acoes.voltar' => 'Back',
     'comum.acoes.titulo' => 'Actions',
 
+    // Authentication — login and language selector
+    'auth.login.titulo'                    => 'Access your account',
+    'auth.login.subtitulo'                 => 'Enter your credentials to continue',
+    'auth.login.email'                     => 'Email',
+    'auth.login.senha'                     => 'Password',
+    'auth.login.esqueceu_senha'            => 'Forgot your password?',
+    'auth.login.entrar'                    => 'Sign in',
+    'auth.login.autenticando'              => 'Signing in…',
+    'auth.login.mostrar_senha'             => 'Show password',
+    'auth.login.idioma_aria'               => 'Select language',
+    'auth.login.direitos_reservados'       => 'All rights reserved',
+    'auth.login.erro_campos_obrigatorios'  => 'Complete all fields.',
+    'auth.login.erro_credenciais'          => 'Incorrect email or password.',
+
     // /platform/negocios (listagem) — i18n pilot screen (2026-07-15)
     'negocios.index.titulo'            => 'Businesses',
     'negocios.index.subtitulo'         => 'Manage the businesses (tenants) registered on the platform',

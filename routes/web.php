@@ -6,6 +6,7 @@ use App\Core\Router;
 // ============================================================
 Router::get('/login',  'AuthController@showLogin');
 Router::post('/login', 'AuthController@login');
+Router::post('/login/idioma', 'AuthController@setLoginLocale');
 Router::get('/logout', 'AuthController@logout');
 Router::get('/selecionar-empresa',  'AuthController@selectTenant');
 Router::post('/selecionar-empresa', 'AuthController@doSelectTenant');

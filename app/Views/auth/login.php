@@ -4,8 +4,9 @@
          alt="VOXEL PACS — Smart Imaging. Secure Data. Better Care.">
 </div>
 
-<div class="auth-title">Acesse sua conta</div>
-<div class="auth-subtitle">Entre com suas credenciais para continuar</div>
+<?php $loginLocale = \App\Core\Translator::locale(); ?>
+<div class="auth-title"><?= htmlspecialchars(t('auth.login.titulo')) ?></div>
+<div class="auth-subtitle"><?= htmlspecialchars(t('auth.login.subtitulo')) ?></div>
 
 <!-- Alertas dinâmicos -->
 <?php if (!empty($error)): ?>
@@ -39,7 +40,8 @@
     <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
 
     <div class="field-group">
-        <label class="field-label" for="inputEmail">E-mail</label>
+        <label class="field-label" for="inputEmail"><?= htmlspecialchars(t('auth.login.email')) ?></label>
+
         <div class="field-wrap">
             <i class="fa fa-envelope field-icon"></i>
             <input type="email" id="inputEmail" name="email" class="field-input"
@@ -49,27 +51,37 @@
     </div>
 
     <div class="field-group">
-        <label class="field-label" for="inputSenha">Senha</label>
+        <label class="field-label" for="inputSenha"><?= htmlspecialchars(t('auth.login.senha')) ?></label>
+
         <div class="field-wrap">
             <i class="fa fa-lock field-icon"></i>
             <input type="password" id="inputSenha" name="password" class="field-input"
                    style="padding-right:42px" placeholder="••••••••" required>
-            <button type="button" class="btn-eye" id="btnEye" onclick="toggleSenha()" title="Mostrar senha">
+            <button type="button" class="btn-eye" id="btnEye" onclick="toggleSenha()" title="<?= htmlspecialchars(t('auth.login.mostrar_senha')) ?>">
+
                 <i class="fa fa-eye" id="iconEye"></i>
             </button>
         </div>
         <div style="text-align:right;margin-top:.4rem;">
-            <a href="/esqueci-senha" style="font-size:.78rem;">Esqueceu a senha?</a>
+            <a href="/esqueci-senha" style="font-size:.78rem;"><?= htmlspecialchars(t('auth.login.esqueceu_senha')) ?></a>
+
         </div>
     </div>
 
-    <button type="submit" class="btn-login" id="btnLogin">
-        <i class="fa fa-arrow-right-to-bracket me-2"></i>Entrar no sistema
+<button type="submit" class="btn-login" id="btnLogin" data-authenticating="<?= htmlspecialchars(t('auth.login.autenticando')) ?>">
+        <i class="fa fa-arrow-right-to-bracket me-2"></i><?= htmlspecialchars(t('auth.login.entrar')) ?>
     </button>
 </form>
 
+<form class="auth-language-switcher" method="POST" action="/login/idioma" aria-label="<?= htmlspecialchars(t('auth.login.idioma_aria')) ?>">
+    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+    <button type="submit" name="locale" value="pt_BR" class="auth-language-switcher__button<?= $loginLocale === 'pt_BR' ? ' is-active' : '' ?>" aria-pressed="<?= $loginLocale === 'pt_BR' ? 'true' : 'false' ?>" title="<?= htmlspecialchars(t('comum.idioma.pt_br')) ?>">PT</button>
+    <button type="submit" name="locale" value="en" class="auth-language-switcher__button<?= $loginLocale === 'en' ? ' is-active' : '' ?>" aria-pressed="<?= $loginLocale === 'en' ? 'true' : 'false' ?>" title="<?= htmlspecialchars(t('comum.idioma.en')) ?>">EN</button>
+    <button type="submit" name="locale" value="es" class="auth-language-switcher__button<?= $loginLocale === 'es' ? ' is-active' : '' ?>" aria-pressed="<?= $loginLocale === 'es' ? 'true' : 'false' ?>" title="<?= htmlspecialchars(t('comum.idioma.es')) ?>">ES</button>
+</form>
+
 <div class="auth-footer">
-    &copy; <?= date('Y') ?> <span>VOXEL PACS</span> &mdash; Todos os direitos reservados
+    &copy; <?= date('Y') ?> <span>VOXEL PACS</span> &mdash; <?= htmlspecialchars(t('auth.login.direitos_reservados')) ?>
 </div>
 
 <script>
@@ -88,7 +100,8 @@ function toggleSenha() {
 // Feedback visual no submit
 document.getElementById('loginForm').addEventListener('submit', function() {
     const btn = document.getElementById('btnLogin');
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i>Autenticando…';
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i>' + btn.dataset.authenticating;
+
     btn.disabled = true;
 });
 </script>

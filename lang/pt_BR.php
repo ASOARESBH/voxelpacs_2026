@@ -9,6 +9,20 @@ return [
     'comum.acoes.voltar' => 'Voltar',
     'comum.acoes.titulo' => 'Ações',
 
+    // Autenticação — login e seletor de idioma
+    'auth.login.titulo'                    => 'Acesse sua conta',
+    'auth.login.subtitulo'                 => 'Entre com suas credenciais para continuar',
+    'auth.login.email'                     => 'E-mail',
+    'auth.login.senha'                     => 'Senha',
+    'auth.login.esqueceu_senha'            => 'Esqueceu a senha?',
+    'auth.login.entrar'                    => 'Entrar no sistema',
+    'auth.login.autenticando'              => 'Autenticando…',
+    'auth.login.mostrar_senha'             => 'Mostrar senha',
+    'auth.login.idioma_aria'               => 'Selecionar idioma',
+    'auth.login.direitos_reservados'       => 'Todos os direitos reservados',
+    'auth.login.erro_campos_obrigatorios'  => 'Preencha todos os campos.',
+    'auth.login.erro_credenciais'          => 'E-mail ou senha incorretos.',
+
     // /platform/negocios (listagem) — tela piloto de i18n (2026-07-15)
     'negocios.index.titulo'            => 'Negócios',
     'negocios.index.subtitulo'         => 'Gerencie os negócios (tenants) cadastrados na plataforma',

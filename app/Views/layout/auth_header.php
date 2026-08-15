@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<?php
+$documentLocale = \App\Core\Translator::locale();
+$documentLang = ['pt_BR' => 'pt-BR', 'en' => 'en', 'es' => 'es'][$documentLocale] ?? 'pt-BR';
+?>
+<html lang="<?= htmlspecialchars($documentLang) ?>">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

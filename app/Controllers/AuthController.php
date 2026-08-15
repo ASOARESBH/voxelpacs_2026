@@ -3,11 +3,15 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Controller;
+use App\Core\Translator;
 
 class AuthController extends Controller {
 
-    public function showLogin(): void {
+        public function showLogin(): void {
+        $this->applyLoginLocale();
+
         // Gera token CSRF se não existir
+
         if (empty($_SESSION['csrf_token'])) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
@@ -23,8 +27,11 @@ class AuthController extends Controller {
         $this->view('auth/login', ['title' => 'Login — VOXEL PACS'], 'auth');
     }
 
-    public function login(): void {
+        public function login(): void {
+        $this->applyLoginLocale();
+
         // Gera token CSRF se não existir
+
         if (empty($_SESSION['csrf_token'])) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
@@ -33,17 +40,19 @@ class AuthController extends Controller {
         $password = $_POST['password'] ?? '';
 
         if (!$email || !$password) {
-            $this->view('auth/login', [
+                        $this->view('auth/login', [
                 'title' => 'Login — VOXEL PACS',
-                'error' => 'Preencha todos os campos.',
+                'error' => Translator::t('auth.login.erro_campos_obrigatorios'),
+
             ], 'auth');
             return;
         }
 
         if (!Auth::login($email, $password)) {
-            $this->view('auth/login', [
+                        $this->view('auth/login', [
                 'title' => 'Login — VOXEL PACS',
-                'error' => 'E-mail ou senha incorretos.',
+                'error' => Translator::t('auth.login.erro_credenciais'),
+
             ], 'auth');
             return;
         }
@@ -66,7 +75,27 @@ class AuthController extends Controller {
         }
     }
 
+        /**
+     * Atualiza a preferência de idioma antes da autenticação.
+     * A alteração é protegida por CSRF e limitada aos locais do Translator.
+     */
+    public function setLoginLocale(): void {
+        $csrf = (string) ($_POST['_csrf_token'] ?? '');
+        $sessionCsrf = (string) ($_SESSION['csrf_token'] ?? '');
+        if ($csrf === '' || $sessionCsrf === '' || !hash_equals($sessionCsrf, $csrf)) {
+            $this->redirect('/login');
+        }
+
+        $locale = (string) ($_POST['locale'] ?? '');
+        if (in_array($locale, Translator::SUPPORTED, true)) {
+            $_SESSION['login_locale'] = $locale;
+        }
+
+        $this->redirect('/login');
+    }
+
     public function logout(): void {
+
         Auth::logout();
         $this->redirect('/login');
     }
@@ -94,7 +123,12 @@ class AuthController extends Controller {
         ], 'auth');
     }
 
+        private function applyLoginLocale(): void {
+        Translator::setLocale($_SESSION['login_locale'] ?? Translator::FALLBACK);
+    }
+
     public function setTenant(): void {
+
         if (!Auth::check()) {
             $this->redirect('/login');
         }

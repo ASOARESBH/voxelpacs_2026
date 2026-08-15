@@ -316,3 +316,44 @@ html, body {
     .auth-brand { display: none; }
     .auth-panel { min-height: 100vh; padding: 48px 24px; }
 }
+
+/* Seletor de idioma — exibido abaixo do botão de login */
+.auth-language-switcher {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 18px;
+}
+.auth-language-switcher__button {
+    min-width: 38px;
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    background: var(--white);
+    color: var(--gray-500);
+    font-family: var(--font-head);
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: color .15s, background .15s, border-color .15s, box-shadow .15s;
+}
+.auth-language-switcher__button:hover {
+    border-color: var(--royal);
+    color: var(--royal);
+}
+.auth-language-switcher__button.is-active {
+    border-color: var(--royal);
+    background: var(--royal);
+    color: var(--white);
+    box-shadow: 0 3px 8px rgba(26,86,219,.22);
+}
+.auth-language-switcher__button:focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(26,86,219,.22);
+}
+@media (max-width: 480px) {
+    .auth-language-switcher { margin-top: 16px; }
+    .auth-language-switcher__button { min-width: 40px; min-height: 36px; }
+}

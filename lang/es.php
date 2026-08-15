@@ -7,6 +7,20 @@ return [
     'comum.acoes.voltar' => 'Volver',
     'comum.acoes.titulo' => 'Acciones',
 
+    // Autenticación — inicio de sesión y selector de idioma
+    'auth.login.titulo'                    => 'Acceda a su cuenta',
+    'auth.login.subtitulo'                 => 'Ingrese sus credenciales para continuar',
+    'auth.login.email'                     => 'Correo electrónico',
+    'auth.login.senha'                     => 'Contraseña',
+    'auth.login.esqueceu_senha'            => '¿Olvidó su contraseña?',
+    'auth.login.entrar'                    => 'Iniciar sesión',
+    'auth.login.autenticando'              => 'Autenticando…',
+    'auth.login.mostrar_senha'             => 'Mostrar contraseña',
+    'auth.login.idioma_aria'               => 'Seleccionar idioma',
+    'auth.login.direitos_reservados'       => 'Todos los derechos reservados',
+    'auth.login.erro_campos_obrigatorios'  => 'Complete todos los campos.',
+    'auth.login.erro_credenciais'          => 'Correo electrónico o contraseña incorrectos.',
+
     // /platform/negocios (listado) — pantalla piloto de i18n (2026-07-15)
     'negocios.index.titulo'            => 'Negocios',
     'negocios.index.subtitulo'         => 'Administre los negocios (tenants) registrados en la plataforma',
