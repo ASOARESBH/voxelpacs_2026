@@ -18,6 +18,8 @@ $checks = [
     'worklist_view' => $root . '/app/Views/estudos/index.php',
     'header' => $root . '/app/Views/layout/reports_header.php',
     'reports_js' => $root . '/public/assets/js/reports/reports-main.js',
+    'reports_footer' => $root . '/app/Views/layout/reports_footer.php',
+    'view_core' => $root . '/app/Core/View.php',
     'chat_service' => $root . '/app/Services/ReportChatService.php',
 ];
 
@@ -42,10 +44,16 @@ $mustContain = [
     ['access', 'findAuthorizedReportByPublicToken'],
     ['reports_controller', 'showByToken'],
     ['reports_controller', 'pdfByToken'],
+    ['reports_controller', 'findAuthorizedReportByPublicToken($token)'],
+    ['reports_controller', '$this->pdf();'],
     ['worklist_controller', 'report_public_token'],
     ['worklist_view', '/reports/r/'],
     ['header', 'data-report-token'],
     ['reports_js', 'config.reportToken'],
+    ['reports_js', 'function openSecurePdf(pdfUrl)'],
+    ['reports_js', '`/reports/r/${encodeURIComponent(config.reportToken)}/pdf`'],
+    ['reports_footer', 'reports-main.js?v=<?= $v ?>'],
+    ['view_core', "ASSET_VERSION = '2.1.5'"],
     ['chat_service', "'/reports/r/'"],
 ];
 

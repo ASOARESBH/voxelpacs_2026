@@ -19,19 +19,25 @@ window.VoxelReports.main = (function () {
             csrf: app.dataset.csrf,
         };
     }
+    function openSecurePdf(pdfUrl) {
+        if (!pdfUrl) {
+            alert('Não foi possível preparar a URL segura do PDF. Recarregue o laudo e tente novamente.');
+            return;
+        }
+        window.open(pdfUrl, '_blank');
+    }
+
     function wireTopButtons(config) {
+        // PDF e impressão usam exclusivamente o token opaco do report. Nunca
+        // reconstituir a URL a partir de reportId, que é identificador interno.
         const pdfUrl = config.reportToken
             ? `/reports/r/${encodeURIComponent(config.reportToken)}/pdf`
             : null;
         const btnViewPdf = document.getElementById('btn-view-pdf');
-        if (btnViewPdf) btnViewPdf.addEventListener('click', () => {
-            if (pdfUrl) window.open(pdfUrl, '_blank');
-        });
+        if (btnViewPdf) btnViewPdf.addEventListener('click', () => openSecurePdf(pdfUrl));
 
         const btnPrint = document.getElementById('btn-print');
-        if (btnPrint) btnPrint.addEventListener('click', () => {
-            if (pdfUrl) window.open(pdfUrl, '_blank');
-        });
+        if (btnPrint) btnPrint.addEventListener('click', () => openSecurePdf(pdfUrl));
 
         const btnViewer = document.getElementById('btn-open-viewer');
         if (btnViewer) btnViewer.addEventListener('click', () => window.open(`/estudos/${config.estudoId}/abrir`, '_blank'));
