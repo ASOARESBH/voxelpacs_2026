@@ -919,6 +919,7 @@ class ReportsController extends Controller
         $params = ['id' => $templateId, 'tenant_id' => $tenantId];
         $queries = [
             "SELECT id, nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
+            "SELECT id, titulo AS nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
             "SELECT id, nome, modalidade, conteudo FROM report_templates {$where}",
             "SELECT id, titulo AS nome, modalidade, conteudo FROM report_templates {$where}",
         ];

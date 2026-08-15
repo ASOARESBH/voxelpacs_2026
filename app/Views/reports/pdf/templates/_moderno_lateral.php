@@ -32,6 +32,12 @@ $formatarDataHora = static function (?string $valor): string {
 $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—';
 $descricaoExame = trim((string) ($r['study_description'] ?? ''));
 if ($descricaoExame === '') {
+    $descricaoExame = trim((string) ($r['requested_procedure_desc'] ?? ''));
+}
+if ($descricaoExame === '') {
+    $descricaoExame = trim((string) ($r['body_part_examined'] ?? ''));
+}
+if ($descricaoExame === '') {
     $descricaoExame = trim((string) ($r['modalities'] ?? 'Laudo Médico'));
 }
 // A Máscara define o título clínico do laudo quando estiver vinculada ao report.
@@ -73,14 +79,14 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
         .pdf-patient-line strong { font-weight: 700; }
 
-        .pdf-exam-title { margin: 29px 0 23px; color: #111; font-size: 13px; font-weight: 700; line-height: 1.3; text-align: center; text-transform: uppercase; }
-        .pdf-report-content { color: #1b1b1b; font-size: 11px; line-height: 1.55; text-align: left; }
-        .pdf-clinical-section { margin: 0 0 17px; page-break-inside: avoid; }
+        .pdf-exam-title { margin: 29px 0 24px; color: #111; font-size: 17px; font-weight: 700; line-height: 1.34; text-align: center; text-transform: uppercase; }
+        .pdf-report-content { color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
+        .pdf-clinical-section { margin: 0 0 21px; page-break-inside: avoid; }
         .pdf-clinical-section:last-child { margin-bottom: 0; }
-        .pdf-clinical-section-title { margin: 0 0 5px; color: #111; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .pdf-clinical-section-content { font-size: 11px; line-height: 1.55; }
-        .pdf-clinical-section-content p { margin: 0 0 9px; }
-        .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 16px 0 5px; font: 700 11px Arial, Helvetica, sans-serif; }
+        .pdf-clinical-section-title { margin: 0 0 6px; color: #111; font-size: 12px; font-weight: 700; line-height: 1.35; text-transform: uppercase; }
+        .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
+        .pdf-clinical-section-content p { margin: 0 0 11px; }
+        .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 18px 0 6px; font: 700 12px Arial, Helvetica, sans-serif; }
         .pdf-report-content h1:first-child, .pdf-report-content h2:first-child, .pdf-report-content h3:first-child, .pdf-report-content h4:first-child, .pdf-report-content h5:first-child, .pdf-report-content h6:first-child { margin-top: 0; }
         .pdf-report-content p { margin: 0 0 9px; }
         .pdf-report-content ul, .pdf-report-content ol { margin: 0 0 9px 19px; padding: 0; }
@@ -117,7 +123,8 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
             .pdf-exam-title { margin-top: 29px; }
             .pdf-signature { margin-top: auto; padding-top: 50px; }
             .pdf-footer { margin-top: 12px; }
-            .pdf-report-content { font-size: 10.5px; line-height: 1.52; }
+            .pdf-report-content, .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
+            .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }
     </style>
 </head>

@@ -39,7 +39,14 @@ Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto 
 
 ### Contrato visual — Moderno Lateral (Orix)
 
-O partial `_moderno_lateral.php` é a fonte única da pré-visualização, de `Imprimir` e de `Baixar PDF` no navegador. Ele usa A4 em branco, cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, título do exame em caixa alta, corpo clínico livre e assinatura centralizada com identificação digital. As regras `@page` mantêm a mesma geometria A4 entre a pré-visualização e a impressão; a composição não cria seções clínicas fixas, não inventa dados de responsável técnico e usa apenas os campos já resolvidos por `ReportsController::pdf()`.
+O partial `_moderno_lateral.php` é a fonte única da pré-visualização, de `Imprimir` e de `Baixar PDF` no navegador. Ele usa A4 em branco, cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, assinatura centralizada com identificação digital e as seguintes regras clínicas de apresentação:
+
+- Se o report possuir `template_id`, o título centralizado em negrito vem da Máscara vinculada (`reports.template_id` → `report_templates.nome` ou `titulo`). Sem vínculo, o fallback é `Study Description`, depois procedimento solicitado, parte do corpo e, por último, modalidade.
+- A aplicação ativa de Máscara coloca somente **TÉCNICA**, **ACHADOS** e **IMPRESSÃO** no editor. As chaves internas permanecem `secao_tecnica`, `secao_achados` e `secao_conclusao`; no Moderno Lateral, `conclusao` é apresentado como **IMPRESSÃO**.
+- O título usa 17px e o corpo clínico usa 13px com entrelinha 1.62, inclusive em `@media print`, para leitura confortável sem alterar o conteúdo, a assinatura ou a auditoria do report.
+- As regras `@page` mantêm a mesma geometria A4 entre pré-visualização e impressão. Seções vazias são omitidas, e documentos extensos podem continuar em nova página sem sobreposição.
+
+A composição não inventa dados de responsável técnico e usa apenas os campos já resolvidos por `ReportsController::pdf()`.
 
 ## Resolução do template (unidade → laudo)
 

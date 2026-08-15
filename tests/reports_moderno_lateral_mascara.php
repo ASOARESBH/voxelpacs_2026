@@ -32,6 +32,7 @@ foreach ([
     [$controller, 'carregarMascaraParaPdf'],
     [$controller, "'mascara_titulo'"],
     [$controller, "'mascara_secoes'"],
+    [$controller, 'titulo AS nome, modalidade, secao_exame'],
     [$dispatcher, '$tituloMascara'],
     [$dispatcher, "'TÉCNICA'"],
     [$dispatcher, "'ACHADOS'"],
@@ -41,6 +42,10 @@ foreach ([
     [$editorView, "<strong>' + secao.rotulo + '</strong>"],
     [$template, '$tituloLaudo'],
     [$template, 'pdf-clinical-section-title'],
+    [$template, 'font-size: 17px'],
+    [$template, 'font-size: 13px'],
+    [$template, "requested_procedure_desc"],
+    [$template, "body_part_examined"],
     [$header, 'data-template-id'],
     [$mainJs, 'templateId: parseInt(app.dataset.templateId'],
     [$autosaveJs, 'template_id: templateId || null'],
@@ -92,6 +97,8 @@ foreach ([
     mascaraPdfAssert(strpos($html, $expected) !== false, "Renderização de Máscara não contém: {$expected}");
 }
 mascaraPdfAssert(strpos($html, '>CR</h1>') === false, 'A modalidade CR não pode substituir o título da Máscara.');
+mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título da Máscara deve ter fonte ampliada.');
+mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico deve ter fonte ampliada para leitura.');
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm
 // precedência sobre a Máscara e permanecem estruturados até a impressão.
