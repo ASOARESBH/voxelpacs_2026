@@ -31,11 +31,15 @@ Confirmado na análise: este projeto **não gera PDF binário** (sem dompdf/wkht
 | código | nome | características |
 |---|---|---|
 | `classico_centralizado` | Clássico Centralizado | **Padrão do sistema** — conteúdo idêntico ao `pdf.php` que já existia antes desta tarefa (zero regressão visual pra unidade sem template escolhido). Logo/cabeçalho centralizados, corpo justificado à esquerda, assinatura centralizada. |
-| `moderno_lateral` | Moderno Lateral | Logo à esquerda, dados do paciente em card cinza claro, corpo centralizado, assinatura centralizada, rodapé só com nome+CNPJ da unidade. |
+| `moderno_lateral` | Moderno Lateral | Composição institucional Orix: cabeçalho em duas colunas com logo à esquerda, identificação clínica compacta em duas colunas, título de exame centralizado, corpo livre em coluna única e assinatura centralizada. |
 | `corporativo_faixa` | Corporativo com Faixa | Faixa de topo em gradiente azul (logo + nome à esquerda, CNPJ/telefone à direita), paciente/exame em 2 colunas, seções com títulos em negrito — **rótulos "Análise"/"Impressão" em vez de "Achados"/"Conclusão"** (só nesta apresentação — as chaves internas `secao_achados`/`secao_conclusao` continuam as mesmas, não mexe no editor nem em `extractSecoes()`), assinatura à direita, rodapé com endereço completo. |
 | `minimalista` | Minimalista | Sem logo (cabeçalho só texto), dados do paciente numa linha compacta, espaçamento generoso entre seções, assinatura à esquerda, rodapé discreto (nome + ID do laudo). |
 
 Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto no PHP/CSS do partial. Com 4 modelos fixos, um motor de layout dirigido por configuração seria complexidade sem necessidade real; **se o catálogo crescer para customização por unidade (cores, texto de rodapé), essa é a hora de reconsiderar** um `config` estruturado.
+
+### Contrato visual — Moderno Lateral (Orix)
+
+O partial `_moderno_lateral.php` é a fonte única da pré-visualização, de `Imprimir` e de `Baixar PDF` no navegador. Ele usa A4 em branco, cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, título do exame em caixa alta, corpo clínico livre e assinatura centralizada com identificação digital. As regras `@page` mantêm a mesma geometria A4 entre a pré-visualização e a impressão; a composição não cria seções clínicas fixas, não inventa dados de responsável técnico e usa apenas os campos já resolvidos por `ReportsController::pdf()`.
 
 ## Resolução do template (unidade → laudo)
 

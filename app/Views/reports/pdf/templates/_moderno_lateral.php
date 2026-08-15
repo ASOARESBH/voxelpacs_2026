@@ -1,18 +1,42 @@
 <?php
 /**
  * Template de Laudo — "Moderno Lateral".
- * Logo à esquerda no cabeçalho, dados do paciente logo abaixo, corpo do
- * laudo centralizado, assinatura centralizada, rodapé minimalista
- * (nome + CNPJ da unidade).
+ *
+ * Composição institucional inspirada no modelo Orix: cabeçalho em duas colunas,
+ * identificação clínica compacta, texto livre em uma coluna e assinatura
+ * centralizada. Esta é a única view usada para visualização, impressão e
+ * "Salvar como PDF" pelo navegador.
  *
  * Variáveis recebidas do dispatcher (reports/pdf.php): $r, $paciente, $download.
  */
-$unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['tenant_nome'] ?? 'Clínica';
-$cnpjFmt = '';
-if (!empty($r['unidade_cnpj']) && strlen($r['unidade_cnpj']) === 14) {
-    $c = $r['unidade_cnpj'];
-    $cnpjFmt = substr($c,0,2).'.'.substr($c,2,3).'.'.substr($c,5,3).'/'.substr($c,8,4).'-'.substr($c,12,2);
+$unidadeNome = trim((string) ($r['unidade_nome_fantasia'] ?? ''));
+if ($unidadeNome === '') {
+    $unidadeNome = trim((string) ($r['unidade_razao_social'] ?? ''));
 }
+if ($unidadeNome === '') {
+    $unidadeNome = (string) ($r['tenant_nome'] ?? 'Clínica');
+}
+
+$formatarData = static function (?string $valor): string {
+    if (!$valor) return '—';
+    $timestamp = strtotime($valor);
+    return $timestamp ? date('d/m/Y', $timestamp) : '—';
+};
+
+$formatarDataHora = static function (?string $valor): string {
+    if (!$valor) return 'Não assinado';
+    $timestamp = strtotime($valor);
+    return $timestamp ? date('d/m/Y H:i', $timestamp) : 'Não assinado';
+};
+
+$solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—';
+$descricaoExame = trim((string) ($r['study_description'] ?? ''));
+if ($descricaoExame === '') {
+    $descricaoExame = trim((string) ($r['modalities'] ?? 'Laudo Médico'));
+}
+$logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+$crm = trim((string) ($r['medico_crm'] ?? ''));
+$crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM ' . $crm);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -21,116 +45,137 @@ if (!empty($r['unidade_cnpj']) && strlen($r['unidade_cnpj']) === 14) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Laudo — <?= $paciente ?></title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Arial', sans-serif; font-size: 12px; color: #222; background: #fff; }
-        .pdf-page { max-width: 800px; margin: 0 auto; padding: 2rem; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #f1f5f9; }
+        body { color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.42; }
+        .pdf-page { display: flex; flex-direction: column; width: min(100%, 210mm); min-height: 297mm; margin: 22px auto; padding: 18mm 18mm 23mm; background: #fff; box-shadow: 0 6px 30px rgba(15,23,42,.13); }
+        .pdf-actions { display: flex; flex-wrap: wrap; gap: 8px; width: min(100%, 210mm); margin: 22px auto 0; }
+        .pdf-actions button, .pdf-actions a { display: inline-flex; align-items: center; gap: 5px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 4px; color: #1e293b; background: #fff; font: 700 12px Arial, sans-serif; text-decoration: none; cursor: pointer; }
+        .pdf-actions .btn-print { border-color: #075a9e; background: #075a9e; color: #fff; }
 
-        .pdf-header { display: flex; align-items: center; gap: 1rem; border-bottom: 2px solid #1e293b; padding-bottom: 1rem; margin-bottom: 1.25rem; }
-        .pdf-logo-box { width: 56px; height: 56px; border-radius: 6px; background: #f1f5f9; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-        .pdf-logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
-        .pdf-title-area h1 { font-size: 1.15rem; color: #1e293b; font-weight: 800; }
-        .pdf-title-area p { font-size: .75rem; color: #64748b; }
-        .pdf-header-badge { margin-left: auto; text-align: right; font-size: .7rem; color: #64748b; }
-        .pdf-header-badge strong { display: block; font-size: .8rem; color: #1e293b; }
+        .pdf-header { display: table; width: 100%; padding-bottom: 9px; border-bottom: 1px solid #777; }
+        .pdf-header-left, .pdf-header-right { display: table-cell; vertical-align: middle; }
+        .pdf-header-left { width: 62%; padding-right: 12px; }
+        .pdf-header-right { width: 38%; padding-left: 18px; text-align: right; }
+        .pdf-logo { display: block; max-width: 196px; max-height: 78px; object-fit: contain; object-position: left center; }
+        .pdf-logo-fallback { color: #075a9e; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
+        .pdf-header-right strong { display: block; font-size: 15px; line-height: 1.1; letter-spacing: .1px; }
+        .pdf-header-right span { display: block; margin-top: 4px; color: #404040; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+        .pdf-header-rules { display: inline-block; width: 106px; margin-top: 10px; border-top: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; height: 6px; }
 
-        .pdf-patient-box { background: #f8fafc; padding: .75rem 1rem; margin-bottom: 1.5rem; border-radius: 6px; }
-        .pdf-patient-box h2 { font-size: .95rem; color: #1e293b; margin-bottom: .4rem; }
-        .pdf-patient-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .25rem .5rem; }
-        .pdf-pinfo { font-size: .72rem; }
-        .pdf-pinfo span { color: #64748b; }
-        .pdf-pinfo strong { color: #1e293b; }
+        .pdf-patient { display: table; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
+        .pdf-patient-col { display: table-cell; width: 50%; vertical-align: top; }
+        .pdf-patient-col:first-child { padding-right: 16px; }
+        .pdf-patient-col:last-child { padding-left: 16px; }
+        .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
+        .pdf-patient-line strong { font-weight: 700; }
 
-        .pdf-section { margin-bottom: 1.2rem; text-align: center; }
-        .pdf-section-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; color: #1e293b; margin-bottom: .4rem; letter-spacing: .6px; }
-        .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; text-align: left; max-width: 620px; margin: 0 auto; }
-        .pdf-section-content:empty::before { content: 'Não informado.'; color: #aaa; font-style: italic; }
+        .pdf-exam-title { margin: 29px 0 23px; color: #111; font-size: 13px; font-weight: 700; line-height: 1.3; text-align: center; text-transform: uppercase; }
+        .pdf-report-content { color: #1b1b1b; font-size: 11px; line-height: 1.55; text-align: left; }
+        .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 16px 0 5px; font: 700 11px Arial, Helvetica, sans-serif; }
+        .pdf-report-content h1:first-child, .pdf-report-content h2:first-child, .pdf-report-content h3:first-child, .pdf-report-content h4:first-child, .pdf-report-content h5:first-child, .pdf-report-content h6:first-child { margin-top: 0; }
+        .pdf-report-content p { margin: 0 0 9px; }
+        .pdf-report-content ul, .pdf-report-content ol { margin: 0 0 9px 19px; padding: 0; }
+        .pdf-report-content li { margin: 0 0 3px; }
+        .pdf-report-empty { color: #737373; font-style: italic; }
 
-        .pdf-signature { border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: 2rem; text-align: center; }
-        .pdf-sig-info { font-size: .8rem; display: inline-block; }
-        .pdf-sig-info strong { display: block; font-size: .9rem; color: #1e293b; }
-        .pdf-sig-info span { color: #64748b; }
-        .pdf-hash { font-size: .65rem; color: #999; word-break: break-all; margin-top: .5rem; }
+        .pdf-signature { margin-top: auto; padding-top: 50px; text-align: center; page-break-inside: avoid; }
+        .pdf-signature-image { display: block; max-width: 210px; max-height: 68px; margin: 0 auto 3px; object-fit: contain; }
+        .pdf-signer-name { font-size: 10px; font-weight: 700; }
+        .pdf-signer-details, .pdf-verification { color: #404040; font-size: 8px; line-height: 1.45; }
+        .pdf-verification { margin-top: 6px; }
+        .pdf-hash { max-width: 490px; margin: 3px auto 0; color: #737373; font-size: 6.5px; line-height: 1.25; overflow-wrap: anywhere; }
 
-        .pdf-footer { border-top: 1px solid #e2e8f0; padding-top: .6rem; margin-top: 1.5rem; text-align: center; font-size: .68rem; color: #94a3b8; }
+        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; text-align: center; }
 
-        .pdf-actions { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
-        .pdf-actions button, .pdf-actions a {
-            padding: .4rem .9rem; border-radius: 4px; font-size: .8rem; cursor: pointer;
-            text-decoration: none; display: inline-flex; align-items: center; gap: .3rem;
+        @media (max-width: 680px) {
+            .pdf-page { min-height: 0; margin: 0; padding: 22px; box-shadow: none; }
+            .pdf-header, .pdf-patient { display: block; }
+            .pdf-header-left, .pdf-header-right, .pdf-patient-col { display: block; width: 100%; padding: 0 !important; text-align: left; }
+            .pdf-header-right { margin-top: 16px; }
+            .pdf-header-rules { width: 100%; }
+            .pdf-patient-col + .pdf-patient-col { margin-top: 8px; }
+            .pdf-actions { width: 100%; margin: 0; padding: 12px; }
         }
-        .btn-print { background: #1e293b; color: #fff; border: none; }
-        .btn-back  { background: #f1f5f9; color: #333; border: 1px solid #ccc; }
-        @media print { .pdf-actions { display: none !important; } body { background: #fff; } }
+
+        @media print {
+            @page { size: A4 portrait; margin: 0; }
+            html, body { width: 210mm; min-height: 297mm; background: #fff; }
+            body { font-size: 11px; }
+            .pdf-actions { display: none !important; }
+            .pdf-page { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; margin: 0; padding: 18mm 18mm 23mm; box-shadow: none; }
+            .pdf-header, .pdf-patient, .pdf-signature, .pdf-footer { position: static; }
+            .pdf-patient { margin-top: 11px; }
+            .pdf-exam-title { margin-top: 29px; }
+            .pdf-signature { margin-top: auto; padding-top: 50px; }
+            .pdf-footer { margin-top: 12px; }
+            .pdf-report-content { font-size: 10.5px; line-height: 1.52; }
+        }
     </style>
 </head>
 <body>
-<div class="pdf-page">
-
     <div class="pdf-actions">
-        <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-        <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
-        <a href="/estudos" class="btn-back">← Worklist</a>
+        <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
+        <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
+        <a href="/estudos">Voltar à Worklist</a>
     </div>
 
-    <div class="pdf-header">
-        <div class="pdf-logo-box">
-            <?php if (!empty($r['unidade_logo_path'])): ?>
-                <img src="/<?= htmlspecialchars($r['unidade_logo_path'], ENT_QUOTES) ?>" alt="Logo">
-            <?php else: ?>
-                <span style="font-size:.6rem;color:#94a3b8;">LOGO</span>
-            <?php endif; ?>
-        </div>
-        <div class="pdf-title-area">
-            <h1><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></h1>
-            <p>Laudo Médico</p>
-        </div>
-        <div class="pdf-header-badge">
-            <strong><?= $r['study_date'] ? date('d/m/Y', strtotime($r['study_date'])) : '—' ?></strong>
-            <span><?= htmlspecialchars($r['modalities'] ?? '—', ENT_QUOTES) ?> · Acc. <?= htmlspecialchars($r['accession_number'] ?? '—', ENT_QUOTES) ?></span>
-        </div>
-    </div>
+    <main class="pdf-page">
+        <header class="pdf-header">
+            <div class="pdf-header-left">
+                <?php if ($logoUnidade !== ''): ?>
+                    <img class="pdf-logo" src="/<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
+                <?php else: ?>
+                    <div class="pdf-logo-fallback"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+                <?php endif; ?>
+            </div>
+            <div class="pdf-header-right">
+                <strong>Laudo Médico</strong>
+                <span><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></span>
+                <i class="pdf-header-rules" aria-hidden="true"></i>
+            </div>
+        </header>
 
-    <div class="pdf-patient-box">
-        <h2><?= $paciente ?></h2>
-        <div class="pdf-patient-grid">
-            <div class="pdf-pinfo"><span>Sexo: </span><strong><?= htmlspecialchars($r['patient_sex'] ?? '—', ENT_QUOTES) ?></strong></div>
-            <div class="pdf-pinfo"><span>Nascimento: </span><strong><?= $r['patient_birth_date'] ? date('d/m/Y', strtotime($r['patient_birth_date'])) : '—' ?></strong></div>
-            <div class="pdf-pinfo"><span>Idade: </span><strong><?= htmlspecialchars($r['patient_age'] ?? '—', ENT_QUOTES) ?></strong></div>
-            <div class="pdf-pinfo"><span>Prontuário: </span><strong><?= htmlspecialchars($r['patient_id'] ?? '—', ENT_QUOTES) ?></strong></div>
-            <div class="pdf-pinfo"><span>Instituição: </span><strong><?= htmlspecialchars($r['institution_name'] ?? '—', ENT_QUOTES) ?></strong></div>
-            <div class="pdf-pinfo"><span>Solicitante: </span><strong><?= htmlspecialchars(\App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—', ENT_QUOTES) ?></strong></div>
-        </div>
-    </div>
+        <section class="pdf-patient" aria-label="Identificação do paciente e exame">
+            <div class="pdf-patient-col">
+                <div class="pdf-patient-line"><strong>Paciente:</strong> <?= $paciente ?></div>
+                <div class="pdf-patient-line"><strong>Data de Nascimento:</strong> <?= $formatarData($r['patient_birth_date'] ?? null) ?></div>
+                <div class="pdf-patient-line"><strong>Médico(a) Solicitante:</strong> <?= htmlspecialchars($solicitante, ENT_QUOTES) ?></div>
+            </div>
+            <div class="pdf-patient-col">
+                <div class="pdf-patient-line"><strong>ID do Paciente:</strong> <?= htmlspecialchars((string) ($r['patient_id'] ?? '—'), ENT_QUOTES) ?></div>
+                <div class="pdf-patient-line"><strong>Data do Exame:</strong> <?= $formatarData($r['study_date'] ?? null) ?></div>
+                <div class="pdf-patient-line"><strong>Prontuário:</strong> <?= htmlspecialchars((string) ($r['accession_number'] ?? '—'), ENT_QUOTES) ?></div>
+            </div>
+        </section>
 
-    <?php if (trim(strip_tags($corpoLaudo)) !== ''): ?>
-    <div class="pdf-section pdf-section-free">
-        <div class="pdf-section-content"><?= $corpoLaudo ?></div>
-    </div>
-    <?php endif; ?>
+        <h1 class="pdf-exam-title"><?= htmlspecialchars($descricaoExame, ENT_QUOTES) ?></h1>
 
-    <div class="pdf-signature">
-        <div class="pdf-sig-info">
+        <?php if (trim(strip_tags($corpoLaudo)) !== ''): ?>
+            <article class="pdf-report-content"><?= $corpoLaudo ?></article>
+        <?php else: ?>
+            <p class="pdf-report-empty">Laudo não informado.</p>
+        <?php endif; ?>
+
+        <section class="pdf-signature" aria-label="Assinatura digital do médico">
             <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-            <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
-                 alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
-                 style="max-width:220px;max-height:70px;display:block;margin:0 auto .35rem;">
+                <img class="pdf-signature-image" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
             <?php endif; ?>
-            <strong><?= htmlspecialchars($r['medico_nome'] ?? '—', ENT_QUOTES) ?></strong>
-            <span>CRM: <?= htmlspecialchars($r['medico_crm'] ?? '—', ENT_QUOTES) ?></span><br>
-            <span>Assinado em: <?= $r['assinado_em'] ? date('d/m/Y H:i', strtotime($r['assinado_em'])) : 'Não assinado' ?></span>
+            <div class="pdf-signer-name"><?= htmlspecialchars((string) ($r['medico_nome'] ?? '—'), ENT_QUOTES) ?></div>
+            <div class="pdf-signer-details">Médico responsável · <?= htmlspecialchars($crmExibicao, ENT_QUOTES) ?></div>
+            <div class="pdf-verification">Assinado digitalmente em <?= $formatarDataHora($r['assinado_em'] ?? null) ?></div>
             <?php if (!empty($r['assinatura_hash'])): ?>
-            <div class="pdf-hash">Hash: <?= htmlspecialchars($r['assinatura_hash'], ENT_QUOTES) ?></div>
+                <div class="pdf-hash">Código de verificação: <?= htmlspecialchars((string) $r['assinatura_hash'], ENT_QUOTES) ?></div>
             <?php endif; ?>
-        </div>
-    </div>
+        </section>
 
-    <div class="pdf-footer">
-        <?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?><?= $cnpjFmt ? ' · CNPJ ' . htmlspecialchars($cnpjFmt, ENT_QUOTES) : '' ?>
-    </div>
+        <footer class="pdf-footer">
+            <?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?> · Laudo médico digital
+        </footer>
+    </main>
 
-</div>
-<?php if ($download): ?>
-<script>window.onload = function() { window.print(); }</script>
-<?php endif; ?>
+    <?php if ($download): ?>
+        <script>window.onload = function () { window.print(); };</script>
+    <?php endif; ?>
 </body>
 </html>
