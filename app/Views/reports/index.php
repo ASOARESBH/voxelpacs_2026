@@ -699,6 +699,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     const REPORT_ID    = <?= $reportId ?>;
     const ESTUDO_ID    = <?= $estudoId ?>;
     const CSRF         = '<?= $csrfToken ?>';
+    let TEMPLATE_ID_ATUAL = <?= (int) ($r->template_id ?? 0) ?>;
     const READONLY     = <?= $somenteLeitura ? 'true' : 'false' ?>;
     const AUTOSAVE_SEC = 30;
     const MEDICO_ID    = <?= (int) ($medicoIdLogado ?? 0) ?>;
@@ -757,7 +758,10 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     }
 
     function getAllContent() {
-        return { corpo_laudo: getEditorContent('corpo') };
+        return {
+            corpo_laudo: getEditorContent('corpo'),
+            template_id: TEMPLATE_ID_ATUAL || null
+        };
     }
 
     // ── Salvar laudo ─────────────────────────────────────────────────────
@@ -869,20 +873,30 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     }
 
     function aplicarTemplate(t) {
-        // Máscaras continuam podendo guardar campos legados, mas são aplicadas
-        // como um único conteúdo contínuo. Títulos, se houver, pertencem ao
-        // próprio texto da máscara e nunca são impostos pelo sistema.
-        var corpo = t.corpo_laudo || [
-            t.secao_exame,
-            t.secao_tecnica,
-            t.secao_achados,
-            t.secao_conclusao,
-            t.secao_recomendacao
-        ].filter(function(html) {
-            return String(html || '').replace(/<[^>]+>/g, '').trim() !== '';
-        }).join('<br><br>');
+        // O título e as seções explícitas acompanham o conteúdo até a impressão.
+        // Isso preserva a redação livre do médico, mas mantém a estrutura clínica
+        // da Máscara quando ela foi escolhida para o laudo.
+        var secoes = [
+            { rotulo: 'TÉCNICA', conteudo: t.secao_tecnica },
+            { rotulo: 'ACHADOS', conteudo: t.secao_achados },
+            { rotulo: 'IMPRESSÃO', conteudo: t.secao_conclusao }
+        ].filter(function(secao) {
+            return String(secao.conteudo || '').replace(/<[^>]+>/g, '').trim() !== '';
+        });
+        var corpo = secoes.length
+            ? secoes.map(function(secao) {
+                return '<p><strong>' + secao.rotulo + '</strong></p>' + secao.conteudo;
+            }).join('<p><br></p>')
+            : (t.corpo_laudo || [
+                t.secao_exame,
+                t.secao_recomendacao
+            ].filter(function(html) {
+                return String(html || '').replace(/<[^>]+>/g, '').trim() !== '';
+            }).join('<br><br>'));
+        TEMPLATE_ID_ATUAL = parseInt(t.id, 10) || TEMPLATE_ID_ATUAL;
         setEditorContent('corpo', corpo);
         initChecklist();
+        if (!READONLY) saveReport(false);
     }
 
     window.openTemplatesModal = function() {

@@ -34,6 +34,9 @@ $descricaoExame = trim((string) ($r['study_description'] ?? ''));
 if ($descricaoExame === '') {
     $descricaoExame = trim((string) ($r['modalities'] ?? 'Laudo Médico'));
 }
+// A Máscara define o título clínico do laudo quando estiver vinculada ao report.
+// Sem Máscara, mantém o Study Description/modalidade como fallback seguro.
+$tituloLaudo = trim((string) ($tituloMascara ?? '')) ?: $descricaoExame;
 $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM ' . $crm);
@@ -72,6 +75,11 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
 
         .pdf-exam-title { margin: 29px 0 23px; color: #111; font-size: 13px; font-weight: 700; line-height: 1.3; text-align: center; text-transform: uppercase; }
         .pdf-report-content { color: #1b1b1b; font-size: 11px; line-height: 1.55; text-align: left; }
+        .pdf-clinical-section { margin: 0 0 17px; page-break-inside: avoid; }
+        .pdf-clinical-section:last-child { margin-bottom: 0; }
+        .pdf-clinical-section-title { margin: 0 0 5px; color: #111; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .pdf-clinical-section-content { font-size: 11px; line-height: 1.55; }
+        .pdf-clinical-section-content p { margin: 0 0 9px; }
         .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 16px 0 5px; font: 700 11px Arial, Helvetica, sans-serif; }
         .pdf-report-content h1:first-child, .pdf-report-content h2:first-child, .pdf-report-content h3:first-child, .pdf-report-content h4:first-child, .pdf-report-content h5:first-child, .pdf-report-content h6:first-child { margin-top: 0; }
         .pdf-report-content p { margin: 0 0 9px; }
@@ -149,9 +157,18 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
             </div>
         </section>
 
-        <h1 class="pdf-exam-title"><?= htmlspecialchars($descricaoExame, ENT_QUOTES) ?></h1>
+        <h1 class="pdf-exam-title"><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
 
-        <?php if (trim(strip_tags($corpoLaudo)) !== ''): ?>
+        <?php if (!empty($secoesClinicasPdf)): ?>
+            <article class="pdf-report-content">
+                <?php foreach ($secoesClinicasPdf as $secao): ?>
+                    <section class="pdf-clinical-section">
+                        <h2 class="pdf-clinical-section-title"><?= htmlspecialchars((string) $secao['rotulo'], ENT_QUOTES) ?></h2>
+                        <div class="pdf-clinical-section-content"><?= (string) $secao['conteudo'] ?></div>
+                    </section>
+                <?php endforeach; ?>
+            </article>
+        <?php elseif (trim(strip_tags($corpoLaudo)) !== ''): ?>
             <article class="pdf-report-content"><?= $corpoLaudo ?></article>
         <?php else: ?>
             <p class="pdf-report-empty">Laudo não informado.</p>

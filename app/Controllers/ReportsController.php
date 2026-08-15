@@ -375,6 +375,20 @@ class ReportsController extends Controller
                 echo 'Laudo não encontrado.';
                 return;
             }
+
+            // O report guarda somente template_id. Resolve a Máscara no momento
+            // do PDF para exibir seu título e recuperar as seções como fallback
+            // de laudos antigos que salvaram apenas corpo_laudo.
+            $mascara = $this->carregarMascaraParaPdf(
+                $pdo,
+                (int) ($data['template_id'] ?? 0),
+                (int) ($data['tenant_id'] ?? 0)
+            );
+            if ($mascara !== null) {
+                $data['mascara_titulo'] = $mascara['titulo'];
+                $data['mascara_secoes'] = $mascara['secoes'];
+            }
+
             // Log de visualização de PDF
             $userId = Auth::userId();
             $user = Auth::user();
@@ -891,6 +905,44 @@ class ReportsController extends Controller
             'secoes' => $secoes,
         ];
     }
+        /**
+     * Resolve a Máscara vinculada ao report sem depender de um único schema
+     * histórico. O acesso permanece isolado pelo tenant do report.
+     */
+    private function carregarMascaraParaPdf(\PDO $pdo, int $templateId, int $tenantId): ?array
+    {
+        if ($templateId <= 0 || $tenantId <= 0) {
+            return null;
+        }
+
+        $where = 'WHERE id = :id AND (tenant_id IS NULL OR tenant_id = :tenant_id) LIMIT 1';
+        $params = ['id' => $templateId, 'tenant_id' => $tenantId];
+        $queries = [
+            "SELECT id, nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
+            "SELECT id, nome, modalidade, conteudo FROM report_templates {$where}",
+            "SELECT id, titulo AS nome, modalidade, conteudo FROM report_templates {$where}",
+        ];
+
+        foreach ($queries as $sql) {
+            try {
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($row !== false) {
+                    return $this->normalizarTemplate($row);
+                }
+                return null;
+            } catch (\PDOException $queryError) {
+                Logger::warning('ReportsController::pdf tentando schema alternativo de mascara', [
+                    'template_id' => $templateId,
+                    'error' => $queryError->getMessage(),
+                ]);
+            }
+        }
+
+        return null;
+    }
+
     private function getJsonInput(): array
     {
         $raw = file_get_contents('php://input');
