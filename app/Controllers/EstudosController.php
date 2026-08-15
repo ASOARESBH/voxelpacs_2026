@@ -1249,6 +1249,15 @@ class EstudosController extends Controller
                 return;
             }
 
+            // A Worklist, a tomada de posse e o Laudário devem usar a mesma
+            // autorização por InstitutionName. Antes de assumir, o médico ainda
+            // não é responsável pelo estudo; por isso a checagem não exige posse.
+            if (!(new \App\Services\ReportAccessService())->isStudyAllowed((object) $estudo, false)) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'msg' => 'Este estudo não pertence às Unidades autorizadas para o seu perfil.']);
+                return;
+            }
+
             $sit = $estudo['situacao'] ?? 'novo';
             if (!in_array($sit, ['novo', 'aberto', ''])) {
                 echo json_encode([

@@ -106,11 +106,37 @@ final class MedicoAccess
         }
 
         foreach (self::allowedInstitutionNames() as $unidade) {
-            if (strcasecmp($unidade, $institutionName) === 0) {
+            if (self::sameInstitutionName($unidade, $institutionName)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Mantém o vínculo explícito por InstitutionName, aceitando somente as
+     * variações de caixa, acentuação e espaços que já são equivalentes nas
+     * collations operacionais do MySQL. Não ignora termos, hífens ou Unidade.
+     */
+    private static function sameInstitutionName(string $left, string $right): bool
+    {
+        if (strcasecmp(trim($left), trim($right)) === 0) {
+            return true;
+        }
+
+        return self::normalizeInstitutionName($left) === self::normalizeInstitutionName($right);
+    }
+
+    private static function normalizeInstitutionName(string $institutionName): string
+    {
+        $value = preg_replace('/\s+/u', ' ', trim($institutionName)) ?? '';
+        if (function_exists('iconv')) {
+            $transliterated = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+            if ($transliterated !== false) {
+                $value = $transliterated;
+            }
+        }
+        return strtoupper($value);
     }
 
     /** Limpa o cache estático; útil em testes e troca de contexto na mesma execução. */
