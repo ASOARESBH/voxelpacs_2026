@@ -335,6 +335,18 @@ class ReportsController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     public function pdfByToken(string $token): void
     {
+        $portalService = new \App\Services\PatientPortalService();
+        $portalScope = $portalService->activeScope(substr((string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'), 0, 45));
+        if ($portalScope !== null) {
+            $portalReport = $portalService->releasedReportByToken($token, $portalScope);
+            if (!$portalReport) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
+            $_GET['report_id'] = (int) $portalReport['report_id'];
+            $_GET['portal_patient_pdf'] = '1';
+            $portalService->auditLaudoAberto((int) $portalReport['report_id'], $portalScope, $token);
+            $this->pdf();
+            return;
+        }
+
         if (!Auth::check()) { $this->redirect('/login'); return; }
         $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token);
         if (!$report) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
@@ -345,15 +357,16 @@ class ReportsController extends Controller
     /** Geração interna de PDF; não é exposta diretamente por rota pública. */
     public function pdf(): void
     {
-        if (!Auth::check()) {
+        $portalPatientPdf = ($_GET['portal_patient_pdf'] ?? '') === '1';
+        if (!$portalPatientPdf && !Auth::check()) {
             $this->redirect('/login');
             return;
         }
-                $reportId = (int) ($_GET['report_id'] ?? 0);
+        $reportId = (int) ($_GET['report_id'] ?? 0);
         $download = ($_GET['download'] ?? '0') === '1';
         $tenantId = Auth::tenantId();
 
-        if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+        if (!$portalPatientPdf && !(new ReportAccessService())->findAuthorizedReport($reportId)) {
             http_response_code(404);
             echo 'Laudo não encontrado.';
             return;
@@ -444,13 +457,15 @@ class ReportsController extends Controller
             }
 
             // Log de visualização de PDF
-            $userId = Auth::userId();
-            $user = Auth::user();
-            $this->reportRepo->logAction(
-                $reportId, (int)$data['estudo_id'], (int)$data['tenant_id'],
-                $userId, $user->name ?? $user->nome ?? '', 'pdf',
-                $download ? 'Download PDF' : 'Visualização PDF'
-            );
+            if (!$portalPatientPdf) {
+                $userId = Auth::userId();
+                $user = Auth::user();
+                $this->reportRepo->logAction(
+                    $reportId, (int)$data['estudo_id'], (int)$data['tenant_id'],
+                    $userId, $user->name ?? $user->nome ?? '', 'pdf',
+                    $download ? 'Download PDF' : 'Visualização PDF'
+                );
+            }
             // Template visual (camada de apresentação — ver App\Services\ReportLayoutService).
             // Unidade resolvida via institution_name; sem unidade vinculada ou sem
             // template escolhido, cai no padrão (classico_centralizado).
@@ -466,7 +481,7 @@ class ReportsController extends Controller
                     'hash' => $data['assinatura_hash'] ?? '',
                     'data' => $data['assinado_em'] ?? ''
                 ]))
-            ], 'pacs');
+            ], $portalPatientPdf ? 'portal_pdf' : 'pacs');
         } catch (\Throwable $e) {
             Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
             http_response_code(500);

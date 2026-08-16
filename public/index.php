@@ -9,15 +9,23 @@ require_once dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Router;
 use App\Core\Auth;
+use App\Core\PortalHost;
 use App\Middlewares\TenantMiddleware;
 
 // Rotas que NÃO precisam de autenticação nem de tenant
 $rotasPublicas = ['/login', '/logout', '/selecionar-empresa', '/test.php', '/api/orthanc/ping', '/open/', '/api/viewer/measurements', '/api/sla-regras/executar', '/api/servidor-pacs/sync-robo', '/api/report-delivery/'];
 $uriAtual = strtok($_SERVER['REQUEST_URI'], '?');
+$portalHost = PortalHost::isPortal();
 
-// Carrega rotas
-require_once BASE_PATH . '/routes/web.php';
-require_once BASE_PATH . '/routes/platform.php';
+// O subdomínio do paciente carrega somente suas próprias rotas públicas. A
+// aplicação continua sendo uma só, sem disponibilizar o namespace interno.
+if ($portalHost) {
+    require_once BASE_PATH . '/routes/portal.php';
+    $rotasPublicas = ['/'];
+} else {
+    require_once BASE_PATH . '/routes/web.php';
+    require_once BASE_PATH . '/routes/platform.php';
+}
 
 // Determina se a rota atual é pública ou de plataforma
 $ehPublica = false;
@@ -27,7 +35,7 @@ foreach ($rotasPublicas as $pub) {
         break;
     }
 }
-$ehPlataforma = strpos($uriAtual, '/platform') === 0;
+$ehPlataforma = !$portalHost && strpos($uriAtual, '/platform') === 0;
 
 // Aplica TenantMiddleware apenas em rotas protegidas de tenant
 // Isso carrega o TenantContext a partir da sessão antes do controller ser chamado

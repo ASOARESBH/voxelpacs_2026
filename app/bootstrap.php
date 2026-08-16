@@ -18,7 +18,12 @@ error_reporting(E_ALL);
 // ─── SESSÃO: deve ser configurada ANTES de qualquer header() ─────────────────
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_only_cookies', 1);
-ini_set('session.cookie_samesite', 'Lax');
+$bootstrapHost = strtolower(trim(explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0]));
+$isPatientPortalHost = $bootstrapHost === 'portal.voxelpacs.com.br';
+ini_set('session.cookie_samesite', $isPatientPortalHost ? 'Strict' : 'Lax');
+if ($isPatientPortalHost && !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    ini_set('session.cookie_secure', '1');
+}
 
 $sessionPath = STORAGE_PATH . '/sessions';
 if (!is_dir($sessionPath)) {

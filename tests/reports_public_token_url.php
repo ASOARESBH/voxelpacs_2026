@@ -53,7 +53,7 @@ $mustContain = [
     ['reports_js', 'function openSecurePdf(pdfUrl)'],
     ['reports_js', '`/reports/r/${encodeURIComponent(config.reportToken)}/pdf`'],
     ['reports_footer', 'reports-main.js?v=<?= $v ?>'],
-    ['view_core', "ASSET_VERSION = '2.1.8'"],
+    ['view_core', "ASSET_VERSION = '2.1.9'"],
     ['chat_service', "'/reports/r/'"],
 ];
 

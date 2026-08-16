@@ -35,6 +35,9 @@ class Router {
     }
 
     private static function isPublicRoute(string $uri): bool {
+        // No host do Portal somente as rotas de routes/portal.php são carregadas
+        // pelo front controller; elas usam sessão própria de paciente.
+        if (PortalHost::isPortal()) return true;
         foreach (self::$publicRoutes as $pub) {
             if ($uri === $pub || strpos($uri, $pub) === 0) return true;
         }
