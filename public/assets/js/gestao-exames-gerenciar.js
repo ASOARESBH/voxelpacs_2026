@@ -13,6 +13,7 @@
         reportId: 0,
         context: null,
         csrf: document.querySelector('#pedidoForm input[name="csrf"]')?.value || '',
+        reopenGerenciarAfterDescription: false,
     };
 
     const $ = (selector) => document.querySelector(selector);
@@ -50,6 +51,13 @@
         element.className = `alert alert-${type} py-2 small`;
         element.textContent = message || '';
         element.style.display = message ? 'block' : 'none';
+    }
+
+    function csrfToken() {
+        return state.csrf
+            || document.querySelector('#gerenciarDescricaoForm input[name="csrf"]')?.value
+            || document.querySelector('input[name="csrf"]')?.value
+            || '';
     }
 
     function priorityLabel(option) {
@@ -270,13 +278,29 @@
 
     async function openDescriptionModal() {
         const modalidade = String(state.context?.modalidade || '').trim();
-        if (!state.studyId || !modalidade) return;
+        const descriptionModal = modal('gerenciarDescricaoModal');
+        if (!state.studyId || !modalidade || !descriptionModal) {
+            showFeedback(text('erroOperacao'), 'danger');
+            return;
+        }
         $('#gerenciarDescricaoInput').value = state.context?.study_description || '';
         $('#gerenciarDescricaoModalidade').textContent = format(text('descricaoModalidade'), modalidade);
         $('#gerenciarDescricaoLote').style.display = state.context?.can_apply_description_batch ? 'inline-flex' : 'none';
         renderDescriptionSuggestions([]);
         showDescriptionStatus('', 'info');
-        modal('gerenciarDescricaoModal')?.show();
+
+        // Bootstrap não deve manter dois modais abertos no mesmo backdrop. Fecha
+        // o menu Gerenciar e só abre o formulário após o evento hidden, evitando
+        // o clique aparentemente sem efeito observado na Gestão de Exames.
+        const mainElement = document.getElementById('gerenciarModal');
+        const mainModal = modal('gerenciarModal');
+        if (mainElement?.classList.contains('show') && mainModal) {
+            state.reopenGerenciarAfterDescription = true;
+            mainElement.addEventListener('hidden.bs.modal', () => descriptionModal.show(), { once: true });
+            mainModal.hide();
+        } else {
+            descriptionModal.show();
+        }
         try {
             const response = await fetch(`/api/gestao-exames/descricoes-por-modalidade?modalidade=${encodeURIComponent(modalidade)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
@@ -299,7 +323,7 @@
         if (!batch) {
             const response = await fetch(baseUrl, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
-                body: JSON.stringify({ descricao, csrf: state.csrf })
+                body: JSON.stringify({ descricao, csrf: csrfToken() })
             });
             const payload = await response.json();
             if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
@@ -310,7 +334,7 @@
 
         const previewResponse = await fetch(`${baseUrl}/previa-lote`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
-            body: JSON.stringify({ descricao, csrf: state.csrf })
+            body: JSON.stringify({ descricao, csrf: csrfToken() })
         });
         const previewPayload = await previewResponse.json();
         if (!previewResponse.ok || !previewPayload.ok) throw new Error(previewPayload.msg || text('erroOperacao'));
@@ -319,7 +343,7 @@
 
         const response = await fetch(`${baseUrl}/lote`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin',
-            body: JSON.stringify({ descricao, confirmar: true, csrf: state.csrf })
+            body: JSON.stringify({ descricao, confirmar: true, csrf: csrfToken() })
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
@@ -383,6 +407,11 @@
             renderChatHistory(state.context?.chat || null);
         });
         $('#gerenciarDescricao')?.addEventListener('click', () => { openDescriptionModal(); });
+        document.getElementById('gerenciarDescricaoModal')?.addEventListener('hidden.bs.modal', () => {
+            if (!state.reopenGerenciarAfterDescription || !state.context) return;
+            state.reopenGerenciarAfterDescription = false;
+            modal('gerenciarModal')?.show();
+        });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
         $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {

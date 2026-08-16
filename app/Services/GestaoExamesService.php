@@ -50,7 +50,7 @@ class GestaoExamesService
             'tenant_id' => (int) $study['tenant_id'],
             'study_instance_uid' => (string) ($study['study_instance_uid'] ?? ''),
             'patient_name' => (string) ($study['patient_name'] ?? ''),
-            'modalidade' => strtoupper(trim((string) ($study['modalities'] ?? ''))),
+            'modalidade' => $this->primaryModality((string) ($study['modalities'] ?? '')),
             'study_description' => (string) ($study['study_description'] ?? ''),
             'study_description_manual' => !empty($study['study_description_manual']),
             'situacao' => (string) ($study['situacao'] ?? 'novo'),
@@ -186,6 +186,16 @@ class GestaoExamesService
             'MEDIUM' => 'Rotina (MEDIUM)',
             'LOW' => 'Ambulatorial (LOW)',
         ][$value] ?? 'Rotina (ROUTINE)';
+    }
+
+    /** Retorna a primeira modalidade DICOM válida de estudos multisseriados. */
+    private function primaryModality(string $modalities): string
+    {
+        $modalities = strtoupper(trim($modalities));
+        if (preg_match('/[A-Z0-9]{1,16}/', $modalities, $matches)) {
+            return (string) $matches[0];
+        }
+        return '';
     }
 
     private function reportUrl(string $publicToken): ?string

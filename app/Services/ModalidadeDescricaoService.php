@@ -141,7 +141,13 @@ class ModalidadeDescricaoService
     private function normalizeModalidade(string $modalidade): string
     {
         $modalidade = strtoupper(trim($modalidade));
-        return preg_match('/^[A-Z0-9\\\\]{1,16}$/', $modalidade) ? $modalidade : '';
+        // Estudos importados podem carregar mais de uma modalidade (ex.: CR\\OT).
+        // A descrição é indexada pela primeira modalidade DICOM válida, como na
+        // Worklist, sem aceitar conteúdo livre como código de modalidade.
+        if (preg_match('/[A-Z0-9]{1,16}/', $modalidade, $matches)) {
+            return (string) $matches[0];
+        }
+        return '';
     }
 
     private function normalizeDescricao(string $descricao): string
