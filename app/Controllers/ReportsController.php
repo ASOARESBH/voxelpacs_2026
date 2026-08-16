@@ -369,7 +369,10 @@ class ReportsController extends Controller
                         e.referring_physician_name, e.num_instances, e.num_series,
                         COALESCE(m.nome, u.name) AS medico_nome,
                         m.crm AS medico_crm,
+                        m.crm_uf AS medico_crm_uf,
+                        m.especialidade AS medico_especialidade,
                         t.nome as tenant_nome,
+                        t.cnpj AS tenant_cnpj,
                         COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
                         COALESCE(NULLIF(bnin.nome_fantasia, ''), un.nome_fantasia)   AS unidade_nome_fantasia,
                         COALESCE(NULLIF(bnin.razao_social, ''), un.razao_social)     AS unidade_razao_social,
@@ -405,6 +408,26 @@ class ReportsController extends Controller
                 http_response_code(404);
                 echo 'Laudo não encontrado.';
                 return;
+            }
+
+            // Registro profissional corporativo é opcional e depende da migration
+            // de Negócios. O fallback impede que laudos parem de abrir enquanto a
+            // coluna ainda não foi aplicada em um ambiente legado.
+            $data['registro_crm_uf'] = null;
+            $data['registro_crm_numero'] = null;
+            try {
+                $stmtRegistro = $pdo->prepare(
+                    'SELECT registro_crm_uf, registro_crm_numero FROM bi_tenants WHERE id = :id LIMIT 1'
+                );
+                $stmtRegistro->execute(['id' => (int) ($data['tenant_id'] ?? 0)]);
+                $registroEmpresa = $stmtRegistro->fetch(\PDO::FETCH_ASSOC) ?: [];
+                $data['registro_crm_uf'] = $registroEmpresa['registro_crm_uf'] ?? null;
+                $data['registro_crm_numero'] = $registroEmpresa['registro_crm_numero'] ?? null;
+            } catch (\PDOException $registroError) {
+                Logger::warning('ReportsController::pdf registro CRM institucional indisponivel — migration pendente', [
+                    'tenant_id' => (int) ($data['tenant_id'] ?? 0),
+                    'error' => $registroError->getMessage(),
+                ]);
             }
 
             // O report guarda somente template_id. Resolve a Máscara no momento

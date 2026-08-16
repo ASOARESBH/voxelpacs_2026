@@ -84,6 +84,8 @@ class NegociosController extends Controller {
                 'bairro'              => $_POST['bairro'] ?? null,
                 'cidade'              => $_POST['cidade'] ?? null,
                 'estado'              => $_POST['estado'] ?? null,
+                'registro_crm_uf'     => $this->normalizarUfRegistro($_POST['registro_crm_uf'] ?? null),
+                'registro_crm_numero' => $this->normalizarNumeroRegistro($_POST['registro_crm_numero'] ?? null),
                 'idioma_padrao'       => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
                                             ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];
@@ -241,6 +243,24 @@ class NegociosController extends Controller {
         return $post;
     }
 
+    /** Retorna a UF válida do CRM institucional ou NULL quando o campo é opcional e vazio. */
+    private function normalizarUfRegistro(?string $uf): ?string {
+        $uf = strtoupper(trim((string) $uf));
+        $ufs = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+        return in_array($uf, $ufs, true) ? $uf : null;
+    }
+
+    /** Normaliza o número opcional do registro profissional sem aceitar caracteres de controle. */
+    private function normalizarNumeroRegistro(?string $numero): ?string {
+        $numero = trim((string) $numero);
+        if ($numero === '') {
+            return null;
+        }
+        $numero = preg_replace('/[^0-9A-Za-z.\\/\\- ]/', '', $numero) ?? '';
+        $numero = trim($numero);
+        return $numero !== '' ? substr($numero, 0, 30) : null;
+    }
+
     public function edit(int $id): void {
         $pdo    = Database::getInstance();
         $negocio = null;
@@ -332,6 +352,8 @@ class NegociosController extends Controller {
                 'bairro'              => $_POST['bairro'] ?? null,
                 'cidade'              => $_POST['cidade'] ?? null,
                 'estado'              => $_POST['estado'] ?? null,
+                'registro_crm_uf'     => $this->normalizarUfRegistro($_POST['registro_crm_uf'] ?? null),
+                'registro_crm_numero' => $this->normalizarNumeroRegistro($_POST['registro_crm_numero'] ?? null),
                 'idioma_padrao'       => in_array($_POST['idioma_padrao'] ?? '', \App\Core\Translator::SUPPORTED, true)
                                             ? $_POST['idioma_padrao'] : \App\Core\Translator::FALLBACK,
             ];

@@ -108,6 +108,26 @@
                             <input type="text" name="estado" id="estado" class="form-control" value="<?= htmlspecialchars($negocio['estado'] ?? '') ?>">
                         </div>
                     </div>
+
+                    <?php $ufsRegistro = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']; ?>
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold" for="registro_crm_uf">Registro no CRM da Empresa</label>
+                            <select name="registro_crm_uf" id="registro_crm_uf" class="form-select">
+                                <option value="">UF (opcional)</option>
+                                <?php foreach ($ufsRegistro as $ufRegistro): ?>
+                                    <option value="<?= $ufRegistro ?>" <?= ($negocio['registro_crm_uf'] ?? '') === $ufRegistro ? 'selected' : '' ?>><?= $ufRegistro ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold" for="registro_crm_numero">Número do Registro CRM</label>
+                            <input type="text" name="registro_crm_numero" id="registro_crm_numero" class="form-control" maxlength="30" value="<?= htmlspecialchars($negocio['registro_crm_numero'] ?? '') ?>" placeholder="Ex.: 1.045.798">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <div class="form-text mb-1">Opcional. Se preenchido, será exibido na assinatura institucional do laudo.</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ABA 2: CONTATOS -->

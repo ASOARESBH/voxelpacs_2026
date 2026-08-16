@@ -94,3 +94,11 @@ Ver `PENDENCIAS_CONHECIDAS.md`/`diagnostics/pendencias-conhecidas.md` — resumo
 
 ## Última análise
 2026-08-08
+
+## Assinatura institucional na impressão — 2026-08-15
+
+No template **Moderno Lateral**, a área de assinatura é composta a partir do snapshot já associado ao report: imagem de assinatura congelada, nome do médico signatário, especialidade e CRM do médico. O horário exibido é `reports.assinado_em`, formatado no fuso `America/Sao_Paulo` com a indicação explícita de **horário de Brasília**.
+
+O campo `reports.assinatura_hash` é usado como **token de validação para auditoria**. Ele não é recriado durante a leitura/impressão; apenas é apresentado ao usuário, preservando a rastreabilidade da assinatura registrada no serviço. A identificação institucional usa o negócio vinculado ao tenant, mostrando nome e CNPJ quando disponível.
+
+A migration `2026-08-15_bi_tenants_registro_crm_empresa.sql` acrescenta `bi_tenants.registro_crm_uf` e `bi_tenants.registro_crm_numero`. Ambos são opcionais, são mantidos pelo formulário Platform Negócios e aparecem na assinatura somente quando o número estiver preenchido. A consulta de PDF trata a ausência dessas colunas como migration pendente, registra aviso técnico e continua renderizando o laudo sem interromper a leitura.

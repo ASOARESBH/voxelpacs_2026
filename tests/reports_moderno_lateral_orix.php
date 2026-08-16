@@ -43,6 +43,11 @@ foreach ([
     'study_description',
     'unidade_logo_path',
     'assinatura_caminho_arquivo',
+    'pdf-validation-token',
+    'Token de validação para auditoria:',
+    'horário de Brasília',
+    'pdf-company-details',
+    'registro_crm_numero',
 ] as $required) {
     modernContains($source, $required, "Template Moderno Lateral não contém o elemento obrigatório: {$required}");
 }
@@ -55,7 +60,10 @@ modernRequire(strpos($source, 'position: fixed;') === false, 'Elementos fixos po
 $r = [
     'unidade_nome_fantasia' => 'ORIX TELERRADIOLOGIA LTDA',
     'unidade_razao_social' => 'ORIX TELERRADIOLOGIA LTDA',
-    'tenant_nome' => 'Tenant de Teste',
+    'tenant_nome' => 'ORIX TELERRADIOLOGIA LTDA',
+    'tenant_cnpj' => '65757819000143',
+    'registro_crm_uf' => 'SP',
+    'registro_crm_numero' => '1.045.798',
     'unidade_logo_path' => 'uploads/unidades/orix-logo.png',
     'patient_birth_date' => '1975-11-05',
     'patient_id' => '26175694',
@@ -65,7 +73,9 @@ $r = [
     'study_description' => 'Tomografia Computadorizada do Tórax',
     'referring_physician_name' => 'Dr. João Silva',
     'medico_nome' => 'Dr. Paulo Vitor M. M. de Brito',
-    'medico_crm' => 'CRM-SP 230161',
+    'medico_crm' => '230161',
+    'medico_crm_uf' => 'SP',
+    'medico_especialidade' => 'Radiologia e Diagnóstico por Imagem',
     'assinado_em' => '2026-08-14 17:26:00',
     'assinatura_hash' => 'abc123456789',
     'assinatura_caminho_arquivo' => null,
@@ -91,8 +101,14 @@ foreach ([
     'Tomografia Computadorizada do Tórax',
     'Aquisição volumétrica sem contraste.',
     'Dr. Paulo Vitor M. M. de Brito',
-    'Médico responsável · CRM-SP 230161',
-    'Código de verificação: abc123456789',
+    'Radiologia e Diagnóstico por Imagem',
+    'CRM-SP 230161',
+    'Assinado digitalmente em 14/08/2026 17:26 (horário de Brasília)',
+    'Token de validação para auditoria: abc123456789',
+    'Empresa vinculada:',
+    'ORIX TELERRADIOLOGIA LTDA',
+    'CNPJ 65.757.819/0001-43',
+    'CRM-SP 1.045.798',
 ] as $expected) {
     modernContains($html, $expected, "Renderização Orix não contém: {$expected}");
 }

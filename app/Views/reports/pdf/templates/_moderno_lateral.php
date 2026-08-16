@@ -23,10 +23,19 @@ $formatarData = static function (?string $valor): string {
     return $timestamp ? date('d/m/Y', $timestamp) : '—';
 };
 
-$formatarDataHora = static function (?string $valor): string {
-    if (!$valor) return 'Não assinado';
-    $timestamp = strtotime($valor);
-    return $timestamp ? date('d/m/Y H:i', $timestamp) : 'Não assinado';
+$formatarDataHoraBrasilia = static function (?string $valor): string {
+    if (!$valor) return '';
+    try {
+        $data = new \DateTimeImmutable($valor, new \DateTimeZone('America/Sao_Paulo'));
+        return $data->setTimezone(new \DateTimeZone('America/Sao_Paulo'))->format('d/m/Y H:i');
+    } catch (\Throwable $e) {
+        return '';
+    }
+};
+$formatarCnpj = static function (?string $valor): string {
+    $digitos = preg_replace('/\D/', '', (string) $valor) ?? '';
+    if (strlen($digitos) !== 14) return trim((string) $valor);
+    return substr($digitos, 0, 2) . '.' . substr($digitos, 2, 3) . '.' . substr($digitos, 5, 3) . '/' . substr($digitos, 8, 4) . '-' . substr($digitos, 12, 2);
 };
 
 $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—';
@@ -45,7 +54,16 @@ if ($descricaoExame === '') {
 $tituloLaudo = trim((string) ($tituloMascara ?? '')) ?: $descricaoExame;
 $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 $crm = trim((string) ($r['medico_crm'] ?? ''));
-$crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM ' . $crm);
+$crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
+$crmExibicao = $crm === '' ? '' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM' . ($crmUf !== '' ? '-' . $crmUf : '') . ' ' . $crm);
+$especialidadeMedico = trim((string) ($r['medico_especialidade'] ?? ''));
+$empresaNome = trim((string) ($r['tenant_nome'] ?? '')) ?: $unidadeNome;
+$empresaCnpj = $formatarCnpj($r['tenant_cnpj'] ?? null);
+$registroEmpresaUf = strtoupper(trim((string) ($r['registro_crm_uf'] ?? '')));
+$registroEmpresaNumero = trim((string) ($r['registro_crm_numero'] ?? ''));
+$registroEmpresa = $registroEmpresaNumero === '' ? '' : 'CRM' . ($registroEmpresaUf !== '' ? '-' . $registroEmpresaUf : '') . ' ' . $registroEmpresaNumero;
+$assinadoEmBrasilia = $formatarDataHoraBrasilia($r['assinado_em'] ?? null);
+$tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -95,9 +113,14 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
 
         .pdf-signature { margin-top: auto; padding-top: 50px; text-align: center; page-break-inside: avoid; }
         .pdf-signature-image { display: block; max-width: 210px; max-height: 68px; margin: 0 auto 3px; object-fit: contain; }
-        .pdf-signer-name { font-size: 10px; font-weight: 700; }
-        .pdf-signer-details, .pdf-verification { color: #404040; font-size: 8px; line-height: 1.45; }
-        .pdf-verification { margin-top: 6px; }
+        .pdf-signer-name { color: #111; font-size: 10px; font-weight: 700; }
+        .pdf-signer-role, .pdf-signer-details, .pdf-verification, .pdf-company-details { color: #404040; font-size: 8px; line-height: 1.45; }
+        .pdf-signer-role { margin-top: 1px; }
+        .pdf-verification { margin-top: 7px; font-weight: 700; }
+        .pdf-validation-token { max-width: 490px; margin: 3px auto 0; color: #404040; font-family: monospace; font-size: 7px; line-height: 1.35; overflow-wrap: anywhere; }
+        .pdf-company-details { margin-top: 5px; font-weight: 700; }
+        .pdf-company-details div { margin-top: 1px; }
+        .pdf-company-label { font-weight: 700; }
         .pdf-hash { max-width: 490px; margin: 3px auto 0; color: #737373; font-size: 6.5px; line-height: 1.25; overflow-wrap: anywhere; }
 
         .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; text-align: center; }
@@ -186,11 +209,25 @@ $crmExibicao = $crm === '' ? '—' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'C
                 <img class="pdf-signature-image" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
             <?php endif; ?>
             <div class="pdf-signer-name"><?= htmlspecialchars((string) ($r['medico_nome'] ?? '—'), ENT_QUOTES) ?></div>
-            <div class="pdf-signer-details">Médico responsável · <?= htmlspecialchars($crmExibicao, ENT_QUOTES) ?></div>
-            <div class="pdf-verification">Assinado digitalmente em <?= $formatarDataHora($r['assinado_em'] ?? null) ?></div>
-            <?php if (!empty($r['assinatura_hash'])): ?>
-                <div class="pdf-hash">Código de verificação: <?= htmlspecialchars((string) $r['assinatura_hash'], ENT_QUOTES) ?></div>
+            <?php if ($especialidadeMedico !== ''): ?>
+                <div class="pdf-signer-role"><?= htmlspecialchars($especialidadeMedico, ENT_QUOTES) ?></div>
             <?php endif; ?>
+            <?php if ($crmExibicao !== ''): ?>
+                <div class="pdf-signer-details"><?= htmlspecialchars($crmExibicao, ENT_QUOTES) ?></div>
+            <?php endif; ?>
+            <?php if ($assinadoEmBrasilia !== ''): ?>
+                <div class="pdf-verification">Assinado digitalmente em <?= htmlspecialchars($assinadoEmBrasilia, ENT_QUOTES) ?> (horário de Brasília)</div>
+            <?php else: ?>
+                <div class="pdf-verification">Laudo ainda não assinado digitalmente.</div>
+            <?php endif; ?>
+            <?php if ($tokenValidacao !== ''): ?>
+                <div class="pdf-validation-token">Token de validação para auditoria: <?= htmlspecialchars($tokenValidacao, ENT_QUOTES) ?></div>
+            <?php endif; ?>
+            <div class="pdf-company-details">
+                <div><span class="pdf-company-label">Empresa vinculada:</span> <?= htmlspecialchars($empresaNome, ENT_QUOTES) ?></div>
+                <?php if ($empresaCnpj !== ''): ?><div>CNPJ <?= htmlspecialchars($empresaCnpj, ENT_QUOTES) ?></div><?php endif; ?>
+                <?php if ($registroEmpresa !== ''): ?><div><?= htmlspecialchars($registroEmpresa, ENT_QUOTES) ?></div><?php endif; ?>
+            </div>
         </section>
 
         <footer class="pdf-footer">
