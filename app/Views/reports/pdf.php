@@ -7,6 +7,7 @@
  * só a escolha de QUAL layout aplicar. Ver app/Views/reports/pdf/templates/.
  */
 $r = $report ?? [];
+$templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
 $corpoLaudo = (string) ($r['corpo_laudo'] ?? '');
@@ -22,10 +23,81 @@ $rotulosSecoesPdf = [
 ];
 $secoesClinicasPdf = [];
 
+// Laudos com Máscara vinculada possuem três seções persistidas pelo editor
+// ativo. Elas são a fonte de verdade do Moderno Lateral: um corpo_laudo
+// histórico pode conter a aplicação antiga do mesmo template e não deve ser
+// mesclado novamente na impressão. Sem seções atuais, preserva-se o corpo livre
+// e o fallback de laudos antigos.
+$secoesPersistidas = [];
+foreach ($rotulosSecoesPdf as $chave => $rotulo) {
+    $valor = (string) ($r['secao_' . $chave] ?? '');
+    if (trim(strip_tags($valor)) !== '') {
+        $secoesPersistidas[$chave] = ['rotulo' => $rotulo, 'conteudo' => $valor];
+    }
+}
+$usarSecoesPersistidas = $templateCodigo === 'moderno_lateral'
+    && (int) ($r['template_id'] ?? 0) > 0
+    && !empty($secoesPersistidas);
+if ($usarSecoesPersistidas) {
+    $secoesClinicasPdf = $secoesPersistidas;
+
+    // Compatibilidade com rascunhos gerados por versões anteriores do editor:
+    // em alguns casos o conteúdo de uma seção foi salvo literalmente no início
+    // da seção seguinte. Remove somente esse prefixo HTML idêntico, preservando
+    // qualquer texto clínico que venha depois dele.
+    foreach (['achados', 'conclusao'] as $chaveAtual) {
+        if (empty($secoesClinicasPdf[$chaveAtual]['conteudo'])) {
+            continue;
+        }
+        $conteudoAtual = ltrim((string) $secoesClinicasPdf[$chaveAtual]['conteudo']);
+        foreach (['tecnica', 'achados'] as $chaveAnterior) {
+            if ($chaveAnterior === $chaveAtual || empty($secoesClinicasPdf[$chaveAnterior]['conteudo'])) {
+                continue;
+            }
+            $conteudoAnterior = trim((string) $secoesClinicasPdf[$chaveAnterior]['conteudo']);
+            if ($conteudoAnterior !== '' && str_starts_with($conteudoAtual, $conteudoAnterior)) {
+                $conteudoAtual = ltrim(substr($conteudoAtual, strlen($conteudoAnterior)));
+            }
+        }
+        $secoesClinicasPdf[$chaveAtual]['conteudo'] = $conteudoAtual;
+    }
+
+    // Algumas Máscaras históricas traziam "Impressão:" ao fim da técnica e
+    // também preenchiam a seção própria de Impressão. Mantém a seção canônica
+    // e remove somente o sufixo explícito da técnica para não imprimi-lo duas vezes.
+    $tecnica = (string) ($secoesClinicasPdf['tecnica']['conteudo'] ?? '');
+    $impressao = (string) ($secoesClinicasPdf['conclusao']['conteudo'] ?? '');
+    if (trim(strip_tags($tecnica)) !== '' && trim(strip_tags($impressao)) !== '') {
+        $partesTecnica = preg_split(
+            '/(?:<br\\s*\\/?\\s*>|<\\/p>\\s*<p>|\\s)*(?:<strong>)?\\s*(?:impressão|conclusão)\\s*:\\s*(?:<\\/strong>)?/isu',
+            $tecnica,
+            2
+        );
+        if (is_array($partesTecnica) && count($partesTecnica) === 2) {
+            $normalizarTextoClinico = static function (string $html): string {
+                $texto = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $texto = preg_replace('/\\s+/u', ' ', $texto) ?? '';
+                return mb_strtolower(trim($texto), 'UTF-8');
+            };
+            if (
+                $normalizarTextoClinico($partesTecnica[1]) !== ''
+                && $normalizarTextoClinico($partesTecnica[1]) === $normalizarTextoClinico($impressao)
+                && trim(strip_tags($partesTecnica[0])) !== ''
+            ) {
+                $secoesClinicasPdf['tecnica']['conteudo'] = $partesTecnica[0];
+            }
+        }
+    }
+    $secoesClinicasPdf = array_filter(
+        $secoesClinicasPdf,
+        static fn(array $secao): bool => trim(strip_tags($secao['conteudo'] ?? '')) !== ''
+    );
+}
+
 // O editor livre persiste títulos em <h*> ou <p><strong>. Quando existirem,
-// eles são a fonte de verdade, pois podem ter sido ajustados pelo médico após
-// aplicar a Máscara. Sem marcadores, aplica o fallback das colunas/Máscara.
-if (trim($corpoLaudo) !== '' && class_exists('DOMDocument')) {
+// eles são a fonte de verdade para laudos sem Máscara vinculada ou sem seções
+// atuais. Sem marcadores, aplica o fallback das colunas/Máscara.
+if (!$usarSecoesPersistidas && trim($corpoLaudo) !== '' && class_exists('DOMDocument')) {
     $dom = new \DOMDocument('1.0', 'UTF-8');
     $previousErrors = libxml_use_internal_errors(true);
     $fragment = '<div id="voxel-pdf-secoes">' . $corpoLaudo . '</div>';
@@ -85,7 +157,6 @@ if (trim($corpoLaudo) === '') {
 $paciente = htmlspecialchars($r['patient_name_display'] ?? $r['patient_name'] ?? 'Paciente', ENT_QUOTES);
 $download = $download ?? false;
 
-$templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
 $partial = (new \App\Services\ReportLayoutService())->caminhoPartial($templateCodigo);
 
 require $partial;
