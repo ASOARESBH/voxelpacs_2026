@@ -105,6 +105,34 @@ class ReportsController extends Controller
             $stmt->execute(['uid' => Auth::userId(), 'tid' => \App\Core\TenantContext::id()]);
             $medicoIdLogado = (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable $ex) {}
+
+        // A tela do Laudário precisa conhecer o mesmo contexto visual do PDF para
+        // que a unidade que escolheu Moderno Lateral veja o documento no próprio
+        // formulário, sem duplicar ou alterar qualquer dado clínico do report.
+        $contextoVisual = $this->carregarContextoVisualLaudo($estudo);
+        $reportLayoutCodigo = (new \App\Services\ReportLayoutService())->resolverCodigo(
+            isset($contextoVisual['report_layout_template_id'])
+                ? (int) $contextoVisual['report_layout_template_id']
+                : null
+        );
+        $mascaraTitulo = '';
+        try {
+            $templateId = (int) ($report->template_id ?? 0);
+            if ($templateId > 0) {
+                $mascara = $this->carregarMascaraParaPdf(
+                    \App\Core\Database::getInstance(),
+                    $templateId,
+                    (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id())
+                );
+                $mascaraTitulo = trim((string) ($mascara['titulo'] ?? ''));
+            }
+        } catch (\Throwable $ex) {
+            Logger::warning('ReportsController::showByToken contexto visual de mascara indisponivel', [
+                'report_id' => (int) ($report->id ?? 0),
+                'error' => $ex->getMessage(),
+            ]);
+        }
+
         $this->view('reports/show', [
             'estudo'            => $estudo,
             'report'            => $report,
@@ -117,6 +145,9 @@ class ReportsController extends Controller
             'csrfToken'         => $this->csrfToken(),
             'page_title'        => 'Laudo — ' . ($estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente'),
             'medicoIdLogado'    => $medicoIdLogado,
+            'reportLayoutCodigo' => $reportLayoutCodigo,
+            'reportVisual'       => $contextoVisual,
+            'mascaraTitulo'      => $mascaraTitulo,
         ], 'reports');
     }
     // ══════════════════════════════════════════════════════════════════════════
@@ -905,7 +936,59 @@ class ReportsController extends Controller
             'secoes' => $secoes,
         ];
     }
-        /**
+    /**
+     * Resolve somente os metadados institucionais necessários para espelhar o
+     * layout de impressão na tela do Laudário. Falhas não impedem a edição.
+     *
+     * @return array{report_layout_template_id:int,unidade_nome:string,unidade_logo_path:string}
+     */
+    private function carregarContextoVisualLaudo(object $estudo): array
+    {
+        $contexto = [
+            'report_layout_template_id' => 0,
+            'unidade_nome' => trim((string) ($estudo->institution_name ?? 'Clínica')) ?: 'Clínica',
+            'unidade_logo_path' => '',
+        ];
+        $tenantId = (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id());
+        $institutionName = trim((string) ($estudo->institution_name ?? ''));
+        if ($tenantId <= 0 || $institutionName === '') {
+            return $contexto;
+        }
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $stmt = $pdo->prepare(
+                "SELECT bnin.report_layout_template_id,
+                        COALESCE(NULLIF(bnin.nome_fantasia, ''), NULLIF(bnin.razao_social, ''), un.nome_fantasia, un.razao_social) AS unidade_nome,
+                        COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path) AS unidade_logo_path
+                 FROM bi_negocio_institution_names bnin
+                 LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
+                 WHERE bnin.tenant_id = :tenant_id
+                   AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                 LIMIT 1"
+            );
+            $stmt->execute([
+                'tenant_id' => $tenantId,
+                'institution_name' => $institutionName,
+            ]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row) {
+                $contexto['report_layout_template_id'] = (int) ($row['report_layout_template_id'] ?? 0);
+                $contexto['unidade_nome'] = trim((string) ($row['unidade_nome'] ?? '')) ?: $contexto['unidade_nome'];
+                $contexto['unidade_logo_path'] = trim((string) ($row['unidade_logo_path'] ?? ''));
+            }
+        } catch (\Throwable $e) {
+            Logger::warning('ReportsController::carregarContextoVisualLaudo indisponivel', [
+                'tenant_id' => $tenantId,
+                'institution_name' => $institutionName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $contexto;
+    }
+
+    /**
      * Resolve a Máscara vinculada ao report sem depender de um único schema
      * histórico. O acesso permanece isolado pelo tenant do report.
      */

@@ -2,6 +2,7 @@
 /** @var object $estudo */
 /** @var object $report */
 /** @var bool $readonly */
+$modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
 ?>
 <div class="reports-col-left">
     <?php include __DIR__ . '/partials/_paciente_card.php'; ?>
@@ -12,7 +13,7 @@
     <?php include __DIR__ . '/partials/_historico_actions.php'; ?>
 </div>
 
-<div class="reports-col-right">
+<div class="reports-col-right<?= $modernoLateral ? ' reports-col-right--moderno' : '' ?>">
     <?php include __DIR__ . '/partials/_editor.php'; ?>
 </div>
 

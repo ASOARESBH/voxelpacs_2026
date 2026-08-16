@@ -15,6 +15,14 @@ window.VoxelReports.templates = (function () {
         return Object.values(secoes).every((html) => !html || html.replace(/<[^>]+>/g, '').trim() === '');
     }
 
+    function atualizarTituloDocumento(titulo) {
+        const elemento = document.getElementById('reports-modern-document-title');
+        const texto = String(titulo || '').trim();
+        if (elemento && texto !== '') {
+            elemento.textContent = texto;
+        }
+    }
+
     function render(templates) {
         const list = document.getElementById('templates-list');
         if (!templates.length) {
@@ -40,6 +48,7 @@ window.VoxelReports.templates = (function () {
                 // IMPRESSÃO. Não inserir marcadores vazios de Exame/Conclusão/
                 // Recomendação no editor clínico.
                 editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao']);
+                atualizarTituloDocumento(template.titulo);
                 config.templateId = Number(template.id) || 0;
                 window.VoxelReports.autosave.setTemplateId(config.templateId);
                 window.VoxelReports.autosave.save('rascunho');

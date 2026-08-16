@@ -24,7 +24,9 @@ Cada Unidade escolhe **um** layout visual entre um catálogo fixo de 4 modelos p
 
 ## Por que "tela + impressão + PDF" é um ponto único
 
-Confirmado na análise: este projeto **não gera PDF binário** (sem dompdf/wkhtmltopdf) — `reports/pdf.php` é uma página HTML com CSS de impressão (`@media print`) e um botão `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` automaticamente no load (o usuário escolhe "Salvar como PDF" no diálogo de impressão do navegador). Ou seja, **tela, impressão e PDF já eram a mesma view antes desta tarefa** — não havia 3 pontos de renderização pra unificar, só 1 pra parametrizar. A tela de edição do laudo (`reports/show.php`/`partials/_editor.php`, o Quill) é uma ferramenta de trabalho separada e **não foi tocada** — trocar o chrome visual dela por template não fazia sentido (o médico está editando, não lendo um laudo finalizado).
+Confirmado na análise: este projeto **não gera PDF binário** (sem dompdf/wkhtmltopdf) — `reports/pdf.php` é uma página HTML com CSS de impressão (`@media print`) e um botão `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` automaticamente no load (o usuário escolhe "Salvar como PDF" no diálogo de impressão do navegador).
+
+A rota de edição (`reports/show.php`/`partials/_editor.php`) continua usando o Quill para preservar o fluxo de trabalho clínico. Entretanto, quando a Unidade seleciona **Moderno Lateral**, o formulário recebe o mesmo cabeçalho institucional, identificação do paciente, título de Máscara e hierarquia de TÉCNICA/ACHADOS/IMPRESSÃO usados na leitura e impressão. A barra de formatação permanece disponível apenas como ferramenta de edição; os demais templates mantêm o formulário convencional.
 
 ## Catálogo (2026-08-11)
 
@@ -39,7 +41,7 @@ Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto 
 
 ### Contrato visual — Moderno Lateral (Orix)
 
-O partial `_moderno_lateral.php` é a fonte única da pré-visualização, de `Imprimir` e de `Baixar PDF` no navegador. Ele usa A4 em branco, cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, assinatura centralizada com identificação digital e as seguintes regras clínicas de apresentação:
+O partial `_moderno_lateral.php` é a fonte única de `Imprimir` e de `Baixar PDF` no navegador. A tela de edição recebe uma casca visual homóloga, ativada por `reports/show.php` somente quando `reportLayoutCodigo === 'moderno_lateral'`. Ambas usam cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, título centralizado e as seguintes regras clínicas de apresentação:
 
 - Se o report possuir `template_id`, o título centralizado em negrito vem da Máscara vinculada (`reports.template_id` → `report_templates.nome` ou `titulo`). Sem vínculo, o fallback é `Study Description`, depois procedimento solicitado, parte do corpo e, por último, modalidade.
 - A aplicação ativa de Máscara coloca somente **TÉCNICA**, **ACHADOS** e **IMPRESSÃO** no editor. As chaves internas permanecem `secao_tecnica`, `secao_achados` e `secao_conclusao`; no Moderno Lateral, `conclusao` é apresentado como **IMPRESSÃO**.

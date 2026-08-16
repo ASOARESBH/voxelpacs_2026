@@ -719,3 +719,164 @@ body.reports-body {
 @media (prefers-reduced-motion: reduce) {
     #btn-dictate.is-recording { animation: none; }
 }
+
+/* ── Formulário de leitura — Moderno Lateral ────────────────────────
+   O formulário usa a mesma hierarquia institucional da impressão.
+   Escopo restrito à unidade que selecionou `moderno_lateral`. */
+.reports-col-right--moderno {
+    padding: clamp(1rem, 2vw, 2rem);
+    background: #edf1f5;
+}
+.reports-editor-card--moderno {
+    width: min(100%, 210mm);
+    min-height: 297mm;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid #d9dee5;
+    border-radius: 0;
+    background: #fff;
+    color: #171717;
+    box-shadow: 0 6px 24px rgba(15, 23, 42, .13);
+}
+.reports-modern-document-header {
+    display: grid;
+    grid-template-columns: minmax(0, 62%) minmax(0, 38%);
+    align-items: center;
+    gap: 1rem;
+    margin: 0 18mm;
+    padding: 14mm 0 9px;
+    border-bottom: 1px solid #777;
+}
+.reports-modern-document-brand { min-width: 0; }
+.reports-modern-document-logo {
+    display: block;
+    max-width: 196px;
+    max-height: 78px;
+    object-fit: contain;
+    object-position: left center;
+}
+.reports-modern-document-logo-fallback {
+    color: #075a9e;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .2px;
+}
+.reports-modern-document-heading { min-width: 0; text-align: right; }
+.reports-modern-document-heading strong {
+    display: block;
+    color: #111;
+    font-size: 15px;
+    line-height: 1.1;
+    letter-spacing: .1px;
+}
+.reports-modern-document-heading span {
+    display: block;
+    margin-top: 4px;
+    color: #404040;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .7px;
+    text-transform: uppercase;
+}
+.reports-modern-document-heading i {
+    display: inline-block;
+    width: 106px;
+    height: 6px;
+    margin-top: 10px;
+    border-top: 1px solid #d4d4d4;
+    border-bottom: 1px solid #d4d4d4;
+}
+.reports-modern-document-patient {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin: 11px 18mm 0;
+    padding: 0 0 11px;
+    border-bottom: 1px solid #777;
+    color: #171717;
+}
+.reports-modern-document-patient p {
+    min-height: 17px;
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.55;
+}
+.reports-modern-document-patient strong { font-weight: 700; }
+.reports-modern-document-title {
+    margin: 29px 18mm 16px;
+    color: #111;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.34;
+    text-align: center;
+    text-transform: uppercase;
+}
+.reports-editor-card--moderno .reports-editor-toolbar {
+    margin: 0 18mm;
+    padding: .35rem .5rem;
+    border-top: 1px solid #d9dee5;
+    border-bottom: 1px solid #d9dee5 !important;
+    background: #fafafa;
+}
+.reports-editor-card--moderno .reports-editor-container {
+    min-height: clamp(540px, calc(100vh - 27rem), 820px);
+    margin: 0 18mm;
+    padding: 0;
+    border: 0;
+    background: #fff;
+    color: #171717;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    line-height: 1.62;
+}
+.reports-editor-card--moderno .reports-editor-container .ql-editor {
+    min-height: clamp(540px, calc(100vh - 27rem), 820px);
+    padding: 16px 0 22mm;
+    color: #171717;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    line-height: 1.62;
+}
+.reports-editor-card--moderno .reports-editor-container h1,
+.reports-editor-card--moderno .reports-editor-container h2,
+.reports-editor-card--moderno .reports-editor-container h3,
+.reports-editor-card--moderno .reports-editor-container h4[data-secao] {
+    margin: 0 0 6px;
+    padding: 0;
+    border: 0;
+    color: #111;
+    font: 700 12px/1.35 Arial, Helvetica, sans-serif;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+.reports-editor-card--moderno .reports-editor-container h4[data-secao]:not(:first-child),
+.reports-editor-card--moderno .reports-editor-container h1:not(:first-child),
+.reports-editor-card--moderno .reports-editor-container h2:not(:first-child),
+.reports-editor-card--moderno .reports-editor-container h3:not(:first-child) {
+    margin-top: 21px;
+}
+.reports-editor-card--moderno .reports-editor-container p { margin: 0 0 11px; }
+.reports-editor-card--moderno .ql-snow .ql-stroke { stroke: #475569; }
+.reports-editor-card--moderno .ql-snow .ql-fill { fill: #475569; }
+.reports-editor-card--moderno .ql-snow .ql-picker { color: #475569; }
+.reports-editor-card--moderno .ql-editor.ql-blank::before { color: #94a3b8; }
+.reports-editor-card--moderno .reports-signature-block {
+    margin: auto 18mm 0;
+    padding: 14mm 0 8mm;
+    border-top: 1px solid #e5e5e5;
+    background: #fff;
+    color: #404040;
+    text-align: center;
+}
+@media (max-width: 980px) {
+    .reports-col-right--moderno { padding: 0; }
+    .reports-editor-card--moderno { min-height: 0; box-shadow: none; }
+    .reports-modern-document-header { grid-template-columns: 1fr; margin: 0 22px; padding-top: 22px; }
+    .reports-modern-document-heading { margin-top: 16px; text-align: left; }
+    .reports-modern-document-heading i { width: 100%; }
+    .reports-modern-document-patient { grid-template-columns: 1fr; gap: 8px; margin: 11px 22px 0; }
+    .reports-modern-document-title { margin: 26px 22px 14px; font-size: 15px; }
+    .reports-editor-card--moderno .reports-editor-toolbar,
+    .reports-editor-card--moderno .reports-editor-container { margin-left: 22px; margin-right: 22px; }
+    .reports-editor-card--moderno .reports-signature-block { margin-left: 22px; margin-right: 22px; }
+}
