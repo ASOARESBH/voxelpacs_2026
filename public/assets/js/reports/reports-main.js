@@ -14,6 +14,9 @@ window.VoxelReports.main = (function () {
             estudoId: parseInt(app.dataset.estudoId, 10),
             studyUid: app.dataset.studyUid,
             modalidade: app.dataset.modalidade || '',
+            modalidades: (app.dataset.modalidades || app.dataset.modalidade || '')
+                .split(',').map((value) => value.trim()).filter(Boolean),
+            studyDescription: app.dataset.studyDescription || '',
             readonly: app.dataset.readonly === '1',
             status: app.dataset.status,
             chatPending: app.dataset.chatPending === '1',

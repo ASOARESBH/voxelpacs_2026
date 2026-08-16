@@ -528,21 +528,58 @@ class ReportsController extends Controller
     public function templates(): void
     {
         if (!Auth::check()) { $this->json(['ok' => false, 'msg' => 'Não autenticado.'], 401); return; }
-        $tenantId = Auth::tenantId();
-        $modalidade = trim((string) ($_GET['modalidade'] ?? ''));
-        $where = "WHERE ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
-        $params = ['tenant_id' => $tenantId];
-        if ($modalidade !== '') { $where .= " AND modalidade = :modalidade"; $params['modalidade'] = $modalidade; }
+
+        $tenantId = (int) (Auth::tenantId() ?? 0);
+        if ($tenantId <= 0) {
+            $this->json(['ok' => false, 'msg' => 'Tenant inválido.'], 403);
+            return;
+        }
+
         try {
             $pdo = \App\Core\Database::getInstance();
+            $modalidades = $this->normalizarModalidades((string) ($_GET['modalidades'] ?? $_GET['modalidade'] ?? ''));
+            $studyDescription = $this->normalizarStudyDescription((string) ($_GET['study_description'] ?? ''));
+            $medicoId = $this->medicoIdAtual($pdo, $tenantId);
+            $perfilMedico = strtolower((string) Auth::perfilAtual()) === 'medico';
+
+            $where = "WHERE ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
+            $params = ['tenant_id' => $tenantId, 'medico_ordem' => $medicoId];
+            if ($perfilMedico) {
+                $where .= " AND (medico_id = :medico_id OR compartilhar = 1 OR medico_id IS NULL)";
+                $params['medico_id'] = $medicoId;
+            }
+
+            if ($studyDescription !== '') $params['study_description'] = $studyDescription;
+            if ($modalidades) {
+                $holders = [];
+                foreach ($modalidades as $index => $modalidade) {
+                    $key = 'modalidade_' . $index;
+                    $holders[] = ':' . $key;
+                    $params[$key] = $modalidade;
+                }
+                $where .= " AND (modalidade IN (" . implode(', ', $holders) . ") OR modalidade IS NULL OR TRIM(modalidade) = ''";
+                if ($studyDescription !== '') {
+                    // A TAG DICOM exata é um vínculo clínico explícito e não deve
+                    // ser descartada por uma modalidade importada incompleta.
+                    $where .= " OR UPPER(TRIM(COALESCE(study_description_tag, ''))) = :study_description";
+                }
+                $where .= ')';
+            }
+
+            $matchField = $studyDescription !== ''
+                ? "CASE WHEN UPPER(TRIM(COALESCE(study_description_tag, ''))) = :study_description THEN 1 ELSE 0 END AS study_description_match"
+                : "0 AS study_description_match";
+            $order = "ORDER BY study_description_match DESC, CASE WHEN medico_id = :medico_ordem THEN 0 ELSE 1 END ASC, COALESCE(uso_count, 0) DESC, nome ASC";
+
             $rows = null;
             $queries = [
-                "SELECT id, nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao
-                 FROM report_templates {$where} ORDER BY nome ASC",
-                "SELECT id, nome, modalidade, conteudo
-                 FROM report_templates {$where} ORDER BY nome ASC",
-                "SELECT id, titulo AS nome, modalidade, conteudo
-                 FROM report_templates {$where} ORDER BY nome ASC",
+                "SELECT id, nome, modalidade, compartilhar, study_description_tag, medico_id, uso_count,
+                        secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao, {$matchField}
+                 FROM report_templates {$where} {$order}",
+                "SELECT id, nome, modalidade, compartilhar, study_description_tag, medico_id, uso_count, conteudo, {$matchField}
+                 FROM report_templates {$where} {$order}",
+                "SELECT id, titulo AS nome, modalidade, compartilhar, study_description_tag, medico_id, uso_count, conteudo, {$matchField}
+                 FROM report_templates {$where} {$order}",
             ];
             foreach ($queries as $sql) {
                 try {
@@ -557,11 +594,19 @@ class ReportsController extends Controller
                 }
             }
             if ($rows === null) throw new \RuntimeException('Nenhum schema de templates compatível.');
+
             $templates = array_map(fn(array $row): array => $this->normalizarTemplate($row), $rows);
-            $this->json(['ok' => true, 'templates' => $templates]);
+            $sugeridos = array_values(array_filter($templates, static fn(array $template): bool => !empty($template['study_description_match'])));
+            $this->json([
+                'ok' => true,
+                'templates' => $templates,
+                'sugeridos' => $sugeridos,
+                'study_description' => $studyDescription,
+                'modalidades' => $modalidades,
+            ]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::templates error', ['msg' => $e->getMessage(), 'tenant_id' => $tenantId]);
-            $this->json(['ok' => false, 'templates' => [], 'msg' => 'Erro ao listar templates.'], 500);
+            $this->json(['ok' => false, 'templates' => [], 'sugeridos' => [], 'msg' => 'Erro ao listar templates.'], 500);
         }
     }
     // ══════════════════════════════════════════════════════════════════════════
@@ -581,13 +626,16 @@ class ReportsController extends Controller
         }
         try {
             $pdo = \App\Core\Database::getInstance();
-            $stmt = $pdo->prepare(
-                "SELECT * FROM report_templates
-                 WHERE id = :id AND ativo = 1
-                   AND (tenant_id IS NULL OR tenant_id = :tenant_id)
-                 LIMIT 1"
-            );
-            $stmt->execute([':id' => $templateId, ':tenant_id' => Auth::tenantId()]);
+            $tenantId = (int) (Auth::tenantId() ?? 0);
+            $medicoId = $this->medicoIdAtual($pdo, $tenantId);
+            $where = "WHERE id = :id AND ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
+            $params = ['id' => $templateId, 'tenant_id' => $tenantId];
+            if (strtolower((string) Auth::perfilAtual()) === 'medico') {
+                $where .= " AND (medico_id = :medico_id OR compartilhar = 1 OR medico_id IS NULL)";
+                $params['medico_id'] = $medicoId;
+            }
+            $stmt = $pdo->prepare("SELECT * FROM report_templates {$where} LIMIT 1");
+            $stmt->execute($params);
             $tpl = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($tpl) $tpl = $this->normalizarTemplate($tpl);
             if (!$tpl) {
@@ -950,15 +998,41 @@ class ReportsController extends Controller
             $secoes[$chave] = $valor;
         }
         $titulo = (string) ($row['nome'] ?? $row['titulo'] ?? ('Template #' . ($row['id'] ?? '')));
-        return [
+                return [
             'id' => (int) ($row['id'] ?? 0),
             'titulo' => $titulo,
             'nome' => $titulo,
             'modalidade' => (string) ($row['modalidade'] ?? ''),
+            'study_description_tag' => trim((string) ($row['study_description_tag'] ?? '')),
+            'study_description_match' => !empty($row['study_description_match']),
             'conteudo' => json_encode(['secoes' => $secoes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'secoes' => $secoes,
         ];
     }
+
+    /** @return array<int,string> */
+    private function normalizarModalidades(string $modalidades): array
+    {
+        $modalidades = strtoupper(trim($modalidades));
+        if ($modalidades === '') return [];
+        preg_match_all('/[A-Z0-9]{1,16}/', $modalidades, $matches);
+        return array_values(array_unique($matches[0] ?? []));
+    }
+
+    private function normalizarStudyDescription(string $descricao): string
+    {
+        $descricao = strtoupper(trim(preg_replace('/\\s+/', ' ', strip_tags($descricao)) ?? ''));
+        return mb_strlen($descricao, 'UTF-8') <= 255 ? $descricao : '';
+    }
+
+    private function medicoIdAtual(\PDO $pdo, int $tenantId): int
+    {
+        if ($tenantId <= 0 || !Auth::userId()) return 0;
+        $stmt = $pdo->prepare('SELECT id FROM bi_medicos WHERE usuario_id = :usuario_id AND tenant_id = :tenant_id LIMIT 1');
+        $stmt->execute(['usuario_id' => (int) Auth::userId(), 'tenant_id' => $tenantId]);
+        return (int) ($stmt->fetchColumn() ?: 0);
+    }
+
     /**
      * Resolve somente os metadados institucionais necessários para espelhar o
      * layout de impressão na tela do Laudário. Falhas não impedem a edição.

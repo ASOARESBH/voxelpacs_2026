@@ -37,6 +37,11 @@ if ($assumidoEm) {
 // ── Botão principal: Assinar ou Liberar ─────────────────────────────────────
 $jaAssinado = in_array($situacao, ['assinado', 'liberado'], true);
 $chatPendente = !empty($chat['pendente']);
+$modalidadesEstudo = [];
+preg_match_all('/[A-Z0-9]{1,16}/', strtoupper((string) ($estudo->modalities ?? '')), $modalidadesEncontradas);
+$modalidadesEstudo = array_values(array_unique($modalidadesEncontradas[0] ?? []));
+$modalidadePrincipal = $modalidadesEstudo[0] ?? '';
+$studyDescriptionDicom = trim((string) ($estudo->study_description ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -59,7 +64,9 @@ $chatPendente = !empty($chat['pendente']);
      data-template-id="<?= (int) ($report->template_id ?? 0) ?>"
      data-estudo-id="<?= (int) $estudo->id ?>"
      data-study-uid="<?= htmlspecialchars($estudo->study_instance_uid ?? '') ?>"
-     data-modalidade="<?= htmlspecialchars(explode('/', (string) ($estudo->modalities ?? ''))[0] ?? '') ?>"
+     data-modalidade="<?= htmlspecialchars($modalidadePrincipal, ENT_QUOTES) ?>"
+     data-modalidades="<?= htmlspecialchars(implode(',', $modalidadesEstudo), ENT_QUOTES) ?>"
+     data-study-description="<?= htmlspecialchars($studyDescriptionDicom, ENT_QUOTES) ?>"
      data-readonly="<?= $readonly ? '1' : '0' ?>"
      data-status="<?= htmlspecialchars($situacao) ?>"
      data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
