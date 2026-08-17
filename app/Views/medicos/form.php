@@ -1720,12 +1720,9 @@ let _mascaraLegacySecoes = { exame: '', recomendacao: '' };
 let _mascarasImportacao = [];
 let _arquivoOrigemImportacao = '';
 
-// Carrega a lista quando a aba "Máscaras" (Bootstrap tabs) é aberta — em vez
-// de recarregar toda vez, evita chamada redundante se o médico só olhar e
-// voltar pra outra aba sem nunca abrir Máscaras.
-document.getElementById('tab-mascaras')?.addEventListener('shown.bs.tab', function () {
-    carregarMascaras();
-});
+// A ativação de abas é centralizada no final deste script. Assim, tanto um
+// clique do Bootstrap quanto a abertura direta com ?aba=mascaras usam a mesma
+// função de carregamento e não deixam a listagem presa em "Carregando".
 
 function carregarMascaras() {
     if (!MEDICO_ID_MASCARAS) return;
@@ -2086,16 +2083,8 @@ const MEDICO_ID_ASSINATURA = <?= (int) $medicoId ?>;
 let _assinaturaPad = null;
 let _assinaturaCarregada = false;
 
-// Carrega o estado dos blocos só quando a aba é aberta pela 1ª vez (evita
-// fetch + init de canvas se o usuário nunca visitar essa aba) — mesmo
-// padrão de shown.bs.tab já usado pra Máscaras.
-document.getElementById('tab-assinatura')?.addEventListener('shown.bs.tab', function () {
-    if (!_assinaturaCarregada) {
-        _assinaturaCarregada = true;
-        initCanvasAssinatura();
-    }
-    carregarAssinaturas();
-});
+// O carregamento preguiçoso da assinatura é acionado pela função única de
+// ativação de abas declarada ao final deste script.
 
 function initCanvasAssinatura() {
     const canvas = document.getElementById('assinaturaCanvas');
@@ -2233,4 +2222,48 @@ function mostrarFeedbackAssinatura(tipo, msg) {
         + '<i class="fa ' + ico + ' me-1"></i>' + escHtml(msg) + '</div>';
     setTimeout(() => { fb.style.display = 'none'; }, 4000);
 }
+
+// ─── ATIVAÇÃO ÚNICA DAS ABAS DO MÉDICO ──────────────────────────────────────
+// Bootstrap cuida da exibição visual; esta função concentra os efeitos de
+// carregamento para clique, URL direta, favorito e fallback de navegação.
+const ABAS_MEDICO = ['dados', 'copilot', 'mascaras', 'assinatura'];
+
+function carregarConteudoAbaMedico(nomeAba) {
+    if (nomeAba === 'mascaras') {
+        carregarMascaras();
+        return;
+    }
+    if (nomeAba === 'assinatura') {
+        if (!_assinaturaCarregada) {
+            _assinaturaCarregada = true;
+            initCanvasAssinatura();
+        }
+        carregarAssinaturas();
+    }
+}
+
+function ativarAbaMedico(nomeAba) {
+    if (!ABAS_MEDICO.includes(nomeAba)) return;
+    const botao = document.getElementById('tab-' + nomeAba);
+    if (botao && !botao.classList.contains('active') && window.bootstrap?.Tab) {
+        bootstrap.Tab.getOrCreateInstance(botao).show();
+        return;
+    }
+    carregarConteudoAbaMedico(nomeAba);
+}
+
+window.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('#medicoTabs .medico-tab-btn').forEach(function (botao) {
+        botao.addEventListener('shown.bs.tab', function (evento) {
+            const nomeAba = evento.target.id.replace(/^tab-/, '');
+            carregarConteudoAbaMedico(nomeAba);
+            const url = new URL(window.location.href);
+            url.searchParams.set('aba', nomeAba);
+            window.history.replaceState({}, '', url);
+        });
+    });
+
+    const abaInicial = new URLSearchParams(window.location.search).get('aba');
+    ativarAbaMedico(ABAS_MEDICO.includes(abaInicial) ? abaInicial : 'dados');
+});
 </script>

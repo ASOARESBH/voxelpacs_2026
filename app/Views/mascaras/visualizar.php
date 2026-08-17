@@ -65,7 +65,9 @@ $conteudoLivre = (string) ($mascara['conteudo_livre'] ?? '');
 <div class="pdf-page">
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
-        <a class="btn-back" href="/medicos/<?= $medicoId ?>/edit?aba=mascaras">← Voltar para Máscaras</a>
+        <a class="btn-back"
+           href="/medicos/<?= $medicoId ?>/edit?aba=mascaras"
+           data-voxel-voltar="/medicos/<?= $medicoId ?>/edit?aba=mascaras">← Voltar para Máscaras</a>
     </div>
 
     <div class="preview-watermark">
@@ -117,5 +119,6 @@ $conteudoLivre = (string) ($mascara['conteudo_livre'] ?? '');
         <span>Gerado em: <?= date('d/m/Y H:i') ?></span>
     </footer>
 </div>
+<script src="/assets/js/shared/voxel-voltar.js?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.2.0' ?>"></script>
 </body>
 </html>

@@ -89,3 +89,9 @@ A rota usa `TemplatesController::visualizar()`. Ela não altera `uso_count`, nã
 A view `app/Views/mascaras/visualizar.php` reaproveita o padrão tipográfico, cabeçalho, títulos de seção e ações de impressão do template PDF Clássico Centralizado, porém **não exibe nenhum dado de paciente**. Ela mostra somente Técnica, Achados e Impressão, preservando o HTML sanitizado de negrito, e contém o aviso visível de que se trata de uma pré-visualização sem vínculo com estudo real.
 
 Não há botão de download de PDF nessa página. Os únicos controles são **Imprimir** e **Voltar para Máscaras**.
+
+## Navegação da aba Máscaras e pré-visualização
+
+A aba **Máscaras** da edição de Médico é acionada por uma única rotina: `ativarAbaMedico()` delega os efeitos de cada aba a `carregarConteudoAbaMedico()`. Por isso, o clique manual, a URL direta `/medicos/{id}/edit?aba=mascaras`, favoritos e o fallback da pré-visualização sempre chamam `carregarMascaras()` e não deixam a interface no estado permanente de carregamento. A aba Assinatura reutiliza o mesmo padrão de inicialização preguiçosa.
+
+O botão **Visualizar Laudo** continua abrindo em nova aba com `target="_blank"` e `rel="noopener"`, preservando a listagem original. A pré-visualização usa o padrão compartilhado `voxelVoltar(fallbackUrl)`: quando houver histórico interno, retorna à página anterior; em nova aba ou acesso direto, usa `/medicos/{id}/edit?aba=mascaras` como fallback seguro. Ver também `SKILL-VOXEL-PACS/patterns/padrao-navegacao-voltar.md`.

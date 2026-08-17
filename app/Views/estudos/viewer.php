@@ -222,7 +222,7 @@
         <button class="viewer-btn" onclick="toggleFullscreen()" title="Tela cheia">
             <i class="fa fa-expand"></i> Tela Cheia
         </button>
-        <a href="/estudos" class="viewer-btn">
+        <a href="/estudos" data-voxel-voltar="/estudos" class="viewer-btn">
             <i class="fa fa-arrow-left"></i> Voltar
         </a>
         <a href="<?= htmlspecialchars($viewerUrl) ?>" target="_blank" class="viewer-btn primary">
@@ -273,13 +273,14 @@
                 Este estudo ainda não possui imagens DICOM associadas no servidor PACS.<br>
                 Verifique a configuração do servidor <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> ou aguarde a sincronização.
             </p>
-            <a href="/estudos" class="orthanc-link">
+            <a href="/estudos" data-voxel-voltar="/estudos" class="orthanc-link">
                 <i class="fa fa-arrow-left"></i> Voltar à Worklist
             </a>
         </div>
     <?php endif; ?>
 </div>
 
+<script src="/assets/js/shared/voxel-voltar.js?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.2.0' ?>"></script>
 <script>
 function checkIframeLoad(iframe) {
     // Se o iframe carregou mas está vazio ou com erro de CORS, mostra placeholder

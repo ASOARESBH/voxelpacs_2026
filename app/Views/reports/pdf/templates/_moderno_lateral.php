@@ -159,7 +159,7 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
-        <a href="/estudos">Voltar à Worklist</a>
+        <a href="/estudos" data-voxel-voltar="/estudos">Voltar à Worklist</a>
     </div>
 
     <main class="pdf-page">
@@ -239,6 +239,7 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
         </footer>
     </main>
 
+    <script src="/assets/js/shared/voxel-voltar.js?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.2.0' ?>"></script>
     <?php if ($download): ?>
         <script>window.onload = function () { window.print(); };</script>
     <?php endif; ?>

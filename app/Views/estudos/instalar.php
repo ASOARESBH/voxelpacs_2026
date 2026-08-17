@@ -209,7 +209,7 @@
         </div>
 
         <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #f1f5f9;">
-            <a href="/estudos" class="pwa-install-btn" style="background:#f1f5f9;color:#334155;">
+            <a href="/estudos" data-voxel-voltar="/estudos" class="pwa-install-btn" style="background:#f1f5f9;color:#334155;">
                 <i class="fa fa-arrow-left"></i> Voltar para a Worklist
             </a>
         </div>

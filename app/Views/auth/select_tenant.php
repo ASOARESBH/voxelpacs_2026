@@ -15,6 +15,6 @@
     </form>
     <?php endforeach; ?>
     <div class="text-center mt-3">
-        <a href="/logout" class="text-muted text-decoration-none"><small><i class="fa fa-arrow-left me-1"></i>Voltar ao login</small></a>
+        <a href="/logout" data-voxel-voltar-skip class="text-muted text-decoration-none"><small><i class="fa fa-arrow-left me-1"></i>Voltar ao login</small></a>
     </div>
 </div>
