@@ -1262,20 +1262,19 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
                 <i class="fa fa-file-medical me-1"></i> Conteúdo do Laudo
             </div>
 
-            <div class="mascara-editor-section">
-                <span class="mascara-editor-label">Técnica</span>
-                <div class="mascara-editor-body" id="mEd-tecnica"
-                     data-placeholder="Descreva a técnica utilizada..."></div>
-            </div>
-            <div class="mascara-editor-section">
-                <span class="mascara-editor-label">Achados</span>
-                <div class="mascara-editor-body" id="mEd-achados"
-                     data-placeholder="Descreva os achados do exame..."></div>
-            </div>
-            <div class="mascara-editor-section">
-                <span class="mascara-editor-label">Impressão</span>
-                <div class="mascara-editor-body" id="mEd-conclusao"
-                     data-placeholder="Impressão diagnóstica..."></div>
+            <div class="mascara-editor-section mascara-editor-section--livre">
+                <span class="mascara-editor-label">Texto livre da Máscara</span>
+                <span class="medico-hint">Use a mesma formatação disponível no Laudário. O conteúdo será aplicado ao laudo como foi redigido.</span>
+                <div id="mEd-conteudo-toolbar" class="reports-editor-toolbar mascara-editor-toolbar" aria-label="Ferramentas de formatação da máscara">
+                    <span class="ql-formats"><button class="ql-bold" title="Negrito"></button><button class="ql-italic" title="Itálico"></button><button class="ql-underline" title="Sublinhado"></button></span>
+                    <span class="ql-formats"><select class="ql-header" title="Cabeçalho"><option value="1"></option><option value="2"></option><option value="3"></option><option selected></option></select></span>
+                    <span class="ql-formats"><button class="ql-list" value="ordered" title="Numeração"></button><button class="ql-list" value="bullet" title="Marcadores"></button></span>
+                    <span class="ql-formats"><button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button></span>
+                    <span class="ql-formats"><button class="ql-undo" title="Desfazer"><i class="fa fa-rotate-left"></i></button><button class="ql-redo" title="Refazer"><i class="fa fa-rotate-right"></i></button></span>
+                    <span class="ql-formats"><button class="ql-clean" title="Limpar formatação"></button></span>
+                </div>
+                <div class="mascara-editor-body mascara-editor-body--livre" id="mEd-conteudo"
+                     data-placeholder="Redija o conteúdo livre que será aplicado ao laudo..."></div>
             </div>
         </div>
         <!-- Footer do modal -->
@@ -1344,6 +1343,7 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 <!-- Bibliotecas do formulário em edição — versões fixadas no CDN jsdelivr. -->
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+<script src="/assets/js/shared/voxel-quill-factory.js?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>"></script>
 <?php endif; ?>
 
 <script>
@@ -1714,9 +1714,8 @@ function toggleVerMedicoLaudo(el) {
 }
 // ─── MÓDULO DE MÁSCARAS ─────────────────────────────────────────────────────
 const MEDICO_ID_MASCARAS = <?= (int) $medicoId ?>;
-const MASCARA_SECOES_EDITAVEIS = ['tecnica', 'achados', 'conclusao'];
 let _mascarasAll = [];
-let _mascaraEditors = {};
+let _mascaraEditor = null;
 let _mascaraLegacySecoes = { exame: '', recomendacao: '' };
 let _mascarasImportacao = [];
 let _arquivoOrigemImportacao = '';
@@ -1803,44 +1802,48 @@ function filtrarMascaras() {
     renderizarMascaras(lista);
 }
 
-function inicializarEditoresMascara() {
-    if (Object.keys(_mascaraEditors).length) return true;
-    if (!window.Quill) {
-        alert('Não foi possível carregar o editor de texto. Verifique sua conexão e recarregue a página.');
+function inicializarEditorMascara() {
+    if (_mascaraEditor) return true;
+    if (!window.Quill || !window.createVoxelQuillEditor) {
+        alert('Não foi possível carregar o editor de texto. Recarregue a página e tente novamente.');
         return false;
     }
 
-    MASCARA_SECOES_EDITAVEIS.forEach(secao => {
-        const el = document.getElementById('mEd-' + secao);
-        if (!el) return;
-        _mascaraEditors[secao] = new Quill(el, {
-            theme: 'snow',
-            placeholder: el.dataset.placeholder || '',
-            modules: { toolbar: [['bold']] }
-        });
+    const el = document.getElementById('mEd-conteudo');
+    if (!el) return false;
+    _mascaraEditor = window.createVoxelQuillEditor(el, {
+        toolbarSelector: '#mEd-conteudo-toolbar',
+        placeholder: el.dataset.placeholder || '',
     });
-    return MASCARA_SECOES_EDITAVEIS.every(secao => !!_mascaraEditors[secao]);
+    return true;
 }
 
-function definirConteudoMascara(secao, html) {
-    const editor = _mascaraEditors[secao];
-    if (editor) editor.clipboard.dangerouslyPasteHTML(html || '');
+function definirConteudoMascara(html) {
+    if (!_mascaraEditor) return;
+    _mascaraEditor.setText('');
+    _mascaraEditor.clipboard.dangerouslyPasteHTML(0, html || '<p><br></p>', 'silent');
 }
 
-function obterConteudoMascara(secao) {
-    const editor = _mascaraEditors[secao];
-    return editor ? editor.root.innerHTML : '';
+function obterConteudoMascara() {
+    return _mascaraEditor ? _mascaraEditor.root.innerHTML : '';
+}
+
+function conteudoLegadoMascara(template) {
+    return ['secao_tecnica', 'secao_achados', 'secao_conclusao']
+        .map(campo => String(template[campo] || '').trim())
+        .filter(Boolean)
+        .join('<p><br></p>');
 }
 
 function abrirNovaMascara() {
-    if (!inicializarEditoresMascara()) return;
+    if (!inicializarEditorMascara()) return;
     document.getElementById('mascaraEditId').value = '';
     document.getElementById('mascaraNome').value = '';
     document.getElementById('mascaraModalidade').value = '';
     document.getElementById('mascaraCompartilhar').checked = false;
     document.getElementById('mascaraStudyDesc').value = '';
     _mascaraLegacySecoes = { exame: '', recomendacao: '' };
-    MASCARA_SECOES_EDITAVEIS.forEach(secao => definirConteudoMascara(secao, ''));
+    definirConteudoMascara('');
     document.getElementById('modalMascaraTitulo').textContent = 'Nova Máscara';
     document.getElementById('modalMascara').style.display = 'block';
     document.getElementById('mascaraNome').focus();
@@ -1848,7 +1851,7 @@ function abrirNovaMascara() {
 
 function editarMascara(id) {
     const t = _mascarasAll.find(x => x.id == id);
-    if (!t || !inicializarEditoresMascara()) return;
+    if (!t || !inicializarEditorMascara()) return;
     document.getElementById('mascaraEditId').value = t.id;
     document.getElementById('mascaraNome').value = t.nome || '';
     document.getElementById('mascaraModalidade').value = t.modalidade || '';
@@ -1858,7 +1861,7 @@ function editarMascara(id) {
         exame: t.secao_exame || '',
         recomendacao: t.secao_recomendacao || ''
     };
-    MASCARA_SECOES_EDITAVEIS.forEach(secao => definirConteudoMascara(secao, t['secao_' + secao] || ''));
+    definirConteudoMascara(t.conteudo_livre || conteudoLegadoMascara(t));
     document.getElementById('modalMascaraTitulo').textContent = 'Editar Máscara';
     document.getElementById('modalMascara').style.display = 'block';
 }
@@ -1869,7 +1872,7 @@ function fecharModalMascara() {
 
 function salvarMascara() {
     const nome = document.getElementById('mascaraNome').value.trim();
-    if (!nome || !inicializarEditoresMascara()) {
+    if (!nome || !inicializarEditorMascara()) {
         if (!nome) alert('Informe o nome do template.');
         return;
     }
@@ -1883,9 +1886,7 @@ function salvarMascara() {
         compartilhar:         document.getElementById('mascaraCompartilhar').checked ? 1 : 0,
         study_description_tag: document.getElementById('mascaraStudyDesc').value.trim().toUpperCase(),
         secao_exame:          _mascaraLegacySecoes.exame,
-        secao_tecnica:        obterConteudoMascara('tecnica'),
-        secao_achados:        obterConteudoMascara('achados'),
-        secao_conclusao:      obterConteudoMascara('conclusao'),
+        conteudo_livre:       obterConteudoMascara(),
         secao_recomendacao:   _mascaraLegacySecoes.recomendacao,
     };
     fetch('/api/medicos/' + MEDICO_ID_MASCARAS + '/templates', {

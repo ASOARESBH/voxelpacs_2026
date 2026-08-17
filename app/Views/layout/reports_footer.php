@@ -24,6 +24,7 @@
 </script>
 <script src="/assets/js/reports/reports-chat.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-peer-review.js?v=<?= $v ?>"></script>
+<script src="/assets/js/shared/voxel-quill-factory.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-editor.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-dictation.js?v=<?= $v ?>"></script>
 <script src="/assets/js/reports/reports-autosave.js?v=<?= $v ?>"></script>

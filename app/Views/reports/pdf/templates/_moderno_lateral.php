@@ -109,6 +109,10 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
         .pdf-report-content p { margin: 0 0 9px; }
         .pdf-report-content ul, .pdf-report-content ol { margin: 0 0 9px 19px; padding: 0; }
         .pdf-report-content li { margin: 0 0 3px; }
+        .pdf-report-content table { width: 100%; border-collapse: collapse; margin: .7rem 0; }
+        .pdf-report-content th, .pdf-report-content td { border: 1px solid #aab4c0; padding: .4rem .5rem; vertical-align: top; }
+        .pdf-report-content th { font-weight: 700; background: #f0f4f8; }
+        .pdf-report-content u { text-decoration: underline; }
         .pdf-report-empty { color: #737373; font-style: italic; }
 
         .pdf-signature { margin-top: auto; padding-top: 50px; text-align: center; page-break-inside: avoid; }

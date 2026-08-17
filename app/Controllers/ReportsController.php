@@ -454,6 +454,7 @@ class ReportsController extends Controller
             if ($mascara !== null) {
                 $data['mascara_titulo'] = $mascara['titulo'];
                 $data['mascara_secoes'] = $mascara['secoes'];
+                $data['mascara_conteudo_livre'] = trim((string) ($mascara['conteudo_livre'] ?? '')) !== '';
             }
 
             // Log de visualização de PDF
@@ -588,7 +589,7 @@ class ReportsController extends Controller
 
             $rows = null;
             $queries = [
-                "SELECT id, nome, modalidade, compartilhar, study_description_tag, medico_id, uso_count,
+                "SELECT id, nome, modalidade, compartilhar, study_description_tag, conteudo_livre, medico_id, uso_count,
                         secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao, {$matchField}
                  FROM report_templates {$where} {$order}",
                 "SELECT id, nome, modalidade, compartilhar, study_description_tag, medico_id, uso_count, conteudo, {$matchField}
@@ -1004,6 +1005,7 @@ class ReportsController extends Controller
                 $secoesJson['exame'] = $conteudo;
             }
         }
+        $conteudoLivre = trim((string) ($row['conteudo_livre'] ?? ''));
         $secoes = [];
         foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $chave) {
             $campo = 'secao_' . $chave;
@@ -1020,7 +1022,10 @@ class ReportsController extends Controller
             'modalidade' => (string) ($row['modalidade'] ?? ''),
             'study_description_tag' => trim((string) ($row['study_description_tag'] ?? '')),
             'study_description_match' => !empty($row['study_description_match']),
-            'conteudo' => json_encode(['secoes' => $secoes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'conteudo_livre' => $conteudoLivre,
+            'conteudo' => $conteudoLivre !== ''
+                ? json_encode(['corpo' => $conteudoLivre], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : json_encode(['secoes' => $secoes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'secoes' => $secoes,
         ];
     }
@@ -1113,8 +1118,8 @@ class ReportsController extends Controller
         $where = 'WHERE id = :id AND (tenant_id IS NULL OR tenant_id = :tenant_id) LIMIT 1';
         $params = ['id' => $templateId, 'tenant_id' => $tenantId];
         $queries = [
-            "SELECT id, nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
-            "SELECT id, titulo AS nome, modalidade, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
+            "SELECT id, nome, modalidade, conteudo_livre, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
+            "SELECT id, titulo AS nome, modalidade, conteudo_livre, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",
             "SELECT id, nome, modalidade, conteudo FROM report_templates {$where}",
             "SELECT id, titulo AS nome, modalidade, conteudo FROM report_templates {$where}",
         ];

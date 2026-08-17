@@ -37,6 +37,7 @@ foreach ($rotulosSecoesPdf as $chave => $rotulo) {
 }
 $usarSecoesPersistidas = $templateCodigo === 'moderno_lateral'
     && (int) ($r['template_id'] ?? 0) > 0
+    && empty($r['mascara_conteudo_livre'])
     && !empty($secoesPersistidas);
 if ($usarSecoesPersistidas) {
     $secoesClinicasPdf = $secoesPersistidas;
@@ -97,7 +98,8 @@ if ($usarSecoesPersistidas) {
 // O editor livre persiste títulos em <h*> ou <p><strong>. Quando existirem,
 // eles são a fonte de verdade para laudos sem Máscara vinculada ou sem seções
 // atuais. Sem marcadores, aplica o fallback das colunas/Máscara.
-if (!$usarSecoesPersistidas && trim($corpoLaudo) !== '' && class_exists('DOMDocument')) {
+if (!$usarSecoesPersistidas && empty($r['mascara_conteudo_livre'])
+    && trim($corpoLaudo) !== '' && class_exists('DOMDocument')) {
     $dom = new \DOMDocument('1.0', 'UTF-8');
     $previousErrors = libxml_use_internal_errors(true);
     $fragment = '<div id="voxel-pdf-secoes">' . $corpoLaudo . '</div>';
@@ -132,7 +134,7 @@ if (!$usarSecoesPersistidas && trim($corpoLaudo) !== '' && class_exists('DOMDocu
     $secoesClinicasPdf = array_filter($secoesClinicasPdf, static fn(array $secao): bool => trim(strip_tags($secao['conteudo'] ?? '')) !== '');
 }
 
-if (empty($secoesClinicasPdf)) {
+if (empty($secoesClinicasPdf) && empty($r['mascara_conteudo_livre'])) {
     foreach ($rotulosSecoesPdf as $chave => $rotulo) {
         $valor = (string) ($r['secao_' . $chave] ?? '');
         if (trim(strip_tags($valor)) === '' && isset($r['mascara_secoes'][$chave])) {

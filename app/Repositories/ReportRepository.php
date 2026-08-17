@@ -244,7 +244,16 @@ class ReportRepository {
         $secoes = $conteudo['secoes'] ?? $conteudo; // suporta ambos os formatos
 
         if (array_key_exists('corpo', $secoes)) {
-            $sets = ['corpo_laudo = :corpo_laudo'];
+            // O modo livre é a fonte única do laudo. Zerar as colunas estruturadas
+            // impede que um rascunho anterior reapareça ao gerar o PDF.
+            $sets = [
+                'corpo_laudo = :corpo_laudo',
+                "secao_exame = ''",
+                "secao_tecnica = ''",
+                "secao_achados = ''",
+                "secao_conclusao = ''",
+                "secao_recomendacao = ''",
+            ];
             $params = [
                 'corpo_laudo' => (string) $secoes['corpo'],
                 'id' => $reportId,
@@ -272,7 +281,13 @@ class ReportRepository {
                     'report_id' => $reportId,
                     'error' => $e->getMessage(),
                 ]);
-                $sets[0] = 'secao_achados = :corpo_laudo';
+                $sets = [
+                    "secao_exame = ''",
+                    "secao_tecnica = ''",
+                    'secao_achados = :corpo_laudo',
+                    "secao_conclusao = ''",
+                    "secao_recomendacao = ''",
+                ];
                 $this->pdo->prepare("UPDATE reports SET " . implode(', ', $sets) . " WHERE id = :id")->execute($params);
                 return;
             }

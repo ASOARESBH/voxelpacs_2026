@@ -7,6 +7,7 @@ $modalidade = htmlspecialchars((string) ($mascara['modalidade'] ?? '—'), ENT_Q
 $tecnica = (string) ($mascara['secao_tecnica'] ?? '');
 $achados = (string) ($mascara['secao_achados'] ?? '');
 $impressao = (string) ($mascara['secao_conclusao'] ?? '');
+$conteudoLivre = (string) ($mascara['conteudo_livre'] ?? '');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -42,6 +43,10 @@ $impressao = (string) ($mascara['secao_conclusao'] ?? '');
         .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; overflow-wrap: anywhere; }
         .pdf-section-content p { margin: 0 0 .55rem; }
         .pdf-section-content p:last-child { margin-bottom: 0; }
+        .pdf-section-content ul, .pdf-section-content ol { margin: .35rem 0 .7rem 1.5rem; padding: 0; }
+        .pdf-section-content table { width: 100%; border-collapse: collapse; margin: .7rem 0; }
+        .pdf-section-content th, .pdf-section-content td { border: 1px solid #aab4c0; padding: .4rem .5rem; vertical-align: top; }
+        .pdf-section-content th { font-weight: 700; background: #f0f4f8; }
         .pdf-footer { border-top: 1px solid #ccc; padding-top: .75rem; margin-top: 2rem; display: flex; justify-content: space-between; align-items: center; font-size: .7rem; color: #888; }
         @media print {
             body { background: #fff; }
@@ -79,25 +84,31 @@ $impressao = (string) ($mascara['secao_conclusao'] ?? '');
         </div>
     </header>
 
-    <?php if (trim(strip_tags($tecnica)) !== ''): ?>
+    <?php if (trim(strip_tags($conteudoLivre)) !== ''): ?>
     <section class="pdf-section">
-        <h2 class="pdf-section-title">Técnica</h2>
-        <div class="pdf-section-content"><?= $tecnica ?></div>
+        <div class="pdf-section-content"><?= $conteudoLivre ?></div>
     </section>
-    <?php endif; ?>
+    <?php else: ?>
+        <?php if (trim(strip_tags($tecnica)) !== ''): ?>
+        <section class="pdf-section">
+            <h2 class="pdf-section-title">Técnica</h2>
+            <div class="pdf-section-content"><?= $tecnica ?></div>
+        </section>
+        <?php endif; ?>
 
-    <?php if (trim(strip_tags($achados)) !== ''): ?>
-    <section class="pdf-section">
-        <h2 class="pdf-section-title">Achados</h2>
-        <div class="pdf-section-content"><?= $achados ?></div>
-    </section>
-    <?php endif; ?>
+        <?php if (trim(strip_tags($achados)) !== ''): ?>
+        <section class="pdf-section">
+            <h2 class="pdf-section-title">Achados</h2>
+            <div class="pdf-section-content"><?= $achados ?></div>
+        </section>
+        <?php endif; ?>
 
-    <?php if (trim(strip_tags($impressao)) !== ''): ?>
-    <section class="pdf-section">
-        <h2 class="pdf-section-title">Impressão</h2>
-        <div class="pdf-section-content"><?= $impressao ?></div>
-    </section>
+        <?php if (trim(strip_tags($impressao)) !== ''): ?>
+        <section class="pdf-section">
+            <h2 class="pdf-section-title">Impressão</h2>
+            <div class="pdf-section-content"><?= $impressao ?></div>
+        </section>
+        <?php endif; ?>
     <?php endif; ?>
 
     <footer class="pdf-footer">

@@ -25,6 +25,18 @@ window.VoxelReports.templates = (function () {
         return Object.values(secoes).every((html) => !html || html.replace(/<[^>]+>/g, '').trim() === '');
     }
 
+    function conteudoLivre(template) {
+        if (typeof template?.conteudo_livre === 'string' && template.conteudo_livre.trim() !== '') {
+            return template.conteudo_livre;
+        }
+        try {
+            const conteudo = typeof template?.conteudo === 'string' ? JSON.parse(template.conteudo) : null;
+            return typeof conteudo?.corpo === 'string' ? conteudo.corpo : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
     function atualizarTituloDocumento(titulo) {
         const elemento = document.getElementById('reports-modern-document-title');
         const texto = String(titulo || '').trim();
@@ -49,10 +61,14 @@ window.VoxelReports.templates = (function () {
         if (confirmar && !isEditorVazio()
             && !confirm('Substituir o conteúdo atual do laudo por este template?')) return false;
 
-        const secoes = parseSecoes(template);
-        // A criação de Máscara disponibiliza somente TÉCNICA, ACHADOS e
-        // IMPRESSÃO. Não inserir marcadores legados no editor clínico.
-        editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao']);
+        const livre = conteudoLivre(template);
+        if (livre !== '') {
+            editor.loadConteudoLivre(livre);
+        } else {
+            const secoes = parseSecoes(template);
+            // Máscaras legadas continuam disponíveis sem conversão destrutiva.
+            editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao']);
+        }
         atualizarTituloDocumento(template.titulo);
         config.templateId = Number(template.id) || 0;
         window.VoxelReports.autosave.setTemplateId(config.templateId);

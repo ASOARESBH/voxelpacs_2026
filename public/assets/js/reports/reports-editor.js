@@ -18,28 +18,13 @@ window.VoxelReports.editor = (function () {
         recomendacao: 'Recomendação',
     };
 
-    function insertBasicTable() {
-        const range = quill.getSelection(true);
-        const html = '<table><tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr></table><p><br></p>';
-        quill.clipboard.dangerouslyPasteHTML(range ? range.index : quill.getLength(), html, 'user');
-    }
+    let documentoLivre = false;
 
     function init(config) {
-        quill = new Quill('#editor-container', {
-            theme: 'snow',
+        documentoLivre = !!config.documentoLivre;
+        quill = window.createVoxelQuillEditor('#editor-container', {
             readOnly: !!config.readonly,
-            modules: {
-                toolbar: config.readonly ? false : {
-                    container: '#editor-toolbar',
-                    handlers: {
-                        table: insertBasicTable,
-                        undo: () => quill.history.undo(),
-                        redo: () => quill.history.redo(),
-                    },
-                },
-                history: { delay: 1000, maxStack: 200, userOnly: true },
-                table: false,
-            },
+            toolbarSelector: '#editor-toolbar',
         });
 
         if (config.readonly) {
@@ -56,6 +41,7 @@ window.VoxelReports.editor = (function () {
      * técnica, achados e impressão.
      */
     function loadSecoes(secoes, chaves = SECOES) {
+        documentoLivre = false;
         let html = '';
         chaves.forEach((chave) => {
             const conteudo = String(secoes[chave] || '');
@@ -106,6 +92,10 @@ window.VoxelReports.editor = (function () {
      * Ver diagnostics/pendencias-conhecidas.md.
      */
     function extractSecoes() {
+        if (documentoLivre) {
+            return { corpo: quill?.root?.innerHTML || '<p><br></p>' };
+        }
+
         const secoes = { exame: '', tecnica: '', achados: '', conclusao: '', recomendacao: '' };
         let atual = null;
         let marcadoresEncontrados = 0;
@@ -161,8 +151,15 @@ window.VoxelReports.editor = (function () {
         return secoes;
     }
 
+    function loadConteudoLivre(html) {
+        documentoLivre = true;
+        quill.setText('');
+        quill.clipboard.dangerouslyPasteHTML(0, html || '<p><br></p>', 'silent');
+    }
+
     function getQuill() { return quill; }
     function setReadOnly(readonly) { if (quill) quill.enable(!readonly); }
+    function isDocumentoLivre() { return documentoLivre; }
 
-    return { init, loadSecoes, extractSecoes, getQuill, setReadOnly };
+    return { init, loadSecoes, loadConteudoLivre, extractSecoes, getQuill, setReadOnly, isDocumentoLivre };
 })();

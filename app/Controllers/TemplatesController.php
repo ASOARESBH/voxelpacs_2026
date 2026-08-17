@@ -47,16 +47,22 @@ class TemplatesController extends Controller
     }
 
     /**
-     * O editor de máscaras permite somente <strong> para preservar o negrito
-     * clínico. Todo o restante é removido no servidor antes da persistência.
+     * Preserva somente marcação clínica produzida pela toolbar comum do Quill.
+     * Atributos são eliminados para impedir estilos, URLs e handlers executáveis
+     * vindos de colagem ou importação de DOCX.
      */
     private function sanitizeSectionHtml($value): string
     {
         $html = (string) $value;
-        $html = strip_tags($html, '<p><br><strong><b>');
+        $allowed = '<p><br><strong><b><em><i><u><h1><h2><h3><h4><h5><h6><ul><ol><li><table><thead><tbody><tr><th><td>';
+        $html = strip_tags($html, $allowed);
         $html = preg_replace('/<(?:strong|b)\\b[^>]*>/i', '<strong>', $html) ?? '';
         $html = preg_replace('/<\\/(?:strong|b)>/i', '</strong>', $html) ?? '';
-        $html = preg_replace('/<p\\b[^>]*>/i', '<p>', $html) ?? '';
+        $html = preg_replace('/<(?:em|i)\\b[^>]*>/i', '<em>', $html) ?? '';
+        $html = preg_replace('/<\\/(?:em|i)>/i', '</em>', $html) ?? '';
+        $html = preg_replace_callback('/<(p|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|u|br)\\b[^>]*>/i', static function (array $match): string {
+            return '<' . strtolower($match[1]) . '>';
+        }, $html) ?? '';
         return trim($html);
     }
 
@@ -124,7 +130,7 @@ class TemplatesController extends Controller
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare("
-                SELECT id, nome, modalidade, compartilhar, study_description_tag,
+                SELECT id, nome, modalidade, compartilhar, study_description_tag, conteudo_livre,
                        secao_tecnica, secao_achados, secao_conclusao, medico_id
                 FROM report_templates
                 WHERE id = :id
@@ -184,6 +190,7 @@ class TemplatesController extends Controller
         $modalidade          = trim($input['modalidade'] ?? '');
         $compartilhar        = (int) ($input['compartilhar'] ?? 0);
         $studyDescriptionTag = trim($input['study_description_tag'] ?? '');
+        $conteudoLivre       = $this->sanitizeSectionHtml($input['conteudo_livre'] ?? '');
         $secaoExame          = (string) ($input['secao_exame']        ?? '');
         $secaoTecnica        = $this->sanitizeSectionHtml($input['secao_tecnica'] ?? '');
         $secaoAchados        = $this->sanitizeSectionHtml($input['secao_achados'] ?? '');
@@ -223,6 +230,7 @@ class TemplatesController extends Controller
                         modalidade           = :modalidade,
                         compartilhar         = :compartilhar,
                         study_description_tag = :study_desc,
+                        conteudo_livre        = :conteudo_livre,
                         secao_exame          = :s_exame,
                         secao_tecnica        = :s_tecnica,
                         secao_achados        = :s_achados,
@@ -235,6 +243,7 @@ class TemplatesController extends Controller
                     'modalidade'     => $modalidade,
                     'compartilhar'   => $compartilhar,
                     'study_desc'     => $studyDescriptionTag ?: null,
+                    'conteudo_livre' => $conteudoLivre !== '' ? $conteudoLivre : null,
                     's_exame'        => $secaoExame,
                     's_tecnica'      => $secaoTecnica,
                     's_achados'      => $secaoAchados,
@@ -251,12 +260,12 @@ class TemplatesController extends Controller
                 $stmt = $pdo->prepare("
                     INSERT INTO report_templates
                         (tenant_id, medico_id, origem, arquivo_origem, revisar,
-                         nome, modalidade, compartilhar, study_description_tag,
+                         nome, modalidade, compartilhar, study_description_tag, conteudo_livre,
                          secao_exame, secao_tecnica, secao_achados,
                          secao_conclusao, secao_recomendacao, ativo)
                     VALUES
                         (:tid, :mid, 'manual', NULL, 0,
-                         :nome, :modalidade, :compartilhar, :study_desc,
+                         :nome, :modalidade, :compartilhar, :study_desc, :conteudo_livre,
                          :s_exame, :s_tecnica, :s_achados,
                          :s_conclusao, :s_recomendacao, 1)
                 ");
@@ -267,6 +276,7 @@ class TemplatesController extends Controller
                     'modalidade'     => $modalidade,
                     'compartilhar'   => $compartilhar,
                     'study_desc'     => $studyDescriptionTag ?: null,
+                    'conteudo_livre' => $conteudoLivre !== '' ? $conteudoLivre : null,
                     's_exame'        => $secaoExame,
                     's_tecnica'      => $secaoTecnica,
                     's_achados'      => $secaoAchados,
@@ -370,12 +380,12 @@ class TemplatesController extends Controller
                 $inserir = $pdo->prepare(
                     'INSERT INTO report_templates
                         (tenant_id, medico_id, origem, arquivo_origem, revisar,
-                         nome, modalidade, compartilhar, study_description_tag,
+                         nome, modalidade, compartilhar, study_description_tag, conteudo_livre,
                          secao_exame, secao_tecnica, secao_achados,
                          secao_conclusao, secao_recomendacao, ativo)
                      VALUES
                         (:tid, :mid, \'importado\', :arquivo_origem, :revisar,
-                         :nome, :modalidade, 0, :study_description_tag,
+                         :nome, :modalidade, 0, :study_description_tag, :conteudo_livre,
                          \'\', :secao_tecnica, :secao_achados,
                          :secao_conclusao, \'\', 1)'
                 );
@@ -401,6 +411,7 @@ class TemplatesController extends Controller
                         'nome' => $mascara['nome'],
                         'modalidade' => $mascara['modalidade'],
                         'study_description_tag' => $mascara['study_description_tag'],
+                        'conteudo_livre' => $mascara['conteudo_livre'],
                         'secao_tecnica' => $mascara['secao_tecnica'],
                         'secao_achados' => $mascara['secao_achados'],
                         'secao_conclusao' => $mascara['secao_conclusao'],
@@ -503,6 +514,15 @@ class TemplatesController extends Controller
                 'nome' => $nome,
                 'modalidade' => $modalidade,
                 'study_description_tag' => substr($studyDescription, 0, 255),
+                'conteudo_livre' => $this->sanitizeSectionHtml(
+                    (string) ($mascara['conteudo_livre'] ?? '') !== ''
+                        ? $mascara['conteudo_livre']
+                        : implode('<p><br></p>', array_filter([
+                            $mascara['secao_tecnica'] ?? '',
+                            $mascara['secao_achados'] ?? '',
+                            $mascara['secao_conclusao'] ?? '',
+                        ], static fn($valor): bool => trim((string) $valor) !== ''))
+                ),
                 'secao_tecnica' => $this->sanitizeSectionHtml($mascara['secao_tecnica'] ?? ''),
                 'secao_achados' => $this->sanitizeSectionHtml($mascara['secao_achados'] ?? ''),
                 'secao_conclusao' => $this->sanitizeSectionHtml($mascara['secao_conclusao'] ?? ''),
