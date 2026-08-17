@@ -102,9 +102,6 @@ $studyDescriptionDicom = trim((string) ($estudo->study_description ?? ''));
             <span id="autosave-status" class="autosave-status"></span>
 
             <?php if (!$readonly): ?>
-            <button type="button" class="btn-pacs-outline" id="btn-template" title="Templates">
-                <i class="fa fa-file-lines"></i> Template
-            </button>
             <button type="button" class="btn-pacs-outline" id="btn-ai-generate" title="Gerar texto com IA (em breve)">
                 <i class="fa fa-wand-magic-sparkles"></i> Gerar Texto
             </button>

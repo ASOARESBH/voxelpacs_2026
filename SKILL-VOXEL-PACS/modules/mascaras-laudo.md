@@ -18,16 +18,17 @@ A tabela mantém colunas legadas para compatibilidade com o laudário e com más
 | `arquivo_origem` | Nome sanitizado do DOCX que originou uma máscara importada; é informativo, nunca um caminho de servidor. |
 | `revisar` | `1` quando o parser não identificou seções clínicas reconhecidas; a máscara recebe badge **Revisar**. |
 | `secao_exame` | Legada; preservada em edição, não exibida no novo modal. |
-| `secao_tecnica` | Editável no modal. Aceita HTML sanitizado com `<p>`, `<br>` e `<strong>`. |
-| `secao_achados` | Editável no modal. Aceita HTML sanitizado com `<p>`, `<br>` e `<strong>`. |
-| `secao_conclusao` | Editável no modal, exibida ao usuário como **Impressão**. A chave interna não foi renomeada. |
+| `conteudo_livre` | Fonte principal das novas Máscaras. Armazena HTML sanitizado do editor Quill livre; `NULL` identifica uma Máscara legada por seções. |
+| `secao_tecnica` | Legada; continua sendo lida para compatibilidade. |
+| `secao_achados` | Legada; continua sendo lida para compatibilidade. |
+| `secao_conclusao` | Legada; continua sendo lida para compatibilidade. |
 | `secao_recomendacao` | Legada; preservada em edição, não exibida no novo modal. |
 
 ## Editor de máscara
 
-A tela `app/Views/medicos/form.php`, aba **Máscaras**, carrega Quill 1.3.7 somente em modo de edição de médico. O modal **Nova Máscara** possui exatamente três editores: **Técnica**, **Achados** e **Impressão**. A toolbar é deliberadamente mínima: apenas **negrito**, inclusive via `Ctrl+B`.
+A tela `app/Views/medicos/form.php`, aba **Máscaras**, carrega Quill 1.3.7 somente em modo de edição de médico. O modal **Nova Máscara** possui um único editor clínico livre, sem obrigatoriedade de Técnica, Achados ou Impressão. A toolbar compartilhada com o Laudário contém negrito, itálico, sublinhado, títulos, listas, tabela 2×2, desfazer/refazer e limpeza de formatação.
 
-O backend permite somente as tags `p`, `br`, `strong` e `b` para as três seções editáveis. Tags e atributos não permitidos são removidos antes da persistência. Assim, o negrito clínico é preservado em segurança no banco e no laudo final.
+O backend preserva somente HTML clínico seguro: `p`, `br`, `strong`, `em`, `u`, headings, listas e tabelas sem atributos. Máscaras antigas com seções continuam editáveis por conversão de leitura: suas seções são apresentadas como conteúdo contínuo, sem destruir o fallback legado.
 
 ## Importação DOCX com revisão obrigatória
 
@@ -53,13 +54,15 @@ A modalidade é somente uma sugestão: `tomografia` e `angiotomografia` → `CT`
 
 O conteúdo textual do DOCX passa por `htmlspecialchars()` antes da geração de `<p>`, `<strong>` ou `<em>`, e é sanitizado novamente no controlador antes do `INSERT`. A confirmação gera **um único** evento `importar_mascaras_docx` em `bi_audit_logs` por lote, com arquivo, totais importados, duplicados ignorados e totais que requerem revisão.
 
-## Aplicação no laudário
+## Aplicação no Laudário
 
-`TemplatesController::autoCarregar()` resolve a máscara pela Study Description e `ReportsController::template()` atende a aplicação manual. Em `app/Views/reports/index.php`, `aplicarTemplate()` une as seções preenchidas em um corpo clínico único, sem impor títulos. O HTML de `<strong>` chega intacto ao editor e à impressão/PDF.
+**Máscaras** e o antigo seletor de **Templates de Laudo** usam a mesma tabela `report_templates`; a diferença é apenas de apresentação. `ReportsController::templates()` entrega as Máscaras do médico, as compartilhadas e as globais do tenant, filtradas pelas modalidades DICOM do estudo e priorizadas pela TAG Study Description `(0008,1030)`.
+
+Na tela `app/Views/reports/show.php`, a ordem da coluna lateral é **Paciente → Buscar Máscara → Exame → demais cards**. O card de busca inline, em `partials/_mascara_search_card.php`, substitui o modal central. Ao focar, carrega e mantém em memória as Máscaras compatíveis; a digitação filtra em memória por nome, modalidade e Study Description com normalização de acentos. Setas, Enter, Esc e clique fora são suportados. Ao selecionar, `reports-templates.js` reaproveita a mesma aplicação clínica: `loadConteudoLivre()` para Máscaras novas e `loadSecoes()` somente para o fallback legado.
 
 ## Migration e compatibilidade
 
-Antes de publicar o código em produção, execute `database/migrations/2026-08-13_report_templates_importacao_docx.sql` no phpMyAdmin. Ela adiciona `origem`, `arquivo_origem`, `revisar` e o índice `idx_rt_origem_revisar`. A migration é compatível com MySQL 5.7/MariaDB em HostGator e não usa `INFORMATION_SCHEMA`, procedures, triggers ou sintaxe de MySQL 8.
+Antes de publicar o código em produção, execute `database/migrations/2026-08-13_report_templates_importacao_docx.sql` e `database/migrations/2026-08-16_report_templates_conteudo_livre.sql` no phpMyAdmin. Elas adicionam, respectivamente, os metadados de importação (`origem`, `arquivo_origem`, `revisar`) e a coluna `conteudo_livre` para o editor rico. As migrations são compatíveis com MySQL 5.7/MariaDB em HostGator e não usam `INFORMATION_SCHEMA`, procedures, triggers ou sintaxe de MySQL 8.
 
 Máscaras existentes recebem origem `manual`. Ao editar uma máscara anterior, `secao_exame` e `secao_recomendacao` são preservadas exatamente como estavam, embora não apareçam no modal novo. Em novas máscaras, essas duas seções são gravadas vazias.
 
@@ -68,9 +71,10 @@ Máscaras existentes recebem origem `manual`. Ao editar uma máscara anterior, `
 - `app/Services/MascaraDocxImportService.php` — parser PHPWord seguro, seções, modalidades e flags de revisão.
 - `app/Controllers/TemplatesController.php` — CRUD, guarda de acesso, análise, confirmação transacional e auditoria.
 - `app/Views/medicos/form.php` — modal de upload, modal de revisão, badges e payloads da máscara.
-- `database/migrations/2026-08-13_report_templates_importacao_docx.sql` — metadados de origem e revisão.
-- `app/Views/reports/index.php` — aplicação no editor clínico.
-- `app/Controllers/ReportsController.php` — recuperação de máscara para o laudário.
+- `database/migrations/2026-08-13_report_templates_importacao_docx.sql` e `2026-08-16_report_templates_conteudo_livre.sql` — metadados de importação e conteúdo rico.
+- `app/Views/reports/show.php` e `partials/_mascara_search_card.php` — posição e markup da busca inline no painel lateral.
+- `public/assets/js/reports/reports-templates.js` — cache, filtro acessível e aplicação da Máscara.
+- `app/Controllers/ReportsController.php` — recuperação de Máscaras para o Laudário.
 
 ## Pré-visualização somente leitura
 

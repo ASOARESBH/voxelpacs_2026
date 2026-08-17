@@ -6,6 +6,9 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
 ?>
 <div class="reports-col-left">
     <?php include __DIR__ . '/partials/_paciente_card.php'; ?>
+    <?php if (!$readonly): ?>
+        <?php include __DIR__ . '/partials/_mascara_search_card.php'; ?>
+    <?php endif; ?>
     <?php include __DIR__ . '/partials/_exame_card.php'; ?>
     <?php include __DIR__ . '/partials/_measurements_card.php'; ?>
     <?php include __DIR__ . '/partials/_chat_card.php'; ?>
@@ -17,7 +20,6 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
     <?php include __DIR__ . '/partials/_editor.php'; ?>
 </div>
 
-<?php include __DIR__ . '/partials/_modal_templates.php'; ?>
 <?php include __DIR__ . '/partials/_modal_historico.php'; ?>
 <?php if (!$readonly): ?>
     <?php include __DIR__ . '/partials/_modal_assinatura.php'; ?>

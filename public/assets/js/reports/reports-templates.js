@@ -1,23 +1,33 @@
 /**
- * VOXEL PACS — Reports / Templates
+ * VOXEL PACS — Reports / Máscaras de Laudo
  *
- * Lista Máscaras compatíveis com todas as modalidades DICOM do estudo. Templates
- * vinculados à TAG Study Description (0008,1030) são priorizados; quando o
- * editor está vazio, o primeiro vínculo é aplicado automaticamente sem apagar
- * conteúdo clínico já iniciado pelo médico.
+ * Carrega Máscaras compatíveis com as modalidades DICOM do estudo e oferece
+ * aplicação automática por Study Description, além da busca inline do painel
+ * lateral. A mesma tabela report_templates é usada pelo cadastro de Máscaras.
  */
 window.VoxelReports = window.VoxelReports || {};
 
 window.VoxelReports.templates = (function () {
     const editor = window.VoxelReports.editor;
     let config = null;
-    let modal = null;
     let lastPayload = null;
+    let templatesRequest = null;
+    let search = null;
+    let visibleTemplates = [];
+    let activeIndex = -1;
 
     function escapeHtml(value) {
         const node = document.createElement('span');
         node.textContent = String(value || '');
         return node.innerHTML;
+    }
+
+    function normalizarBusca(value) {
+        return String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLocaleLowerCase('pt-BR')
+            .trim();
     }
 
     function isEditorVazio() {
@@ -56,100 +66,210 @@ window.VoxelReports.templates = (function () {
 
     function applyTemplate(template, options = {}) {
         const confirmar = options.confirmar !== false;
-        const fecharModal = options.fecharModal !== false;
         if (!template?.id) return false;
         if (confirmar && !isEditorVazio()
-            && !confirm('Substituir o conteúdo atual do laudo por este template?')) return false;
+            && !confirm('Substituir o conteúdo atual do laudo por esta máscara?')) return false;
 
         const livre = conteudoLivre(template);
         if (livre !== '') {
             editor.loadConteudoLivre(livre);
         } else {
-            const secoes = parseSecoes(template);
             // Máscaras legadas continuam disponíveis sem conversão destrutiva.
-            editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao']);
+            editor.loadSecoes(parseSecoes(template), ['tecnica', 'achados', 'conclusao']);
         }
         atualizarTituloDocumento(template.titulo);
         config.templateId = Number(template.id) || 0;
         window.VoxelReports.autosave.setTemplateId(config.templateId);
         window.VoxelReports.autosave.save('rascunho');
-        if (fecharModal) modal?.hide();
         return true;
     }
 
-    function renderTemplate(template, suggested) {
-        const title = escapeHtml(template.titulo);
-        const modality = escapeHtml(template.modalidade || 'Todas as modalidades');
-        const tag = escapeHtml(template.study_description_tag || '');
-        const badge = suggested
-            ? '<span class="badge bg-primary-subtle text-primary-emphasis ms-2">Sugerido pela TAG DICOM</span>'
-            : '';
-        const detail = suggested && tag
-            ? `<div class="text-pacs-muted" style="font-size:.7rem;">(0008,1030) ${tag}</div>`
-            : `<div class="text-pacs-muted" style="font-size:.7rem;">${modality}</div>`;
-        return `<div class="template-item${suggested ? ' template-item-suggested' : ''}" data-id="${Number(template.id) || 0}">
-            <strong>${title}${badge}</strong>${detail}
-        </div>`;
-    }
-
-    function bindTemplateActions(templates) {
-        document.querySelectorAll('#templates-list .template-item').forEach((element) => {
-            element.addEventListener('click', () => {
-                const template = templates.find((item) => String(item.id) === element.dataset.id);
-                if (template) applyTemplate(template);
-            });
-        });
-    }
-
-    function render(payload) {
-        const list = document.getElementById('templates-list');
-        const templates = Array.isArray(payload?.templates) ? payload.templates : [];
-        const suggested = Array.isArray(payload?.sugeridos) ? payload.sugeridos : [];
-        const suggestedIds = new Set(suggested.map((template) => String(template.id)));
-        const remaining = templates.filter((template) => !suggestedIds.has(String(template.id)));
-
-        if (!templates.length) {
-            const modalities = (config.modalidades || []).join(', ') || config.modalidade || '—';
-            list.innerHTML = `<p class="text-pacs-muted">Nenhum template cadastrado para as modalidades "${escapeHtml(modalities)}".</p>`;
-            return;
-        }
-
-        let html = '';
-        if (suggested.length) {
-            const description = escapeHtml(payload.study_description || config.studyDescription || '—');
-            html += `<div class="small text-primary fw-semibold mb-2"><i class="fa fa-wand-magic-sparkles me-1"></i>Vinculados a este estudo: ${description}</div>`;
-            html += suggested.map((template) => renderTemplate(template, true)).join('');
-        }
-        if (remaining.length) {
-            html += suggested.length ? '<div class="small text-pacs-muted mt-3 mb-2">Outros templates compatíveis</div>' : '';
-            html += remaining.map((template) => renderTemplate(template, false)).join('');
-        }
-        list.innerHTML = html;
-        bindTemplateActions(templates);
-    }
-
     async function carregarTemplates() {
+        if (lastPayload) return lastPayload;
+        if (templatesRequest) return templatesRequest;
+
         const modalidades = (config.modalidades || []).join(',');
         const params = new URLSearchParams();
         if (modalidades) params.set('modalidades', modalidades);
         if (config.studyDescription) params.set('study_description', config.studyDescription);
 
-        const response = await fetch(`/reports/templates?${params.toString()}`, { credentials: 'same-origin' });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.msg || 'Falha ao carregar templates.');
-        lastPayload = payload;
-        return payload;
+        templatesRequest = fetch(`/reports/templates?${params.toString()}`, { credentials: 'same-origin' })
+            .then(async (response) => {
+                const payload = await response.json();
+                if (!response.ok || !payload.ok) throw new Error(payload.msg || 'Falha ao carregar máscaras.');
+                lastPayload = payload;
+                return payload;
+            })
+            .catch((error) => {
+                templatesRequest = null;
+                throw error;
+            });
+        return templatesRequest;
     }
 
-    async function open() {
-        const list = document.getElementById('templates-list');
-        list.innerHTML = '<p class="text-pacs-muted">Carregando templates...</p>';
-        modal.show();
-        try {
-            render(await carregarTemplates());
-        } catch (error) {
-            list.innerHTML = `<p class="text-danger">${escapeHtml(error.message || 'Falha ao carregar templates.')}</p>`;
+    function sugeridosIds() {
+        return new Set((lastPayload?.sugeridos || []).map((template) => String(template.id)));
+    }
+
+    function filtrarTemplates(consulta) {
+        const templates = Array.isArray(lastPayload?.templates) ? lastPayload.templates : [];
+        const termo = normalizarBusca(consulta);
+        if (!termo) return templates;
+        return templates.filter((template) => {
+            const nome = normalizarBusca(template.titulo || template.nome);
+            const modalidade = normalizarBusca(template.modalidade);
+            const descricao = normalizarBusca(template.study_description_tag);
+            return nome.includes(termo) || modalidade.includes(termo) || descricao.includes(termo);
+        });
+    }
+
+    function atualizarEstadoAtivo() {
+        if (!search) return;
+        const options = search.dropdown.querySelectorAll('.reports-mascara-search-option');
+        options.forEach((option, index) => {
+            const ativo = index === activeIndex;
+            option.classList.toggle('is-active', ativo);
+            option.setAttribute('aria-selected', ativo ? 'true' : 'false');
+            if (ativo) {
+                search.input.setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
+        if (activeIndex < 0) search.input.setAttribute('aria-activedescendant', '');
+    }
+
+    function renderizarDropdown() {
+        if (!search || !lastPayload) return;
+        visibleTemplates = filtrarTemplates(search.input.value);
+        activeIndex = visibleTemplates.length ? Math.min(Math.max(activeIndex, 0), visibleTemplates.length - 1) : -1;
+
+        if (!visibleTemplates.length) {
+            const temBusca = normalizarBusca(search.input.value) !== '';
+            const modalidades = (config.modalidades || []).join(', ') || config.modalidade || '—';
+            search.dropdown.innerHTML = `<span class="reports-mascara-search-message">${temBusca
+                ? 'Nenhuma máscara encontrada para a busca informada.'
+                : `Nenhuma máscara cadastrada para as modalidades "${escapeHtml(modalidades)}".`}</span>`;
+            return;
         }
+
+        const sugeridos = sugeridosIds();
+        search.dropdown.innerHTML = visibleTemplates.map((template, index) => {
+            const titulo = escapeHtml(template.titulo || template.nome || 'Máscara sem título');
+            const modalidade = escapeHtml(template.modalidade || 'Todas as modalidades');
+            const tag = escapeHtml(template.study_description_tag || '');
+            const sugerida = sugeridos.has(String(template.id));
+            const meta = sugerida && tag ? `(0008,1030) ${tag}` : modalidade;
+            return `<button type="button"
+                            id="mascara-search-option-${Number(template.id) || index}"
+                            class="reports-mascara-search-option"
+                            role="option"
+                            aria-selected="false"
+                            data-template-id="${Number(template.id) || 0}">
+                        <span class="reports-mascara-search-option-title">${titulo}${sugerida ? '<span class="reports-mascara-search-option-suggested">Sugerida</span>' : ''}</span>
+                        <span class="reports-mascara-search-option-meta">${meta}</span>
+                    </button>`;
+        }).join('');
+        atualizarEstadoAtivo();
+    }
+
+    function mostrarMensagem(carregando, erro) {
+        if (!search) return;
+        search.dropdown.innerHTML = `<span class="reports-mascara-search-message${erro ? ' is-error' : ''}">${escapeHtml(carregando)}</span>`;
+    }
+
+    function atualizarLimpar() {
+        if (!search) return;
+        search.clear.hidden = search.input.value === '';
+    }
+
+    function fecharBusca({ limpar = true } = {}) {
+        if (!search) return;
+        search.dropdown.hidden = true;
+        search.input.setAttribute('aria-expanded', 'false');
+        search.input.setAttribute('aria-activedescendant', '');
+        activeIndex = -1;
+        if (limpar) search.input.value = '';
+        atualizarLimpar();
+    }
+
+    async function abrirBusca() {
+        if (!search) return;
+        search.dropdown.hidden = false;
+        search.input.setAttribute('aria-expanded', 'true');
+        activeIndex = -1;
+        atualizarLimpar();
+        if (lastPayload) {
+            renderizarDropdown();
+            return;
+        }
+
+        mostrarMensagem('Carregando máscaras...');
+        try {
+            await carregarTemplates();
+            renderizarDropdown();
+        } catch (error) {
+            mostrarMensagem(error.message || 'Falha ao carregar máscaras.', true);
+        }
+    }
+
+    function selecionarAtiva() {
+        const template = visibleTemplates[activeIndex];
+        if (template && applyTemplate(template)) fecharBusca();
+    }
+
+    function vincularBuscaInline() {
+        const input = document.getElementById('mascara-search-input');
+        const dropdown = document.getElementById('mascara-search-dropdown');
+        const clear = document.getElementById('mascara-search-clear');
+        const card = document.getElementById('mascara-search-card');
+        if (!input || !dropdown || !clear || !card) return;
+
+        search = { input, dropdown, clear, card };
+        input.addEventListener('focus', abrirBusca);
+        input.addEventListener('input', () => {
+            atualizarLimpar();
+            activeIndex = -1;
+            if (dropdown.hidden) abrirBusca();
+            else if (lastPayload) renderizarDropdown();
+        });
+        input.addEventListener('keydown', async (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                fecharBusca();
+                input.blur();
+                return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (dropdown.hidden) await abrirBusca();
+                if (!visibleTemplates.length) return;
+                activeIndex = event.key === 'ArrowDown'
+                    ? (activeIndex + 1) % visibleTemplates.length
+                    : (activeIndex - 1 + visibleTemplates.length) % visibleTemplates.length;
+                atualizarEstadoAtivo();
+                return;
+            }
+            if (event.key === 'Enter' && !dropdown.hidden && activeIndex >= 0) {
+                event.preventDefault();
+                selecionarAtiva();
+            }
+        });
+        clear.addEventListener('click', () => {
+            input.value = '';
+            activeIndex = -1;
+            atualizarLimpar();
+            input.focus();
+            if (lastPayload) renderizarDropdown();
+        });
+        dropdown.addEventListener('click', (event) => {
+            const option = event.target.closest('.reports-mascara-search-option');
+            if (!option) return;
+            const template = visibleTemplates.find((item) => String(item.id) === option.dataset.templateId);
+            if (template && applyTemplate(template)) fecharBusca();
+        });
+        document.addEventListener('mousedown', (event) => {
+            if (!card.contains(event.target)) fecharBusca();
+        });
     }
 
     async function sugerirAutomaticamente() {
@@ -157,16 +277,7 @@ window.VoxelReports.templates = (function () {
         try {
             const payload = await carregarTemplates();
             const suggested = Array.isArray(payload.sugeridos) ? payload.sugeridos : [];
-            if (!suggested.length) return;
-
-            // Aplica somente a primeira sugestão ordenada pelo backend (médico
-            // proprietário antes de compartilhada/global). Se houver alternativas,
-            // apresenta-as imediatamente para decisão do médico.
-            if (!applyTemplate(suggested[0], { confirmar: false, fecharModal: false })) return;
-            if (suggested.length > 1) {
-                render(payload);
-                modal.show();
-            }
+            if (suggested.length) applyTemplate(suggested[0], { confirmar: false });
         } catch (_) {
             // A indisponibilidade de sugestão nunca impede a abertura do Laudário.
         }
@@ -174,13 +285,14 @@ window.VoxelReports.templates = (function () {
 
     function init(cfg) {
         config = cfg;
-        const modalEl = document.getElementById('modalTemplates');
-        if (!modalEl) return;
-        modal = new bootstrap.Modal(modalEl);
-        const btn = document.getElementById('btn-template');
-        if (btn) btn.addEventListener('click', open);
+        vincularBuscaInline();
         sugerirAutomaticamente();
     }
 
-    return { init, open, applyTemplate, lastPayload: () => lastPayload };
+    return {
+        init,
+        open: abrirBusca,
+        applyTemplate,
+        lastPayload: () => lastPayload,
+    };
 })();

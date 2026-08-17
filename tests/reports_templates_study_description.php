@@ -29,9 +29,9 @@ $expect(!str_contains($header, "explode('/', (string) (\$estudo->modalities"), '
 $expect(str_contains($header, 'data-modalidades=') && str_contains($header, 'data-study-description='), 'Header não expõe modalidades e Study Description ao editor.');
 $expect(str_contains($bootstrap, 'modalidades:') && str_contains($bootstrap, 'studyDescription:'), 'Bootstrap não propaga modalidades e Study Description ao módulo de Templates.');
 $expect(str_contains($templates, 'sugerirAutomaticamente') && str_contains($templates, 'config.templateId > 0') && str_contains($templates, '!isEditorVazio()'), 'Sugestão automática não preserva Template ou conteúdo clínico já existente.');
-$expect(str_contains($templates, 'payload.sugeridos') && str_contains($templates, 'Vinculados a este estudo'), 'Modal não apresenta todos os Templates vinculados ao estudo.');
+$expect(str_contains($templates, 'sugeridosIds()') && str_contains($templates, 'reports-mascara-search-option-suggested'), 'Busca inline não destaca os Templates vinculados ao estudo.');
 $expect(str_contains($templates, 'modalidades') && str_contains($templates, 'study_description'), 'Frontend não envia modalidades e Study Description ao endpoint ativo.');
-$expect(str_contains($templates, "editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao'])"), 'Aplicação automática não preserva o contrato das três seções clínicas.');
+$expect(str_contains($templates, "editor.loadSecoes(parseSecoes(template), ['tecnica', 'achados', 'conclusao'])") && str_contains($templates, 'editor.loadConteudoLivre(livre)'), 'Aplicação não preserva os contratos livre e legado das Máscaras.');
 
 if ($failures) {
     fwrite(STDERR, "FALHOU:\n- " . implode("\n- ", $failures) . "\n");

@@ -52,7 +52,7 @@ foreach ([
     [$autosaveJs, 'function setTemplateId(id)'],
     [$templatesJs, 'function conteudoLivre(template)'],
     [$templatesJs, 'editor.loadConteudoLivre(livre)'],
-    [$templatesJs, "editor.loadSecoes(secoes, ['tecnica', 'achados', 'conclusao'])"],
+    [$templatesJs, "editor.loadSecoes(parseSecoes(template), ['tecnica', 'achados', 'conclusao'])"],
     [$templatesJs, 'window.VoxelReports.autosave.setTemplateId(config.templateId)'],
     [$editorJs, "conclusao: 'Impressão'"],
 ] as [$source, $needle]) {
