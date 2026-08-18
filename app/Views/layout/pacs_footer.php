@@ -11,6 +11,9 @@
 <?php if (!empty($includeTemplateCustomEditor)): ?>
 <script src="/assets/js/unidades/template-personalizado.js?v=<?= $v ?>"></script>
 <?php endif; ?>
+<?php if (!empty($includeCustomChannels)): ?>
+<script src="/assets/js/unidades/canais-personalizados.js?v=<?= $v ?>"></script>
+<?php endif; ?>
 <script src="/assets/js/shared/voxel-voltar.js?v=<?= $v ?>"></script>
 <script>
 // ── SIDEBAR TOGGLE ──────────────────────────────────────────

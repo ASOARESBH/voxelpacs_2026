@@ -3,6 +3,8 @@ namespace App\Services;
 
 use App\Core\Database;
 use App\Core\Logger;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 
 /**
  * Templates personalizados de impressão por Unidade.
@@ -199,6 +201,10 @@ final class ReportCustomTemplateService
             'unidade.cnpj' => '12.345.678/0001-90',
             'unidade.endereco' => 'Av. Exemplo, 1000 — Centro, Belo Horizonte/MG',
             'unidade.logo' => '<span class="voxel-placeholder-image">LOGO DA UNIDADE</span>',
+            'unidade.qrcode' => $this->buildInstitutionalQrMarkup('https://exemplo.voxelpacs.com.br'),
+            'unidade.site' => $this->buildInstitutionalLinkMarkup('https://exemplo.voxelpacs.com.br', 'Site institucional'),
+            'unidade.instagram' => $this->buildInstitutionalLinkMarkup('https://instagram.com/voxelpacs', 'Instagram'),
+            'unidade.facebook' => $this->buildInstitutionalLinkMarkup('https://facebook.com/voxelpacs', 'Facebook'),
             'paciente.nome' => 'PACIENTE DE EXEMPLO',
             'paciente.data_nascimento' => '15/04/1980',
             'paciente.id' => 'PRONT-000123',
@@ -246,6 +252,14 @@ final class ReportCustomTemplateService
         $signature = !empty($report['assinatura_caminho_arquivo']) && !empty($report['public_token'])
             ? '<img src="/reports/r/' . rawurlencode((string) $report['public_token']) . '/assinatura" alt="Assinatura médica" class="voxel-signature-image">'
             : '';
+        $institutionalQr = !empty($report['unidade_personalizado_qrcode_habilitado'])
+            ? $this->buildInstitutionalQrMarkup((string) ($report['unidade_personalizado_qrcode_url'] ?? '')) : '';
+        $institutionalSite = !empty($report['unidade_personalizado_site_habilitado'])
+            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_site_url'] ?? ''), 'Site institucional') : '';
+        $institutionalInstagram = !empty($report['unidade_personalizado_instagram_habilitado'])
+            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_instagram_url'] ?? ''), 'Instagram') : '';
+        $institutionalFacebook = !empty($report['unidade_personalizado_facebook_habilitado'])
+            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_facebook_url'] ?? ''), 'Facebook') : '';
         $context = [
             'unidade.nome' => $unitName,
             'unidade.cnpj' => (string) ($report['unidade_cnpj'] ?? ''),
@@ -255,6 +269,10 @@ final class ReportCustomTemplateService
                 $report['unidade_cidade'] ?? '', $report['unidade_estado'] ?? '',
             ]))),
             'unidade.logo' => $logo,
+            'unidade.qrcode' => $institutionalQr,
+            'unidade.site' => $institutionalSite,
+            'unidade.instagram' => $institutionalInstagram,
+            'unidade.facebook' => $institutionalFacebook,
             'paciente.nome' => (string) ($report['patient_name_display'] ?? $report['patient_name'] ?? ''),
             'paciente.data_nascimento' => $formatDate($report['patient_birth_date'] ?? null),
             'paciente.id' => (string) ($report['patient_id'] ?? ''),
@@ -288,7 +306,7 @@ final class ReportCustomTemplateService
 
         return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'
             . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-            . '<style>html,body{margin:0;padding:0;background:#f1f5f9;color:#1f2937;font-family:Arial,Helvetica,sans-serif}.voxel-custom-page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:16mm 15mm 22mm;position:relative}.voxel-custom-header{min-height:12mm}.voxel-custom-body{margin-top:7mm;line-height:1.55}.voxel-custom-footer{margin-top:12mm;border-top:1px solid #cbd5e1;padding-top:5mm;color:#475569;font-size:10px}.voxel-unit-logo{max-width:180px;max-height:70px;object-fit:contain}.voxel-signature-image{max-width:220px;max-height:70px;object-fit:contain}.voxel-placeholder-image{display:inline-block;border:1px dashed #94a3b8;padding:8px;color:#64748b;font-size:10px}@media print{body{background:#fff}.voxel-custom-page{width:auto;min-height:0;margin:0;box-shadow:none;padding:14mm 14mm 20mm}.voxel-custom-header{position:fixed;top:8mm;left:14mm;right:14mm}.voxel-custom-body{margin-top:28mm}.voxel-custom-footer{position:fixed;bottom:8mm;left:14mm;right:14mm}}</style>'
+            . '<style>html,body{margin:0;padding:0;background:#f1f5f9;color:#1f2937;font-family:Arial,Helvetica,sans-serif}.voxel-custom-page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:16mm 15mm 22mm;position:relative}.voxel-custom-header{min-height:12mm}.voxel-custom-body{margin-top:7mm;line-height:1.55}.voxel-custom-footer{margin-top:12mm;border-top:1px solid #cbd5e1;padding-top:5mm;color:#475569;font-size:10px}.voxel-unit-logo{max-width:180px;max-height:70px;object-fit:contain}.voxel-signature-image{max-width:220px;max-height:70px;object-fit:contain}.voxel-institutional-qr{width:78px;height:78px;display:inline-block}.voxel-institutional-link{color:#1d4ed8;text-decoration:underline}.voxel-placeholder-image{display:inline-block;border:1px dashed #94a3b8;padding:8px;color:#64748b;font-size:10px}@media print{body{background:#fff}.voxel-custom-page{width:auto;min-height:0;margin:0;box-shadow:none;padding:14mm 14mm 20mm}.voxel-custom-header{position:fixed;top:8mm;left:14mm;right:14mm}.voxel-custom-body{margin-top:28mm}.voxel-custom-footer{position:fixed;bottom:8mm;left:14mm;right:14mm}}</style>'
             . '</head><body><main class="voxel-custom-page"><header class="voxel-custom-header">' . $header
             . '</header><section class="voxel-custom-body">' . $body
             . '</section><footer class="voxel-custom-footer">' . $footer
@@ -303,11 +321,45 @@ final class ReportCustomTemplateService
                 return '';
             }
             $value = (string) $context[$key];
-            if (in_array($key, ['unidade.logo', 'assinatura.imagem', 'laudo.corpo', 'qrcode'], true)) {
+            if (in_array($key, ['unidade.logo', 'unidade.qrcode', 'unidade.site', 'unidade.instagram', 'unidade.facebook', 'assinatura.imagem', 'laudo.corpo', 'qrcode'], true)) {
                 return $value;
             }
             return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         }, self::sanitizeHtml($html)) ?? '';
+    }
+
+    private function buildInstitutionalLinkMarkup(string $url, string $label): string
+    {
+        $url = $this->safeHttpsUrl($url);
+        if ($url === '') return '';
+        return '<a class="voxel-institutional-link" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" rel="noopener noreferrer" target="_blank">'
+            . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</a>';
+    }
+
+    private function buildInstitutionalQrMarkup(string $url): string
+    {
+        $url = $this->safeHttpsUrl($url);
+        if ($url === '' || !class_exists(QRCode::class) || !class_exists(QROptions::class)) return '';
+        try {
+            $options = new QROptions([
+                'outputType' => QRCode::OUTPUT_MARKUP_SVG,
+                'imageBase64' => true,
+                'scale' => 3,
+            ]);
+            $dataUri = (new QRCode($options))->render($url);
+            return '<img class="voxel-institutional-qr" src="' . htmlspecialchars($dataUri, ENT_QUOTES, 'UTF-8') . '" alt="QR Code institucional">';
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportCustomTemplateService] QR institucional indisponível', ['error' => $e->getMessage()]);
+            return '';
+        }
+    }
+
+    private function safeHttpsUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) return '';
+        $parts = parse_url($url);
+        return strtolower((string) ($parts['scheme'] ?? '')) === 'https' ? $url : '';
     }
 
     public static function sanitizeHtml(string $html): string
