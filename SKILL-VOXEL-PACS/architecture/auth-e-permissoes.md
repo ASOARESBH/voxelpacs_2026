@@ -82,15 +82,21 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 4. **Correção crítica IDOR de laudos — 2026-08-14:** endpoints que recebem `report_id` ou `estudo_id` não podem carregar, listar histórico, gerar PDF, exibir assinatura, consultar/inserir Medidas, operar CHAT, abrir Peer Review, salvar, assinar, restaurar versão ou alterar situação sem chamar `ReportAccessService`. O serviço é a fonte única de autorização de report/estudo e devolve ausência de recurso ao usuário não autorizado, sem confirmar a existência do ID. Tentativas negadas são registradas em `Logger::warning`.
 5. A validação ponta a ponta deve ser executada manualmente com superadmin, administrador do tenant, analista/viewer e médico vinculado; não há suíte de integração autenticada no projeto.
 
-## Configurações do Sistema — superadmin exclusivo (2026-08-17)
+## Configurações do Sistema — permissões por grupo (2026-08-18)
 
-`/configuracoes` é uma área de infraestrutura exclusiva de `Auth::isPlatformAdmin()`, portanto aceita somente `bi_users.role = superadmin`. A regra é deliberadamente **mais restritiva** que as telas de Médicos e Unidades: `role = admin` do tenant não tem acesso, ainda que o RBAC legado contenha `manage_configuracoes`.
+`/configuracoes` permanece disponível para `superadmin` e para o administrador do negócio que possua `manage_configuracoes`. A página não concede uma permissão única para todos os campos: o Controller separa explicitamente **Dados da Empresa** de **infraestrutura PACS**.
 
-A proteção é aplicada no backend por `ConfiguracoesController::guardSuperadminOnly()` em `index()`, `salvar()` e `salvarViewerDesktop()`. Tentativas negadas retornam HTTP 403 e são registradas com `Logger::warning` contendo apenas `user_id`, `role`, `tenant_id` e método HTTP; não são registrados campos de formulário, senhas ou URLs sensíveis. A sidebar dos layouts PACS e BI oculta o item **Configurações** para não-superadmin, mas essa ocultação não substitui a guarda do controller.
+| Grupo de configuração | Superadmin | Administrador do negócio | Médico, analista e viewer |
+|---|---:|---:|---:|
+| Dados da Empresa (`empresa_*`) | Pode visualizar e editar | Pode visualizar e editar somente no próprio tenant | Sem acesso (403) |
+| Orthanc e URL do Viewer (`orthanc_*`, `viewer_url`) | Pode visualizar e editar | Não recebe os campos e POST forjado recebe 403 | Sem acesso (403) |
+| Visualizadores Desktop (RadiAnt/Weasis) | Pode visualizar e editar | Não recebe os campos e POST forjado recebe 403 | Sem acesso (403) |
 
-As configurações continuam segregadas por tenant (`bi_configuracoes.tenant_id` e `bi_viewer_desktop_config.tenant_id`). Como o superadmin autentica sem tenant ativo, ele deve configurar uma clínica via impersonação para operar os dados daquele tenant. A confirmação operacional dessa restrição foi obtida antes da implementação.
+`ConfiguracoesController::guardCompanySettings()` protege a entrada e a gravação dos Dados da Empresa; `guardSuperadminOnly()` protege Orthanc, Viewer DICOM e Visualizadores Desktop. `salvar()` usa whitelist de campos por `grupo` (`empresa` ou `infraestrutura`), portanto o envio forjado de campos Orthanc junto a `grupo=empresa` é ignorado. Todos os POSTs validam CSRF antes de gravar. Tentativas negadas retornam 403 e são registradas com `Logger::warning` contendo apenas identidade, tenant, escopo e método HTTP; não são registrados campos de formulário, senhas ou URLs sensíveis.
+
+As configurações são segregadas por tenant (`bi_configuracoes.tenant_id` e `bi_viewer_desktop_config.tenant_id`). A página falha fechada sem um tenant ativo; por isso, o superadmin deve usar impersonação para operar os dados de uma clínica. Os layouts PACS e BI exibem o menu **Configurações** para superadmin e administrador do negócio, mas a view omite todo o bloco de infraestrutura para o administrador.
 
 `/usuarios`, `/sla-regras` e `/modalidades` continuam fora desta entrega e permanecem como gaps adjacentes conhecidos; a regra de `admin` nos demais módulos não foi alterada.
 
 ## Última análise
-2026-08-17
+2026-08-18

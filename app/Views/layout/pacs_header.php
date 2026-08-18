@@ -154,7 +154,7 @@
                 <span class="sidebar-label">Usuários</span>
             </a>
 
-            <?php if (\App\Core\Auth::isPlatformAdmin()): ?>
+            <?php if (\App\Core\Auth::isPlatformAdmin() || \App\Core\Auth::can('manage_configuracoes')): ?>
             <a href="/configuracoes" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/configuracoes') ? 'active' : '' ?>">
                 <i class="fa fa-gear"></i>
                 <span class="sidebar-label">Configurações</span>
