@@ -115,12 +115,11 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
         .pdf-header-custom-qr .voxel-institutional-qr { width: 78px; height: 78px; display: block; margin: 0 0 0 auto; }
         .pdf-header-custom-links { margin-top: 3px; text-align: right; }
         .pdf-header-custom-links .voxel-institutional-link { display: block; color: #404040; font-size: 8px; line-height: 1.5; font-weight: 700; text-decoration: none; }
-        .pdf-header-rules { display: inline-block; width: 106px; margin-top: 10px; border-top: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; height: 6px; }
 
         .pdf-patient { display: table; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
         .pdf-patient-col { display: table-cell; vertical-align: top; }
-        .pdf-patient-col:first-child { width: 56%; padding-right: 16px; }
-        .pdf-patient-col:last-child { width: 44%; padding-left: 28px; }
+        .pdf-patient-col:first-child { width: 60%; padding-right: 16px; }
+        .pdf-patient-col:last-child { width: 40%; padding-left: 22px; text-align: right; }
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
         .pdf-patient-line strong { font-weight: 700; }
 
@@ -161,7 +160,6 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
             .pdf-header, .pdf-patient { display: block; }
             .pdf-header-left, .pdf-header-right, .pdf-patient-col { display: block; width: 100%; padding: 0 !important; text-align: left; }
             .pdf-header-right { margin-top: 16px; }
-            .pdf-header-rules { width: 100%; }
             .pdf-patient-col + .pdf-patient-col { margin-top: 8px; }
             .pdf-actions { width: 100%; margin: 0; padding: 12px; }
         }
@@ -211,7 +209,6 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
                 <?php else: ?>
                     <span class="pdf-header-unit"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></span>
                 <?php endif; ?>
-                <i class="pdf-header-rules" aria-hidden="true"></i>
             </div>
         </header>
 
