@@ -3,6 +3,7 @@ namespace App\Controllers\Platform;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 
 class PlatformDashboardController extends Controller {
     public function index(): void {
@@ -31,9 +32,10 @@ class PlatformDashboardController extends Controller {
         } catch (\Throwable $e) { $ultimosNegocios = []; }
 
         try {
+            $mesSql = SqlHelper::dateFormat('created_at', '%Y-%m');
             $crescimento = $pdo->query("
-                SELECT DATE_FORMAT(created_at,'%Y-%m') AS mes, COUNT(*) AS total
-                FROM bi_tenants GROUP BY mes ORDER BY mes DESC LIMIT 12
+                SELECT {$mesSql} AS mes, COUNT(*) AS total
+                FROM bi_tenants GROUP BY {$mesSql} ORDER BY mes DESC LIMIT 12
             ")->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\Throwable $e) { $crescimento = []; }
 

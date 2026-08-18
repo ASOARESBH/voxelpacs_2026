@@ -4,6 +4,7 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Models\Configuracao;
@@ -195,15 +196,23 @@ class ConfiguracoesController extends Controller
             $this->redirect('/configuracoes');
         }
 
-        Database::getInstance()->prepare("
-            INSERT INTO bi_viewer_desktop_config
-                (tenant_id, viewer, host, porta, ae_title, calling_ae, ativo)
-            VALUES (:tenant_id, :viewer, :host, :porta, :ae_title, :calling_ae, :ativo)
-            ON DUPLICATE KEY UPDATE
-                host = VALUES(host), porta = VALUES(porta),
-                ae_title = VALUES(ae_title), calling_ae = VALUES(calling_ae),
-                ativo = VALUES(ativo)
-        ")->execute([
+                $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO bi_viewer_desktop_config
+                   (tenant_id, viewer, host, porta, ae_title, calling_ae, ativo)
+               VALUES (:tenant_id, :viewer, :host, :porta, :ae_title, :calling_ae, :ativo)
+               ON CONFLICT (tenant_id, viewer) DO UPDATE SET
+                   host = EXCLUDED.host, porta = EXCLUDED.porta,
+                   ae_title = EXCLUDED.ae_title, calling_ae = EXCLUDED.calling_ae,
+                   ativo = EXCLUDED.ativo"
+            : "INSERT INTO bi_viewer_desktop_config
+                   (tenant_id, viewer, host, porta, ae_title, calling_ae, ativo)
+               VALUES (:tenant_id, :viewer, :host, :porta, :ae_title, :calling_ae, :ativo)
+               ON DUPLICATE KEY UPDATE
+                   host = VALUES(host), porta = VALUES(porta),
+                   ae_title = VALUES(ae_title), calling_ae = VALUES(calling_ae),
+                   ativo = VALUES(ativo)";
+        Database::getInstance()->prepare($sql)->execute([
+
             ':tenant_id'  => $tenantId,
             ':viewer'     => $viewer,
             ':host'       => trim((string) ($_POST['host'] ?? '')) ?: null,

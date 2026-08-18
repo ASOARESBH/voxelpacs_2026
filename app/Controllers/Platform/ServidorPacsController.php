@@ -4,6 +4,7 @@ namespace App\Controllers\Platform;
 use App\Core\Controller;
 use App\Core\Crypto;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Auth;
 use App\Services\OrthancService;
 use App\Services\PacsRoutingService;
@@ -37,14 +38,20 @@ class ServidorPacsController extends Controller
         try {
             $servidores = $pdo->query("SELECT * FROM bi_pacs_servidor ORDER BY id")->fetchAll(\PDO::FETCH_ASSOC);
 
-            $contagens = $pdo->query("
-                SELECT servidor_id,
-                       SUM(roteamento_status = 'roteado')          AS roteados,
-                       SUM(roteamento_status = 'nao_identificado') AS nao_identificados,
-                       SUM(roteamento_status = 'conflito')         AS conflitos,
-                       COUNT(*)                                    AS total
-                FROM bi_pacs_estudos GROUP BY servidor_id
-            ")->fetchAll(\PDO::FETCH_ASSOC);
+            $sqlContagens = SqlHelper::isPostgres()
+                ? "SELECT servidor_id,
+                         SUM(CASE WHEN roteamento_status = 'roteado' THEN 1 ELSE 0 END) AS roteados,
+                         SUM(CASE WHEN roteamento_status = 'nao_identificado' THEN 1 ELSE 0 END) AS nao_identificados,
+                         SUM(CASE WHEN roteamento_status = 'conflito' THEN 1 ELSE 0 END) AS conflitos,
+                         COUNT(*) AS total
+                    FROM bi_pacs_estudos GROUP BY servidor_id"
+                : "SELECT servidor_id,
+                         SUM(roteamento_status = 'roteado') AS roteados,
+                         SUM(roteamento_status = 'nao_identificado') AS nao_identificados,
+                         SUM(roteamento_status = 'conflito') AS conflitos,
+                         COUNT(*) AS total
+                    FROM bi_pacs_estudos GROUP BY servidor_id";
+            $contagens = $pdo->query($sqlContagens)->fetchAll(\PDO::FETCH_ASSOC);
             $contagensPorServidor = [];
             foreach ($contagens as $c) {
                 $contagensPorServidor[$c['servidor_id']] = $c;
@@ -84,10 +91,12 @@ class ServidorPacsController extends Controller
     public function syncRoboGerarToken(): void
     {
         $token = bin2hex(random_bytes(24));
-        Database::getInstance()->prepare("
-            INSERT INTO bi_pacs_sync_robo_config (id, token) VALUES (1, ?)
-            ON DUPLICATE KEY UPDATE token = VALUES(token)
-        ")->execute([$token]);
+        $sql = SqlHelper::isPostgres()
+            ? 'INSERT INTO bi_pacs_sync_robo_config (id, token) VALUES (1, ?)
+               ON CONFLICT (id) DO UPDATE SET token = EXCLUDED.token'
+            : 'INSERT INTO bi_pacs_sync_robo_config (id, token) VALUES (1, ?)
+               ON DUPLICATE KEY UPDATE token = VALUES(token)';
+        Database::getInstance()->prepare($sql)->execute([$token]);
         $_SESSION['success'] = 'Token gerado com sucesso.';
         $this->redirect('/platform/servidor-pacs');
     }
@@ -233,11 +242,14 @@ class ServidorPacsController extends Controller
         }
 
         try {
-            $pdo->prepare("
-                INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por)
-                VALUES (?, ?, 1, ?)
-                ON DUPLICATE KEY UPDATE ativo = 1
-            ")->execute([$tenantId, $servidorId, Auth::userId()]);
+            $sql = SqlHelper::isPostgres()
+                ? 'INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por)
+                   VALUES (?, ?, 1, ?)
+                   ON CONFLICT (tenant_id, servidor_id) DO UPDATE SET ativo = EXCLUDED.ativo'
+                : 'INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por)
+                   VALUES (?, ?, 1, ?)
+                   ON DUPLICATE KEY UPDATE ativo = VALUES(ativo)';
+            $pdo->prepare($sql)->execute([$tenantId, $servidorId, Auth::userId()]);
 
             echo json_encode(['success' => true, 'message' => 'Negócio associado ao servidor.']);
         } catch (\Exception $e) {

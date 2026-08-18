@@ -11,6 +11,7 @@ use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\CnpjLookupService;
@@ -106,6 +107,8 @@ class UnidadesController extends Controller
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         if (!$tenantId) { header('Location: /selecionar-empresa'); exit; }
 
+        $institutionMatchSql = SqlHelper::caseInsensitiveEquals('e.institution_name', 'n.institution_name');
+        $institutionNamesSql = SqlHelper::groupConcat('n.institution_name', '|', 'n.institution_name');
         $this->sincronizarInstitutionNames($tenantId);
 
         try {
@@ -128,7 +131,7 @@ class UnidadesController extends Controller
                     n.created_at,
                     (SELECT COUNT(*) FROM bi_pacs_estudos e
                      WHERE e.tenant_id = n.tenant_id
-                       AND e.institution_name COLLATE utf8mb4_general_ci = n.institution_name COLLATE utf8mb4_general_ci) AS total_estudos
+                       AND {$institutionMatchSql}) AS total_estudos
                 FROM bi_negocio_institution_names n
                 WHERE n.tenant_id = ?
                   AND (n.excluido_manualmente = 0 OR n.excluido_manualmente IS NULL)
@@ -155,7 +158,7 @@ class UnidadesController extends Controller
                     COALESCE(u.logo_path,     '') AS logo_path,
                     COALESCE(u.copilot_logo_url, '') AS copilot_logo_url,
                     COALESCE(u.ativo,          1) AS ativo,
-                    GROUP_CONCAT(n.institution_name ORDER BY n.institution_name SEPARATOR '|') AS institution_names
+                    {$institutionNamesSql} AS institution_names
                 FROM bi_unidades u
                 LEFT JOIN bi_negocio_institution_names n
                     ON n.unidade_id = u.id AND n.tenant_id = u.tenant_id
@@ -363,8 +366,14 @@ class UnidadesController extends Controller
     private function sincronizarInstitutionNames(int $tenantId): void
     {
         try {
-            $this->pdo->prepare("
-                INSERT IGNORE INTO bi_negocio_institution_names (tenant_id, institution_name, ativo, created_at)
+            $matchNome = SqlHelper::caseInsensitiveEquals('n.institution_name', 'e.institution_name');
+            $matchNomeExcluido = SqlHelper::caseInsensitiveEquals('nx.institution_name', 'e.institution_name');
+            $insertPrefix = SqlHelper::isPostgres() ? 'INSERT INTO' : 'INSERT IGNORE INTO';
+            $conflictSql = SqlHelper::isPostgres()
+                ? ' ON CONFLICT (tenant_id, institution_name) DO NOTHING'
+                : '';
+            $sql = "
+                {$insertPrefix} bi_negocio_institution_names (tenant_id, institution_name, ativo, created_at)
                 SELECT DISTINCT e.tenant_id, e.institution_name, 1, NOW()
                 FROM bi_pacs_estudos e
                 WHERE e.tenant_id = ?
@@ -373,15 +382,16 @@ class UnidadesController extends Controller
                   AND NOT EXISTS (
                       SELECT 1 FROM bi_negocio_institution_names n
                       WHERE n.tenant_id = e.tenant_id
-                        AND n.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                        AND {$matchNome}
                   )
                   AND NOT EXISTS (
                       SELECT 1 FROM bi_negocio_institution_names nx
                       WHERE nx.tenant_id = e.tenant_id
-                        AND nx.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                        AND {$matchNomeExcluido}
                         AND nx.excluido_manualmente = 1
-                  )
-            ")->execute([$tenantId]);
+                  ){$conflictSql}
+            ";
+            $this->pdo->prepare($sql)->execute([$tenantId]);
         } catch (\Throwable $e) {
             Logger::error('[UnidadesController::sincronizarInstitutionNames] ' . $e->getMessage());
         }
@@ -731,11 +741,13 @@ class UnidadesController extends Controller
 
         try {
             $unidade = null;
+            $institutionNamesSql = SqlHelper::groupConcat('n.institution_name', '|', 'n.institution_name');
+            $institutionMatchSql = SqlHelper::caseInsensitiveEquals('n.institution_name', '?');
 
             if (!empty($_GET['id'])) {
                 $stmt = $this->pdo->prepare("
                     SELECT u.*,
-                           GROUP_CONCAT(n.institution_name ORDER BY n.institution_name SEPARATOR '|') AS institution_names
+                           {$institutionNamesSql} AS institution_names
                     FROM bi_unidades u
                     LEFT JOIN bi_negocio_institution_names n ON n.unidade_id = u.id AND n.tenant_id = u.tenant_id
                     WHERE u.id = ? AND u.tenant_id = ? AND u.ativo = 1
@@ -749,10 +761,10 @@ class UnidadesController extends Controller
                 $instName = trim($_GET['institution_name']);
                 $stmt = $this->pdo->prepare("
                     SELECT u.*,
-                           GROUP_CONCAT(n.institution_name ORDER BY n.institution_name SEPARATOR '|') AS institution_names
+                           {$institutionNamesSql} AS institution_names
                     FROM bi_unidades u
                     JOIN bi_negocio_institution_names n ON n.unidade_id = u.id AND n.tenant_id = u.tenant_id
-                    WHERE n.institution_name COLLATE utf8mb4_general_ci = ? COLLATE utf8mb4_general_ci AND u.tenant_id = ? AND u.ativo = 1
+                    WHERE {$institutionMatchSql} AND u.tenant_id = ? AND u.ativo = 1
                     GROUP BY u.id
                     LIMIT 1
                 ");

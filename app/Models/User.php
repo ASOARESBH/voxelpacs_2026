@@ -26,20 +26,23 @@ class User extends Model {
         return $stmt->fetchAll();
     }
 
-    public function create(array $data): int {
+        public function create(array $data): int {
         $data['password'] = password_hash($data['password'], PASSWORD_ARGON2ID);
-        $stmt = $this->pdo->prepare("
-            INSERT INTO bi_users (name, email, password, role, status)
-            VALUES (:name, :email, :password, :role, :status)
-        ");
+        $isPostgres = \App\Core\SqlHelper::isPostgres();
+        $sql = "INSERT INTO bi_users (name, email, password, role, status)
+                VALUES (:name, :email, :password, :role, :status)"
+            . ($isPostgres ? ' RETURNING id' : '');
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute($data);
-        return (int) $this->pdo->lastInsertId();
+        return $isPostgres ? (int) $stmt->fetchColumn() : (int) $this->pdo->lastInsertId();
     }
 
     public function attachToTenant(int $userId, int $tenantId, string $role = 'viewer'): void {
-        $stmt = $this->pdo->prepare("
-            INSERT IGNORE INTO bi_user_tenants (user_id, tenant_id, role) VALUES (:uid, :tid, :role)
-        ");
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? 'INSERT INTO bi_user_tenants (user_id, tenant_id, role) VALUES (:uid, :tid, :role) ON CONFLICT DO NOTHING'
+            : 'INSERT IGNORE INTO bi_user_tenants (user_id, tenant_id, role) VALUES (:uid, :tid, :role)';
+        $stmt = $this->pdo->prepare($sql);
+
         $stmt->execute(['uid' => $userId, 'tid' => $tenantId, 'role' => $role]);
     }
 }

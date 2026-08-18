@@ -3,6 +3,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\TenantContext;
 
 /**
@@ -17,22 +18,25 @@ class ModalidadesController extends Controller
         $pdo      = Database::getInstance();
 
         $modalidades = [];
-        $resumo      = ['total_estudos'=>0,'total_pacientes'=>0,'total_modalidades'=>0];
+        $resumo      = ['total_estudos' => 0, 'total_pacientes' => 0, 'total_modalidades' => 0];
+        $evolucaoPorMod = [];
 
         if ($tenantId) {
+            $mesSql = SqlHelper::dateFormat('study_date', '%Y-%m');
+
             // Modalidades vindas do PACS (DICOM)
             $stmt = $pdo->prepare("
                 SELECT
-                    modalities                              AS sigla,
-                    modalities                              AS nome,
-                    COUNT(*)                                AS total_estudos,
-                    COUNT(DISTINCT patient_id)              AS total_pacientes,
-                    MIN(study_date)                         AS primeira_data,
-                    MAX(study_date)                         AS ultima_data,
-                    COUNT(DISTINCT institution_name)        AS unidades,
-                    ROUND(AVG(num_instances),1)             AS media_imagens,
-                    SUM(num_instances)                      AS total_imagens,
-                    COUNT(DISTINCT DATE_FORMAT(study_date,'%Y-%m')) AS meses_ativos
+                    modalities AS sigla,
+                    modalities AS nome,
+                    COUNT(*) AS total_estudos,
+                    COUNT(DISTINCT patient_id) AS total_pacientes,
+                    MIN(study_date) AS primeira_data,
+                    MAX(study_date) AS ultima_data,
+                    COUNT(DISTINCT institution_name) AS unidades,
+                    ROUND(AVG(num_instances), 1) AS media_imagens,
+                    SUM(num_instances) AS total_imagens,
+                    COUNT(DISTINCT {$mesSql}) AS meses_ativos
                 FROM bi_pacs_estudos
                 WHERE tenant_id = ?
                   AND modalities IS NOT NULL
@@ -44,25 +48,27 @@ class ModalidadesController extends Controller
             $modalidades = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
             // Evolução mensal por modalidade (últimos 6 meses)
+            $inicioSql = SqlHelper::isPostgres()
+                ? "CURRENT_DATE - INTERVAL '6 months'"
+                : 'DATE_SUB(CURDATE(), INTERVAL 6 MONTH)';
             $stmtEvo = $pdo->prepare("
                 SELECT
                     modalities,
-                    DATE_FORMAT(study_date,'%Y-%m') AS periodo,
+                    {$mesSql} AS periodo,
                     COUNT(*) AS total
                 FROM bi_pacs_estudos
                 WHERE tenant_id = ?
-                  AND study_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                  AND study_date >= {$inicioSql}
                   AND modalities IS NOT NULL
-                GROUP BY modalities, periodo
-                ORDER BY modalities, periodo
+                GROUP BY modalities, {$mesSql}
+                ORDER BY modalidades, periodo
             ");
             $stmtEvo->execute([$tenantId]);
             $evoRaw = $stmtEvo->fetchAll(\PDO::FETCH_ASSOC);
 
             // Organiza evolução por modalidade
-            $evolucaoPorMod = [];
             foreach ($evoRaw as $r) {
-                $evolucaoPorMod[$r['modalities']][$r['periodo']] = (int)$r['total'];
+                $evolucaoPorMod[$r['modalities']][$r['periodo']] = (int) $r['total'];
             }
 
             // Resumo geral
@@ -78,6 +84,6 @@ class ModalidadesController extends Controller
             $resumo = $stmtRes->fetch(\PDO::FETCH_ASSOC) ?: $resumo;
         }
 
-        $this->view('modalidades/index', compact('modalidades','resumo','evolucaoPorMod'));
+        $this->view('modalidades/index', compact('modalidades', 'resumo', 'evolucaoPorMod'));
     }
 }

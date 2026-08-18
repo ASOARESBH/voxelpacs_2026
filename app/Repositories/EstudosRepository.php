@@ -2,6 +2,7 @@
 namespace App\Repositories;
 
 use App\Core\Database;
+use App\Core\SqlHelper;
 
 class EstudosRepository
 {
@@ -376,6 +377,8 @@ class EstudosRepository
     public function assumirEstudo(int $estudoId, int $usuarioId): bool
     {
         $params = [':usuario_id' => $usuarioId, ':usuario_id2' => $usuarioId, ':id' => $estudoId];
+        $dataAtualSql = SqlHelper::isPostgres() ? 'CURRENT_DATE' : 'CURDATE()';
+        $horaAtualSql = SqlHelper::isPostgres() ? 'CURRENT_TIME' : 'CURTIME()';
         try {
             $stmt = $this->pdo->prepare(
                 "UPDATE bi_pacs_estudos SET
@@ -383,8 +386,8 @@ class EstudosRepository
                     assumido_por           = :usuario_id,
                     assumido_em            = NOW(),
                     usuario_responsavel_id = :usuario_id2,
-                    data_inicio_laudo     = CURDATE(),
-                    hora_inicio_laudo     = CURTIME(),
+                    data_inicio_laudo     = {$dataAtualSql},
+                    hora_inicio_laudo     = {$horaAtualSql},
                     lock_heartbeat_em     = NOW()
                  WHERE id = :id AND COALESCE(situacao,'novo') IN ('novo','aberto')"
             );
@@ -433,11 +436,13 @@ class EstudosRepository
         $campoOrigem = $regra->metrica === 'sla_medico' ? 'assumido_em' : 'recebido_em';
         $operadorSql = $regra->operador === 'menor' ? '<' : '>';
 
+        $campoSql = "`{$campoOrigem}`";
+        $minutosDecorridosSql = SqlHelper::timestampDiff('MINUTE', $campoSql, 'NOW()');
         $where  = [
             'tenant_id = :tenant_id',
             "situacao NOT IN ('assinado','liberado')",
-            "`{$campoOrigem}` IS NOT NULL",
-            "TIMESTAMPDIFF(MINUTE, `{$campoOrigem}`, NOW()) {$operadorSql} :limite",
+            "{$campoSql} IS NOT NULL",
+            "{$minutosDecorridosSql} {$operadorSql} :limite",
         ];
         $params = [
             'tenant_id' => $tenantId,
@@ -458,7 +463,7 @@ class EstudosRepository
 
         try {
             $sql = "SELECT id, assumido_por, situacao, institution_name, modalities,
-                           TIMESTAMPDIFF(MINUTE, `{$campoOrigem}`, NOW()) AS minutos_decorridos
+                           {$minutosDecorridosSql} AS minutos_decorridos
                     FROM bi_pacs_estudos
                     WHERE " . implode(' AND ', $where);
             $stmt = $this->pdo->prepare($sql);

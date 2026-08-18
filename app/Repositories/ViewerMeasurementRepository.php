@@ -80,36 +80,67 @@ class ViewerMeasurementRepository
      */
     public function upsertMeasurement(int $sessionId, array $measurement): int
     {
-        $sql = 'INSERT INTO pacs_viewer_measurements (
-                    measurement_session_id, tenant_id, estudo_id, study_instance_uid,
-                    measurement_uid, tool_name, source_name, source_version,
-                    series_instance_uid, sop_instance_uid, frame_of_reference_uid, frame_number,
-                    label, display_value, numeric_value, unit, points_payload,
-                    raw_payload, payload_hash, is_removed, captured_at
-                ) VALUES (
-                    :measurement_session_id, :tenant_id, :estudo_id, :study_instance_uid,
-                    :measurement_uid, :tool_name, :source_name, :source_version,
-                    :series_instance_uid, :sop_instance_uid, :frame_of_reference_uid, :frame_number,
-                    :label, :display_value, :numeric_value, :unit, :points_payload,
-                    :raw_payload, :payload_hash, 0, NOW()
-                ) ON DUPLICATE KEY UPDATE
-                    tool_name = VALUES(tool_name),
-                    source_name = VALUES(source_name),
-                    source_version = VALUES(source_version),
-                    series_instance_uid = VALUES(series_instance_uid),
-                    sop_instance_uid = VALUES(sop_instance_uid),
-                    frame_of_reference_uid = VALUES(frame_of_reference_uid),
-                    frame_number = VALUES(frame_number),
-                    label = VALUES(label),
-                    display_value = VALUES(display_value),
-                    numeric_value = VALUES(numeric_value),
-                    unit = VALUES(unit),
-                    points_payload = VALUES(points_payload),
-                    raw_payload = VALUES(raw_payload),
-                    payload_hash = VALUES(payload_hash),
-                    is_removed = 0,
-                    removed_at = NULL,
-                    captured_at = NOW()';
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? 'INSERT INTO pacs_viewer_measurements (
+                   measurement_session_id, tenant_id, estudo_id, study_instance_uid,
+                   measurement_uid, tool_name, source_name, source_version,
+                   series_instance_uid, sop_instance_uid, frame_of_reference_uid, frame_number,
+                   label, display_value, numeric_value, unit, points_payload,
+                   raw_payload, payload_hash, is_removed, captured_at
+               ) VALUES (
+                   :measurement_session_id, :tenant_id, :estudo_id, :study_instance_uid,
+                   :measurement_uid, :tool_name, :source_name, :source_version,
+                   :series_instance_uid, :sop_instance_uid, :frame_of_reference_uid, :frame_number,
+                   :label, :display_value, :numeric_value, :unit, :points_payload,
+                   :raw_payload, :payload_hash, 0, NOW()
+               ) ON CONFLICT (measurement_session_id, measurement_uid) DO UPDATE SET
+                   tool_name = EXCLUDED.tool_name,
+                   source_name = EXCLUDED.source_name,
+                   source_version = EXCLUDED.source_version,
+                   series_instance_uid = EXCLUDED.series_instance_uid,
+                   sop_instance_uid = EXCLUDED.sop_instance_uid,
+                   frame_of_reference_uid = EXCLUDED.frame_of_reference_uid,
+                   frame_number = EXCLUDED.frame_number,
+                   label = EXCLUDED.label,
+                   display_value = EXCLUDED.display_value,
+                   numeric_value = EXCLUDED.numeric_value,
+                   unit = EXCLUDED.unit,
+                   points_payload = EXCLUDED.points_payload,
+                   raw_payload = EXCLUDED.raw_payload,
+                   payload_hash = EXCLUDED.payload_hash,
+                   is_removed = 0,
+                   removed_at = NULL,
+                   captured_at = NOW()'
+            : 'INSERT INTO pacs_viewer_measurements (
+                   measurement_session_id, tenant_id, estudo_id, study_instance_uid,
+                   measurement_uid, tool_name, source_name, source_version,
+                   series_instance_uid, sop_instance_uid, frame_of_reference_uid, frame_number,
+                   label, display_value, numeric_value, unit, points_payload,
+                   raw_payload, payload_hash, is_removed, captured_at
+               ) VALUES (
+                   :measurement_session_id, :tenant_id, :estudo_id, :study_instance_uid,
+                   :measurement_uid, :tool_name, :source_name, :source_version,
+                   :series_instance_uid, :sop_instance_uid, :frame_of_reference_uid, :frame_number,
+                   :label, :display_value, :numeric_value, :unit, :points_payload,
+                   :raw_payload, :payload_hash, 0, NOW()
+               ) ON DUPLICATE KEY UPDATE
+                   tool_name = VALUES(tool_name),
+                   source_name = VALUES(source_name),
+                   source_version = VALUES(source_version),
+                   series_instance_uid = VALUES(series_instance_uid),
+                   sop_instance_uid = VALUES(sop_instance_uid),
+                   frame_of_reference_uid = VALUES(frame_of_reference_uid),
+                   frame_number = VALUES(frame_number),
+                   label = VALUES(label),
+                   display_value = VALUES(display_value),
+                   numeric_value = VALUES(numeric_value),
+                   unit = VALUES(unit),
+                   points_payload = VALUES(points_payload),
+                   raw_payload = VALUES(raw_payload),
+                   payload_hash = VALUES(payload_hash),
+                   is_removed = 0,
+                   removed_at = NULL,
+                   captured_at = NOW()';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([

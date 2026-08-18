@@ -701,6 +701,7 @@ class ReportService {
         }
 
         try {
+            $institutionMatchSql = \App\Core\SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
                 "SELECT bnin.id AS institution_unit_id, un.id AS rich_unit_id,
                         bnin.report_layout_template_id AS institution_report_layout_id,
@@ -709,7 +710,7 @@ class ReportService {
                  FROM bi_negocio_institution_names bnin
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                  WHERE bnin.tenant_id = :tenant_id
-                   AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                   AND {$institutionMatchSql}
                  LIMIT 1"
             );
             $stmt->execute(['tenant_id' => $tenantId, 'institution_name' => $institutionName]);

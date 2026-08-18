@@ -3,6 +3,7 @@ namespace App\Services;
 
 use App\Core\Database;
 use App\Core\Logger;
+use App\Core\SqlHelper;
 use App\Repositories\EstudosRepository;
 use App\Repositories\SlaRegrasRepository;
 
@@ -162,12 +163,13 @@ class SlaRulesEngineService
     /** Lock simples de concorrência: só avança se ninguém segurar o lock, ou se o lock estiver "preso" há mais que o TTL. */
     private function adquirirLock(): bool
     {
+        $minutosLockSql = SqlHelper::timestampDiff('MINUTE', 'lock_adquirido_em', 'NOW()');
         $stmt = $this->pdo->prepare("
             UPDATE bi_sla_robo_config
             SET lock_adquirido_em = NOW()
             WHERE id = 1
               AND (lock_adquirido_em IS NULL
-                   OR TIMESTAMPDIFF(MINUTE, lock_adquirido_em, NOW()) > :ttl)
+                   OR {$minutosLockSql} > :ttl)
         ");
         $stmt->execute(['ttl' => self::LOCK_TTL_MINUTES]);
         return $stmt->rowCount() === 1;

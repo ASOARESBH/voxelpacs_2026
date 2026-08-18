@@ -3,6 +3,7 @@ namespace App\Controllers\Platform;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Audit\AuditLogger;
 use App\Models\Tenant;
 use App\Models\TenantPlan;
@@ -91,7 +92,7 @@ class NegociosController extends Controller {
             ];
 
             try {
-                $colunas = $pdo->query("SHOW COLUMNS FROM bi_tenants")->fetchAll(\PDO::FETCH_COLUMN);
+                $colunas = SqlHelper::tableColumns($pdo, 'bi_tenants');
                 foreach ($camposOpcionais as $campo => $valor) {
                     if (in_array($campo, $colunas)) {
                         $tenantData[$campo] = $valor;
@@ -101,7 +102,7 @@ class NegociosController extends Controller {
                     error_log("[NegociosController::store] Coluna 'idioma_padrao' não existe em bi_tenants — rode a migration 2026-07-15_bi_tenants_idioma.sql. Campo ignorado nesta gravação.");
                 }
             } catch (\Throwable $e) {
-                error_log("[NegociosController::store] SHOW COLUMNS falhou: " . $e->getMessage());
+                error_log("[NegociosController::store] Introspecção de colunas falhou: " . $e->getMessage());
             }
 
             // Previne duplicidade por slug
@@ -147,10 +148,12 @@ class NegociosController extends Controller {
             if (!empty($_POST['institution_names'])) {
                 try {
                     $names   = array_map('trim', explode(',', $_POST['institution_names']));
-                    $stmtInst = $pdo->prepare("
-                        INSERT IGNORE INTO bi_negocio_institution_names (tenant_id, institution_name)
-                        VALUES (?, ?)
-                    ");
+                    $sqlInst = SqlHelper::isPostgres()
+                        ? 'INSERT INTO bi_negocio_institution_names (tenant_id, institution_name)
+                           VALUES (?, ?) ON CONFLICT (tenant_id, institution_name) DO NOTHING'
+                        : 'INSERT IGNORE INTO bi_negocio_institution_names (tenant_id, institution_name)
+                           VALUES (?, ?)';
+                    $stmtInst = $pdo->prepare($sqlInst);
                     foreach ($names as $name) {
                         if (!empty($name)) $stmtInst->execute([$tenantId, $name]);
                     }
@@ -359,7 +362,7 @@ class NegociosController extends Controller {
             ];
 
             try {
-                $colunas = $pdo->query("SHOW COLUMNS FROM bi_tenants")->fetchAll(\PDO::FETCH_COLUMN);
+                $colunas = SqlHelper::tableColumns($pdo, 'bi_tenants');
                 foreach ($camposOpcionais as $campo => $valor) {
                     if (in_array($campo, $colunas)) $tenantData[$campo] = $valor;
                 }
@@ -367,7 +370,7 @@ class NegociosController extends Controller {
                     error_log("[NegociosController::update] Coluna 'idioma_padrao' não existe em bi_tenants — rode a migration 2026-07-15_bi_tenants_idioma.sql. Campo ignorado nesta gravação.");
                 }
             } catch (\Throwable $e) {
-                error_log("[NegociosController::update] SHOW COLUMNS: " . $e->getMessage());
+                error_log("[NegociosController::update] Introspecção de colunas: " . $e->getMessage());
             }
 
             (new Tenant())->update($id, $tenantData);
@@ -453,14 +456,20 @@ class NegociosController extends Controller {
 
                 // 2. Reativar (ou inserir) cada nome que permanece na lista
                 if (!empty($novosNomes)) {
-                    $stmtUpsert = $pdo->prepare("
-                        INSERT INTO bi_negocio_institution_names
-                            (tenant_id, institution_name, ativo, excluido_manualmente)
-                        VALUES (?, ?, 1, 0)
-                        ON DUPLICATE KEY UPDATE
-                            ativo = 1,
-                            excluido_manualmente = 0
-                    ");
+                    $sqlUpsert = SqlHelper::isPostgres()
+                        ? "INSERT INTO bi_negocio_institution_names
+                               (tenant_id, institution_name, ativo, excluido_manualmente)
+                           VALUES (?, ?, 1, 0)
+                           ON CONFLICT (tenant_id, institution_name) DO UPDATE SET
+                               ativo = EXCLUDED.ativo,
+                               excluido_manualmente = EXCLUDED.excluido_manualmente"
+                        : "INSERT INTO bi_negocio_institution_names
+                               (tenant_id, institution_name, ativo, excluido_manualmente)
+                           VALUES (?, ?, 1, 0)
+                           ON DUPLICATE KEY UPDATE
+                               ativo = VALUES(ativo),
+                               excluido_manualmente = VALUES(excluido_manualmente)";
+                    $stmtUpsert = $pdo->prepare($sqlUpsert);
                     foreach ($novosNomes as $name) {
                         $stmtUpsert->execute([$id, $name]);
                     }
@@ -468,17 +477,25 @@ class NegociosController extends Controller {
 
                 // 3. Remover fisicamente os registros excluidos_manualmente
                 //    que NAO possuem estudos vinculados (limpeza segura)
-                $pdo->prepare("
-                    DELETE n FROM bi_negocio_institution_names n
-                    WHERE n.tenant_id = ?
-                      AND n.excluido_manualmente = 1
-                      AND NOT EXISTS (
-                          SELECT 1 FROM bi_pacs_estudos e
-                          WHERE e.tenant_id = n.tenant_id
-                            AND e.institution_name COLLATE utf8mb4_general_ci
-                                = n.institution_name COLLATE utf8mb4_general_ci
-                      )
-                ")->execute([$id]);
+                $sqlLimpeza = SqlHelper::isPostgres()
+                    ? "DELETE FROM bi_negocio_institution_names n
+                         WHERE n.tenant_id = ?
+                           AND n.excluido_manualmente = 1
+                           AND NOT EXISTS (
+                               SELECT 1 FROM bi_pacs_estudos e
+                                WHERE e.tenant_id = n.tenant_id
+                                  AND LOWER(e.institution_name) = LOWER(n.institution_name)
+                           )"
+                    : "DELETE n FROM bi_negocio_institution_names n
+                         WHERE n.tenant_id = ?
+                           AND n.excluido_manualmente = 1
+                           AND NOT EXISTS (
+                               SELECT 1 FROM bi_pacs_estudos e
+                                WHERE e.tenant_id = n.tenant_id
+                                  AND e.institution_name COLLATE utf8mb4_general_ci
+                                      = n.institution_name COLLATE utf8mb4_general_ci
+                           )";
+                $pdo->prepare($sqlLimpeza)->execute([$id]);
 
             } catch (\Throwable $e) {
                 error_log("[NegociosController::update] InstitutionNames: " . $e->getMessage());

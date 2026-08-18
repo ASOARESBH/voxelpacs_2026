@@ -173,10 +173,12 @@ class GrupoRepository
     public function adicionarMembro(int $grupoId, int $usuarioId, int $tenantId): void
     {
         try {
-            $stmt = $this->pdo->prepare("
-                INSERT IGNORE INTO bi_grupo_usuarios (tenant_id, grupo_id, usuario_id)
-                VALUES (:tenant_id, :grupo_id, :usuario_id)
-            ");
+            $sql = \App\Core\SqlHelper::isPostgres()
+                ? 'INSERT INTO bi_grupo_usuarios (tenant_id, grupo_id, usuario_id)
+                   VALUES (:tenant_id, :grupo_id, :usuario_id) ON CONFLICT DO NOTHING'
+                : 'INSERT IGNORE INTO bi_grupo_usuarios (tenant_id, grupo_id, usuario_id)
+                   VALUES (:tenant_id, :grupo_id, :usuario_id)';
+            $stmt = $this->pdo->prepare($sql);
             $stmt->execute(['tenant_id' => $tenantId, 'grupo_id' => $grupoId, 'usuario_id' => $usuarioId]);
         } catch (\Throwable $e) {
             Logger::error('[GrupoRepository::adicionarMembro] ERRO: ' . $e->getMessage(), [

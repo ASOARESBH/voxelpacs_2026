@@ -120,24 +120,40 @@ class PedidoMedicoRepository
     public function upsert(array $data): array
     {
         try {
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO bi_pacs_estudos_pedidos
-                    (tenant_id, estudo_id, nome_original, nome_arquivo, mime_type,
-                     extensao, tamanho_bytes, hash_sha256, caminho_arquivo, usuario_id)
-                 VALUES
-                    (:tenant_id, :estudo_id, :nome_original, :nome_arquivo, :mime_type,
-                     :extensao, :tamanho_bytes, :hash_sha256, :caminho_arquivo, :usuario_id)
-                 ON DUPLICATE KEY UPDATE
-                    nome_original   = VALUES(nome_original),
-                    nome_arquivo    = VALUES(nome_arquivo),
-                    mime_type      = VALUES(mime_type),
-                    extensao        = VALUES(extensao),
-                    tamanho_bytes  = VALUES(tamanho_bytes),
-                    hash_sha256    = VALUES(hash_sha256),
-                    caminho_arquivo = VALUES(caminho_arquivo),
-                    usuario_id     = VALUES(usuario_id),
-                    atualizado_em  = CURRENT_TIMESTAMP'
-            );
+            $sql = \App\Core\SqlHelper::isPostgres()
+                ? 'INSERT INTO bi_pacs_estudos_pedidos
+                       (tenant_id, estudo_id, nome_original, nome_arquivo, mime_type,
+                        extensao, tamanho_bytes, hash_sha256, caminho_arquivo, usuario_id)
+                   VALUES
+                       (:tenant_id, :estudo_id, :nome_original, :nome_arquivo, :mime_type,
+                        :extensao, :tamanho_bytes, :hash_sha256, :caminho_arquivo, :usuario_id)
+                   ON CONFLICT (tenant_id, estudo_id) DO UPDATE SET
+                       nome_original = EXCLUDED.nome_original,
+                       nome_arquivo = EXCLUDED.nome_arquivo,
+                       mime_type = EXCLUDED.mime_type,
+                       extensao = EXCLUDED.extensao,
+                       tamanho_bytes = EXCLUDED.tamanho_bytes,
+                       hash_sha256 = EXCLUDED.hash_sha256,
+                       caminho_arquivo = EXCLUDED.caminho_arquivo,
+                       usuario_id = EXCLUDED.usuario_id,
+                       atualizado_em = CURRENT_TIMESTAMP'
+                : 'INSERT INTO bi_pacs_estudos_pedidos
+                       (tenant_id, estudo_id, nome_original, nome_arquivo, mime_type,
+                        extensao, tamanho_bytes, hash_sha256, caminho_arquivo, usuario_id)
+                   VALUES
+                       (:tenant_id, :estudo_id, :nome_original, :nome_arquivo, :mime_type,
+                        :extensao, :tamanho_bytes, :hash_sha256, :caminho_arquivo, :usuario_id)
+                   ON DUPLICATE KEY UPDATE
+                       nome_original = VALUES(nome_original),
+                       nome_arquivo = VALUES(nome_arquivo),
+                       mime_type = VALUES(mime_type),
+                       extensao = VALUES(extensao),
+                       tamanho_bytes = VALUES(tamanho_bytes),
+                       hash_sha256 = VALUES(hash_sha256),
+                       caminho_arquivo = VALUES(caminho_arquivo),
+                       usuario_id = VALUES(usuario_id),
+                       atualizado_em = CURRENT_TIMESTAMP';
+            $stmt = $this->pdo->prepare($sql);
             $stmt->execute([
                 'tenant_id'      => (int) $data['tenant_id'],
                 'estudo_id'      => (int) $data['estudo_id'],
