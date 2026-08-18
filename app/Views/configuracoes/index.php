@@ -1,13 +1,17 @@
 <?php
 $config = $config ?? [];
 $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => null];
+$podeGerenciarInfraestrutura = (bool) ($podeGerenciarInfraestrutura ?? false);
+$csrfToken = (string) ($csrfToken ?? '');
 ?>
 
 <div style="margin-bottom:1.5rem;">
     <h1 style="font-size:1.3rem;font-weight:700;color:var(--pacs-text);margin-bottom:.25rem;">
         <i class="fa fa-gear me-2 text-pacs-primary"></i>Configurações do Sistema
     </h1>
-    <p style="color:var(--pacs-text-muted);font-size:.82rem;">Configurações gerais do VOXEL PACS</p>
+    <p style="color:var(--pacs-text-muted);font-size:.82rem;">
+        <?= $podeGerenciarInfraestrutura ? 'Configurações empresariais e de infraestrutura do VOXEL PACS' : 'Dados cadastrais da sua empresa' ?>
+    </p>
 </div>
 
 <?php if (!empty($_SESSION['success'])): ?>
@@ -15,9 +19,10 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
     <?php unset($_SESSION['success']); ?>
 <?php endif; ?>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:900px;">
+<div style="display:grid;grid-template-columns:<?= $podeGerenciarInfraestrutura ? '1fr 1fr' : 'minmax(0,440px)' ?>;gap:1rem;max-width:900px;">
 
-    <!-- Configurações PACS -->
+    <?php if ($podeGerenciarInfraestrutura): ?>
+    <!-- Infraestrutura PACS: exclusiva de superadmin -->
     <div class="pacs-card">
         <div class="pacs-card-header">
             <i class="fa fa-x-ray text-pacs-primary"></i>
@@ -25,7 +30,8 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
         </div>
         <div class="pacs-card-body">
             <form method="POST" action="/configuracoes/salvar">
-                <input type="hidden" name="grupo" value="pacs">
+                <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="grupo" value="infraestrutura">
 
                 <div style="margin-bottom:.75rem;">
                     <label class="form-label-dark">URL do Orthanc</label>
@@ -42,14 +48,14 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
                 <div style="margin-bottom:.75rem;">
                     <label class="form-label-dark">Senha Orthanc</label>
                     <input type="password" name="orthanc_pass" class="form-control-dark"
-                           value="" placeholder="••••••••">
+                           value="" placeholder="Deixe em branco para manter a senha atual" autocomplete="new-password">
                 </div>
                 <div style="margin-bottom:1rem;">
                     <label class="form-label-dark">URL do Viewer DICOM</label>
                     <input type="url" name="viewer_url" class="form-control-dark"
                            value="<?= htmlspecialchars($config['viewer_url'] ?? '') ?>"
                            placeholder="http://localhost:3000">
-                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">URL base do Voxel View (o visualizador web do VOXEL PACS)</small>
+                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">URL base do Voxel View, o visualizador web do VOXEL PACS.</small>
                 </div>
                 <button type="submit" class="btn-pacs-primary" style="width:100%;">
                     <i class="fa fa-floppy-disk"></i> Salvar Configurações PACS
@@ -57,8 +63,9 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
             </form>
         </div>
     </div>
+    <?php endif; ?>
 
-    <!-- Configurações Gerais -->
+    <!-- Dados empresariais: superadmin e administrador do tenant -->
     <div class="pacs-card">
         <div class="pacs-card-header">
             <i class="fa fa-building text-pacs-primary"></i>
@@ -66,6 +73,7 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
         </div>
         <div class="pacs-card-body">
             <form method="POST" action="/configuracoes/salvar">
+                <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="grupo" value="empresa">
 
                 <div style="margin-bottom:.75rem;">
@@ -99,7 +107,8 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
         </div>
     </div>
 
-    <!-- Visualizadores Desktop (RadiAnt / Weasis) -->
+    <?php if ($podeGerenciarInfraestrutura): ?>
+    <!-- Visualizadores Desktop: infraestrutura exclusiva de superadmin -->
     <div class="pacs-card" style="grid-column:1 / -1;">
         <div class="pacs-card-header">
             <i class="fa fa-desktop text-pacs-primary"></i>
@@ -114,7 +123,8 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
                     $vc = $viewerDesktopConfig[$viewerKey] ?? null;
                 ?>
                 <form method="POST" action="/configuracoes/viewer-desktop/salvar" style="border:1px solid var(--pacs-border);border-radius:8px;padding:.9rem;">
-                    <input type="hidden" name="viewer" value="<?= $viewerKey ?>">
+                    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <input type="hidden" name="viewer" value="<?= htmlspecialchars($viewerKey) ?>">
                     <div style="font-weight:600;color:var(--pacs-text);font-size:.85rem;margin-bottom:.6rem;">
                         <i class="fa fa-desktop"></i> <?= htmlspecialchars($viewerLabel) ?>
                     </div>
@@ -153,5 +163,5 @@ $viewerDesktopConfig = $viewerDesktopConfig ?? ['radiant' => null, 'weasis' => n
             </div>
         </div>
     </div>
-
+    <?php endif; ?>
 </div>

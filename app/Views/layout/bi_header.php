@@ -49,7 +49,7 @@
             <li class="nav-item"><a href="/pacs" class="nav-link text-white <?= str_contains($_SERVER['REQUEST_URI'],'/pacs')?'active bg-primary rounded':'' ?>"><i class="fa fa-plug me-2"></i>PACS Conectados</a></li>
             <li class="nav-item mt-2"><small class="text-muted px-2 text-uppercase fw-semibold" style="font-size:.7rem;">Sistema</small></li>
             <li class="nav-item"><a href="/servidor" class="nav-link text-white <?= str_contains($_SERVER['REQUEST_URI'],'/servidor')?'active bg-primary rounded':'' ?>"><i class="fa fa-server me-2"></i>Servidor <span class="badge bg-info text-dark ms-1" style="font-size:.65rem;">PACS</span></a></li>
-            <?php if (\App\Core\Auth::isPlatformAdmin()): ?>
+            <?php if (\App\Core\Auth::isPlatformAdmin() || \App\Core\Auth::can('manage_configuracoes')): ?>
             <li class="nav-item"><a href="/configuracoes" class="nav-link text-white <?= str_contains($_SERVER['REQUEST_URI'],'/configuracoes')?'active bg-primary rounded':'' ?>"><i class="fa fa-cog me-2"></i>Configurações</a></li>
             <?php endif; ?>
             <li class="nav-item"><a href="/usuarios" class="nav-link text-white <?= str_contains($_SERVER['REQUEST_URI'],'/usuarios')?'active bg-primary rounded':'' ?>"><i class="fa fa-users me-2"></i>Usuários</a></li>

@@ -34,4 +34,35 @@ class Configuracao extends Model {
         }
         return $result;
     }
+
+    /**
+     * Recupera somente chaves previamente autorizadas pelo Controller.
+     * Evita expor configuração de infraestrutura ao administrador do tenant.
+     */
+    public function getMany(array $chaves): array {
+        $chaves = array_values(array_unique(array_filter($chaves, static fn ($chave): bool => is_string($chave) && $chave !== '')));
+        if ($chaves === []) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = $this->tenantParam();
+        foreach ($chaves as $indice => $chave) {
+            $placeholder = ':chave_' . $indice;
+            $placeholders[] = $placeholder;
+            $params[ltrim($placeholder, ':')] = $chave;
+        }
+
+        $sql = "SELECT chave, valor FROM {$this->table}"
+            . ' WHERE chave IN (' . implode(', ', $placeholders) . ')'
+            . $this->tenantWhere();
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $result[$row->chave] = $row->valor;
+        }
+        return $result;
+    }
 }
