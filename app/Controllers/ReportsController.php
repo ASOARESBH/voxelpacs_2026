@@ -386,6 +386,10 @@ class ReportsController extends Controller
                         m.especialidade AS medico_especialidade,
                         t.nome as tenant_nome,
                         t.cnpj AS tenant_cnpj,
+                        bnin.id AS institution_unit_id,
+                        un.id AS rich_unit_id,
+                        bnin.report_layout_template_id AS institution_report_layout_id,
+                        un.report_layout_template_id AS rich_report_layout_id,
                         COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
                         COALESCE(NULLIF(bnin.nome_fantasia, ''), un.nome_fantasia)   AS unidade_nome_fantasia,
                         COALESCE(NULLIF(bnin.razao_social, ''), un.razao_social)     AS unidade_razao_social,
@@ -470,13 +474,38 @@ class ReportsController extends Controller
             // Template visual (camada de apresentação — ver App\Services\ReportLayoutService).
             // Unidade resolvida via institution_name; sem unidade vinculada ou sem
             // template escolhido, cai no padrão (classico_centralizado).
-            $templateCodigo = (new \App\Services\ReportLayoutService())
+            $layoutService = new \App\Services\ReportLayoutService();
+            $templateCodigo = $layoutService
                 ->resolverCodigo(isset($data['report_layout_template_id']) ? (int) $data['report_layout_template_id'] : null);
+            $customTemplate = null;
+            if ($templateCodigo === 'personalizado') {
+                $customService = new \App\Services\ReportCustomTemplateService();
+                $snapshotId = (int) ($data['report_custom_template_id'] ?? 0);
+                if ($snapshotId > 0) {
+                    $customTemplate = $customService->getById($snapshotId, (int) $data['tenant_id']);
+                }
+                if ($customTemplate === null) {
+                    $origem = ((int) ($data['institution_report_layout_id'] ?? 0) === (int) ($data['report_layout_template_id'] ?? 0))
+                        ? \App\Services\ReportCustomTemplateService::SOURCE_INSTITUTION
+                        : \App\Services\ReportCustomTemplateService::SOURCE_UNIDADE;
+                    $unidadeId = $origem === \App\Services\ReportCustomTemplateService::SOURCE_INSTITUTION
+                        ? (int) ($data['institution_unit_id'] ?? 0)
+                        : (int) ($data['rich_unit_id'] ?? 0);
+                    $customTemplate = $customService->getPublished((int) $data['tenant_id'], $origem, $unidadeId);
+                }
+                if ($customTemplate === null) {
+                    Logger::warning('ReportsController::pdf layout personalizado sem versão publicada; aplicado fallback', [
+                        'report_id' => $reportId, 'tenant_id' => $data['tenant_id'] ?? null,
+                    ]);
+                    $templateCodigo = \App\Services\ReportLayoutService::PADRAO;
+                }
+            }
             // Renderizar a view de PDF
             $this->view('reports/pdf', [
                 'report'         => $data,
                 'download'       => $download,
                 'templateCodigo' => $templateCodigo,
+                'customTemplate' => $customTemplate,
                 'qr_data'  => base64_encode(json_encode([
                     'id'   => $reportId,
                     'hash' => $data['assinatura_hash'] ?? '',

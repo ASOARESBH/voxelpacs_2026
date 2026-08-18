@@ -316,6 +316,7 @@ $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
         <div class="row g-2" id="templateLaudoGrid">
             <?php foreach ($templatesLaudo as $tpl):
                 $tplId    = (int) $tpl['id'];
+                $isPersonalizado = ($tpl['codigo'] ?? '') === 'personalizado';
                 $selecionado = $templateAtualId === $tplId || (!$templateAtualId && $tpl['codigo'] === 'classico_centralizado');
             ?>
             <div class="col-12 col-md-6 col-xl-3">
@@ -339,6 +340,11 @@ $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
                             </div>
                             <div class="tp-body"></div>
                             <div class="tp-sig" style="margin-left:auto;"></div>
+                        <?php elseif ($isPersonalizado): ?>
+                            <div class="tp-row"><div class="tp-logo"></div><div class="tp-line" style="width:28%;margin-left:auto"></div></div>
+                            <div class="tp-line" style="width:76%;margin-top:8px"></div>
+                            <div class="tp-body"></div>
+                            <div class="tp-sig"></div>
                         <?php else: /* minimalista */ ?>
                             <div class="tp-row"><div class="tp-line" style="width:40%"></div><div class="tp-line" style="width:25%;margin-left:auto"></div></div>
                             <div class="tp-body" style="margin-top:10px;"></div>
@@ -351,6 +357,11 @@ $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
                             <i class="fa fa-check-circle template-laudo-check"></i>
                         </div>
                         <div class="template-laudo-desc"><?= htmlspecialchars($tpl['descricao'] ?? '') ?></div>
+                        <?php if ($isPersonalizado && !empty($unidade['id'])): ?>
+                        <a href="/unidades/<?= (int) $unidade['id'] ?>/editar/template-personalizado" class="btn btn-outline-primary btn-sm mt-2 w-100" onclick="event.stopPropagation();">
+                            <i class="fa fa-pen-to-square me-1"></i>Editar layout
+                        </a>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

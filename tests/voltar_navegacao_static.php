@@ -91,7 +91,7 @@ exigirVoltar(strpos($moduloMascaras, 'ativarAbaMedico()') !== false,
     'O módulo de Máscaras não documenta a correção por query string.');
 
 $core = lerVoltar($root . '/app/Core/View.php');
-exigirVoltar(strpos($core, "ASSET_VERSION = '2.2.1'") !== false,
+exigirVoltar(strpos($core, "ASSET_VERSION = '2.2.2'") !== false,
     'Assets não foram versionados para distribuir o helper de retorno.');
 
 if ($falhas !== []) {
