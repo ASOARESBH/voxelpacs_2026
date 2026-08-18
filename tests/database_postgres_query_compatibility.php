@@ -43,6 +43,8 @@ $pdo->beginTransaction();
 try {
     $columns = SqlHelper::tableColumns($pdo, 'bi_tenants');
     assertPgCompatibility(in_array('id', $columns, true), 'Introspecção de colunas via information_schema');
+    assertPgCompatibility(SqlHelper::hasTable($pdo, 'bi_tenants'), 'Introspecção de tabela existente via information_schema');
+    assertPgCompatibility(!SqlHelper::hasTable($pdo, '__tabela_pg_inexistente__'), 'Introspecção de tabela inexistente via information_schema');
 
     $monthSql = SqlHelper::dateFormat('NOW()', '%Y-%m');
     $month = $pdo->query("SELECT {$monthSql}")->fetchColumn();

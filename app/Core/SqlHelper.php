@@ -123,6 +123,32 @@ final class SqlHelper
         return in_array($column, self::tableColumns($pdo, $table), true);
     }
 
+    /**
+     * Confirma se uma tabela está presente no schema ativo sem depender de
+     * migrations opcionais. Útil para preservar telas de leitura em bancos
+     * de homologação que ainda não receberam todos os módulos recentes.
+     */
+    public static function hasTable(PDO $pdo, string $table): bool
+    {
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            throw new \InvalidArgumentException('Nome de tabela inválido para introspecção.');
+        }
+
+        if (!self::isPostgres()) {
+            return $pdo->query('SHOW TABLES LIKE ' . self::quoteLiteral($table))->fetchColumn() !== false;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT 1
+               FROM information_schema.tables
+              WHERE table_schema = current_schema()
+                AND table_name = :table
+              LIMIT 1'
+        );
+        $stmt->execute([':table' => $table]);
+        return $stmt->fetchColumn() !== false;
+    }
+
     private static function quoteLiteral(string $value): string
     {
         return "'" . str_replace("'", "''", $value) . "'";
