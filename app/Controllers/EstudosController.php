@@ -684,10 +684,11 @@ class EstudosController extends Controller
         // ── Token de uso único para abertura segura (LGPD) ──────────────────────
         $token = $this->gerarToken();
         try {
+            $expiresAtSql = SqlHelper::futureTimestamp('HOUR', 2);
             $pdo->prepare("
                 INSERT INTO pacs_viewer_tokens
                     (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
-                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,:expires_at)
+                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,{$expiresAtSql})
             ")->execute([
                 ':token'      => $token,
                 ':estudo_id'  => $id,
@@ -696,7 +697,6 @@ class EstudosController extends Controller
                 ':tenant_id'  => Auth::tenantId() ?: null,
                 ':usuario_id' => Auth::userId()   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
-                ':expires_at' => date('Y-m-d H:i:s', strtotime('+2 hours')),
             ]);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
@@ -789,10 +789,11 @@ class EstudosController extends Controller
         // ── 2. Gerar token temporário (60 min) em pacs_viewer_tokens ──────────────
         $token = $this->gerarToken();
         try {
+            $expiresAtSql = SqlHelper::futureTimestamp('HOUR', 1);
             $pdo->prepare("
                 INSERT INTO pacs_viewer_tokens
                     (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
-                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,:expires_at)
+                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,{$expiresAtSql})
             ")->execute([
                 ':token'      => $token,
                 ':estudo_id'  => $id,
@@ -801,7 +802,6 @@ class EstudosController extends Controller
                 ':tenant_id'  => $tenantId ?: null,
                 ':usuario_id' => $userId   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
-                ':expires_at' => date('Y-m-d H:i:s', strtotime('+1 hour')),
             ]);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::abrirVoxelDesktop] token: ' . $ex->getMessage());
