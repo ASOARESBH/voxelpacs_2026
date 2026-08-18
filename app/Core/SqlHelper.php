@@ -65,6 +65,26 @@ final class SqlHelper
     }
 
     /**
+     * Retorna uma expressão de data/hora futura calculada pelo próprio banco.
+     * Evita que valores sem offset, produzidos pelo PHP, sejam interpretados no
+     * fuso errado quando gravados em colunas TIMESTAMPTZ do PostgreSQL.
+     */
+    public static function futureTimestamp(string $unit, int $amount, string $base = 'NOW()'): string
+    {
+        $unit = strtoupper(trim($unit));
+        if (!in_array($unit, ['MINUTE', 'HOUR', 'DAY'], true) || $amount < 1) {
+            throw new \InvalidArgumentException('Intervalo futuro SQL inválido.');
+        }
+
+        if (!self::isPostgres()) {
+            return "DATE_ADD({$base}, INTERVAL {$amount} {$unit})";
+        }
+
+        $postgresUnit = strtolower($unit) . ($amount === 1 ? '' : 's');
+        return "({$base} + INTERVAL '{$amount} {$postgresUnit}')";
+    }
+
+    /**
      * Retorna agregação textual compatível, incluindo ordenação determinística.
      */
     public static function groupConcat(string $expression, string $separator, string $order = ''): string

@@ -54,6 +54,10 @@ try {
     $minutes = (float) $pdo->query("SELECT {$minutesSql}")->fetchColumn();
     assertPgCompatibility($minutes >= 4.9 && $minutes <= 5.1, 'Diferença temporal equivalente a TIMESTAMPDIFF');
 
+    $futureSql = SqlHelper::futureTimestamp('HOUR', 2);
+    $futureSeconds = (float) $pdo->query("SELECT EXTRACT(EPOCH FROM ({$futureSql} - NOW()))")->fetchColumn();
+    assertPgCompatibility($futureSeconds >= 7199 && $futureSeconds <= 7201, 'Expiração futura calculada pelo relógio PostgreSQL');
+
     $namesSql = SqlHelper::groupConcat('v.nome', '|', 'v.nome');
     $names = $pdo->query("SELECT {$namesSql} FROM (VALUES ('B'), ('A')) AS v(nome)")->fetchColumn();
     assertPgCompatibility($names === 'A|B', 'Agregação textual equivalente a GROUP_CONCAT');
