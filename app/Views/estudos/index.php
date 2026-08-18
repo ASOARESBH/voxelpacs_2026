@@ -1387,9 +1387,11 @@ $periodoLabel = [
     .col-unidade,.col-solicitante,.col-modalidades,.col-pedido,.col-medico-laudo{display:none;}
 }
 /* ── Barra de Seleção / Download em Lote ─────────────────────────────── */
-.wl-sel-bar{background:var(--pacs-surface);border:1px solid var(--pacs-primary);border-radius:8px;
-    padding:.5rem .85rem;margin:.4rem 0;box-shadow:0 2px 8px rgba(14,165,233,.15);}
+.wl-sel-bar{position:fixed;z-index:1050;left:calc(50% + 92px);bottom:12px;transform:translateX(-50%);
+    width:min(860px,calc(100vw - 230px));background:var(--pacs-surface);border:1px solid var(--pacs-primary);border-radius:8px;
+    padding:.5rem .85rem;margin:0;box-shadow:0 8px 24px rgba(14,165,233,.24);}
 .wl-sel-bar-inner{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+@media (max-width:640px){.wl-sel-bar{left:12px;right:12px;bottom:10px;transform:none;width:auto;}}
 .wl-sel-count{font-size:.8rem;font-weight:600;color:var(--pacs-primary);min-width:160px;}
 .wl-btn-download{background:var(--pacs-primary);color:#fff;border:none;border-radius:6px;
     padding:.3rem .85rem;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.35rem;
