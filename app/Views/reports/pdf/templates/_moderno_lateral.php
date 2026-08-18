@@ -105,22 +105,22 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
 
         .pdf-header { display: table; width: 100%; padding-bottom: 9px; border-bottom: 1px solid #777; }
         .pdf-header-left, .pdf-header-right { display: table-cell; vertical-align: middle; }
-        .pdf-header-left { width: 62%; padding-right: 12px; }
-        .pdf-header-right { width: 38%; padding-left: 18px; text-align: right; }
+        .pdf-header-left { width: 58%; padding-right: 12px; }
+        .pdf-header-right { width: 42%; padding-left: 22px; text-align: right; }
         .pdf-logo { display: block; max-width: 196px; max-height: 78px; object-fit: contain; object-position: left center; }
         .pdf-logo-fallback { color: #075a9e; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
         .pdf-header-unit { display: block; margin-top: 4px; color: #404040; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
         .pdf-header-custom { width: 100%; margin-top: 0; text-align: right; }
         .pdf-header-custom-qr { text-align: right; }
-        .pdf-header-custom-qr .voxel-institutional-qr { width: 56px; height: 56px; display: block; margin: 0 0 0 auto; }
+        .pdf-header-custom-qr .voxel-institutional-qr { width: 78px; height: 78px; display: block; margin: 0 0 0 auto; }
         .pdf-header-custom-links { margin-top: 3px; text-align: right; }
         .pdf-header-custom-links .voxel-institutional-link { display: block; color: #404040; font-size: 8px; line-height: 1.5; font-weight: 700; text-decoration: none; }
         .pdf-header-rules { display: inline-block; width: 106px; margin-top: 10px; border-top: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; height: 6px; }
 
         .pdf-patient { display: table; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
-        .pdf-patient-col { display: table-cell; width: 50%; vertical-align: top; }
-        .pdf-patient-col:first-child { padding-right: 16px; }
-        .pdf-patient-col:last-child { padding-left: 16px; }
+        .pdf-patient-col { display: table-cell; vertical-align: top; }
+        .pdf-patient-col:first-child { width: 56%; padding-right: 16px; }
+        .pdf-patient-col:last-child { width: 44%; padding-left: 28px; }
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
         .pdf-patient-line strong { font-weight: 700; }
 
