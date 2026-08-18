@@ -64,6 +64,9 @@ try {
     $activeUnits = (int) $pdo->query('SELECT COUNT(*) FROM bi_unidades WHERE ativo = 1')->fetchColumn();
     assertPgCompatibility($activeUnits >= 0, 'Flags TINYINT(1) normalizadas para comparação numérica');
 
+    $reportSituacao = $pdo->query("SELECT COALESCE((SELECT situacao::text FROM reports LIMIT 1), '')")->fetchColumn();
+    assertPgCompatibility(is_string($reportSituacao), 'Enum de situação de laudo convertido para texto na Worklist');
+
     $tenantId = (int) $pdo->query('SELECT id FROM bi_tenants ORDER BY id LIMIT 1')->fetchColumn();
     assertPgCompatibility($tenantId > 0, 'Tenant de referência disponível para validação de UPSERT');
     $probeKey = '__pg_compat_' . bin2hex(random_bytes(8));

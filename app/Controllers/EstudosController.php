@@ -314,14 +314,20 @@ class EstudosController extends Controller
                p.tamanho_bytes AS pedido_tamanho_bytes, p.caminho_arquivo AS pedido_caminho_arquivo"
             : "NULL AS pedido_id, NULL AS pedido_nome_original, NULL AS pedido_mime_type,
                NULL AS pedido_tamanho_bytes, NULL AS pedido_caminho_arquivo";
+        $reportPublicTokenSql = $hasReportPublicToken ? "COALESCE(r.public_token, '')" : "''";
+        // pgloader preserva ENUMs como tipos PostgreSQL. Um COALESCE direto com
+        // string vazia tenta converter '' para o ENUM e aborta a consulta; texto
+        // explícito conserva o contrato da view sem afetar MySQL.
+        $reportSituacaoSql = $hasReportSituacao
+            ? (SqlHelper::isPostgres() ? "COALESCE(r.situacao::text, '')" : "COALESCE(r.situacao, '')")
+            : "''";
+        $chatStatusSql = $hasChats && $hasChatStatus
+            ? (SqlHelper::isPostgres() ? "COALESCE(c.status::text, '')" : "COALESCE(c.status, '')")
+            : "''";
         $reportSelectSql = $hasReports
-            ? 'r.id AS report_id, '
-                . ($hasReportPublicToken ? "COALESCE(r.public_token, '')" : "''") . ' AS report_public_token, '
-                . ($hasReportSituacao ? "COALESCE(r.situacao, '')" : "''") . ' AS report_situacao'
+            ? "r.id AS report_id, {$reportPublicTokenSql} AS report_public_token, {$reportSituacaoSql} AS report_situacao"
             : "NULL AS report_id, '' AS report_public_token, '' AS report_situacao";
-        $chatSelectSql = $hasChats && $hasChatStatus
-            ? "COALESCE(c.status, '') AS chat_status"
-            : "'' AS chat_status";
+        $chatSelectSql = "{$chatStatusSql} AS chat_status";
         $pedidoJoinSql = $hasPedidos
             ? 'LEFT JOIN bi_pacs_estudos_pedidos p ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id'
             : '';
