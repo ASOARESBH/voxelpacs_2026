@@ -9,6 +9,7 @@
         "dompdf/dompdf": "^3.0",
         "phpoffice/phpspreadsheet": "^1.29",
         "phpoffice/phpword": "^1.2",
+        "sabberworm/php-css-parser": "^8.4",
         "vlucas/phpdotenv": "^5.5"
     },
     "require-dev": {
@@ -29,6 +30,13 @@
     },
     "config": {
         "optimize-autoloader": true,
-        "sort-packages": true
+        "sort-packages": true,
+        "audit": {
+            "ignore": {
+                "PKSA-r22k-87hv-mfk4": "CVE-2026-59933: sem versao corrigida disponivel (phpoffice/phpspreadsheet)",
+                "PKSA-m9cr-9614-rsf7": "CVE-2026-59932: sem versao corrigida disponivel (phpoffice/phpspreadsheet)",
+                "PKSA-dqzt-yst9-1w9y": "CVE-2026-59931: sem versao corrigida disponivel (phpoffice/phpspreadsheet)"
+            }
+        }
     }
 }
