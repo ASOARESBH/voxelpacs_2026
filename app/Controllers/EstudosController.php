@@ -3,6 +3,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Auth;
 use App\Core\Access\MedicoAccess;
 use App\Services\DesktopViewerService;
@@ -277,8 +278,7 @@ class EstudosController extends Controller
         // O override é opcional para manter a Worklist funcional durante o deploy da migration.
         $hasPriorityOverride = false;
         try {
-            $priorityColumn = $pdo->query("SHOW COLUMNS FROM bi_pacs_estudos LIKE 'dicom_priority_override'")->fetch(\PDO::FETCH_ASSOC);
-            $hasPriorityOverride = is_array($priorityColumn) && !empty($priorityColumn);
+            $hasPriorityOverride = SqlHelper::hasColumn($pdo, 'bi_pacs_estudos', 'dicom_priority_override');
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] prioridade override: ' . $ex->getMessage());
         }

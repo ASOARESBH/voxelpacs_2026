@@ -143,26 +143,44 @@ class PreditivoService {
     /**
      * Atualiza os snapshots de KPI (chamado após cada importação)
      */
-    public function atualizarSnapshots(int $tenantId, string $periodoRef): void {
-        $stmt = $this->pdo->prepare("
-            INSERT INTO bi_kpi_snapshots
-                (tenant_id, periodo_ref, total_exames, total_urgencia, sla_medio, receita_total, created_at)
-            SELECT
-                :tid,
-                :periodo,
-                COUNT(*),
-                SUM(CASE WHEN prioridade = 'Urgencia' THEN 1 ELSE 0 END),
-                ROUND(AVG(sla_minutos), 0),
-                COALESCE(SUM(valor_venda), 0),
-                NOW()
-            FROM bi_exames
-            WHERE tenant_id = :tid2 AND periodo_ref = :periodo2
-            ON DUPLICATE KEY UPDATE
-                total_exames   = VALUES(total_exames),
-                total_urgencia = VALUES(total_urgencia),
-                sla_medio      = VALUES(sla_medio),
-                receita_total  = VALUES(receita_total)
-        ");
+        public function atualizarSnapshots(int $tenantId, string $periodoRef): void {
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? "INSERT INTO bi_kpi_snapshots
+                   (tenant_id, periodo_ref, total_exames, total_urgencia, sla_medio, receita_total, created_at)
+               SELECT
+                   :tid,
+                   :periodo,
+                   COUNT(*),
+                   SUM(CASE WHEN prioridade = 'Urgencia' THEN 1 ELSE 0 END),
+                   ROUND(AVG(sla_minutos), 0),
+                   COALESCE(SUM(valor_venda), 0),
+                   NOW()
+               FROM bi_exames
+               WHERE tenant_id = :tid2 AND periodo_ref = :periodo2
+               ON CONFLICT (tenant_id, periodo_ref) DO UPDATE SET
+                   total_exames = EXCLUDED.total_exames,
+                   total_urgencia = EXCLUDED.total_urgencia,
+                   sla_medio = EXCLUDED.sla_medio,
+                   receita_total = EXCLUDED.receita_total"
+            : "INSERT INTO bi_kpi_snapshots
+                   (tenant_id, periodo_ref, total_exames, total_urgencia, sla_medio, receita_total, created_at)
+               SELECT
+                   :tid,
+                   :periodo,
+                   COUNT(*),
+                   SUM(CASE WHEN prioridade = 'Urgencia' THEN 1 ELSE 0 END),
+                   ROUND(AVG(sla_minutos), 0),
+                   COALESCE(SUM(valor_venda), 0),
+                   NOW()
+               FROM bi_exames
+               WHERE tenant_id = :tid2 AND periodo_ref = :periodo2
+               ON DUPLICATE KEY UPDATE
+                   total_exames = VALUES(total_exames),
+                   total_urgencia = VALUES(total_urgencia),
+                   sla_medio = VALUES(sla_medio),
+                   receita_total = VALUES(receita_total)";
+        $stmt = $this->pdo->prepare($sql);
+
         $stmt->execute(['tid' => $tenantId, 'periodo' => $periodoRef, 'tid2' => $tenantId, 'periodo2' => $periodoRef]);
     }
 }

@@ -3,6 +3,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\TenantContext;
 
 /**
@@ -226,15 +227,19 @@ class ExamesPacsController extends Controller
         }
 
         // Evolução mensal por modalidade (últimos 12 meses)
+        $mesSql = SqlHelper::dateFormat('study_date', '%Y-%m');
+        $inicioSql = SqlHelper::isPostgres()
+            ? "CURRENT_DATE - INTERVAL '12 months'"
+            : 'DATE_SUB(CURDATE(), INTERVAL 12 MONTH)';
         $evolucaoStmt = $pdo->prepare("
             SELECT
-                DATE_FORMAT(study_date, '%Y-%m') AS mes,
-                modalities                        AS modalidade,
-                COUNT(*)                          AS total
+                {$mesSql} AS mes,
+                modalities AS modalidade,
+                COUNT(*) AS total
             FROM bi_pacs_estudos
             WHERE tenant_id = :tid
-              AND study_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-            GROUP BY mes, modalidade
+              AND study_date >= {$inicioSql}
+            GROUP BY {$mesSql}, modalidades
             ORDER BY mes ASC
         ");
         $evolucaoStmt->execute([':tid' => $tenantId]);
@@ -263,15 +268,18 @@ class ExamesPacsController extends Controller
 
     private function getStats(\PDO $pdo, int $tenantId): array
     {
+        $inicioTrintaDiasSql = SqlHelper::isPostgres()
+            ? "CURRENT_DATE - INTERVAL '30 days'"
+            : 'DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
         $stmt = $pdo->prepare("
             SELECT
-                COUNT(*)                        AS total_estudos,
-                COUNT(DISTINCT patient_id)      AS total_pacientes,
-                SUM(num_instances)              AS total_imagens,
-                COUNT(DISTINCT modalities)      AS total_modalidades,
-                COUNT(DISTINCT institution_name)AS total_unidades,
-                MAX(study_date)                 AS ultimo_exame,
-                SUM(CASE WHEN study_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS ultimos_30_dias
+                COUNT(*) AS total_estudos,
+                COUNT(DISTINCT patient_id) AS total_pacientes,
+                SUM(num_instances) AS total_imagens,
+                COUNT(DISTINCT modalities) AS total_modalidades,
+                COUNT(DISTINCT institution_name) AS total_unidades,
+                MAX(study_date) AS ultimo_exame,
+                SUM(CASE WHEN study_date >= {$inicioTrintaDiasSql} THEN 1 ELSE 0 END) AS ultimos_30_dias
             FROM bi_pacs_estudos
             WHERE tenant_id = ?
         ");

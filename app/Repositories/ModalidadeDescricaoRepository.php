@@ -105,15 +105,22 @@ class ModalidadeDescricaoRepository
 
     public function registerSuggestion(int $tenantId, string $modalidade, string $descricao, int $userId): void
     {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO bi_modalidade_descricoes
-                (tenant_id, modalidade, descricao, uso_count, ativo, criado_por)
-             VALUES (:tenant_id, :modalidade, :descricao, 1, 1, :criado_por)
-             ON DUPLICATE KEY UPDATE
-                uso_count = uso_count + 1,
-                ativo = 1,
-                criado_por = VALUES(criado_por)'
-        );
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? 'INSERT INTO bi_modalidade_descricoes
+                   (tenant_id, modalidade, descricao, uso_count, ativo, criado_por)
+               VALUES (:tenant_id, :modalidade, :descricao, 1, 1, :criado_por)
+               ON CONFLICT (tenant_id, modalidade, descricao) DO UPDATE SET
+                   uso_count = bi_modalidade_descricoes.uso_count + 1,
+                   ativo = EXCLUDED.ativo,
+                   criado_por = EXCLUDED.criado_por'
+            : 'INSERT INTO bi_modalidade_descricoes
+                   (tenant_id, modalidade, descricao, uso_count, ativo, criado_por)
+               VALUES (:tenant_id, :modalidade, :descricao, 1, 1, :criado_por)
+               ON DUPLICATE KEY UPDATE
+                   uso_count = uso_count + 1,
+                   ativo = VALUES(ativo),
+                   criado_por = VALUES(criado_por)';
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             'tenant_id' => $tenantId,
             'modalidade' => $modalidade,

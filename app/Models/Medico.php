@@ -50,9 +50,13 @@ class Medico extends Model {
     public function sincronizarUnidades(int $medicoId, int $tenantId, array $institutionNames): void {
         $this->pdo->prepare("DELETE FROM bi_medico_unidades WHERE medico_id = :id")->execute(['id' => $medicoId]);
         if (!$institutionNames) return;
-        $ins = $this->pdo->prepare(
-            "INSERT IGNORE INTO bi_medico_unidades (tenant_id, medico_id, institution_name) VALUES (:tenant_id, :medico_id, :institution_name)"
-        );
+                $sql = \App\Core\SqlHelper::isPostgres()
+            ? 'INSERT INTO bi_medico_unidades (tenant_id, medico_id, institution_name)
+               VALUES (:tenant_id, :medico_id, :institution_name) ON CONFLICT DO NOTHING'
+            : 'INSERT IGNORE INTO bi_medico_unidades (tenant_id, medico_id, institution_name)
+               VALUES (:tenant_id, :medico_id, :institution_name)';
+        $ins = $this->pdo->prepare($sql);
+
         foreach ($institutionNames as $nome) {
             $nome = trim((string) $nome);
             if ($nome === '') continue;

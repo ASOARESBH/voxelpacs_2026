@@ -45,16 +45,24 @@ class ImportacaoService {
                     $data['hash_dedup']   = hash('sha256', $tenantId . ($data['accession_number'] ?? '') . ($data['data_estudo'] ?? '') . ($data['medico_crm'] ?? ''));
                     $data['periodo_ref']  = !empty($data['data_estudo']) ? substr($data['data_estudo'], 0, 7) : null;
 
-                    $cols = implode(', ', array_keys($data));
+                                        $cols = implode(', ', array_keys($data));
                     $vals = ':' . implode(', :', array_keys($data));
-                    $stmt = $this->pdo->prepare("
-                        INSERT INTO bi_exames ({$cols}) VALUES ({$vals})
-                        ON DUPLICATE KEY UPDATE importacao_id = VALUES(importacao_id)
-                    ");
+                    $isPostgres = \App\Core\SqlHelper::isPostgres();
+                    $sql = $isPostgres
+                        ? "INSERT INTO bi_exames ({$cols}) VALUES ({$vals})
+                           ON CONFLICT (hash_dedup) DO UPDATE SET importacao_id = EXCLUDED.importacao_id
+                           RETURNING (xmax = 0) AS inserted"
+                        : "INSERT INTO bi_exames ({$cols}) VALUES ({$vals})
+                           ON DUPLICATE KEY UPDATE importacao_id = VALUES(importacao_id)";
+                    $stmt = $this->pdo->prepare($sql);
                     $stmt->execute($data);
-                    $affected = $stmt->rowCount();
+                    $inserted = $isPostgres ? $stmt->fetchColumn() : null;
+                    $affected = $isPostgres
+                        ? ($inserted === true || $inserted === 't' || $inserted === '1' ? 1 : 2)
+                        : $stmt->rowCount();
 
                     if ($affected === 1) $importados++;
+
                     else $duplicados++;
                 } catch (\Throwable $e) {
                     $erros++;

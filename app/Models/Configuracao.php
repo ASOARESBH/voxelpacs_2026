@@ -2,6 +2,7 @@
 namespace App\Models;
 
 use App\Core\Model;
+use App\Core\SqlHelper;
 
 class Configuracao extends Model {
     protected string $table = 'bi_configuracoes';
@@ -17,11 +18,15 @@ class Configuracao extends Model {
 
     public function set(string $chave, string $valor): void {
         $params = array_merge(['chave' => $chave, 'valor' => $valor], $this->tenantParam());
-        $this->pdo->prepare("
-            INSERT INTO {$this->table} (tenant_id, chave, valor)
-            VALUES (:tenant_id, :chave, :valor)
-            ON DUPLICATE KEY UPDATE valor = :valor
-        ")->execute($params);
+                $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO {$this->table} (tenant_id, chave, valor)
+               VALUES (:tenant_id, :chave, :valor)
+               ON CONFLICT (tenant_id, chave) DO UPDATE SET valor = EXCLUDED.valor"
+            : "INSERT INTO {$this->table} (tenant_id, chave, valor)
+               VALUES (:tenant_id, :chave, :valor)
+               ON DUPLICATE KEY UPDATE valor = VALUES(valor)";
+        $this->pdo->prepare($sql)->execute($params);
+
     }
 
     public function getAll(): array {

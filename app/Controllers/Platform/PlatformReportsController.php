@@ -4,6 +4,7 @@ namespace App\Controllers\Platform;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Core\Logger;
 use DateTimeImmutable;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -109,12 +110,13 @@ class PlatformReportsController extends Controller
         );
         $exames->execute(['periodo_inicial' => $inicio]);
 
+        $mesSql = SqlHelper::dateFormat('created_at', '%Y-%m');
         $tenants = $pdo->prepare(
-            "SELECT DATE_FORMAT(created_at, '%Y-%m') AS mes,
+            "SELECT {$mesSql} AS mes,
                     COUNT(*) AS novos_negocios
              FROM bi_tenants
              WHERE created_at >= :data_inicial
-             GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+             GROUP BY {$mesSql}
              ORDER BY mes ASC"
         );
         $tenants->execute(['data_inicial' => $inicio . '-01 00:00:00']);

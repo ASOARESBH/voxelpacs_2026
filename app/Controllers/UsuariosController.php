@@ -356,9 +356,10 @@ class UsuariosController extends Controller
 
         if (empty($modulos)) return;
 
-        $ins = $pdo->prepare(
-            "INSERT IGNORE INTO bi_user_permissoes (user_id, tenant_id, modulo) VALUES (?,?,?)"
-        );
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? 'INSERT INTO bi_user_permissoes (user_id, tenant_id, modulo) VALUES (?,?,?) ON CONFLICT DO NOTHING'
+            : 'INSERT IGNORE INTO bi_user_permissoes (user_id, tenant_id, modulo) VALUES (?,?,?)';
+        $ins = $pdo->prepare($sql);
         foreach ($modulos as $modulo) {
             $modulo = trim((string)$modulo);
             if ($modulo === '' || !isset(self::MODULOS[$modulo])) continue;

@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use DomainException;
 use PDO;
+use App\Core\SqlHelper;
 
 /**
  * Persistência do VOXEL Report Delivery Hub.
@@ -53,11 +54,12 @@ class ReportDeliveryRepository
     /** @return array<int, array<string, mixed>> */
     public function listDestinations(int $tenantId): array
     {
+        $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
-                    COALESCE((SELECT GROUP_CONCAT(di.institution_name ORDER BY di.institution_name SEPARATOR '||')
+                    COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
              FROM pacs_report_delivery_destinations d
@@ -76,9 +78,10 @@ class ReportDeliveryRepository
             'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
+        $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $stmt = $this->pdo->prepare(
             "SELECT {$columns},
-                    COALESCE((SELECT GROUP_CONCAT(di.institution_name ORDER BY di.institution_name SEPARATOR '||')
+                    COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
              FROM pacs_report_delivery_destinations d
@@ -257,12 +260,18 @@ class ReportDeliveryRepository
         string $idempotencyKey,
         array $payload
     ): int {
-        $stmt = $this->pdo->prepare(
-            "INSERT IGNORE INTO pacs_report_delivery_outbox
-                (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
-             VALUES
-                (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')"
-        );
+        $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO pacs_report_delivery_outbox
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+               VALUES
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')
+               ON CONFLICT (idempotency_key) DO NOTHING
+               RETURNING id"
+            : "INSERT IGNORE INTO pacs_report_delivery_outbox
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+               VALUES
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')";
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':tenant_id' => $tenantId,
             ':estabelecimento_id' => $estabelecimentoId,
@@ -274,7 +283,12 @@ class ReportDeliveryRepository
             ':payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
 
-        if ($stmt->rowCount() === 1) {
+        if (SqlHelper::isPostgres()) {
+            $insertedId = $stmt->fetchColumn();
+            if ($insertedId !== false) {
+                return (int) $insertedId;
+            }
+        } elseif ($stmt->rowCount() === 1) {
             return (int) $this->pdo->lastInsertId();
         }
 
@@ -292,12 +306,17 @@ class ReportDeliveryRepository
     public function createJobs(int $outboxId, int $tenantId, ?int $estabelecimentoId, string $eventKey, array $destinations): int
     {
         $created = 0;
-        $stmt = $this->pdo->prepare(
-            "INSERT IGNORE INTO pacs_report_delivery_jobs
-                (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key)
-             VALUES
-                (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key)"
-        );
+        $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO pacs_report_delivery_jobs
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key)
+               VALUES
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key)
+               ON CONFLICT DO NOTHING"
+            : "INSERT IGNORE INTO pacs_report_delivery_jobs
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key)
+               VALUES
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key)";
+        $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
             $jobKey = hash('sha256', $eventKey . '|destination|' . (int) $destination['id']);
@@ -418,6 +437,9 @@ class ReportDeliveryRepository
      */
     public function recoverStaleProcessingJob(int $jobId, int $tenantId): bool
     {
+        $staleThresholdSql = SqlHelper::isPostgres()
+            ? "NOW() - INTERVAL '10 minutes'"
+            : 'DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
         $stmt = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_jobs
              SET status = 'queued',
@@ -429,7 +451,7 @@ class ReportDeliveryRepository
                AND tenant_id = :tenant_id
                AND status = 'processing'
                AND locked_at IS NOT NULL
-               AND locked_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)"
+               AND locked_at <= {$staleThresholdSql}"
         );
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 

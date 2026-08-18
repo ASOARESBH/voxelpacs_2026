@@ -56,13 +56,15 @@ class ReportRepository {
      */
     public function assumirEstudo(int $estudoId, int $userId): bool {
         $params = ['uid' => $userId, 'id' => $estudoId, 'uid2' => $userId];
+        $dataAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_DATE' : 'CURDATE()';
+        $horaAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_TIME' : 'CURTIME()';
         try {
             $stmt = $this->pdo->prepare("
                 UPDATE bi_pacs_estudos
                 SET situacao = 'em_laudo',
                     usuario_responsavel_id = :uid,
-                    data_inicio_laudo = CURDATE(),
-                    hora_inicio_laudo = CURTIME(),
+                    data_inicio_laudo = {$dataAtualSql},
+                    hora_inicio_laudo = {$horaAtualSql},
                     lock_heartbeat_em = NOW()
                 WHERE id = :id
                   AND (
@@ -80,7 +82,7 @@ class ReportRepository {
             $stmt = $this->pdo->prepare("
                 UPDATE bi_pacs_estudos
                 SET situacao = 'em_laudo', usuario_responsavel_id = :uid,
-                    data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME()
+                    data_inicio_laudo = {$dataAtualSql}, hora_inicio_laudo = {$horaAtualSql}
                 WHERE id = :id
                   AND (
                         (usuario_responsavel_id IS NULL AND COALESCE(situacao, 'novo') IN ('novo','aberto','urgente'))
@@ -96,11 +98,13 @@ class ReportRepository {
     }
 
     public function reatribuirLock(int $estudoId, int $userId): void {
+        $dataAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_DATE' : 'CURDATE()';
+        $horaAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_TIME' : 'CURTIME()';
         try {
             $this->pdo->prepare("
                 UPDATE bi_pacs_estudos
-                SET usuario_responsavel_id = :uid, data_inicio_laudo = CURDATE(),
-                    hora_inicio_laudo = CURTIME(), lock_heartbeat_em = NOW()
+                SET usuario_responsavel_id = :uid, data_inicio_laudo = {$dataAtualSql},
+                    hora_inicio_laudo = {$horaAtualSql}, lock_heartbeat_em = NOW()
                 WHERE id = :id
             ")->execute(['uid' => $userId, 'id' => $estudoId]);
         } catch (\PDOException $e) {
@@ -111,7 +115,7 @@ class ReportRepository {
             ]);
             $this->pdo->prepare("
                 UPDATE bi_pacs_estudos
-                SET usuario_responsavel_id = :uid, data_inicio_laudo = CURDATE(), hora_inicio_laudo = CURTIME()
+                SET usuario_responsavel_id = :uid, data_inicio_laudo = {$dataAtualSql}, hora_inicio_laudo = {$horaAtualSql}
                 WHERE id = :id
             ")->execute(['uid' => $userId, 'id' => $estudoId]);
         }
@@ -446,6 +450,8 @@ class ReportRepository {
     }
 
     public function createSignature(int $reportId, int $userId, string $nomeMedico, ?string $crm, string $hash, ?string $ip): void {
+        $dataAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_DATE' : 'CURDATE()';
+        $horaAtualSql = \App\Core\SqlHelper::isPostgres() ? 'CURRENT_TIME' : 'CURTIME()';
         try {
             $this->pdo->prepare("
                 INSERT INTO report_signatures
@@ -473,7 +479,7 @@ class ReportRepository {
         try {
             $this->pdo->prepare("
                 INSERT INTO report_signatures (report_id, user_id, nome_medico, crm, data, hora, hash, ip)
-                VALUES (:report_id, :user_id, :nome, :crm, CURDATE(), CURTIME(), :hash, :ip)
+                VALUES (:report_id, :user_id, :nome, :crm, {$dataAtualSql}, {$horaAtualSql}, :hash, :ip)
             ")->execute([
                 'report_id' => $reportId,
                 'user_id'   => $userId,

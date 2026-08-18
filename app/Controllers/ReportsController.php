@@ -3,6 +3,8 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Auth;
 use App\Core\Logger;
+use App\Core\SqlHelper;
+
 use App\Services\ReportService;
 use App\Services\ReportAccessService;
 use App\Repositories\ReportRepository;
@@ -372,10 +374,13 @@ class ReportsController extends Controller
             return;
         }
 
-        try {
+                try {
             $pdo = \App\Core\Database::getInstance();
+            $institutionJoinSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', 'e.institution_name');
+            $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
                 "SELECT r.*, e.patient_name_display, e.patient_name, e.patient_id,
+
                         e.patient_birth_date, e.patient_sex, e.patient_age,
                         e.study_date, e.study_time, e.study_description,
                         e.accession_number, e.modalities, e.institution_name,
@@ -414,7 +419,8 @@ class ReportsController extends Controller
                  -- ainda sem dado real confirmado. Prioriza bnin, cai pra un se faltar.
                  LEFT JOIN bi_negocio_institution_names bnin
                         ON bnin.tenant_id = r.tenant_id
-                       AND bnin.institution_name COLLATE utf8mb4_general_ci = e.institution_name COLLATE utf8mb4_general_ci
+                                              AND {$institutionJoinSql}
+
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = r.tenant_id
                                   WHERE r.id = :id
                  LIMIT 1"
@@ -447,7 +453,7 @@ class ReportsController extends Controller
                      FROM bi_negocio_institution_names bnin
                      LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                      WHERE bnin.tenant_id = :tenant_id
-                       AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                       AND {$institutionParameterSql}
                      LIMIT 1"
                 );
                 $stmtCanais->execute([
@@ -840,11 +846,12 @@ class ReportsController extends Controller
             // Descobre o schema uma única vez. Assim, bancos com a versão
             // HostGator (`nome/conteudo`) não geram warnings por tentativas
             // contra colunas de outra versão (`texto_sugerido`/`gatilho`).
-            $columns = [];
-            foreach ($pdo->query('SHOW COLUMNS FROM report_autotext')->fetchAll(\PDO::FETCH_ASSOC) as $column) {
-                $field = strtolower((string) ($column['Field'] ?? $column['field'] ?? ''));
+                        $columns = [];
+            foreach (SqlHelper::tableColumns($pdo, 'report_autotext') as $field) {
+                $field = strtolower((string) $field);
                 if ($field !== '') $columns[$field] = true;
             }
+
             $has = static fn (string $name): bool => isset($columns[$name]);
             if (!$has('id')) throw new \RuntimeException('Tabela report_autotext sem coluna id.');
             if ($has('gatilho') && $has('conteudo')) {
@@ -1141,6 +1148,7 @@ class ReportsController extends Controller
 
         try {
             $pdo = \App\Core\Database::getInstance();
+            $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
                 "SELECT bnin.report_layout_template_id,
                         COALESCE(NULLIF(bnin.nome_fantasia, ''), NULLIF(bnin.razao_social, ''), un.nome_fantasia, un.razao_social) AS unidade_nome,
@@ -1148,7 +1156,7 @@ class ReportsController extends Controller
                  FROM bi_negocio_institution_names bnin
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                  WHERE bnin.tenant_id = :tenant_id
-                   AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                   AND {$institutionParameterSql}
                  LIMIT 1"
             );
             $stmt->execute([

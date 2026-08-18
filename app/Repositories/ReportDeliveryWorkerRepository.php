@@ -115,6 +115,9 @@ class ReportDeliveryWorkerRepository
             $delaySeconds = min(3600, 30 * (2 ** max(0, $attempt - 1)));
             $this->createAttempt($jobId, $attempt, $workerId, $deadLetter ? 'dead_letter' : 'retrying', null, null, $error, $metadata);
 
+            $nextAttemptSql = \App\Core\SqlHelper::isPostgres()
+                ? "NOW() + INTERVAL '{$delaySeconds} seconds'"
+                : "DATE_ADD(NOW(), INTERVAL {$delaySeconds} SECOND)";
             $sql = $deadLetter
                 ? "UPDATE pacs_report_delivery_jobs
                    SET status = 'dead_letter', locked_at = NULL, locked_by = NULL,
@@ -123,7 +126,7 @@ class ReportDeliveryWorkerRepository
                 : "UPDATE pacs_report_delivery_jobs
                    SET status = 'retrying', locked_at = NULL, locked_by = NULL,
                        last_error = :error,
-                       next_attempt_at = DATE_ADD(NOW(), INTERVAL {$delaySeconds} SECOND)
+                       next_attempt_at = {$nextAttemptSql}
                    WHERE id = :id";
             $update = $this->pdo->prepare($sql);
             $update->execute([':error' => mb_substr($error, 0, 5000), ':id' => $jobId]);
@@ -165,15 +168,24 @@ class ReportDeliveryWorkerRepository
         string $sha256,
         int $fileSize
     ): void {
-        $stmt = $this->pdo->prepare(
-            "INSERT INTO pacs_report_delivery_artifacts
-                (outbox_id, tenant_id, estabelecimento_id, artifact_type, storage_path, sha256, file_size_bytes)
-             VALUES
-                (:outbox_id, :tenant_id, :estabelecimento_id, :artifact_type, :storage_path, :sha256, :file_size_bytes)
-             ON DUPLICATE KEY UPDATE
-                storage_path = VALUES(storage_path), sha256 = VALUES(sha256),
-                file_size_bytes = VALUES(file_size_bytes), created_at = NOW()"
-        );
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? "INSERT INTO pacs_report_delivery_artifacts
+                   (outbox_id, tenant_id, estabelecimento_id, artifact_type, storage_path, sha256, file_size_bytes)
+               VALUES
+                   (:outbox_id, :tenant_id, :estabelecimento_id, :artifact_type, :storage_path, :sha256, :file_size_bytes)
+               ON CONFLICT (outbox_id, artifact_type) DO UPDATE SET
+                   storage_path = EXCLUDED.storage_path,
+                   sha256 = EXCLUDED.sha256,
+                   file_size_bytes = EXCLUDED.file_size_bytes,
+                   created_at = NOW()"
+            : "INSERT INTO pacs_report_delivery_artifacts
+                   (outbox_id, tenant_id, estabelecimento_id, artifact_type, storage_path, sha256, file_size_bytes)
+               VALUES
+                   (:outbox_id, :tenant_id, :estabelecimento_id, :artifact_type, :storage_path, :sha256, :file_size_bytes)
+               ON DUPLICATE KEY UPDATE
+                   storage_path = VALUES(storage_path), sha256 = VALUES(sha256),
+                   file_size_bytes = VALUES(file_size_bytes), created_at = NOW()";
+        $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':outbox_id', $outboxId, PDO::PARAM_INT);
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
         if ($estabelecimentoId === null) {
@@ -236,15 +248,22 @@ class ReportDeliveryWorkerRepository
 
     private function refreshOutboxStatus(int $outboxId): void
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT
-                SUM(status = 'delivered') AS delivered_count,
-                SUM(status IN ('queued', 'retrying', 'processing')) AS pending_count,
-                SUM(status IN ('failed', 'dead_letter')) AS failed_count,
-                COUNT(*) AS total
-             FROM pacs_report_delivery_jobs
-             WHERE outbox_id = :outbox_id"
-        );
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? "SELECT
+                   SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_count,
+                   SUM(CASE WHEN status IN ('queued', 'retrying', 'processing') THEN 1 ELSE 0 END) AS pending_count,
+                   SUM(CASE WHEN status IN ('failed', 'dead_letter') THEN 1 ELSE 0 END) AS failed_count,
+                   COUNT(*) AS total
+               FROM pacs_report_delivery_jobs
+               WHERE outbox_id = :outbox_id"
+            : "SELECT
+                   SUM(status = 'delivered') AS delivered_count,
+                   SUM(status IN ('queued', 'retrying', 'processing')) AS pending_count,
+                   SUM(status IN ('failed', 'dead_letter')) AS failed_count,
+                   COUNT(*) AS total
+               FROM pacs_report_delivery_jobs
+               WHERE outbox_id = :outbox_id";
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':outbox_id' => $outboxId]);
         $stats = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $total = (int) ($stats['total'] ?? 0);
