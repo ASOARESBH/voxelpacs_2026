@@ -107,6 +107,7 @@ mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título da Másc
 mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico deve ter fonte ampliada para leitura.');
 mascaraPdfAssert(strpos($html, '<strong>Laudo Médico</strong>') === false, 'O cabeçalho não pode manter o título padrão Laudo Médico.');
 mascaraPdfAssert(strpos($html, 'pdf-header-unit">NOVA IMAGEM</span>') !== false, 'Sem canal ativo, o cabeçalho deve exibir somente o Nome Fantasia.');
+mascaraPdfAssert(strpos($html, '<img class="voxel-institutional-qr"') === false, 'Sem QR habilitado, o cabeçalho não pode renderizar imagem institucional.');
 
 $r['unidade_personalizado_site_habilitado'] = 1;
 $r['unidade_personalizado_site_url'] = 'https://novaimagem.example.br';
@@ -114,7 +115,16 @@ ob_start();
 require $templatePath;
 $htmlComCanal = (string) ob_get_clean();
 mascaraPdfAssert(strpos($htmlComCanal, 'https://novaimagem.example.br') !== false, 'Canal Site ativo deve ser inserido no cabeçalho do Moderno Lateral.');
+mascaraPdfAssert(strpos($htmlComCanal, 'pdf-header-unit">NOVA IMAGEM</span>') === false, 'Com canal ativo, o cabeçalho deve usar o conteúdo institucional no lugar do Nome Fantasia.');
 mascaraPdfAssert(strpos($htmlComCanal, '<strong>Laudo Médico</strong>') === false, 'Canal ativo não pode reintroduzir o título padrão Laudo Médico.');
+
+$r['unidade_personalizado_qrcode_habilitado'] = 1;
+$r['unidade_personalizado_qrcode_url'] = 'https://novaimagem.example.br/resultado';
+ob_start();
+require $templatePath;
+$htmlComQr = (string) ob_get_clean();
+mascaraPdfAssert(strpos($htmlComQr, 'class="voxel-institutional-qr"') !== false, 'QR institucional ativo deve ser renderizado no cabeçalho do Moderno Lateral.');
+mascaraPdfAssert(strpos($htmlComQr, 'width: 56px; height: 56px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm
 // precedência sobre a Máscara e permanecem estruturados até a impressão.
