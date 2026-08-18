@@ -95,7 +95,7 @@ class ReportChatRepository
                   FROM bi_users u
                   INNER JOIN bi_user_tenants ut
                           ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
-                 WHERE ut.ativo = 1 AND u.status = "ativo"';
+                 WHERE ut.ativo = 1 AND u.status = \'ativo\'';
         $params = ['tenant_id' => $tenantId];
         if ($excludeUserId > 0) {
             $sql .= ' AND u.id <> :exclude_user_id';
@@ -116,8 +116,8 @@ class ReportChatRepository
                INNER JOIN bi_user_tenants ut
                        ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
               WHERE ut.ativo = 1
-                AND u.status = "ativo"
-                AND ut.perfil = "admin"
+                AND u.status = \'ativo\'
+                AND ut.perfil = \'admin\'
               ORDER BY u.name ASC'
         );
         $stmt->execute(['tenant_id' => $tenantId]);
@@ -131,7 +131,7 @@ class ReportChatRepository
                FROM bi_users u
                INNER JOIN bi_user_tenants ut
                        ON ut.user_id = u.id AND ut.tenant_id = :tenant_id
-              WHERE u.id = :user_id AND ut.ativo = 1 AND u.status = "ativo"
+              WHERE u.id = :user_id AND ut.ativo = 1 AND u.status = \'ativo\'
               LIMIT 1'
         );
         $stmt->execute(['user_id' => $userId, 'tenant_id' => $tenantId]);
@@ -199,7 +199,7 @@ class ReportChatRepository
                 AND gu.tenant_id = :tenant_id
                 AND g.ativo = 1
                 AND ut.ativo = 1
-                AND u.status = "ativo"
+                AND u.status = \'ativo\'
               ORDER BY u.name ASC'
         );
         $stmt->execute(['group_id' => $groupId, 'tenant_id' => $tenantId]);
@@ -223,7 +223,7 @@ class ReportChatRepository
         if ($existing) {
             $stmt = $this->pdo->prepare(
                 'UPDATE pacs_report_chats
-                    SET status = "pendente",
+                    SET status = \'pendente\',
                         destinatario_tipo = :destinatario_tipo,
                         destinatario_grupo = :destinatario_grupo,
                         destinatario_grupo_id = :destinatario_grupo_id,
@@ -231,7 +231,7 @@ class ReportChatRepository
                         assunto_codigo = :assunto_codigo,
                         assunto = :assunto,
                         situacao_anterior = CASE
-                            WHEN status = "concluido" OR situacao_anterior IS NULL OR situacao_anterior = ""
+                            WHEN status = \'concluido\' OR situacao_anterior IS NULL OR situacao_anterior = \'\'
                             THEN :situacao_anterior ELSE situacao_anterior END,
                         concluido_por = NULL,
                         concluido_em = NULL,
@@ -259,7 +259,7 @@ class ReportChatRepository
                  destinatario_grupo, destinatario_grupo_id, destinatario_user_id,
                  assunto_codigo, assunto, situacao_anterior, criado_por)
              VALUES
-                (:tenant_id, :report_id, :estudo_id, "pendente", :destinatario_tipo,
+                (:tenant_id, :report_id, :estudo_id, \'pendente\', :destinatario_tipo,
                  :destinatario_grupo, :destinatario_grupo_id, :destinatario_user_id,
                  :assunto_codigo, :assunto, :situacao_anterior, :criado_por)'
         );
@@ -353,10 +353,10 @@ class ReportChatRepository
 
         $stmt = $this->pdo->prepare(
             'UPDATE pacs_report_chats
-                SET status = "concluido", concluido_por = :user_id,
+                SET status = \'concluido\', concluido_por = :user_id,
                     concluido_em = NOW(), atualizado_em = NOW()
               WHERE id = :id AND report_id = :report_id AND tenant_id = :tenant_id
-                AND status = "pendente"'
+                AND status = \'pendente\''
         );
         $stmt->execute([
             'user_id' => $userId,
@@ -371,7 +371,7 @@ class ReportChatRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT 1 FROM pacs_report_chats
-              WHERE report_id = :report_id AND tenant_id = :tenant_id AND status = "pendente"
+              WHERE report_id = :report_id AND tenant_id = :tenant_id AND status = \'pendente\'
               LIMIT 1'
         );
         $stmt->execute(['report_id' => $reportId, 'tenant_id' => $tenantId]);
