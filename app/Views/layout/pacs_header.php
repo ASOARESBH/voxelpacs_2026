@@ -154,10 +154,12 @@
                 <span class="sidebar-label">Usuários</span>
             </a>
 
+            <?php if (\App\Core\Auth::isPlatformAdmin()): ?>
             <a href="/configuracoes" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/configuracoes') ? 'active' : '' ?>">
                 <i class="fa fa-gear"></i>
                 <span class="sidebar-label">Configurações</span>
             </a>
+            <?php endif; ?>
 
             <?php if (\App\Core\Auth::isPlatformAdmin()): ?>
             <!-- PLATAFORMA (só superadmin) -->
