@@ -43,7 +43,7 @@ $assert(str_contains($controller, 'camposCanaisPersonalizados'), 'Controller dev
 $assert(str_contains($controller, "'https'"), 'Controller deve exigir HTTPS.');
 $assert(str_contains($controller, "'instagram.com'"), 'Controller deve restringir Instagram ao domínio esperado.');
 $assert(str_contains($controller, "'facebook.com'"), 'Controller deve restringir Facebook ao domínio esperado.');
-$assert(str_contains($service, 'buildInstitutionalQrMarkup'), 'Serviço deve renderizar QR institucional internamente.');
+$assert(str_contains($service, 'institutionalQrMarkup'), 'Serviço deve renderizar QR institucional internamente.');
 $assert(str_contains($service, 'safeHttpsUrl'), 'Serviço deve revalidar URL antes de renderizar.');
 $assert(str_contains($reports, 'canais institucionais indisponiveis'), 'PDF deve manter fallback se a migration não estiver aplicada.');
 $assert(str_contains($js, 'custom-channel-toggle'), 'JavaScript deve sincronizar os toggles dos canais.');
