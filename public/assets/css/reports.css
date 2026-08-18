@@ -316,6 +316,16 @@ body.reports-body {
     background: var(--pacs-card-bg, #0d1b2a);
 }
 
+.reports-editor-document-title {
+    margin: 16px 1rem 12px;
+    color: var(--pacs-text, #e2e8f0);
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.35;
+    text-align: center;
+    text-transform: uppercase;
+}
+
 .reports-editor-container {
     flex: 1 1 auto;
     min-height: clamp(500px, calc(100vh - 14rem), 820px);
@@ -939,11 +949,16 @@ body.reports-body {
     text-transform: uppercase;
 }
 .reports-editor-card--moderno .reports-editor-toolbar {
-    margin: 0 18mm;
+    margin: 18mm 18mm 0;
     padding: .35rem .5rem;
     border-top: 1px solid #d9dee5;
     border-bottom: 1px solid #d9dee5 !important;
     background: #fafafa;
+}
+.reports-editor-card--moderno .reports-editor-document-title {
+    margin: 17px 18mm 14px;
+    color: #111;
+    font-size: 17px;
 }
 .reports-editor-card--moderno .reports-editor-container {
     min-height: clamp(540px, calc(100vh - 27rem), 820px);
@@ -1003,6 +1018,7 @@ body.reports-body {
     .reports-modern-document-heading i { width: 100%; }
     .reports-modern-document-patient { grid-template-columns: 1fr; gap: 8px; margin: 11px 22px 0; }
     .reports-modern-document-title { margin: 26px 22px 14px; font-size: 15px; }
+    .reports-editor-card--moderno .reports-editor-document-title { margin: 16px 22px 12px; font-size: 15px; }
     .reports-editor-card--moderno .reports-editor-toolbar,
     .reports-editor-card--moderno .reports-editor-container { margin-left: 22px; margin-right: 22px; }
     .reports-editor-card--moderno .reports-signature-block { margin-left: 22px; margin-right: 22px; }
