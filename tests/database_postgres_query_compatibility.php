@@ -67,6 +67,13 @@ try {
     $reportSituacao = $pdo->query("SELECT COALESCE((SELECT situacao::text FROM reports LIMIT 1), '')")->fetchColumn();
     assertPgCompatibility(is_string($reportSituacao), 'Enum de situação de laudo convertido para texto na Worklist');
 
+    $assumiveis = (int) $pdo->query(
+        "SELECT COUNT(*) FROM bi_pacs_estudos
+         WHERE COALESCE(situacao::text, 'novo') IN ('novo', 'aberto')
+           AND usuario_responsavel_id IS NULL"
+    )->fetchColumn();
+    assertPgCompatibility($assumiveis >= 0, 'Cláusula de elegibilidade para assumir estudo aceita ENUM PostgreSQL');
+
     $tenantId = (int) $pdo->query('SELECT id FROM bi_tenants ORDER BY id LIMIT 1')->fetchColumn();
     assertPgCompatibility($tenantId > 0, 'Tenant de referência disponível para validação de UPSERT');
     $probeKey = '__pg_compat_' . bin2hex(random_bytes(8));

@@ -1314,7 +1314,13 @@ class EstudosController extends Controller
             // A tomada de posse deve ser atômica: entre a leitura acima e este
             // UPDATE outro médico pode tentar assumir o mesmo estudo. A condição
             // impede substituição silenciosa do responsável já gravado.
-            $whereAssumir  = "id = ? AND COALESCE(situacao, 'novo') IN ('novo', 'aberto', '') AND usuario_responsavel_id IS NULL";
+            // Em MySQL, o legado pode conter situacao vazia. No PostgreSQL a
+            // coluna é ENUM; incluir '' no IN tenta convertê-lo para o tipo ENUM
+            // e aborta toda a tomada de posse. O cast para texto preserva NULL →
+            // novo sem aceitar estados fora da regra clínica.
+            $whereAssumir = SqlHelper::isPostgres()
+                ? "id = ? AND COALESCE(situacao::text, 'novo') IN ('novo', 'aberto') AND usuario_responsavel_id IS NULL"
+                : "id = ? AND COALESCE(situacao, 'novo') IN ('novo', 'aberto', '') AND usuario_responsavel_id IS NULL";
             $paramsAssumir = [$nomeMedico, $userId, $estudoId];
             if ($tenantId) {
                 $whereAssumir .= ' AND tenant_id = ?';
