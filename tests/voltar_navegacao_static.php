@@ -29,11 +29,14 @@ function lerVoltar(string $caminho): string
 $helper = lerVoltar($root . '/public/assets/js/shared/voxel-voltar.js');
 foreach ([
     'function veioDoMesmoSistema()',
-    'window.history.back()',
-    'window.location.assign(destino)',
+    'global.history.back()',
+    'global.location.assign(destino)',
     'function fallbackDoControle(controle)',
     'data-voxel-voltar-skip',
     'global.voxelVoltar = voxelVoltar',
+    'function voxelRetornarWorklist(fallbackUrl)',
+    'global.voxelRetornarWorklist = voxelRetornarWorklist',
+    'data-voxel-return-worklist',
 ] as $contrato) {
     exigirVoltar(strpos($helper, $contrato) !== false, 'Contrato ausente no helper de retorno: ' . $contrato);
 }
@@ -77,8 +80,22 @@ $instalar = lerVoltar($root . '/app/Views/estudos/instalar.php');
 $tenant = lerVoltar($root . '/app/Views/auth/select_tenant.php');
 exigirVoltar(substr_count($viewer, 'data-voxel-voltar="/estudos"') >= 2, 'Viewer não cobre os dois retornos à Worklist.');
 exigirVoltar(strpos($viewer, 'voxel-voltar.js?v=') !== false, 'Viewer independente não carrega o helper.');
-exigirVoltar(strpos($moderno, 'data-voxel-voltar="/estudos"') !== false && strpos($moderno, 'voxel-voltar.js?v=') !== false,
-    'PDF Moderno Lateral não usa o retorno seguro.');
+exigirVoltar(strpos($moderno, 'data-voxel-return-worklist') !== false && strpos($moderno, 'voxel-voltar.js?v=') !== false,
+    'PDF Moderno Lateral não usa o retorno coordenado à Worklist.');
+
+$reportsHeader = lerVoltar($root . '/app/Views/layout/reports_header.php');
+$worklist = lerVoltar($root . '/app/Views/estudos/index.php');
+$reportsMain = lerVoltar($root . '/public/assets/js/reports/reports-main.js');
+$reportsSignature = lerVoltar($root . '/public/assets/js/reports/reports-signature.js');
+exigirVoltar(strpos($reportsHeader, 'data-voxel-return-worklist') !== false,
+    'Laudário não declara retorno coordenado à Worklist.');
+exigirVoltar(substr_count($worklist, 'target="voxel-laudario"') >= 3,
+    'Worklist não reutiliza a aba nomeada do Laudário.');
+exigirVoltar(strpos($reportsMain, "window.open(pdfUrl, 'voxel-laudo-pdf')") !== false,
+    'Prévia PDF não reutiliza sua aba nomeada.');
+exigirVoltar(strpos($reportsMain, 'window.voxelRetornarWorklist(\'/estudos\')') !== false
+    && strpos($reportsSignature, 'window.voxelRetornarWorklist(\'/estudos\')') !== false,
+    'Fluxos de liberar ou assinar e fechar não retornam pela Worklist de origem.');
 exigirVoltar(strpos($instalar, 'data-voxel-voltar="/estudos"') !== false, 'Página de instalação não declara fallback para Worklist.');
 exigirVoltar(strpos($tenant, 'href="/logout" data-voxel-voltar-skip') !== false,
     'Retorno da seleção de empresa não preserva a exceção de logout.');
@@ -91,8 +108,8 @@ exigirVoltar(strpos($moduloMascaras, 'ativarAbaMedico()') !== false,
     'O módulo de Máscaras não documenta a correção por query string.');
 
 $core = lerVoltar($root . '/app/Core/View.php');
-exigirVoltar(strpos($core, "ASSET_VERSION = '2.2.3'") !== false,
-    'Assets não foram versionados para distribuir o helper de retorno.');
+exigirVoltar(strpos($core, "ASSET_VERSION = '2.2.6'") !== false,
+    'Assets não foram versionados para distribuir o helper de retorno coordenado.');
 
 if ($falhas !== []) {
     fwrite(STDERR, "FALHOU\n- " . implode("\n- ", $falhas) . "\n");
