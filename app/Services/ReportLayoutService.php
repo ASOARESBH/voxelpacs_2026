@@ -24,6 +24,7 @@ class ReportLayoutService
         'moderno_lateral',
         'corporativo_faixa',
         'minimalista',
+        'personalizado',
     ];
 
     /** Catálogo completo (ativos), para a tela de seleção em Editar Unidade. */

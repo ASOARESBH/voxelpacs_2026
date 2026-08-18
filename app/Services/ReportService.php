@@ -451,6 +451,10 @@ class ReportService {
         try {
             $pdo->beginTransaction();
 
+            // Congela o layout personalizado publicado no momento da assinatura.
+            // A falha de schema pendente é registrada, mas não pode bloquear a assinatura.
+            $this->congelarTemplatePersonalizadoAssinado($report, $estudo, $pdo);
+
             // O registro auxiliar possui schemas históricos; o Repository faz
             // fallback sem impedir a persistência principal do laudo.
             $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
@@ -679,6 +683,67 @@ class ReportService {
             $tamanhos[$chave] = strlen(strip_tags($texto));
         }
         return $tamanhos;
+    }
+
+    /**
+     * Salva no report a versão publicada do layout personalizado escolhida pela
+     * Unidade. A publicação posterior de outra versão não pode alterar o laudo
+     * já assinado. Compatibilidade: a migration pendente não impede assinatura.
+     */
+    private function congelarTemplatePersonalizadoAssinado(object $report, object $estudo, \PDO $pdo): void {
+        if ((int) ($report->report_custom_template_id ?? 0) > 0) {
+            return;
+        }
+        $tenantId = (int) ($report->tenant_id ?? 0);
+        $institutionName = trim((string) ($estudo->institution_name ?? ''));
+        if ($tenantId <= 0 || $institutionName === '') {
+            return;
+        }
+
+        try {
+            $stmt = $pdo->prepare(
+                "SELECT bnin.id AS institution_unit_id, un.id AS rich_unit_id,
+                        bnin.report_layout_template_id AS institution_report_layout_id,
+                        un.report_layout_template_id AS rich_report_layout_id,
+                        COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS layout_id
+                 FROM bi_negocio_institution_names bnin
+                 LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
+                 WHERE bnin.tenant_id = :tenant_id
+                   AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                 LIMIT 1"
+            );
+            $stmt->execute(['tenant_id' => $tenantId, 'institution_name' => $institutionName]);
+            $unit = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$unit) return;
+
+            $layoutService = new ReportLayoutService();
+            if ($layoutService->resolverCodigo((int) ($unit['layout_id'] ?? 0)) !== 'personalizado') {
+                return;
+            }
+            $source = ((int) ($unit['institution_report_layout_id'] ?? 0) === (int) ($unit['layout_id'] ?? 0))
+                ? ReportCustomTemplateService::SOURCE_INSTITUTION
+                : ReportCustomTemplateService::SOURCE_UNIDADE;
+            $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
+                ? (int) ($unit['institution_unit_id'] ?? 0)
+                : (int) ($unit['rich_unit_id'] ?? 0);
+            $template = (new ReportCustomTemplateService())->getPublished($tenantId, $source, $unitId);
+            if (!$template) return;
+
+            $pdo->prepare(
+                'UPDATE reports SET report_custom_template_id = :template_id
+                 WHERE id = :report_id AND tenant_id = :tenant_id AND report_custom_template_id IS NULL'
+            )->execute([
+                'template_id' => (int) $template['id'],
+                'report_id' => (int) $report->id,
+                'tenant_id' => $tenantId,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::warning('[ReportService::congelarTemplatePersonalizadoAssinado] indisponível', [
+                'report_id' => $report->id ?? null,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function lockExpirado(?string $heartbeat): bool {
