@@ -427,6 +427,44 @@ class ReportsController extends Controller
                 return;
             }
 
+            // Canais institucionais são opcionais e dependem da migration de Unidade.
+            // A ausência das colunas mantém o PDF operacional sem placeholders ativos.
+            foreach (['qrcode', 'site', 'instagram', 'facebook'] as $canal) {
+                $data['unidade_personalizado_' . $canal . '_habilitado'] = 0;
+                $data['unidade_personalizado_' . $canal . '_url'] = null;
+            }
+            try {
+                $stmtCanais = $pdo->prepare(
+                    "SELECT
+                        COALESCE(bnin.personalizado_qrcode_habilitado, un.personalizado_qrcode_habilitado, 0) AS qrcode_habilitado,
+                        COALESCE(NULLIF(bnin.personalizado_qrcode_url, ''), un.personalizado_qrcode_url) AS qrcode_url,
+                        COALESCE(bnin.personalizado_site_habilitado, un.personalizado_site_habilitado, 0) AS site_habilitado,
+                        COALESCE(NULLIF(bnin.personalizado_site_url, ''), un.personalizado_site_url) AS site_url,
+                        COALESCE(bnin.personalizado_instagram_habilitado, un.personalizado_instagram_habilitado, 0) AS instagram_habilitado,
+                        COALESCE(NULLIF(bnin.personalizado_instagram_url, ''), un.personalizado_instagram_url) AS instagram_url,
+                        COALESCE(bnin.personalizado_facebook_habilitado, un.personalizado_facebook_habilitado, 0) AS facebook_habilitado,
+                        COALESCE(NULLIF(bnin.personalizado_facebook_url, ''), un.personalizado_facebook_url) AS facebook_url
+                     FROM bi_negocio_institution_names bnin
+                     LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
+                     WHERE bnin.tenant_id = :tenant_id
+                       AND bnin.institution_name COLLATE utf8mb4_general_ci = :institution_name COLLATE utf8mb4_general_ci
+                     LIMIT 1"
+                );
+                $stmtCanais->execute([
+                    'tenant_id' => (int) ($data['tenant_id'] ?? 0),
+                    'institution_name' => (string) ($data['institution_name'] ?? ''),
+                ]);
+                $canaisUnidade = $stmtCanais->fetch(\PDO::FETCH_ASSOC) ?: [];
+                foreach (['qrcode', 'site', 'instagram', 'facebook'] as $canal) {
+                    $data['unidade_personalizado_' . $canal . '_habilitado'] = (int) ($canaisUnidade[$canal . '_habilitado'] ?? 0);
+                    $data['unidade_personalizado_' . $canal . '_url'] = $canaisUnidade[$canal . '_url'] ?? null;
+                }
+            } catch (\PDOException $canaisError) {
+                Logger::warning('ReportsController::pdf canais institucionais indisponiveis — migration pendente', [
+                    'tenant_id' => (int) ($data['tenant_id'] ?? 0), 'error' => $canaisError->getMessage(),
+                ]);
+            }
+
             // Registro profissional corporativo é opcional e depende da migration
             // de Negócios. O fallback impede que laudos parem de abrir enquanto a
             // coluna ainda não foi aplicada em um ambiente legado.

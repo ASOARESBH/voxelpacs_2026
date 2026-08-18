@@ -61,6 +61,44 @@ class UnidadesController extends Controller
         return true;
     }
 
+    /**
+     * Normaliza os canais opcionais usados exclusivamente pelo Template Personalizado.
+     * URL externa é aceita somente em HTTPS e rede social precisa pertencer ao domínio esperado.
+     */
+    private function camposCanaisPersonalizados(array $input): array
+    {
+        $canais = [
+            'qrcode' => ['label' => 'QR Code', 'host' => null],
+            'site' => ['label' => 'Site', 'host' => null],
+            'instagram' => ['label' => 'Instagram', 'host' => 'instagram.com'],
+            'facebook' => ['label' => 'Facebook', 'host' => 'facebook.com'],
+        ];
+        $campos = [];
+        foreach ($canais as $chave => $regra) {
+            $habilitado = isset($input['personalizado_' . $chave . '_habilitado']) ? 1 : 0;
+            $url = trim((string) ($input['personalizado_' . $chave . '_url'] ?? ''));
+            if ($url !== '' && !preg_match('#^https?://#i', $url)) {
+                $url = 'https://' . ltrim($url, '/');
+            }
+            if ($habilitado && $url === '') {
+                throw new \InvalidArgumentException('Informe a URL HTTPS de destino para ' . $regra['label'] . '.');
+            }
+            if ($url !== '') {
+                $partes = parse_url($url);
+                $host = strtolower((string) ($partes['host'] ?? ''));
+                if (!filter_var($url, FILTER_VALIDATE_URL) || strtolower((string) ($partes['scheme'] ?? '')) !== 'https') {
+                    throw new \InvalidArgumentException($regra['label'] . ' deve usar uma URL HTTPS válida.');
+                }
+                if ($regra['host'] !== null && !($host === $regra['host'] || str_ends_with($host, '.' . $regra['host']))) {
+                    throw new \InvalidArgumentException($regra['label'] . ' deve apontar para ' . $regra['host'] . '.');
+                }
+            }
+            $campos['personalizado_' . $chave . '_habilitado'] = $habilitado;
+            $campos['personalizado_' . $chave . '_url'] = $url !== '' ? mb_substr($url, 0, 500, 'UTF-8') : null;
+        }
+        return $campos;
+    }
+
     // INDEX
     public function index(): void
     {
@@ -153,7 +191,8 @@ class UnidadesController extends Controller
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $unidade  = $this->findOrFail($id, $tenantId);
         $templatesLaudo = $this->reportLayoutService->listarCatalogo();
-        $this->view('unidades/edit', compact('unidade', 'templatesLaudo'));
+        $includeCustomChannels = true;
+        $this->view('unidades/edit', compact('unidade', 'templatesLaudo', 'includeCustomChannels'));
     }
 
     // UPDATE
@@ -162,6 +201,14 @@ class UnidadesController extends Controller
         $this->denyIfRestricted();
         $tenantId = TenantContext::id() ?? Auth::tenantId();
         $this->findOrFail($id, $tenantId);
+
+        try {
+            $camposCanais = $this->camposCanaisPersonalizados($_POST);
+        } catch (\InvalidArgumentException $e) {
+            $_SESSION['error'] = $e->getMessage();
+            header("Location: /unidades/{$id}/edit");
+            exit;
+        }
 
         $campos = [
             'descricao'              => trim($_POST['descricao']              ?? ''),
@@ -184,7 +231,7 @@ class UnidadesController extends Controller
             'observacoes'            => trim($_POST['observacoes']            ?? ''),
             'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'                  => isset($_POST['ativo']) ? 1 : 0,
-        ];
+        ] + $camposCanais;
 
         // Upload de logo
         if (!empty($_FILES['logo']['name'])) {
@@ -389,7 +436,8 @@ class UnidadesController extends Controller
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId);
         $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
         $unidade = null;
-        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'templatesLaudo'));
+        $includeCustomChannels = true;
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'templatesLaudo', 'includeCustomChannels'));
     }
 
     // POST /unidades/nova
@@ -418,6 +466,14 @@ class UnidadesController extends Controller
             }
         }
 
+        try {
+            $camposCanais = $this->camposCanaisPersonalizados($_POST);
+        } catch (\InvalidArgumentException $e) {
+            $_SESSION['error'] = $e->getMessage();
+            header('Location: /unidades/nova');
+            exit;
+        }
+
         $campos = [
             'tenant_id'    => $tenantId,
             'cnpj'         => $cnpj ?: null,
@@ -436,7 +492,7 @@ class UnidadesController extends Controller
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
             'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => 1,
-        ];
+        ] + $camposCanais;
 
         try {
             $cols   = implode(', ', array_map(fn($k) => "`{$k}`", array_keys($campos)));
@@ -493,7 +549,8 @@ class UnidadesController extends Controller
 
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId, $id);
         $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
-        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados', 'templatesLaudo'));
+        $includeCustomChannels = true;
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados', 'templatesLaudo', 'includeCustomChannels'));
     }
 
     // POST /unidades/{id}/editar
@@ -520,6 +577,14 @@ class UnidadesController extends Controller
             } catch (\Throwable $e) {}
         }
 
+        try {
+            $camposCanais = $this->camposCanaisPersonalizados($_POST);
+        } catch (\InvalidArgumentException $e) {
+            $_SESSION['error'] = $e->getMessage();
+            header("Location: /unidades/{$id}/editar");
+            exit;
+        }
+
         $campos = [
             'cnpj'         => $cnpj ?: null,
             'razao_social' => trim($_POST['razao_social']  ?? '') ?: null,
@@ -537,7 +602,7 @@ class UnidadesController extends Controller
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
             'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => isset($_POST['ativo']) ? 1 : 0,
-        ];
+        ] + $camposCanais;
 
         // Upload de logo
         if (!empty($_FILES['logo']['name'])) {

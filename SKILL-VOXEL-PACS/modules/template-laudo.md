@@ -35,13 +35,14 @@ O editor dedicado é acessado pelo botão **Editar layout** dentro do quinto car
 | Categoria | Placeholders |
 |---|---|
 | Unidade | `{{unidade.nome}}`, `{{unidade.logo}}`, `{{unidade.cnpj}}`, `{{unidade.endereco}}` |
+| Canais institucionais | `{{unidade.qrcode}}`, `{{unidade.site}}`, `{{unidade.instagram}}`, `{{unidade.facebook}}` |
 | Paciente | `{{paciente.nome}}`, `{{paciente.data_nascimento}}`, `{{paciente.id}}` |
 | Exame | `{{exame.modalidade}}`, `{{exame.data}}`, `{{exame.descricao}}`, `{{exame.prontuario}}`, `{{exame.acesso}}` |
 | Médico | `{{medico.nome}}`, `{{medico.crm}}`, `{{medico_solicitante.nome}}` |
 | Laudo | `{{laudo.titulo}}`, `{{laudo.corpo}}`, `{{laudo.tecnica}}`, `{{laudo.achados}}`, `{{laudo.impressao}}`, `{{laudo.data_emissao}}`, `{{laudo.token_validacao}}` |
 | Assinatura/rastreio | `{{assinatura.imagem}}`, `{{assinatura.data}}`, `{{qrcode}}` |
 
-Valores clínicos e textuais são escapados por `htmlspecialchars`. Somente `unidade.logo`, `assinatura.imagem`, `laudo.corpo` e `qrcode` podem retornar markup gerado e controlado pelo servidor.
+Valores clínicos e textuais são escapados por `htmlspecialchars`. Somente `unidade.logo`, `unidade.qrcode`, `unidade.site`, `unidade.instagram`, `unidade.facebook`, `assinatura.imagem`, `laudo.corpo` e `qrcode` podem retornar markup gerado e controlado pelo servidor. Os quatro canais são configurados abaixo de **Contato e Operação** na Unidade; ficam ocultos do PDF enquanto a flag individual não estiver habilitada. QR Code usa o gerador local já instalado e aponta para a URL HTTPS configurada, sem API externa.
 
 ## Sanitização e CSS
 

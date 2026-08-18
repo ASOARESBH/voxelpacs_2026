@@ -191,6 +191,49 @@ $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
     </div>
 </div>
 
+<!-- SEÇÃO 3B — CANAIS DO TEMPLATE PERSONALIZADO -->
+<div class="card shadow-sm mb-3" id="canaisPersonalizadosCard">
+    <div class="card-header py-2 d-flex align-items-center gap-2">
+        <i class="fa fa-wand-magic-sparkles text-primary"></i>
+        <span class="fw-semibold small">Personalizado</span>
+    </div>
+    <div class="card-body p-3">
+        <p class="small text-muted mb-3">Habilite os canais que poderão ser inseridos automaticamente no Template de Laudo Personalizado.</p>
+        <div class="row g-3">
+            <?php foreach ([
+                'qrcode' => ['rótulo' => 'QR Code institucional', 'ícone' => 'fa-qrcode', 'placeholder' => 'https://site-da-unidade.com.br/resultado'],
+                'site' => ['rótulo' => 'Site institucional', 'ícone' => 'fa-globe', 'placeholder' => 'https://site-da-unidade.com.br'],
+                'instagram' => ['rótulo' => 'Instagram', 'ícone' => 'fa-instagram', 'placeholder' => 'https://instagram.com/unidade'],
+                'facebook' => ['rótulo' => 'Facebook', 'ícone' => 'fa-facebook', 'placeholder' => 'https://facebook.com/unidade'],
+            ] as $canal => $meta):
+                $habilitado = !empty($unidade['personalizado_' . $canal . '_habilitado']);
+            ?>
+            <div class="col-md-6">
+                <div class="border rounded p-3 h-100 custom-channel" data-custom-channel>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input custom-channel-toggle" type="checkbox"
+                               name="personalizado_<?= htmlspecialchars($canal) ?>_habilitado"
+                               id="personalizado_<?= htmlspecialchars($canal) ?>_habilitado"
+                               <?= $habilitado ? 'checked' : '' ?>>
+                        <label class="form-check-label small fw-semibold" for="personalizado_<?= htmlspecialchars($canal) ?>_habilitado">
+                            <i class="fa <?= htmlspecialchars($meta['ícone']) ?> me-1 text-primary"></i><?= htmlspecialchars($meta['rótulo']) ?>
+                        </label>
+                    </div>
+                    <label class="form-label small mb-1" for="personalizado_<?= htmlspecialchars($canal) ?>_url">URL de destino</label>
+                    <input type="url" class="form-control form-control-sm custom-channel-url"
+                           name="personalizado_<?= htmlspecialchars($canal) ?>_url"
+                           id="personalizado_<?= htmlspecialchars($canal) ?>_url"
+                           value="<?= htmlspecialchars($unidade['personalizado_' . $canal . '_url'] ?? '') ?>"
+                           placeholder="<?= htmlspecialchars($meta['placeholder']) ?>"
+                           inputmode="url" maxlength="500">
+                    <div class="form-text">Disponível no editor como <code>{{unidade.<?= htmlspecialchars($canal) ?>}}</code>.</div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════
      SEÇÃO 4 — LOGO DA UNIDADE
 ═══════════════════════════════════════════════════════════════════ -->

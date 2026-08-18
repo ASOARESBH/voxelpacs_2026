@@ -11,6 +11,7 @@ $baseUrl = $unitSource === 'unidade'
 $backUrl = $unitSource === 'unidade' ? '/unidades/' . $unitId . '/editar' : '/unidades/' . $unitId . '/edit';
 $placeholders = [
     'Unidade' => ['{{unidade.nome}}', '{{unidade.cnpj}}', '{{unidade.endereco}}', '{{unidade.logo}}'],
+    'Canais institucionais' => ['{{unidade.qrcode}}', '{{unidade.site}}', '{{unidade.instagram}}', '{{unidade.facebook}}'],
     'Paciente' => ['{{paciente.nome}}', '{{paciente.data_nascimento}}', '{{paciente.id}}'],
     'Exame' => ['{{exame.modalidade}}', '{{exame.data}}', '{{exame.descricao}}', '{{exame.prontuario}}', '{{exame.acesso}}'],
     'Médico' => ['{{medico.nome}}', '{{medico.crm}}', '{{medico_solicitante.nome}}'],
