@@ -28,7 +28,7 @@ window.VoxelReports.main = (function () {
             alert('Não foi possível preparar a URL segura do PDF. Recarregue o laudo e tente novamente.');
             return;
         }
-        window.open(pdfUrl, '_blank');
+        window.open(pdfUrl, 'voxel-laudo-pdf');
     }
 
     function wireTopButtons(config) {
@@ -70,7 +70,11 @@ window.VoxelReports.main = (function () {
                             alert(data.msg || 'Não foi possível liberar o laudo.');
                             return;
                         }
-                        window.location.href = '/estudos';
+                        if (typeof window.voxelRetornarWorklist === 'function') {
+                            window.voxelRetornarWorklist('/estudos');
+                        } else {
+                            window.location.href = '/estudos';
+                        }
                     })
                     .catch(() => {
                         btnLiberar.disabled = false;

@@ -79,7 +79,7 @@ $studyDescriptionDicom = trim((string) ($estudo->study_description ?? ''));
     ═══════════════════════════════════════════════════════ -->
     <header class="reports-topbar">
         <!-- Voltar -->
-        <a href="/estudos" class="pacs-btn" id="btn-voltar" title="Voltar para a Worklist">
+        <a href="/estudos" data-voxel-voltar="/estudos" data-voxel-return-worklist class="pacs-btn" id="btn-voltar" title="Voltar para a Worklist">
             <i class="fa fa-arrow-left"></i>
         </a>
 

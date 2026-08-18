@@ -683,7 +683,7 @@ $periodoLabel = [
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if ($podePeerReview && !empty($e['report_public_token'])): ?>
-                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="_blank"
+                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="voxel-laudario"
                            class="wl-btn-peer-review" title="<?= htmlspecialchars(t('peer_review.abrir_worklist')) ?>">
                             <i class="fa fa-rotate"></i> <?= htmlspecialchars(t('peer_review.botao_worklist')) ?>
                         </a>
@@ -699,7 +699,7 @@ $periodoLabel = [
                         <?php elseif ($podeLaudar): ?>
                         <?php if (!$workspaceLaudoHabilitado && !empty($e['report_public_token'])): ?>
                         <!-- Laudário Interno: URL pública usa somente token opaco -->
-                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="_blank"
+                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="voxel-laudario"
                            class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
                             <i class="fa fa-file-medical"></i> Laudo
                         </a>
@@ -1625,7 +1625,7 @@ document.addEventListener('click', function(e) {
             let novoBotao;
             if (!wlHabilitado && reportUrl) {
                 // Laudário Interno: endpoint retorna URL com token opaco.
-                novoBotao = `<a href="${reportUrl}" target="_blank" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
+                novoBotao = `<a href="${reportUrl}" target="voxel-laudario" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
             } else if (!wlHabilitado) {
                 // Falha segura: mantém a ação disponível para recuperar o token
                 // do report já assumido, em vez de fazer o botão desaparecer.
@@ -1666,7 +1666,7 @@ document.addEventListener('click', function(e) {
     const estudoId = parseInt(btn.dataset.id || '0', 10);
     if (!estudoId) return;
 
-    const aba = window.open('', '_blank');
+    const aba = window.open('', 'voxel-laudario');
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Preparando...';
 

@@ -84,7 +84,11 @@ window.VoxelReports.signature = (function () {
                 }
                 modal.hide();
                 if (modo === 'fechar') {
-                    window.location.href = '/estudos';
+                    if (typeof window.voxelRetornarWorklist === 'function') {
+                        window.voxelRetornarWorklist('/estudos');
+                    } else {
+                        window.location.href = '/estudos';
+                    }
                     return;
                 }
                 window.location.reload();
