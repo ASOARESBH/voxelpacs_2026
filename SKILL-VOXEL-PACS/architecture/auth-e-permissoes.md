@@ -76,11 +76,21 @@ Antes de alterar qualquer coisa em auth/permissões, confirme e registre:
 
 ### Gaps conhecidos fora do escopo
 
-1. `/usuarios`, `/configuracoes`, `/sla-regras` e `/modalidades` ainda não aplicam uma política de autorização equivalente para perfil médico. Não foram alterados para limitar o raio desta correção.
+1. `/usuarios`, `/sla-regras` e `/modalidades` ainda não aplicam uma política de autorização equivalente para perfil médico. Não foram alterados para limitar o raio desta correção.
 2. `App\Core\Permission`, `Auth::can()` e `PermissionMiddleware` continuam como infraestrutura RBAC não conectada ao despacho das rotas. Não foram removidos nem ativados nesta entrega, pois RBAC por role não substitui a regra de posse `usuário → médico`.
 3. Todo novo endpoint que receba `medicoId` pela rota ou querystring deve aplicar `MedicoAccess::currentMedicoId()` antes de consultar ou alterar dados do cadastro.
 4. **Correção crítica IDOR de laudos — 2026-08-14:** endpoints que recebem `report_id` ou `estudo_id` não podem carregar, listar histórico, gerar PDF, exibir assinatura, consultar/inserir Medidas, operar CHAT, abrir Peer Review, salvar, assinar, restaurar versão ou alterar situação sem chamar `ReportAccessService`. O serviço é a fonte única de autorização de report/estudo e devolve ausência de recurso ao usuário não autorizado, sem confirmar a existência do ID. Tentativas negadas são registradas em `Logger::warning`.
 5. A validação ponta a ponta deve ser executada manualmente com superadmin, administrador do tenant, analista/viewer e médico vinculado; não há suíte de integração autenticada no projeto.
 
+## Configurações do Sistema — superadmin exclusivo (2026-08-17)
+
+`/configuracoes` é uma área de infraestrutura exclusiva de `Auth::isPlatformAdmin()`, portanto aceita somente `bi_users.role = superadmin`. A regra é deliberadamente **mais restritiva** que as telas de Médicos e Unidades: `role = admin` do tenant não tem acesso, ainda que o RBAC legado contenha `manage_configuracoes`.
+
+A proteção é aplicada no backend por `ConfiguracoesController::guardSuperadminOnly()` em `index()`, `salvar()` e `salvarViewerDesktop()`. Tentativas negadas retornam HTTP 403 e são registradas com `Logger::warning` contendo apenas `user_id`, `role`, `tenant_id` e método HTTP; não são registrados campos de formulário, senhas ou URLs sensíveis. A sidebar dos layouts PACS e BI oculta o item **Configurações** para não-superadmin, mas essa ocultação não substitui a guarda do controller.
+
+As configurações continuam segregadas por tenant (`bi_configuracoes.tenant_id` e `bi_viewer_desktop_config.tenant_id`). Como o superadmin autentica sem tenant ativo, ele deve configurar uma clínica via impersonação para operar os dados daquele tenant. A confirmação operacional dessa restrição foi obtida antes da implementação.
+
+`/usuarios`, `/sla-regras` e `/modalidades` continuam fora desta entrega e permanecem como gaps adjacentes conhecidos; a regra de `admin` nos demais módulos não foi alterada.
+
 ## Última análise
-2026-08-14
+2026-08-17
