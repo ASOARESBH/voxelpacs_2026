@@ -286,6 +286,52 @@ class EstudosController extends Controller
             ? "COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE')"
             : "COALESCE(e.dicom_priority, 'ROUTINE')";
 
+        // Migrations de pedido, chat e token público são incrementais. A ausência
+        // delas não pode tornar a Worklist inteira vazia, especialmente durante
+        // restaurações e homologações de uma cópia histórica do banco.
+        $hasPedidos = false;
+        $hasReports = false;
+        $hasChats = false;
+        $hasReportPublicToken = false;
+        $hasReportSituacao = false;
+        $hasChatStatus = false;
+        try {
+            $hasPedidos = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_pedidos');
+            $hasReports = SqlHelper::hasTable($pdo, 'reports');
+            $hasChats = $hasReports && SqlHelper::hasTable($pdo, 'pacs_report_chats');
+            $hasReportPublicToken = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'public_token');
+            $hasReportSituacao = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'situacao');
+            $hasChatStatus = $hasChats && SqlHelper::hasColumn($pdo, 'pacs_report_chats', 'status');
+        } catch (\Throwable $ex) {
+            Logger::warning('[EstudosController::index] joins opcionais indisponíveis', [
+                'tenant_id' => $tenantId,
+                'error' => $ex->getMessage(),
+            ]);
+        }
+
+        $pedidoSelectSql = $hasPedidos
+            ? "p.id AS pedido_id, p.nome_original AS pedido_nome_original, p.mime_type AS pedido_mime_type,
+               p.tamanho_bytes AS pedido_tamanho_bytes, p.caminho_arquivo AS pedido_caminho_arquivo"
+            : "NULL AS pedido_id, NULL AS pedido_nome_original, NULL AS pedido_mime_type,
+               NULL AS pedido_tamanho_bytes, NULL AS pedido_caminho_arquivo";
+        $reportSelectSql = $hasReports
+            ? 'r.id AS report_id, '
+                . ($hasReportPublicToken ? "COALESCE(r.public_token, '')" : "''") . ' AS report_public_token, '
+                . ($hasReportSituacao ? "COALESCE(r.situacao, '')" : "''") . ' AS report_situacao'
+            : "NULL AS report_id, '' AS report_public_token, '' AS report_situacao";
+        $chatSelectSql = $hasChats && $hasChatStatus
+            ? "COALESCE(c.status, '') AS chat_status"
+            : "'' AS chat_status";
+        $pedidoJoinSql = $hasPedidos
+            ? 'LEFT JOIN bi_pacs_estudos_pedidos p ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id'
+            : '';
+        $reportJoinSql = $hasReports
+            ? 'LEFT JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id'
+            : '';
+        $chatJoinSql = $hasChats
+            ? 'LEFT JOIN pacs_report_chats c ON c.report_id = r.id AND c.tenant_id = r.tenant_id'
+            : '';
+
         $estudos = [];
         try {
             $sql = "
@@ -328,22 +374,13 @@ class EstudosController extends Controller
                     COALESCE(e.recebido_em, e.importado_em) AS recebido_em,
                     COALESCE(e.body_part_examined, '')          AS body_part_examined,
                     COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
-                    p.id                                         AS pedido_id,
-                    p.nome_original                               AS pedido_nome_original,
-                    p.mime_type                                   AS pedido_mime_type,
-                    p.tamanho_bytes                               AS pedido_tamanho_bytes,
-                    p.caminho_arquivo                             AS pedido_caminho_arquivo,
-                    r.id                                           AS report_id,
-                    COALESCE(r.public_token, '')                   AS report_public_token,
-                    COALESCE(r.situacao, '')                       AS report_situacao,
-                    COALESCE(c.status, '')                         AS chat_status
+                    {$pedidoSelectSql},
+                    {$reportSelectSql},
+                    {$chatSelectSql}
                 FROM bi_pacs_estudos e
-                LEFT JOIN bi_pacs_estudos_pedidos p
-                       ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id
-                LEFT JOIN reports r
-                       ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id
-                LEFT JOIN pacs_report_chats c
-                       ON c.report_id = r.id AND c.tenant_id = r.tenant_id
+                {$pedidoJoinSql}
+                {$reportJoinSql}
+                {$chatJoinSql}
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
                 {$limitClause}

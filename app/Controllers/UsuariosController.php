@@ -6,6 +6,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Mailer;
+use App\Core\SqlHelper;
 use App\Core\TenantContext;
 
 /**
@@ -51,6 +52,16 @@ class UsuariosController extends Controller
 
         if ($tenantId) {
             try {
+                $perfilOrderSql = SqlHelper::isPostgres()
+                    ? "CASE ut.perfil
+                           WHEN 'admin' THEN 1
+                           WHEN 'medico' THEN 2
+                           WHEN 'secretaria' THEN 3
+                           WHEN 'analista' THEN 4
+                           WHEN 'viewer' THEN 5
+                           ELSE 99
+                       END"
+                    : "FIELD(ut.perfil,'admin','medico','secretaria','analista','viewer')";
                 $stmt = $pdo->prepare("
                     SELECT
                         u.id,
@@ -67,9 +78,7 @@ class UsuariosController extends Controller
                     FROM bi_users u
                     INNER JOIN bi_user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = ?
                     LEFT  JOIN bi_medicos m ON m.tenant_id = ? AND m.usuario_id = u.id AND m.ativo = 1
-                    ORDER BY
-                        FIELD(ut.perfil,'admin','medico','secretaria','analista','viewer'),
-                        u.name ASC
+                    ORDER BY {$perfilOrderSql}, u.name ASC
                 ");
                 $stmt->execute([$tenantId, $tenantId]);
                 $usuarios = $stmt->fetchAll(\PDO::FETCH_ASSOC);
