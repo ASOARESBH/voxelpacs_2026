@@ -201,10 +201,10 @@ final class ReportCustomTemplateService
             'unidade.cnpj' => '12.345.678/0001-90',
             'unidade.endereco' => 'Av. Exemplo, 1000 — Centro, Belo Horizonte/MG',
             'unidade.logo' => '<span class="voxel-placeholder-image">LOGO DA UNIDADE</span>',
-            'unidade.qrcode' => $this->buildInstitutionalQrMarkup('https://exemplo.voxelpacs.com.br'),
-            'unidade.site' => $this->buildInstitutionalLinkMarkup('https://exemplo.voxelpacs.com.br', 'Site institucional'),
-            'unidade.instagram' => $this->buildInstitutionalLinkMarkup('https://instagram.com/voxelpacs', 'Instagram'),
-            'unidade.facebook' => $this->buildInstitutionalLinkMarkup('https://facebook.com/voxelpacs', 'Facebook'),
+            'unidade.qrcode' => $this->institutionalQrMarkup('https://exemplo.voxelpacs.com.br'),
+            'unidade.site' => $this->institutionalLinkMarkup('https://exemplo.voxelpacs.com.br', 'Site institucional'),
+            'unidade.instagram' => $this->institutionalLinkMarkup('https://instagram.com/voxelpacs', 'Instagram'),
+            'unidade.facebook' => $this->institutionalLinkMarkup('https://facebook.com/voxelpacs', 'Facebook'),
             'paciente.nome' => 'PACIENTE DE EXEMPLO',
             'paciente.data_nascimento' => '15/04/1980',
             'paciente.id' => 'PRONT-000123',
@@ -253,13 +253,13 @@ final class ReportCustomTemplateService
             ? '<img src="/reports/r/' . rawurlencode((string) $report['public_token']) . '/assinatura" alt="Assinatura médica" class="voxel-signature-image">'
             : '';
         $institutionalQr = !empty($report['unidade_personalizado_qrcode_habilitado'])
-            ? $this->buildInstitutionalQrMarkup((string) ($report['unidade_personalizado_qrcode_url'] ?? '')) : '';
+            ? $this->institutionalQrMarkup((string) ($report['unidade_personalizado_qrcode_url'] ?? '')) : '';
         $institutionalSite = !empty($report['unidade_personalizado_site_habilitado'])
-            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_site_url'] ?? ''), 'Site institucional') : '';
+            ? $this->institutionalLinkMarkup((string) ($report['unidade_personalizado_site_url'] ?? ''), 'Site institucional') : '';
         $institutionalInstagram = !empty($report['unidade_personalizado_instagram_habilitado'])
-            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_instagram_url'] ?? ''), 'Instagram') : '';
+            ? $this->institutionalLinkMarkup((string) ($report['unidade_personalizado_instagram_url'] ?? ''), 'Instagram') : '';
         $institutionalFacebook = !empty($report['unidade_personalizado_facebook_habilitado'])
-            ? $this->buildInstitutionalLinkMarkup((string) ($report['unidade_personalizado_facebook_url'] ?? ''), 'Facebook') : '';
+            ? $this->institutionalLinkMarkup((string) ($report['unidade_personalizado_facebook_url'] ?? ''), 'Facebook') : '';
         $context = [
             'unidade.nome' => $unitName,
             'unidade.cnpj' => (string) ($report['unidade_cnpj'] ?? ''),
@@ -328,7 +328,8 @@ final class ReportCustomTemplateService
         }, self::sanitizeHtml($html)) ?? '';
     }
 
-    private function buildInstitutionalLinkMarkup(string $url, string $label): string
+    /** Gera link institucional somente após validar HTTPS. */
+    public function institutionalLinkMarkup(string $url, string $label): string
     {
         $url = $this->safeHttpsUrl($url);
         if ($url === '') return '';
@@ -336,7 +337,8 @@ final class ReportCustomTemplateService
             . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</a>';
     }
 
-    private function buildInstitutionalQrMarkup(string $url): string
+    /** Gera QR institucional localmente, sem chamar recursos externos. */
+    public function institutionalQrMarkup(string $url): string
     {
         $url = $this->safeHttpsUrl($url);
         if ($url === '' || !class_exists(QRCode::class) || !class_exists(QROptions::class)) return '';

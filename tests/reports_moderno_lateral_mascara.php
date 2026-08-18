@@ -44,6 +44,10 @@ foreach ([
     [$template, 'pdf-clinical-section-title'],
     [$template, 'font-size: 17px'],
     [$template, 'font-size: 13px'],
+    [$template, '$temPersonalizadoInstitucional'],
+    [$template, 'pdf-header-unit'],
+    [$template, "'site' => 'Site institucional'"],
+    [$template, "\$r['unidade_personalizado_' . \$canalInstitucional . '_habilitado']"],
     [$template, "requested_procedure_desc"],
     [$template, "body_part_examined"],
     [$header, 'data-template-id'],
@@ -101,6 +105,16 @@ foreach ([
 mascaraPdfAssert(strpos($html, '>CR</h1>') === false, 'A modalidade CR não pode substituir o título da Máscara.');
 mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título da Máscara deve ter fonte ampliada.');
 mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico deve ter fonte ampliada para leitura.');
+mascaraPdfAssert(strpos($html, '<strong>Laudo Médico</strong>') === false, 'O cabeçalho não pode manter o título padrão Laudo Médico.');
+mascaraPdfAssert(strpos($html, 'pdf-header-unit">NOVA IMAGEM</span>') !== false, 'Sem canal ativo, o cabeçalho deve exibir somente o Nome Fantasia.');
+
+$r['unidade_personalizado_site_habilitado'] = 1;
+$r['unidade_personalizado_site_url'] = 'https://novaimagem.example.br';
+ob_start();
+require $templatePath;
+$htmlComCanal = (string) ob_get_clean();
+mascaraPdfAssert(strpos($htmlComCanal, 'https://novaimagem.example.br') !== false, 'Canal Site ativo deve ser inserido no cabeçalho do Moderno Lateral.');
+mascaraPdfAssert(strpos($htmlComCanal, '<strong>Laudo Médico</strong>') === false, 'Canal ativo não pode reintroduzir o título padrão Laudo Médico.');
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm
 // precedência sobre a Máscara e permanecem estruturados até a impressão.

@@ -17,6 +17,29 @@ if ($unidadeNome === '') {
     $unidadeNome = (string) ($r['tenant_nome'] ?? 'Clínica');
 }
 
+// O Moderno Lateral só apresenta canais que a própria Unidade habilitou.
+// Sem configuração ativa, o cabeçalho preserva somente o Nome Fantasia.
+$servicoTemplatePersonalizado = new \App\Services\ReportCustomTemplateService();
+$qrInstitucionalCabecalho = !empty($r['unidade_personalizado_qrcode_habilitado'])
+    ? $servicoTemplatePersonalizado->institutionalQrMarkup((string) ($r['unidade_personalizado_qrcode_url'] ?? '')) : '';
+$canaisInstitucionaisCabecalho = [];
+foreach ([
+    'site' => 'Site institucional',
+    'instagram' => 'Instagram',
+    'facebook' => 'Facebook',
+] as $canalInstitucional => $rotuloCanal) {
+    if (!empty($r['unidade_personalizado_' . $canalInstitucional . '_habilitado'])) {
+        $linkCanal = $servicoTemplatePersonalizado->institutionalLinkMarkup(
+            (string) ($r['unidade_personalizado_' . $canalInstitucional . '_url'] ?? ''),
+            $rotuloCanal
+        );
+        if ($linkCanal !== '') {
+            $canaisInstitucionaisCabecalho[] = $linkCanal;
+        }
+    }
+}
+$temPersonalizadoInstitucional = $qrInstitucionalCabecalho !== '' || $canaisInstitucionaisCabecalho !== [];
+
 $formatarData = static function (?string $valor): string {
     if (!$valor) return '—';
     $timestamp = strtotime($valor);
@@ -86,8 +109,13 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
         .pdf-header-right { width: 38%; padding-left: 18px; text-align: right; }
         .pdf-logo { display: block; max-width: 196px; max-height: 78px; object-fit: contain; object-position: left center; }
         .pdf-logo-fallback { color: #075a9e; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
-        .pdf-header-right strong { display: block; font-size: 15px; line-height: 1.1; letter-spacing: .1px; }
-        .pdf-header-right span { display: block; margin-top: 4px; color: #404040; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+        .pdf-header-unit { display: block; margin-top: 4px; color: #404040; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+        .pdf-header-custom { display: table; width: 100%; margin-top: 5px; }
+        .pdf-header-custom-qr, .pdf-header-custom-links { display: table-cell; vertical-align: middle; }
+        .pdf-header-custom-qr { width: 48px; padding-right: 6px; text-align: left; }
+        .pdf-header-custom-qr .voxel-institutional-qr { width: 42px; height: 42px; display: block; }
+        .pdf-header-custom-links { text-align: right; }
+        .pdf-header-custom-links .voxel-institutional-link { display: block; color: #404040; font-size: 8px; line-height: 1.5; font-weight: 700; text-decoration: none; }
         .pdf-header-rules { display: inline-block; width: 106px; margin-top: 10px; border-top: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; height: 6px; }
 
         .pdf-patient { display: table; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
@@ -172,8 +200,17 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
                 <?php endif; ?>
             </div>
             <div class="pdf-header-right">
-                <strong>Laudo Médico</strong>
-                <span><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></span>
+                <span class="pdf-header-unit"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></span>
+                <?php if ($temPersonalizadoInstitucional): ?>
+                    <div class="pdf-header-custom" aria-label="Canais institucionais da unidade">
+                        <?php if ($qrInstitucionalCabecalho !== ''): ?>
+                            <div class="pdf-header-custom-qr"><?= $qrInstitucionalCabecalho ?></div>
+                        <?php endif; ?>
+                        <?php if ($canaisInstitucionaisCabecalho !== []): ?>
+                            <div class="pdf-header-custom-links"><?= implode('', $canaisInstitucionaisCabecalho) ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
                 <i class="pdf-header-rules" aria-hidden="true"></i>
             </div>
         </header>
