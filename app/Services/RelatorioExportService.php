@@ -11,6 +11,8 @@
  */
 namespace App\Services;
 
+use App\Repositories\RelatorioProdutividadeMedicosRepository;
+
 use Dompdf\Dompdf;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -198,7 +200,7 @@ class RelatorioExportService
             fputcsv($out, [
                 trim(($linha['study_date'] ?? '') . ' ' . ($linha['study_time'] ?? '')),
                 $linha['paciente'] ?? '', $linha['patient_id'] ?? '', $linha['descricao_estudo'] ?? '',
-                $linha['unidade'] ?? '', $linha['modalities'] ?? '', ucfirst($linha['prioridade'] ?? ''), $linha['medico_nome'] ?? '',
+                $linha['unidade'] ?? '', $linha['modalities'] ?? '', RelatorioProdutividadeMedicosRepository::prioridadeLabel((string) ($linha['prioridade'] ?? 'ROUTINE')), $linha['medico_nome'] ?? '',
                 $linha['assumido_em'] ?? '', $linha['assinado_em'] ?? '', $linha['liberado_em'] ?? '',
                 $this->formatarMinutos($linha['tempo_assinatura_min'] ?? null),
                 $this->formatarMinutos($linha['tempo_conclusao_min'] ?? null),

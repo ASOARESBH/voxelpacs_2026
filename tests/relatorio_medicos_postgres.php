@@ -67,14 +67,17 @@ foreach ($result['linhas'] as $line) {
 }
 
 $prioridades = $repo->prioridades($tenantId);
-if ($prioridades) {
-    $porPrioridade = $base;
-    $porPrioridade['prioridade'] = $prioridades[0];
-    $filtradoPrioridade = $repo->buscar($porPrioridade);
-    foreach ($filtradoPrioridade['linhas'] as $line) {
-        if (($line['prioridade'] ?? '') !== $prioridades[0]) {
-            throw new RuntimeException('Filtro de prioridade retornou exame com prioridade divergente.');
-        }
+foreach (['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'] as $codigo) {
+    if (!array_key_exists($codigo, $prioridades)) {
+        throw new RuntimeException('Catálogo DICOM de prioridade incompleto: ' . $codigo);
+    }
+}
+$porPrioridade = $base;
+$porPrioridade['prioridade'] = 'ROUTINE';
+$filtradoPrioridade = $repo->buscar($porPrioridade);
+foreach ($filtradoPrioridade['linhas'] as $line) {
+    if (($line['prioridade'] ?? '') !== 'ROUTINE') {
+        throw new RuntimeException('Filtro de prioridade retornou exame com prioridade divergente.');
     }
 }
 

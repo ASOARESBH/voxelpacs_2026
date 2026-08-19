@@ -13,6 +13,15 @@ final class RelatorioProdutividadeMedicosRepository
 {
     private const MAX_LINHAS = 5000;
 
+    /** @var array<string,string> */
+    private const PRIORIDADES_DICOM = [
+        'STAT' => 'Emergência (STAT)',
+        'HIGH' => 'Urgência (HIGH)',
+        'ROUTINE' => 'Rotina (ROUTINE)',
+        'MEDIUM' => 'Rotina (MEDIUM)',
+        'LOW' => 'Ambulatorial (LOW)',
+    ];
+
     public function __construct(private PDO $pdo)
     {
     }
@@ -46,19 +55,41 @@ final class RelatorioProdutividadeMedicosRepository
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
-    /** @return array<int,string> */
+    /** @return array<string,string> value => rótulo */
     public function prioridades(int $tenantId): array
     {
+        // O catálogo DICOM permanece visível mesmo quando um tenant ainda não recebeu
+        // estudos de determinada prioridade. Valores legados desconhecidos são preservados.
+        $opcoes = self::PRIORIDADES_DICOM;
         $stmt = $this->pdo->prepare(
-            'SELECT DISTINCT prioridade
+            'SELECT DISTINCT UPPER(BTRIM(prioridade))
                FROM bi_pacs_estudos
               WHERE tenant_id = :tenant_id
                 AND prioridade IS NOT NULL
                 AND BTRIM(prioridade) <> \'\'
-              ORDER BY prioridade'
+              ORDER BY 1'
         );
         $stmt->execute([':tenant_id' => $tenantId]);
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $prioridade) {
+            $prioridade = (string) $prioridade;
+            $normalizada = match ($prioridade) {
+                'ROTINA', 'NORMAL' => 'ROUTINE',
+                'URGENTE', 'URGÊNCIA' => 'HIGH',
+                'CRITICO', 'CRÍTICO', 'EMERGENCIA', 'EMERGÊNCIA' => 'STAT',
+                'AMBULATORIAL' => 'LOW',
+                default => $prioridade,
+            };
+            if (!isset($opcoes[$normalizada])) {
+                $opcoes[$normalizada] = ucfirst(mb_strtolower($prioridade, 'UTF-8'));
+            }
+        }
+        return $opcoes;
+    }
+
+    public static function prioridadeLabel(string $prioridade): string
+    {
+        $prioridade = strtoupper(trim($prioridade));
+        return self::PRIORIDADES_DICOM[$prioridade] ?? ucfirst(mb_strtolower($prioridade, 'UTF-8'));
     }
 
     /** @return array<int,string> */
@@ -114,7 +145,21 @@ final class RelatorioProdutividadeMedicosRepository
                 COALESCE(e.patient_id, \'—\') AS patient_id,
                 e.institution_name AS unidade,
                 e.modalities,
-                e.prioridade,
+                COALESCE(
+                    CASE LOWER(COALESCE(e.prioridade, \'\'))
+                        WHEN \'rotina\' THEN \'ROUTINE\'
+                        WHEN \'normal\' THEN \'ROUTINE\'
+                        WHEN \'urgente\' THEN \'HIGH\'
+                        WHEN \'urgência\' THEN \'HIGH\'
+                        WHEN \'critico\' THEN \'STAT\'
+                        WHEN \'crítico\' THEN \'STAT\'
+                        WHEN \'emergencia\' THEN \'STAT\'
+                        WHEN \'emergência\' THEN \'STAT\'
+                        WHEN \'ambulatorial\' THEN \'LOW\'
+                        ELSE UPPER(NULLIF(e.prioridade, \'\'))
+                    END,
+                    \'ROUTINE\'
+                ) AS prioridade,
                 COALESCE(
                     NULLIF(e.study_description, \'\'),
                     NULLIF(e.scheduled_procedure_step_desc, \'\'),
@@ -195,7 +240,21 @@ final class RelatorioProdutividadeMedicosRepository
         }
 
         if ($filtros['prioridade'] !== '') {
-            $where[] = 'e.prioridade = :prioridade';
+            $where[] = "COALESCE(
+                CASE LOWER(COALESCE(e.prioridade, ''))
+                    WHEN 'rotina' THEN 'ROUTINE'
+                    WHEN 'normal' THEN 'ROUTINE'
+                    WHEN 'urgente' THEN 'HIGH'
+                    WHEN 'urgência' THEN 'HIGH'
+                    WHEN 'critico' THEN 'STAT'
+                    WHEN 'crítico' THEN 'STAT'
+                    WHEN 'emergencia' THEN 'STAT'
+                    WHEN 'emergência' THEN 'STAT'
+                    WHEN 'ambulatorial' THEN 'LOW'
+                    ELSE UPPER(NULLIF(e.prioridade, ''))
+                END,
+                'ROUTINE'
+            ) = :prioridade";
             $params[':prioridade'] = $filtros['prioridade'];
         }
 

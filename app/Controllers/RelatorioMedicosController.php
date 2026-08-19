@@ -127,7 +127,7 @@ final class RelatorioMedicosController extends Controller
             'Apurar por' => $base[$filtros['base_periodo']] ?? 'Data da assinatura',
             'Unidade' => $filtros['unidade'] ?: 'Todas as unidades',
             'Modalidades' => $filtros['modalidades'] ? implode(', ', $filtros['modalidades']) : 'Todas',
-            'Prioridade' => $filtros['prioridade'] !== '' ? ucfirst($filtros['prioridade']) : 'Todas',
+            'Prioridade' => $filtros['prioridade'] !== '' ? RelatorioProdutividadeMedicosRepository::prioridadeLabel($filtros['prioridade']) : 'Todas',
             'Estudo' => $filtros['estudo'] ?: 'Todos',
         ];
         if ($filtros['medico_restrito_id'] !== null) {
@@ -162,7 +162,7 @@ final class RelatorioMedicosController extends Controller
         $estudo = mb_substr($estudo, 0, 180, 'UTF-8');
         $prioridade = trim((string) ($get['prioridade'] ?? ''));
         $prioridadesValidas = $repository->prioridades($tenantId);
-        if ($prioridade !== '' && !in_array($prioridade, $prioridadesValidas, true)) {
+        if ($prioridade !== '' && !array_key_exists($prioridade, $prioridadesValidas)) {
             $prioridade = '';
         }
 
