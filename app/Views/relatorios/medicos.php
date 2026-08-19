@@ -22,6 +22,12 @@ function relMedicosUrl(array $filtros, ?int $pagina = null): string {
     if ($pagina !== null) $query['pagina'] = $pagina;
     return '/relatorios/medicos?' . http_build_query($query);
 }
+function relMedicosExportUrl(array $filtros, string $formato): string {
+    $query = $filtros;
+    unset($query['tenant_id'], $query['medico_restrito_id'], $query['por_pagina'], $query['periodo'], $query['pagina']);
+    $query['formato'] = $formato;
+    return '/relatorios/medicos/exportar?' . http_build_query($query);
+}
 ?>
 <style>
 .rel-med-page{padding:1.25rem 1.5rem;}
@@ -36,6 +42,7 @@ function relMedicosUrl(array $filtros, ?int $pagina = null): string {
 .rel-med-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.35rem;}
 .rel-med-chip{display:inline-flex;align-items:center;gap:.32rem;padding:.28rem .6rem;border-radius:99px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.08);font-size:.75rem;color:var(--pacs-text,#e2e8f0);cursor:pointer;}
 .rel-med-actions{display:flex;align-items:center;gap:.55rem;margin-top:1rem;}
+.rel-med-export{display:flex;gap:.45rem;margin-left:auto;}
 .rel-med-button{border:0;border-radius:6px;padding:.5rem .9rem;background:var(--pacs-primary,#1a56db);color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;}
 .rel-med-clear{padding:.5rem .8rem;border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;color:var(--pacs-text-muted,#8892a4);font-size:.82rem;text-decoration:none;}
 .rel-med-cards{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:.75rem;margin-bottom:1.1rem;}
@@ -117,6 +124,10 @@ function relMedicosUrl(array $filtros, ?int $pagina = null): string {
         <div class="rel-med-actions">
             <button class="rel-med-button" type="submit"><i class="fa fa-filter me-1"></i> Gerar relatório</button>
             <a class="rel-med-clear" href="/relatorios/medicos"><i class="fa fa-xmark me-1"></i> Limpar</a>
+            <div class="rel-med-export">
+                <a class="rel-med-clear" href="<?= htmlspecialchars(relMedicosExportUrl($filtros, 'csv')) ?>"><i class="fa fa-file-csv me-1"></i> CSV</a>
+                <a class="rel-med-clear" href="<?= htmlspecialchars(relMedicosExportUrl($filtros, 'pdf')) ?>"><i class="fa fa-file-pdf me-1"></i> PDF</a>
+            </div>
         </div>
     </form>
 

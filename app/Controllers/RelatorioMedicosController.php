@@ -9,6 +9,7 @@ use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Repositories\RelatorioProdutividadeMedicosRepository;
 use App\Services\RelatorioFiltrosService;
+use App\Services\RelatorioExportService;
 
 /**
  * Relatório de produtividade médica.
@@ -57,6 +58,90 @@ final class RelatorioMedicosController extends Controller
             'totalPaginas' => (int) ceil($result['total'] / $filters['por_pagina']),
             'medicoRestrito' => MedicoAccess::isRestricted(),
         ]);
+    }
+
+    public function exportar(): void
+    {
+        $tenantId = $this->tenantId();
+        $formato = ($_GET['formato'] ?? 'csv') === 'pdf' ? 'pdf' : 'csv';
+        if ($formato === 'pdf' && !RelatorioExportService::pdfDisponivel()) {
+            http_response_code(503);
+            $this->view('relatorios/pdf_indisponivel', [
+                'title' => 'Exportação PDF indisponível',
+                'urlRetorno' => '/relatorios/medicos',
+            ]);
+            return;
+        }
+
+        $repository = new RelatorioProdutividadeMedicosRepository(Database::getInstance());
+        $filters = $this->filters($_GET, $tenantId, $repository);
+        $filters['pagina'] = 1;
+        $filters['por_pagina'] = 5000;
+        $result = $repository->buscar($filters);
+
+        $export = new RelatorioExportService();
+        $tenantNome = TenantContext::name() ?: 'VOXEL PACS';
+        $usuarioNome = Auth::user()->name ?? '—';
+        $resumo = $this->resumoFiltros($filters, $repository);
+        $filename = 'RELATORIO_MEDICOS_' . date('Ymd_Hi');
+
+        if ($formato === 'pdf') {
+            $export->streamPdf(
+                __DIR__ . '/../Views/relatorios/pdf/medicos.php',
+                [
+                    'linhas' => $result['linhas'],
+                    'porMedico' => $result['porMedico'],
+                    'totalizadores' => $result['totalizadores'],
+                    'resumo' => $resumo,
+                    'tenantNome' => $tenantNome,
+                    'usuarioNome' => $usuarioNome,
+                    'geradoEm' => date('d/m/Y H:i'),
+                ],
+                $filename . '.pdf'
+            );
+            return;
+        }
+
+        $export->streamCsvMedicos(
+            $result['linhas'],
+            $result['porMedico'],
+            $result['totalizadores'],
+            $resumo,
+            $tenantNome,
+            $usuarioNome,
+            $filename . '.csv'
+        );
+    }
+
+    /** @param array<string,mixed> $filtros @return array<string,string> */
+    private function resumoFiltros(array $filtros, RelatorioProdutividadeMedicosRepository $repository): array
+    {
+        $base = [
+            'assinatura' => 'Data da assinatura',
+            'liberacao' => 'Data da liberação',
+            'estudo' => 'Data do estudo',
+        ];
+        $resumo = [
+            'Período' => $filtros['data_de'] . ' a ' . $filtros['data_ate'],
+            'Apurar por' => $base[$filtros['base_periodo']] ?? 'Data da assinatura',
+            'Unidade' => $filtros['unidade'] ?: 'Todas as unidades',
+            'Modalidades' => $filtros['modalidades'] ? implode(', ', $filtros['modalidades']) : 'Todas',
+            'Estudo' => $filtros['estudo'] ?: 'Todos',
+        ];
+        if ($filtros['medico_restrito_id'] !== null) {
+            $resumo['Médico'] = 'Próprio médico';
+            return $resumo;
+        }
+        if ($filtros['medico_id'] !== null) {
+            foreach ($repository->medicos((int) $filtros['tenant_id']) as $medico) {
+                if ((int) $medico['id'] === (int) $filtros['medico_id']) {
+                    $resumo['Médico'] = $medico['nome'];
+                    return $resumo;
+                }
+            }
+        }
+        $resumo['Médico'] = 'Todos os médicos';
+        return $resumo;
     }
 
     /** @return array<string,mixed> */

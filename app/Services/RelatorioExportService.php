@@ -158,6 +158,58 @@ class RelatorioExportService
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // CSV — Relatório de produtividade médica
+    // ─────────────────────────────────────────────────────────────────────
+    public function streamCsvMedicos(array $linhas, array $porMedico, array $totalizadores, array $resumoFiltros, string $tenantNome, string $usuarioNome, string $filename): void
+    {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header("Content-Disposition: attachment; filename=\"{$filename}\"");
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        echo "\xEF\xBB\xBF";
+
+        $out = fopen('php://output', 'wb');
+        fputcsv($out, [$tenantNome], ';');
+        fputcsv($out, ['Relatório de Produtividade Médica'], ';');
+        fputcsv($out, ['Gerado em', date('d/m/Y H:i'), 'Por', $usuarioNome], ';');
+        foreach ($resumoFiltros as $label => $valor) {
+            fputcsv($out, [$label, $valor], ';');
+        }
+        fputcsv($out, [], ';');
+        fputcsv($out, ['PRODUTIVIDADE POR MÉDICO'], ';');
+        fputcsv($out, ['Médico', 'Exames laudados', 'Assinados', 'Liberados', 'Peer Review', 'SLA médio', 'SLA total'], ';');
+        foreach ($porMedico as $item) {
+            fputcsv($out, [
+                $item['medico'], $item['laudos'], $item['assinados'], $item['liberados'], $item['peer_reviews'],
+                $this->formatarMinutos($item['sla_medio_min']), $this->formatarMinutos($item['sla_total_min']),
+            ], ';');
+        }
+        fputcsv($out, [], ';');
+        fputcsv($out, ['TOTALIZADORES'], ';');
+        fputcsv($out, ['Exames laudados', $totalizadores['laudos'] ?? 0], ';');
+        fputcsv($out, ['Assinados', $totalizadores['assinados'] ?? 0], ';');
+        fputcsv($out, ['Liberados', $totalizadores['liberados'] ?? 0], ';');
+        fputcsv($out, ['Com Peer Review', $totalizadores['peer_reviews'] ?? 0], ';');
+        fputcsv($out, ['SLA médio médico', $this->formatarMinutos($totalizadores['sla_medio_min'] ?? null)], ';');
+        fputcsv($out, ['SLA total acumulado', $this->formatarMinutos($totalizadores['sla_total_min'] ?? null)], ';');
+        fputcsv($out, [], ';');
+        fputcsv($out, ['DETALHAMENTO DOS EXAMES LAUDADOS'], ';');
+        fputcsv($out, ['Data do estudo', 'Paciente', 'ID paciente', 'Estudo', 'Unidade', 'Modalidade', 'Médico', 'Assumido em', 'Assinado em', 'Liberado em', 'Tempo médico', 'Tempo até conclusão', 'Peer Review'], ';');
+        foreach ($linhas as $linha) {
+            fputcsv($out, [
+                trim(($linha['study_date'] ?? '') . ' ' . ($linha['study_time'] ?? '')),
+                $linha['paciente'] ?? '', $linha['patient_id'] ?? '', $linha['descricao_estudo'] ?? '',
+                $linha['unidade'] ?? '', $linha['modalities'] ?? '', $linha['medico_nome'] ?? '',
+                $linha['assumido_em'] ?? '', $linha['assinado_em'] ?? '', $linha['liberado_em'] ?? '',
+                $this->formatarMinutos($linha['tempo_assinatura_min'] ?? null),
+                $this->formatarMinutos($linha['tempo_conclusao_min'] ?? null),
+                $linha['peer_reviews'] ?? 0,
+            ], ';');
+        }
+        fclose($out);
+        exit;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Helpers de montagem/estilo compartilhados
     // ─────────────────────────────────────────────────────────────────────
 

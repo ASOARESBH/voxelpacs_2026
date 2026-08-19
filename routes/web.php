@@ -157,6 +157,7 @@ Router::post('/sla-regras/{id}/toggle',        'SlaRegrasController@toggleStatus
 Router::get('/relatorios/exames',              'RelatorioEstudosController@index');
 Router::get('/relatorios/exames/exportar',     'RelatorioEstudosController@exportar');
 Router::get('/relatorios/medicos',             'RelatorioMedicosController@index');
+Router::get('/relatorios/medicos/exportar',    'RelatorioMedicosController@exportar');
 Router::get('/relatorios/sla-medicos',         'RelatorioSlaController@index');
 Router::get('/relatorios/sla-medicos/exportar','RelatorioSlaController@exportar');
 
