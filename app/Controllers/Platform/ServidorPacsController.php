@@ -395,8 +395,19 @@ class ServidorPacsController extends Controller
 
             foreach ($studies as $study) {
                 try {
-                    $sharedTags    = $orthanc->getSharedTags($study['orthanc_id']);
-                    $dicomTagsJson = $sharedTags['success'] ? json_encode($sharedTags['data'], JSON_UNESCAPED_UNICODE) : null;
+                    $sharedTagsResult = $orthanc->getSharedTags($study['orthanc_id']);
+                    $sharedTags = ($sharedTagsResult['success'] ?? false) && is_array($sharedTagsResult['data'] ?? null)
+                        ? $sharedTagsResult['data']
+                        : null;
+                    $dicomTagsJson = $sharedTags !== null ? json_encode($sharedTags, JSON_UNESCAPED_UNICODE) : null;
+
+                    if (trim((string) ($study['study_description'] ?? '')) === ''
+                        && trim((string) ($study['scheduled_procedure_step_desc'] ?? '')) === '') {
+                        $scheduled = $orthanc->getScheduledProcedureStepDescription($study['orthanc_id'], $sharedTags);
+                        if (($scheduled['success'] ?? false) && !empty($scheduled['description'])) {
+                            $study['scheduled_procedure_step_desc'] = $scheduled['description'];
+                        }
+                    }
 
                     $routing = PacsRoutingService::resolveTenant($id, $study['institution_name'] ?? null);
                     match ($routing['status']) {

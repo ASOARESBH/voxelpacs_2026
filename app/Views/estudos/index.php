@@ -89,19 +89,16 @@ function bodyPartBadge(string $key): string {
     $label  = htmlspecialchars(t($i18n[$key] ?? $key));
     return "<span class=\"bp-badge\" style=\"background:{$bg};color:{$txt}\">{$label}</span>";
 }
-/* ─── renderiza coluna ESTUDO: apenas texto de study_description ────────────── */
+/* ─── renderiza coluna ESTUDO com fallback clínico de descrições DICOM ─── */
 function renderEstudo(array $e): string {
-    // Cadeia de fontes (0008,1030 → 0032,1070 → 0018,0015 → fallback)
-    $desc     = trim($e['study_description']        ?? '');
-    $procDesc = trim($e['requested_procedure_desc'] ?? '');
-    $bodyPart = trim($e['body_part_examined']       ?? '');
-
-    $texto = $desc !== '' ? $desc
-           : ($procDesc !== '' ? $procDesc
-           : ($bodyPart !== '' ? $bodyPart : ''));
-
-    $tooltip  = htmlspecialchars('Tag DICOM (0008,1030) Study Description: ' . ($texto !== '' ? $texto : 'vazia'));
-    $display  = $texto !== '' ? htmlspecialchars($texto) : 'SEM DESCRIÇÃO';
+    $resolved = \App\Services\StudyDescriptionResolver::resolve($e);
+    $texto = $resolved['description'];
+    $tooltip = htmlspecialchars(
+        $resolved['tag'] !== ''
+            ? 'Tag DICOM ' . $resolved['tag'] . ' ' . $resolved['source'] . ': ' . ($texto !== '' ? $texto : 'vazia')
+            : $resolved['source']
+    );
+    $display = $texto !== '' ? htmlspecialchars($texto) : 'SEM DESCRIÇÃO';
 
     return sprintf(
         '<span class="study-description" title="%s">%s</span>',

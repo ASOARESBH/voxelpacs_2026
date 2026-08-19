@@ -122,6 +122,19 @@ class EstudosController extends Controller
         // Reutilizada pelo painel-resumo; deve existir independentemente do período filtrado.
         $today = date('Y-m-d');
 
+        // A migration da tag (0040,0007) é incremental: durante a implantação,
+        // a Worklist continua funcional e passa a usá-la assim que a coluna existir.
+        $hasScheduledProcedureStepDescription = false;
+        try {
+            $hasScheduledProcedureStepDescription = SqlHelper::hasColumn(
+                $pdo,
+                'bi_pacs_estudos',
+                'scheduled_procedure_step_desc'
+            );
+        } catch (\Throwable $ex) {
+            error_log('[EstudosController::index] descricao agendada: ' . $ex->getMessage());
+        }
+
         // ── Filtros ───────────────────────────────────────────────────────────────────────
         // Padrão: 30dias (não "hoje") para mostrar dados relevantes ao abrir o módulo
         $periodo = trim($_GET['periodo'] ?? '30dias');
@@ -188,13 +201,22 @@ class EstudosController extends Controller
         $where  = $escopoWorklist['where'];
         $params = $escopoWorklist['params'];
 
-        // Pesquisa global (6 campos) — todos com parâmetros posicionais
+        // Pesquisa global — todos os valores usam parâmetros posicionais.
         if ($filtros['q'] !== '') {
-            $like    = '%' . $filtros['q'] . '%';
-            $where[] = '(e.patient_name LIKE ? OR e.patient_id LIKE ?
-                      OR e.study_instance_uid LIKE ? OR e.accession_number LIKE ?
-                      OR e.study_description LIKE ? OR e.institution_name LIKE ?)';
-            for ($i = 0; $i < 6; $i++) {
+            $like = '%' . $filtros['q'] . '%';
+            $searchFields = [
+                'e.patient_name LIKE ?',
+                'e.patient_id LIKE ?',
+                'e.study_instance_uid LIKE ?',
+                'e.accession_number LIKE ?',
+                'e.study_description LIKE ?',
+                'e.institution_name LIKE ?',
+            ];
+            if ($hasScheduledProcedureStepDescription) {
+                $searchFields[] = 'e.scheduled_procedure_step_desc LIKE ?';
+            }
+            $where[] = '(' . implode(' OR ', $searchFields) . ')';
+            foreach ($searchFields as $_) {
                 $params[] = $like;
             }
         }
@@ -285,6 +307,9 @@ class EstudosController extends Controller
         $priorityEffectiveSql = $hasPriorityOverride
             ? "COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE')"
             : "COALESCE(e.dicom_priority, 'ROUTINE')";
+        $scheduledProcedureStepDescriptionSql = $hasScheduledProcedureStepDescription
+            ? "COALESCE(e.scheduled_procedure_step_desc, '')"
+            : "''";
 
         // Migrations de pedido, chat e token público são incrementais. A ausência
         // delas não pode tornar a Worklist inteira vazia, especialmente durante
@@ -379,6 +404,7 @@ class EstudosController extends Controller
                     e.atualizado_em,
                     COALESCE(e.recebido_em, e.importado_em) AS recebido_em,
                     COALESCE(e.body_part_examined, '')          AS body_part_examined,
+                    {$scheduledProcedureStepDescriptionSql}      AS scheduled_procedure_step_desc,
                     COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
                     {$pedidoSelectSql},
                     {$reportSelectSql},
@@ -1280,8 +1306,9 @@ class EstudosController extends Controller
                         patient_name, patient_name_display, patient_id,
                         patient_birth_date, patient_sex, patient_age,
                         modalities, study_date, study_description,
-                        institution_name, num_series, num_instances,
-                        referring_physician_name, body_part_examined, orthanc_id
+                        scheduled_procedure_step_desc, requested_procedure_desc,
+                        body_part_examined, institution_name, num_series, num_instances,
+                        referring_physician_name, orthanc_id
                  FROM bi_pacs_estudos WHERE id = ? {$tWhere} LIMIT 1"
             );
             $stmtCheck->execute($tParam);

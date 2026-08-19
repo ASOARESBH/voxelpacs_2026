@@ -4,6 +4,7 @@ namespace App\Services;
 use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\Logger;
+use App\Core\SqlHelper;
 
 /**
  * VOXEL PACS — Sincronização automática incremental do(s) servidor(es) Orthanc.
@@ -21,6 +22,9 @@ class PacsSyncService
     private const LOCK_STALE_MINUTES = 10;
     private const PAGE_SIZE          = 100;
     private const MAX_PAGES_PER_CICLO = 200; // guarda contra loop patológico
+
+    /** Cache por processo para não consultar o schema a cada estudo sincronizado. */
+    private static ?bool $hasScheduledProcedureStepDescriptionColumn = null;
 
     /**
      * Mesma lista de colunas DICOM já usada em ServidorPacsController::sincronizar(),
@@ -60,6 +64,7 @@ class PacsSyncService
             'requested_procedure_desc'      => $study['requested_procedure_desc']      ?? null,
             'requested_procedure_id'        => $study['requested_procedure_id']        ?? null,
             'scheduled_procedure_step_id'   => $study['scheduled_procedure_step_id']   ?? null,
+            'scheduled_procedure_step_desc' => $study['scheduled_procedure_step_desc'] ?? null,
             'institution_name'              => $study['institution_name']              ?? null,
             'institution_address'           => $study['institution_address']           ?? null,
             'institutional_dept_name'       => $study['institutional_dept_name']       ?? null,
@@ -158,6 +163,24 @@ class PacsSyncService
         $cols = self::colunasEstudo($study);
         $cols['dicom_tags_completas'] = $dicomTagsJson;
 
+        // A descrição de procedimento agendado (0040,0007) costuma vir do
+        // RIS/HIS pela Modality Worklist e pode não fazer parte das MainDicomTags.
+        // A fonte completa é o shared-tags?simplify já coletado no mesmo ciclo.
+        if (self::hasScheduledProcedureStepDescriptionColumn($pdo)) {
+            $capturada = self::scheduledProcedureStepDescription($dicomTagsJson)
+                ?? self::normalizarDescricaoAgendada($cols['scheduled_procedure_step_desc'] ?? null);
+            if ($capturada !== null) {
+                $cols['scheduled_procedure_step_desc'] = $capturada;
+            } else {
+                // Ausência temporária da tag não pode apagar um valor já obtido
+                // do RIS/HIS em ciclo anterior.
+                unset($cols['scheduled_procedure_step_desc']);
+            }
+        } else {
+            // Mantém bancos que ainda não receberam a migration funcionais.
+            unset($cols['scheduled_procedure_step_desc']);
+        }
+
         $existeStmt = $pdo->prepare("
             SELECT id, roteamento_resolvido_por, study_description_manual
             FROM bi_pacs_estudos
@@ -199,6 +222,79 @@ class PacsSyncService
         $vals         = array_merge([$servidorId], array_values($cols), [$study['orthanc_id']]);
         $pdo->prepare("INSERT INTO bi_pacs_estudos ($colNames) VALUES ($placeholders)")->execute($vals);
         return 'novo';
+    }
+
+    private static function hasScheduledProcedureStepDescriptionColumn(\PDO $pdo): bool
+    {
+        if (self::$hasScheduledProcedureStepDescriptionColumn === null) {
+            self::$hasScheduledProcedureStepDescriptionColumn = SqlHelper::hasColumn(
+                $pdo,
+                'bi_pacs_estudos',
+                'scheduled_procedure_step_desc'
+            );
+        }
+
+        return self::$hasScheduledProcedureStepDescriptionColumn;
+    }
+
+    /**
+     * Extrai a descrição (0040,0007) do payload simplificado ou estruturado
+     * retornado pelo Orthanc. A função aceita tanto o keyword DICOM quanto a
+     * chave hexadecimal, pois versões/plugins distintos usam representações
+     * diferentes para tags fora das MainDicomTags.
+     */
+    private static function normalizarDescricaoAgendada(mixed $value): ?string
+    {
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+        return $text === '' ? null : mb_substr($text, 0, 500, 'UTF-8');
+    }
+
+    private static function scheduledProcedureStepDescription(?string $dicomTagsJson): ?string
+    {
+        if ($dicomTagsJson === null || trim($dicomTagsJson) === '') {
+            return null;
+        }
+
+        try {
+            $tags = json_decode($dicomTagsJson, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        return self::findScheduledProcedureStepDescription($tags);
+    }
+
+    private static function findScheduledProcedureStepDescription(mixed $node): ?string
+    {
+        if (!is_array($node)) {
+            return null;
+        }
+
+        foreach ($node as $key => $value) {
+            $normalizedKey = strtolower((string) preg_replace('/[^a-zA-Z0-9]/', '', (string) $key));
+            if (in_array($normalizedKey, ['scheduledprocedurestepdescription', '00400007'], true)) {
+                $candidate = is_array($value)
+                    ? ($value['Value'][0] ?? $value['value'] ?? null)
+                    : $value;
+                if (is_scalar($candidate)) {
+                    $normalized = self::normalizarDescricaoAgendada($candidate);
+                    if ($normalized !== null) {
+                        return $normalized;
+                    }
+                }
+            }
+
+            $found = self::findScheduledProcedureStepDescription($value);
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -295,7 +391,21 @@ class PacsSyncService
                         }
 
                         $sharedTagsRes = $orthanc->getSharedTags($studyId);
-                        $dicomTagsJson = $sharedTagsRes['success'] ? json_encode($sharedTagsRes['data'], JSON_UNESCAPED_UNICODE) : null;
+                        $sharedTags = ($sharedTagsRes['success'] ?? false) && is_array($sharedTagsRes['data'] ?? null)
+                            ? $sharedTagsRes['data']
+                            : null;
+                        $dicomTagsJson = $sharedTags !== null ? json_encode($sharedTags, JSON_UNESCAPED_UNICODE) : null;
+
+                        // O RIS/HIS pode gravar (0040,0007) somente nas instâncias.
+                        // Consulta a primeira instância apenas quando a descrição
+                        // principal está vazia, evitando chamadas extras no ciclo normal.
+                        if (trim((string) ($study['study_description'] ?? '')) === ''
+                            && trim((string) ($study['scheduled_procedure_step_desc'] ?? '')) === '') {
+                            $scheduled = $orthanc->getScheduledProcedureStepDescription($studyId, $sharedTags);
+                            if (($scheduled['success'] ?? false) && !empty($scheduled['description'])) {
+                                $study['scheduled_procedure_step_desc'] = $scheduled['description'];
+                            }
+                        }
 
                         $routing = PacsRoutingService::resolveTenant($servidorId, $study['institution_name'] ?? null);
                         match ($routing['status']) {

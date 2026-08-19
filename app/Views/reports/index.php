@@ -19,7 +19,8 @@ foreach (array_filter(array_map('trim', explode('\\', $e['modalities'] ?? ''))) 
         htmlspecialchars(\App\Services\DicomModalityService::code($modItem), ENT_QUOTES)
     );
 }
-$descricao   = htmlspecialchars($e['study_description'] ?? '', ENT_QUOTES);
+$descricaoEfetiva = \App\Services\StudyDescriptionResolver::text($e);
+$descricao   = htmlspecialchars($descricaoEfetiva, ENT_QUOTES);
 $situacao    = $r ? $r->situacao : 'rascunho';
 $somenteLeitura = ($bloqueado ?? false) || in_array($situacao, ['assinado','liberado']);
 $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
@@ -137,7 +138,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
                         </span>
                         <small class="text-muted"><?= $ea['study_date'] ? date('d/m/Y', strtotime($ea['study_date'])) : '' ?></small>
                     </div>
-                    <div class="small mt-1"><?= htmlspecialchars($ea['study_description'] ?? '—', ENT_QUOTES) ?></div>
+                    <div class="small mt-1"><?= htmlspecialchars(\App\Services\StudyDescriptionResolver::text($ea, '—'), ENT_QUOTES) ?></div>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -703,7 +704,7 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
     const READONLY     = <?= $somenteLeitura ? 'true' : 'false' ?>;
     const AUTOSAVE_SEC = 30;
     const MEDICO_ID    = <?= (int) ($medicoIdLogado ?? 0) ?>;
-    const STUDY_DESC   = '<?= htmlspecialchars(strtoupper($e['study_description'] ?? ''), ENT_QUOTES) ?>';
+    const STUDY_DESC   = '<?= htmlspecialchars(strtoupper($descricaoEfetiva), ENT_QUOTES) ?>';
     const MODALIDADE   = '<?= htmlspecialchars(explode('\\', $e['modalities'] ?? '')[0] ?? '', ENT_QUOTES) ?>';
 
     // ── Estado ──────────────────────────────────────────────────────────

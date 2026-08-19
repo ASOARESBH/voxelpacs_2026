@@ -383,7 +383,8 @@ class ReportsController extends Controller
 
                         e.patient_birth_date, e.patient_sex, e.patient_age,
                         e.study_date, e.study_time, e.study_description,
-                        e.accession_number, e.modalities, e.institution_name,
+                        e.scheduled_procedure_step_desc, e.requested_procedure_desc,
+                        e.body_part_examined, e.accession_number, e.modalities, e.institution_name,
                         e.referring_physician_name, e.num_instances, e.num_series,
                         COALESCE(m.nome, u.name) AS medico_nome,
                         m.crm AS medico_crm,

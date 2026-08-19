@@ -92,6 +92,77 @@ class OrthancService {
         return $this->request("/studies/$studyId/shared-tags?simplify");
     }
 
+    /**
+     * Lê a tag (0040,0007) mesmo quando ela não é comum a todas as instâncias
+     * e por isso não aparece em shared-tags. É uma propriedade que costuma vir
+     * da Modality Worklist/RIS, portanto a primeira instância é a fonte de
+     * fallback adequada após a tentativa nas tags compartilhadas.
+     *
+     * @param array<string,mixed>|null $sharedTags dados já obtidos por getSharedTags()
+     * @return array{success:bool,description:?string,error?:string}
+     */
+    public function getScheduledProcedureStepDescription(string $studyId, ?array $sharedTags = null): array
+    {
+        $description = $this->findScheduledProcedureStepDescription($sharedTags ?? []);
+        if ($description !== null) {
+            return ['success' => true, 'description' => $description];
+        }
+
+        $study = $this->getStudy($studyId);
+        if (!($study['success'] ?? false) || !is_array($study['data'] ?? null)) {
+            return ['success' => false, 'description' => null, 'error' => $study['error'] ?? 'Falha ao buscar estudo'];
+        }
+
+        $seriesId = $study['data']['Series'][0] ?? null;
+        if (!is_string($seriesId) || $seriesId === '') {
+            return ['success' => true, 'description' => null];
+        }
+
+        $series = $this->request('/series/' . rawurlencode($seriesId));
+        if (!($series['success'] ?? false) || !is_array($series['data'] ?? null)) {
+            return ['success' => false, 'description' => null, 'error' => $series['error'] ?? 'Falha ao buscar série'];
+        }
+
+        $instanceId = $series['data']['Instances'][0] ?? null;
+        if (!is_string($instanceId) || $instanceId === '') {
+            return ['success' => true, 'description' => null];
+        }
+
+        $tags = $this->request('/instances/' . rawurlencode($instanceId) . '/tags?simplify');
+        if (!($tags['success'] ?? false) || !is_array($tags['data'] ?? null)) {
+            return ['success' => false, 'description' => null, 'error' => $tags['error'] ?? 'Falha ao buscar tags da instância'];
+        }
+
+        return [
+            'success' => true,
+            'description' => $this->findScheduledProcedureStepDescription($tags['data']),
+        ];
+    }
+
+    /** @param array<string,mixed> $node */
+    private function findScheduledProcedureStepDescription(array $node): ?string
+    {
+        foreach ($node as $key => $value) {
+            $normalizedKey = strtolower((string) preg_replace('/[^a-zA-Z0-9]/', '', (string) $key));
+            if (in_array($normalizedKey, ['scheduledprocedurestepdescription', '00400007'], true)) {
+                $candidate = is_array($value) ? ($value['Value'][0] ?? $value['value'] ?? null) : $value;
+                if (is_scalar($candidate)) {
+                    $text = trim((string) $candidate);
+                    if ($text !== '') {
+                        return mb_substr($text, 0, 500, 'UTF-8');
+                    }
+                }
+            }
+            if (is_array($value)) {
+                $found = $this->findScheduledProcedureStepDescription($value);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+        return null;
+    }
+
     public function getStudies(): array { return $this->request('/studies?expand'); }
 
     public function countStudies(): int {
@@ -270,6 +341,7 @@ class OrthancService {
             'requested_procedure_desc'      => $t($main['RequestedProcedureDescription'] ?? null),
             'requested_procedure_id'        => $t($main['RequestedProcedureID']      ?? null),
             'scheduled_procedure_step_id'   => $t($main['ScheduledProcedureStepID'] ?? null),
+            'scheduled_procedure_step_desc' => $t($main['ScheduledProcedureStepDescription'] ?? null),
 
             // --- Equipment / Institution ---
             'institution_name'              => $t($main['InstitutionName']           ?? null),

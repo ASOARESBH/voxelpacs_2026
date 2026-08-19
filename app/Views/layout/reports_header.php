@@ -41,7 +41,7 @@ $modalidadesEstudo = [];
 preg_match_all('/[A-Z0-9]{1,16}/', strtoupper((string) ($estudo->modalities ?? '')), $modalidadesEncontradas);
 $modalidadesEstudo = array_values(array_unique($modalidadesEncontradas[0] ?? []));
 $modalidadePrincipal = $modalidadesEstudo[0] ?? '';
-$studyDescriptionDicom = trim((string) ($estudo->study_description ?? ''));
+$studyDescriptionDicom = \App\Services\StudyDescriptionResolver::text($estudo, '');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -86,7 +86,7 @@ $studyDescriptionDicom = trim((string) ($estudo->study_description ?? ''));
         <!-- Info do paciente + SLA -->
         <div class="reports-topbar-info">
             <strong><?= htmlspecialchars($pacienteNome) ?></strong>
-            <span class="text-pacs-muted"><?= htmlspecialchars($estudo->study_description ?? '—') ?></span>
+            <span class="text-pacs-muted"><?= htmlspecialchars($studyDescriptionDicom !== '' ? $studyDescriptionDicom : '—') ?></span>
         </div>
 
         <?php if ($slaTexto): ?>
