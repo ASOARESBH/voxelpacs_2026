@@ -39,8 +39,11 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
 .rel-med-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.8rem;}
 .rel-med-label{display:block;margin-bottom:.32rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--pacs-text-muted,#8892a4);}
 .rel-med-input,.rel-med-select{width:100%;height:36px;border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;padding:0 .6rem;background:var(--pacs-input-bg,#252b3b);color:var(--pacs-text,#e2e8f0);font-size:.84rem;}
-.rel-med-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.35rem;}
-.rel-med-chip{display:inline-flex;align-items:center;gap:.32rem;padding:.28rem .6rem;border-radius:99px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.08);font-size:.75rem;color:var(--pacs-text,#e2e8f0);cursor:pointer;}
+.rel-med-modalities{display:flex;align-items:center;gap:.6rem;margin-top:.6rem;}
+.rel-med-modalities .rel-med-label{margin:0;min-width:72px;}
+.rel-med-chips{display:flex;gap:.22rem;flex-wrap:nowrap;overflow-x:auto;margin:0;padding-bottom:1px;scrollbar-width:thin;}
+.rel-med-chip{display:inline-flex;flex:0 0 auto;align-items:center;gap:.18rem;padding:.14rem .38rem;border-radius:5px;border:1px solid rgba(59,130,246,.30);background:rgba(59,130,246,.07);font-size:.68rem;line-height:1.1;color:var(--pacs-text,#e2e8f0);cursor:pointer;}
+.rel-med-chip input{width:12px;height:12px;margin:0;accent-color:var(--pacs-primary,#1a56db);}
 .rel-med-actions{display:flex;align-items:center;gap:.55rem;margin-top:1rem;}
 .rel-med-export{display:flex;gap:.45rem;margin-left:auto;}
 .rel-med-button{border:0;border-radius:6px;padding:.5rem .9rem;background:var(--pacs-primary,#1a56db);color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;}
@@ -59,7 +62,7 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
 .rel-med-patient{font-weight:700}.rel-med-muted{color:var(--pacs-text-muted,#8892a4)}.rel-med-empty{text-align:center;padding:2.5rem!important;color:var(--pacs-text-muted,#8892a4)!important}
 .rel-med-badge{display:inline-flex;align-items:center;gap:.25rem;border-radius:99px;padding:.2rem .45rem;font-size:.68rem;font-weight:700;white-space:nowrap}.rel-med-badge.peer{color:#c084fc;background:rgba(192,132,252,.12);border:1px solid rgba(192,132,252,.28)}.rel-med-badge.none{color:#94a3b8;background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2)}
 .rel-med-pagination{display:flex;align-items:center;justify-content:space-between;padding:.75rem .9rem;color:var(--pacs-text-muted,#8892a4);font-size:.78rem}.rel-med-pages{display:flex;gap:.3rem}.rel-med-page{padding:.25rem .55rem;border-radius:5px;border:1px solid var(--pacs-border,#3a3f4b);color:var(--pacs-text-muted,#8892a4);text-decoration:none}.rel-med-page.active{background:var(--pacs-primary,#1a56db);color:#fff;border-color:var(--pacs-primary,#1a56db)}
-@media(max-width:1180px){.rel-med-cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.rel-med-page{padding:1rem}.rel-med-header{display:block}.rel-med-cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1180px){.rel-med-cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.rel-med-page{padding:1rem}.rel-med-header{display:block}.rel-med-cards{grid-template-columns:repeat(2,1fr)}.rel-med-modalities{align-items:flex-start;flex-direction:column;gap:.3rem}.rel-med-modalities .rel-med-label{min-width:0}.rel-med-chips{flex-wrap:wrap;overflow:visible}}
 </style>
 
 <div class="rel-med-page">
@@ -122,7 +125,7 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
             </div>
             <?php endif; ?>
         </div>
-        <div style="margin-top:.8rem">
+        <div class="rel-med-modalities">
             <span class="rel-med-label">Modalidade</span>
             <div class="rel-med-chips">
                 <?php foreach ($opcoes['modalidades'] as $modalidade): ?>
