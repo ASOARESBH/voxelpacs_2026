@@ -40,6 +40,7 @@ $base = [
     'unidade' => '',
     'modalidades' => [],
     'estudo' => '',
+    'prioridade' => '',
     'medico_id' => null,
     'medico_restrito_id' => null,
     'pagina' => 1,
@@ -62,6 +63,18 @@ foreach ($result['linhas'] as $line) {
     }
     if ($line['tempo_conclusao_min'] !== null && (int) $line['tempo_conclusao_min'] < 0) {
         throw new RuntimeException('Tempo de conclusão negativo.');
+    }
+}
+
+$prioridades = $repo->prioridades($tenantId);
+if ($prioridades) {
+    $porPrioridade = $base;
+    $porPrioridade['prioridade'] = $prioridades[0];
+    $filtradoPrioridade = $repo->buscar($porPrioridade);
+    foreach ($filtradoPrioridade['linhas'] as $line) {
+        if (($line['prioridade'] ?? '') !== $prioridades[0]) {
+            throw new RuntimeException('Filtro de prioridade retornou exame com prioridade divergente.');
+        }
     }
 }
 

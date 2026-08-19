@@ -193,12 +193,12 @@ class RelatorioExportService
         fputcsv($out, ['SLA total acumulado', $this->formatarMinutos($totalizadores['sla_total_min'] ?? null)], ';');
         fputcsv($out, [], ';');
         fputcsv($out, ['DETALHAMENTO DOS EXAMES LAUDADOS'], ';');
-        fputcsv($out, ['Data do estudo', 'Paciente', 'ID paciente', 'Estudo', 'Unidade', 'Modalidade', 'Médico', 'Assumido em', 'Assinado em', 'Liberado em', 'Tempo médico', 'Tempo até conclusão', 'Peer Review'], ';');
+        fputcsv($out, ['Data do estudo', 'Paciente', 'ID paciente', 'Estudo', 'Unidade', 'Modalidade', 'Prioridade', 'Médico', 'Assumido em', 'Assinado em', 'Liberado em', 'Tempo médico', 'Tempo até conclusão', 'Peer Review'], ';');
         foreach ($linhas as $linha) {
             fputcsv($out, [
                 trim(($linha['study_date'] ?? '') . ' ' . ($linha['study_time'] ?? '')),
                 $linha['paciente'] ?? '', $linha['patient_id'] ?? '', $linha['descricao_estudo'] ?? '',
-                $linha['unidade'] ?? '', $linha['modalities'] ?? '', $linha['medico_nome'] ?? '',
+                $linha['unidade'] ?? '', $linha['modalities'] ?? '', ucfirst($linha['prioridade'] ?? ''), $linha['medico_nome'] ?? '',
                 $linha['assumido_em'] ?? '', $linha['assinado_em'] ?? '', $linha['liberado_em'] ?? '',
                 $this->formatarMinutos($linha['tempo_assinatura_min'] ?? null),
                 $this->formatarMinutos($linha['tempo_conclusao_min'] ?? null),

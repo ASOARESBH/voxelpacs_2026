@@ -47,6 +47,21 @@ final class RelatorioProdutividadeMedicosRepository
     }
 
     /** @return array<int,string> */
+    public function prioridades(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT DISTINCT prioridade
+               FROM bi_pacs_estudos
+              WHERE tenant_id = :tenant_id
+                AND prioridade IS NOT NULL
+                AND BTRIM(prioridade) <> \'\'
+              ORDER BY prioridade'
+        );
+        $stmt->execute([':tenant_id' => $tenantId]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /** @return array<int,string> */
     public function modalidades(int $tenantId): array
     {
         $stmt = $this->pdo->prepare(
@@ -99,6 +114,7 @@ final class RelatorioProdutividadeMedicosRepository
                 COALESCE(e.patient_id, \'—\') AS patient_id,
                 e.institution_name AS unidade,
                 e.modalities,
+                e.prioridade,
                 COALESCE(
                     NULLIF(e.study_description, \'\'),
                     NULLIF(e.scheduled_procedure_step_desc, \'\'),
@@ -176,6 +192,11 @@ final class RelatorioProdutividadeMedicosRepository
         if ($filtros['unidade'] !== '') {
             $where[] = 'e.institution_name = :unidade';
             $params[':unidade'] = $filtros['unidade'];
+        }
+
+        if ($filtros['prioridade'] !== '') {
+            $where[] = 'e.prioridade = :prioridade';
+            $params[':prioridade'] = $filtros['prioridade'];
         }
 
         if (!empty($filtros['modalidades'])) {

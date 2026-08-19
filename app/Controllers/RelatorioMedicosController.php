@@ -49,6 +49,7 @@ final class RelatorioMedicosController extends Controller
             'opcoes' => [
                 'unidades' => $unidades,
                 'modalidades' => $repository->modalidades($tenantId),
+                'prioridades' => $repository->prioridades($tenantId),
                 'medicos' => $repository->medicos($tenantId),
             ],
             'linhas' => $result['linhas'],
@@ -126,6 +127,7 @@ final class RelatorioMedicosController extends Controller
             'Apurar por' => $base[$filtros['base_periodo']] ?? 'Data da assinatura',
             'Unidade' => $filtros['unidade'] ?: 'Todas as unidades',
             'Modalidades' => $filtros['modalidades'] ? implode(', ', $filtros['modalidades']) : 'Todas',
+            'Prioridade' => $filtros['prioridade'] !== '' ? ucfirst($filtros['prioridade']) : 'Todas',
             'Estudo' => $filtros['estudo'] ?: 'Todos',
         ];
         if ($filtros['medico_restrito_id'] !== null) {
@@ -158,6 +160,11 @@ final class RelatorioMedicosController extends Controller
             : 'assinatura';
         $estudo = trim((string) ($get['estudo'] ?? ''));
         $estudo = mb_substr($estudo, 0, 180, 'UTF-8');
+        $prioridade = trim((string) ($get['prioridade'] ?? ''));
+        $prioridadesValidas = $repository->prioridades($tenantId);
+        if ($prioridade !== '' && !in_array($prioridade, $prioridadesValidas, true)) {
+            $prioridade = '';
+        }
 
         $medicoId = filter_var($get['medico_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
         $medicosValidos = array_column($repository->medicos($tenantId), 'id');
@@ -187,6 +194,7 @@ final class RelatorioMedicosController extends Controller
             'modalidades' => $base['modalidades'],
             'base_periodo' => $basePeriodo,
             'estudo' => $estudo,
+            'prioridade' => $prioridade,
             'medico_id' => $medicoId,
             'medico_restrito_id' => $medicoRestritoId,
             'pagina' => max(1, (int) ($get['pagina'] ?? 1)),

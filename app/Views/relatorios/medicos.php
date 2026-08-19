@@ -89,6 +89,15 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
                 </select>
             </div>
             <div>
+                <label class="rel-med-label" for="prioridade">Prioridade</label>
+                <select id="prioridade" name="prioridade" class="rel-med-select">
+                    <option value="">Todas as prioridades</option>
+                    <?php foreach ($opcoes['prioridades'] as $prioridade): ?>
+                        <option value="<?= htmlspecialchars($prioridade) ?>" <?= $filtros['prioridade'] === $prioridade ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($prioridade)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
                 <label class="rel-med-label" for="unidade">Unidade</label>
                 <select id="unidade" name="unidade" class="rel-med-select">
                     <option value="">Todas as unidades</option>
@@ -156,13 +165,13 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
     <h2 class="rel-med-section">Detalhamento dos exames laudados</h2>
     <div class="rel-med-table-wrap">
         <table class="rel-med-table">
-            <thead><tr><th>Data estudo</th><th>Paciente</th><th>Estudo</th><th>Unidade</th><th>Modalidade</th><th>Médico</th><th>Assumido</th><th>Assinado</th><th>Liberado</th><th>Tempo médico</th><th>Tempo até conclusão</th><th>Peer Review</th></tr></thead>
+            <thead><tr><th>Data estudo</th><th>Paciente</th><th>Estudo</th><th>Unidade</th><th>Modalidade</th><th>Prioridade</th><th>Médico</th><th>Assumido</th><th>Assinado</th><th>Liberado</th><th>Tempo médico</th><th>Tempo até conclusão</th><th>Peer Review</th></tr></thead>
             <tbody>
-            <?php if (!$linhas): ?><tr><td colspan="12" class="rel-med-empty"><i class="fa fa-magnifying-glass me-1"></i>Nenhum resultado para os filtros selecionados.</td></tr>
+            <?php if (!$linhas): ?><tr><td colspan="13" class="rel-med-empty"><i class="fa fa-magnifying-glass me-1"></i>Nenhum resultado para os filtros selecionados.</td></tr>
             <?php else: foreach ($linhas as $linha): ?><tr>
                 <td><?= htmlspecialchars(($linha['study_date'] ?? '') . (!empty($linha['study_time']) ? ' ' . substr((string)$linha['study_time'], 0, 5) : '')) ?></td>
                 <td><span class="rel-med-patient"><?= htmlspecialchars($linha['paciente']) ?></span><br><small class="rel-med-muted">ID <?= htmlspecialchars($linha['patient_id']) ?></small></td>
-                <td><?= htmlspecialchars($linha['descricao_estudo']) ?></td><td><?= htmlspecialchars($linha['unidade'] ?? '—') ?></td><td><?= htmlspecialchars($linha['modalities'] ?? '—') ?></td><td><?= htmlspecialchars($linha['medico_nome']) ?></td>
+                <td><?= htmlspecialchars($linha['descricao_estudo']) ?></td><td><?= htmlspecialchars($linha['unidade'] ?? '—') ?></td><td><?= htmlspecialchars($linha['modalities'] ?? '—') ?></td><td><?= htmlspecialchars(ucfirst($linha['prioridade'] ?? '—')) ?></td><td><?= htmlspecialchars($linha['medico_nome']) ?></td>
                 <td><?= relMedicosData($linha['assumido_em']) ?></td><td><?= relMedicosData($linha['assinado_em']) ?></td><td><?= relMedicosData($linha['liberado_em']) ?></td><td><?= relMedicosMinutos($linha['tempo_assinatura_min']) ?></td><td><?= relMedicosMinutos($linha['tempo_conclusao_min']) ?></td>
                 <td><?php if ((int)$linha['peer_reviews'] > 0): ?><span class="rel-med-badge peer"><i class="fa fa-user-doctor"></i><?= (int)$linha['peer_reviews'] ?> revisão(ões)</span><?php else: ?><span class="rel-med-badge none">Sem revisão</span><?php endif; ?></td>
             </tr><?php endforeach; endif; ?>
