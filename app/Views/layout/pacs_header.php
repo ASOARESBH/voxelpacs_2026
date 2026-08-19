@@ -139,9 +139,13 @@
                 <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.titulo')) ?></span>
             </a>
             <div class="sidebar-submenu <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios') ? 'show' : '' ?>" id="sub-rel">
-                <a href="/relatorios/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/exames') ? 'active' : '' ?>">
+                                <a href="/relatorios/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/exames') ? 'active' : '' ?>">
                     <i class="fa fa-file-medical"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.exames')) ?></span>
+                </a>
+                <a href="/relatorios/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/medicos') ? 'active' : '' ?>">
+                    <i class="fa fa-user-doctor"></i>
+                    <span class="sidebar-label">Médicos</span>
                 </a>
                 <a href="/relatorios/sla-medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/sla-medicos') ? 'active' : '' ?>">
                     <i class="fa fa-gauge-high"></i>
