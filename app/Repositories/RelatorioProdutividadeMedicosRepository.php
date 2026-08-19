@@ -13,6 +13,12 @@ final class RelatorioProdutividadeMedicosRepository
 {
     private const MAX_LINHAS = 5000;
 
+    /** Modalidades disponíveis nos chips da Worklist, inclusive para consultas futuras. */
+    private const MODALIDADES_WORKLIST = [
+        'CR', 'CT', 'CTG', 'DO', 'DR', 'DX', 'ECG', 'ES', 'MG',
+        'MR', 'NM', 'OF', 'OT', 'PT', 'RF', 'US', 'XA',
+    ];
+
     /** @var array<string,string> */
     private const PRIORIDADES_DICOM = [
         'STAT' => 'Emergência (STAT)',
@@ -95,6 +101,10 @@ final class RelatorioProdutividadeMedicosRepository
     /** @return array<int,string> */
     public function modalidades(int $tenantId): array
     {
+        // Mantém o conjunto completo da Worklist, ainda que uma modalidade não tenha
+        // laudos concluídos no período. Códigos adicionais presentes no tenant entram ao final.
+        $catalogo = array_fill_keys(self::MODALIDADES_WORKLIST, true);
+        $descobertas = [];
         $stmt = $this->pdo->prepare(
             'SELECT DISTINCT modalities
                FROM bi_pacs_estudos
@@ -104,18 +114,17 @@ final class RelatorioProdutividadeMedicosRepository
         );
         $stmt->execute([':tenant_id' => $tenantId]);
 
-        $set = [];
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $modalities) {
             foreach (explode('\\', (string) $modalities) as $modality) {
-                $modality = trim($modality);
-                if ($modality !== '') {
-                    $set[$modality] = true;
+                $modality = strtoupper(trim($modality));
+                if ($modality !== '' && !isset($catalogo[$modality])) {
+                    $descobertas[$modality] = true;
                 }
             }
         }
-        $items = array_keys($set);
-        sort($items);
-        return $items;
+        $extras = array_keys($descobertas);
+        sort($extras);
+        return array_merge(self::MODALIDADES_WORKLIST, $extras);
     }
 
     /**

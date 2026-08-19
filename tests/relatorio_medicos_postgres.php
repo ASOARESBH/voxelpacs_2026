@@ -66,6 +66,13 @@ foreach ($result['linhas'] as $line) {
     }
 }
 
+$modalidades = $repo->modalidades($tenantId);
+foreach (['CR', 'CT', 'CTG', 'DO', 'DR', 'DX', 'ECG', 'ES', 'MG', 'MR', 'NM', 'OF', 'OT', 'PT', 'RF', 'US', 'XA'] as $modalidade) {
+    if (!in_array($modalidade, $modalidades, true)) {
+        throw new RuntimeException('Catálogo de modalidades da Worklist incompleto: ' . $modalidade);
+    }
+}
+
 $prioridades = $repo->prioridades($tenantId);
 foreach (['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'] as $codigo) {
     if (!array_key_exists($codigo, $prioridades)) {
