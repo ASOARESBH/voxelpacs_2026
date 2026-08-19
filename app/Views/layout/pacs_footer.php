@@ -1,6 +1,7 @@
         </div><!-- /pacs-page -->
     </div><!-- /pacs-content -->
 </div><!-- /pacs-wrapper -->
+<div class="pacs-mobile-backdrop" id="pacs-mobile-backdrop" aria-hidden="true"></div>
 
 <?php $v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -60,10 +61,29 @@ function toggleSubmenu(link, id) {
 }
 
 // ── MOBILE SIDEBAR ──────────────────────────────────────────
-function toggleMobileSidebar() {
+function toggleMobileSidebar(forceOpen) {
     const sidebar = document.getElementById('pacs-sidebar');
-    sidebar.classList.toggle('mobile-open');
+    const backdrop = document.getElementById('pacs-mobile-backdrop');
+    if (!sidebar) return;
+
+    const open = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : !sidebar.classList.contains('mobile-open');
+
+    sidebar.classList.toggle('mobile-open', open);
+    document.body.classList.toggle('pacs-mobile-nav-open', open);
+    if (backdrop) {
+        backdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
 }
+
+document.getElementById('pacs-mobile-backdrop')?.addEventListener('click', function () {
+    toggleMobileSidebar(false);
+});
+
+document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') toggleMobileSidebar(false);
+});
 
 // ── TOOLTIPS (ex: descrição de modalidade DICOM — dicom-modality) ───────
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));

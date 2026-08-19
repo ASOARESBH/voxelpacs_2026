@@ -613,4 +613,19 @@ return [
     'gestao_gerenciar.descricao.erro.modalidade' => 'The study has no valid modality for this action.',
     'gestao_gerenciar.descricao.erro.confirmacao' => 'Confirm the batch action before applying it.',
     'gestao_gerenciar.descricao.erro.lote_permissao' => 'Only administrators can apply descriptions in batch.',
+
+    // Worklist — mobile responsiveness
+    'worklist.mobile.filtros_abrir' => 'Show filters',
+    'worklist.mobile.filtros_fechar' => 'Hide filters',
+    'worklist.mobile.coluna.data' => 'Study date',
+    'worklist.mobile.coluna.paciente' => 'Patient',
+    'worklist.mobile.coluna.unidade' => 'Unit',
+    'worklist.mobile.coluna.modalidades' => 'Modalities',
+    'worklist.mobile.coluna.prioridade' => 'Priority',
+    'worklist.mobile.coluna.estudo' => 'Study',
+    'worklist.mobile.coluna.medico' => 'Doctor',
+    'worklist.mobile.coluna.solicitante' => 'Referring physician',
+    'worklist.mobile.coluna.pedido' => 'Order',
+    'worklist.mobile.coluna.situacao' => 'Status',
+    'worklist.mobile.coluna.sla' => 'SLA',
 ];

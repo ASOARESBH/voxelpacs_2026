@@ -271,6 +271,13 @@ $periodoLabel = [
 
 <!-- ═══════════════════════════════════════════════════════════ FILTROS -->
 <form id="formFiltros" method="GET" action="<?= htmlspecialchars($urlWorklist) ?>" autocomplete="off">
+    <button type="button" id="wl-mobile-filters-toggle" class="wl-mobile-filters-toggle"
+            aria-expanded="false"
+            data-open-label="<?= htmlspecialchars(t('worklist.mobile.filtros_abrir'), ENT_QUOTES) ?>"
+            data-close-label="<?= htmlspecialchars(t('worklist.mobile.filtros_fechar'), ENT_QUOTES) ?>">
+        <i class="fa fa-sliders"></i>
+        <span><?= htmlspecialchars(t('worklist.mobile.filtros_abrir')) ?></span>
+    </button>
 
 <!-- Linha 1: busca geral + período + ordenação + unidade + situação + ações -->
 <div class="wl-filters wl-filters-row1">
@@ -510,7 +517,7 @@ $periodoLabel = [
             </td>
 
             <!-- Data/Hora -->
-            <td class="col-dt">
+            <td class="col-dt" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.data'), ENT_QUOTES) ?>">
                 <?= prioridadeInternaBadge($prio) ?>
                 <?= achadoCriticoBadge($e['achado_critico_em'] ?? null, $e['achado_critico_assunto'] ?? null) ?>
                 <div class="wl-date"><?= $dtFmt ?></div>
@@ -518,7 +525,7 @@ $periodoLabel = [
             </td>
 
             <!-- Paciente: ícone sexo + nome + info -->
-            <td class="col-paciente">
+            <td class="col-paciente" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.paciente'), ENT_QUOTES) ?>">
                 <div class="wl-pac-row">
                     <?= sexoIcon($sex) ?>
                     <div class="wl-pac-info">
@@ -534,24 +541,24 @@ $periodoLabel = [
             </td>
 
                         <!-- Unidade -->
-            <td class="col-unidade">
+            <td class="col-unidade" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.unidade'), ENT_QUOTES) ?>">
                 <?= htmlspecialchars($e['institution_name'] ?? '—') ?>
             </td>
             <!-- Modalidades -->
-            <td class="col-modalidades">
+            <td class="col-modalidades" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.modalidades'), ENT_QUOTES) ?>">
                 <?php foreach ($mods as $mod) echo modBadge($mod); ?>
             </td>
             <!-- Prioridade DICOM (0040,1003) -->
-            <td class="col-prioridade">
+            <td class="col-prioridade" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.prioridade'), ENT_QUOTES) ?>">
                 <?= prioridadeBadge($e['dicom_priority_effective'] ?? ($e['dicom_priority'] ?? ''), 'pt_BR') ?>
             </td>
             <!-- Estudo: apenas study_description -->
-            <td class="col-estudo">
+            <td class="col-estudo" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.estudo'), ENT_QUOTES) ?>">
                 <?= renderEstudo($e) ?>
             </td>
 
             <!-- Médico responsável pelo laudo -->
-            <td class="col-medico-laudo">
+            <td class="col-medico-laudo" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.medico'), ENT_QUOTES) ?>">
                 <?php
                 // Regra de visibilidade:
                 //   1. Se não há médico assumido: exibe —
@@ -588,7 +595,7 @@ $periodoLabel = [
             </td>
 
             <!-- Solicitante -->
-            <td class="col-solicitante">
+            <td class="col-solicitante" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.solicitante'), ENT_QUOTES) ?>">
                 <?php
                 $sol = $e['especialidade'] ?: \App\Helpers\DicomPersonName::format($e['referring_physician_name'] ?? null);
                 if ($sol): ?>
@@ -599,7 +606,7 @@ $periodoLabel = [
             </td>
 
             <!-- Pedido médico -->
-            <td class="col-pedido">
+            <td class="col-pedido" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.pedido'), ENT_QUOTES) ?>">
                 <?php if (!empty($e['pedido_id'])): ?>
                     <span class="pedido-anexado-badge" title="<?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>">
                         <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>
@@ -613,7 +620,7 @@ $periodoLabel = [
             </td>
 
             <!-- Situação -->
-            <td class="col-sit">
+            <td class="col-sit" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.situacao'), ENT_QUOTES) ?>">
                 <?= situacaoBadge($sit) ?>
                 <?php
                 // Exibe apenas se assumido_por for um nome válido (não numérico, não vazio)
@@ -627,7 +634,7 @@ $periodoLabel = [
             </td>
 
             <!-- SLA -->
-            <td class="col-sla">
+            <td class="col-sla" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.sla'), ENT_QUOTES) ?>">
                 <?php if ($slaP): ?>
                 <div class="sla-pill <?= $slaPCls ?>" title="SLA Padrão: <?= htmlspecialchars($slaP) ?> desde chegada">
                     <i class="fa fa-clock"></i> <?= $slaP ?>
@@ -1381,7 +1388,6 @@ $periodoLabel = [
 @media (max-width: 640px) {
     .wl-resumo{flex-direction:column;align-items:flex-start;}
     .wl-table-wrap{max-height:none;}
-    .col-unidade,.col-solicitante,.col-modalidades,.col-pedido,.col-medico-laudo{display:none;}
 }
 /* ── Barra de Seleção / Download em Lote ─────────────────────────────── */
 .wl-sel-bar{position:fixed;z-index:1050;left:calc(50% + 92px);bottom:12px;transform:translateX(-50%);
@@ -1417,6 +1423,27 @@ $periodoLabel = [
 #pacs-page{
     padding:.5rem .75rem .25rem;
 }
+
+/* Cartões mobile: mantém todos os dados clínicos relevantes, sem ocultar colunas. */
+@media (max-width:575px){
+    .wl-table-wrap{overflow:visible;}
+    .wl-table,.wl-table tbody,.wl-table tr,.wl-table td{display:block;width:100%;}
+    .wl-table{min-width:0;}
+    .wl-table thead{display:none;}
+    .wl-table tbody{display:grid;gap:.75rem;}
+    .wl-table tr.wl-row{position:relative;padding:.65rem .7rem;border:1px solid var(--pacs-border);border-radius:10px;background:var(--pacs-surface);box-shadow:0 2px 8px rgba(15,23,42,.10);}
+    .wl-table td{min-height:0;padding:.34rem 0;border:0;}
+    .wl-table td[data-label]{display:grid;grid-template-columns:106px minmax(0,1fr);align-items:center;gap:.45rem;}
+    .wl-table td[data-label]::before{content:attr(data-label);color:var(--pacs-text-muted);font-size:.64rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;}
+    .wl-table td.col-check{position:absolute;top:.52rem;right:.55rem;width:auto;padding:0;}
+    .wl-table td.col-check input{width:20px;height:20px;}
+    .wl-table td.col-paciente,.wl-table td.col-dt{padding-right:2rem;}
+    .wl-table td.col-paciente .wl-pac-nome{max-width:none;white-space:normal;}
+    .wl-table td.col-acoes{padding-top:.55rem;border-top:1px solid var(--pacs-border);}
+    .wl-acoes-wrap{flex-direction:row;align-items:stretch;flex-wrap:wrap;gap:.42rem;}
+    .wl-acoes-wrap>a,.wl-acoes-wrap>button,.wl-acoes-wrap .wl-viewer-wrap>button{min-height:44px;}
+    .wl-viewer-wrap{flex:1 1 124px;}
+}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════ JAVASCRIPT -->
@@ -1426,6 +1453,10 @@ window._workspaceLaudoHabilitado = <?= $workspaceLaudoHabilitado ? 'true' : 'fal
 const I18N_DL = {
     baixandoIndividual: <?= json_encode(t('download_lote.baixando_individual')) ?>,
     erroParcial:        <?= json_encode(t('download_lote.erro_parcial')) ?>,
+};
+const I18N_WL_MOBILE = {
+    abrir: <?= json_encode(t('worklist.mobile.filtros_abrir')) ?>,
+    fechar: <?= json_encode(t('worklist.mobile.filtros_fechar')) ?>,
 };
 
 function toggleModalidade(mod) {
@@ -1443,6 +1474,8 @@ function toggleModalidade(mod) {
     document.querySelectorAll('.wl-mod-btn').forEach(b => {
         b.classList.toggle('active', !!container.querySelector('input[value="' + b.dataset.mod + '"]'));
     });
+    // No celular, permite selecionar mais de uma modalidade e aplicar tudo no botão Buscar.
+    if (window.matchMedia('(max-width: 575px)').matches) return;
     document.getElementById('formFiltros').submit();
 }
 function toggleDatasPersonalizadas(val) {
@@ -1471,7 +1504,16 @@ function setFiltroRapido(campo, valor) {
 //    tornava o comportamento inconsistente entre os campos da mesma tela).
 (function () {
     const form = document.getElementById('formFiltros');
+    const mobileToggle = document.getElementById('wl-mobile-filters-toggle');
     if (!form) return;
+
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', function () {
+            const aberto = form.classList.toggle('mobile-filters-open');
+            mobileToggle.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+            mobileToggle.querySelector('span').textContent = aberto ? I18N_WL_MOBILE.fechar : I18N_WL_MOBILE.abrir;
+        });
+    }
 
     // Selects e datas: submit imediato ao mudar. "periodo" fica de fora —
     // já tem lógica própria (toggleDatasPersonalizadas) para não submeter

@@ -4,12 +4,13 @@
  * Cache-first para assets estáticos (CSS, JS, fontes, imagens).
  */
 
-const CACHE_NAME   = 'voxelpacs-worklist-v1';
-const STATIC_CACHE = 'voxelpacs-static-v1';
+const CACHE_NAME   = 'voxelpacs-worklist-v2';
+const STATIC_CACHE = 'voxelpacs-static-v2';
 
 // Assets estáticos a pré-cachear na instalação
 const PRECACHE_ASSETS = [
     '/assets/css/pacs.css',
+    '/assets/css/mobile-responsive.css',
     '/assets/img/pwa-icon-192.png',
     '/assets/img/pwa-icon-512.png',
     '/assets/img/logo-voxel-pacs.png',

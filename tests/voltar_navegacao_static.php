@@ -108,8 +108,8 @@ exigirVoltar(strpos($moduloMascaras, 'ativarAbaMedico()') !== false,
     'O módulo de Máscaras não documenta a correção por query string.');
 
 $core = lerVoltar($root . '/app/Core/View.php');
-exigirVoltar(strpos($core, "ASSET_VERSION = '2.2.6'") !== false,
-    'Assets não foram versionados para distribuir o helper de retorno coordenado.');
+exigirVoltar(strpos($core, "ASSET_VERSION = '2.3.0'") !== false,
+    'Assets não foram versionados para distribuir a camada responsiva e a navegação coordenada.');
 
 if ($falhas !== []) {
     fwrite(STDERR, "FALHOU\n- " . implode("\n- ", $falhas) . "\n");

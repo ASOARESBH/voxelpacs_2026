@@ -4,7 +4,7 @@
   "description": "Worklist de estudos radiológicos — VOXEL PACS",
   "start_url": "/estudos",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#0f172a",
   "theme_color": "#1d4ed8",
   "lang": "pt-BR",

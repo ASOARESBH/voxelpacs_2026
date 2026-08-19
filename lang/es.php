@@ -613,4 +613,19 @@ return [
     'gestao_gerenciar.descricao.erro.modalidade' => 'El estudio no tiene una modalidad válida para esta acción.',
     'gestao_gerenciar.descricao.erro.confirmacao' => 'Confirme la acción en lote antes de aplicarla.',
     'gestao_gerenciar.descricao.erro.lote_permissao' => 'Solo los administradores pueden aplicar descripciones en lote.',
+
+    // Worklist — responsividad móvil
+    'worklist.mobile.filtros_abrir' => 'Mostrar filtros',
+    'worklist.mobile.filtros_fechar' => 'Ocultar filtros',
+    'worklist.mobile.coluna.data' => 'Fecha del estudio',
+    'worklist.mobile.coluna.paciente' => 'Paciente',
+    'worklist.mobile.coluna.unidade' => 'Unidad',
+    'worklist.mobile.coluna.modalidades' => 'Modalidades',
+    'worklist.mobile.coluna.prioridade' => 'Prioridad',
+    'worklist.mobile.coluna.estudo' => 'Estudio',
+    'worklist.mobile.coluna.medico' => 'Médico',
+    'worklist.mobile.coluna.solicitante' => 'Solicitante',
+    'worklist.mobile.coluna.pedido' => 'Solicitud',
+    'worklist.mobile.coluna.situacao' => 'Situación',
+    'worklist.mobile.coluna.sla' => 'SLA',
 ];
