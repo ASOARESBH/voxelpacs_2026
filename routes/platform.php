@@ -44,6 +44,10 @@ Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Plat
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 
+// Revisão humana de pixels das cópias anonimizadas do Portal (somente superadmin).
+Router::get('/platform/negocios/{id}/portal-imagens', 'Platform\PortalImageReviewController@index');
+Router::post('/platform/negocios/{id}/portal-imagens/{copyId}/revisar', 'Platform\PortalImageReviewController@review');
+
 // Token de acesso para admin (Etapa 4)
 Router::post('/platform/negocios/{id}/enviar-token',                   'Platform\NegociosController@enviarTokenAcesso');
 

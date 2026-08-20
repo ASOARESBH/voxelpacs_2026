@@ -12,7 +12,10 @@ $required = [
     'app/Services/PortalAnonymizedOrthancClient.php',
     'app/Views/portal/images_preparing.php',
     'app/Views/portal/images_viewer.php',
+    'app/Controllers/Platform/PortalImageReviewController.php',
+    'app/Views/platform/negocios/portal_images_review.php',
     'routes/portal.php',
+    'routes/platform.php',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql',
 ];
@@ -30,6 +33,8 @@ $portal = file_get_contents($root . '/app/Controllers/PatientPortalController.ph
 $reportService = file_get_contents($root . '/app/Services/ReportService.php') ?: '';
 $envExample = file_get_contents($root . '/.env.example') ?: '';
 $routes = file_get_contents($root . '/routes/portal.php') ?: '';
+$platformRoutes = file_get_contents($root . '/routes/platform.php') ?: '';
+$review = file_get_contents($root . '/app/Controllers/Platform/PortalImageReviewController.php') ?: '';
 $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql') ?: '';
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
 
@@ -51,6 +56,10 @@ $expectations = [
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
     [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],
     [$routes, "Router::get('/imagens/dicom-web/studies/{studyUid}/metadata'", 'Gateway deve expor apenas rota DICOMweb específica.'],
+    [$platformRoutes, "Router::post('/platform/negocios/{id}/portal-imagens/{copyId}/revisar'", 'Rota de revisão administrativa ausente.'],
+    [$review, 'Auth::isPlatformAdmin()', 'Revisão de pixels deve ser exclusiva de superadmin.'],
+    [$review, 'validCsrf()', 'Revisão de pixels deve exigir CSRF.'],
+    [$review, "'approved', 'rejected'", 'Revisão deve aceitar somente decisões explícitas.'],
     [$pg, 'bi_portal_anonymized_studies', 'Migration PostgreSQL das cópias anonimizadas ausente.'],
     [$pg, "pixel_review_status", 'Migration PostgreSQL deve bloquear cópia sem revisão de pixels.'],
     [$mysql, 'DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci', 'Migration MySQL deve manter compatibilidade HostGator.'],
