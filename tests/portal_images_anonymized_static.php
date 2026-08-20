@@ -31,6 +31,7 @@ $gateway = file_get_contents($root . '/app/Services/PortalImageGatewayService.ph
 $controller = file_get_contents($root . '/app/Controllers/PortalImageGatewayController.php') ?: '';
 $portal = file_get_contents($root . '/app/Controllers/PatientPortalController.php') ?: '';
 $reportService = file_get_contents($root . '/app/Services/ReportService.php') ?: '';
+$preparation = file_get_contents($root . '/app/Services/PortalImagePreparationService.php') ?: '';
 $envExample = file_get_contents($root . '/.env.example') ?: '';
 $routes = file_get_contents($root . '/routes/portal.php') ?: '';
 $platformRoutes = file_get_contents($root . '/routes/platform.php') ?: '';
@@ -53,8 +54,11 @@ $expectations = [
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],
     [$portal, "'httponly' => true", 'Cookie de sessão de imagens deve ser HttpOnly.'],
     [$reportService, 'PORTAL_IMAGES_PIPELINE_ENABLED', 'Pipeline deve exigir habilitação explícita.'],
+    [$preparation, 'PORTAL_CLINICAL_ORTHANC_PRIVATE_URL', 'Pipeline deve exigir origem privada explícita do Orthanc clínico.'],
+    [$preparation, 'Endpoint privado do Orthanc clínico não configurado.', 'Pipeline deve falhar fechado sem origem clínica privada.'],
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
     [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],
+    [$envExample, 'PORTAL_CLINICAL_ORTHANC_PRIVATE_URL=http://10.0.0.3:8042', 'Ambiente deve documentar a origem privada do Orthanc clínico.'],
     [$routes, "Router::get('/imagens/dicom-web/studies/{studyUid}/metadata'", 'Gateway deve expor apenas rota DICOMweb específica.'],
     [$platformRoutes, "Router::post('/platform/negocios/{id}/portal-imagens/{copyId}/revisar'", 'Rota de revisão administrativa ausente.'],
     [$review, 'Auth::isPlatformAdmin()', 'Revisão de pixels deve ser exclusiva de superadmin.'],

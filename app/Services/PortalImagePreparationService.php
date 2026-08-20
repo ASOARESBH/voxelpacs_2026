@@ -251,8 +251,14 @@ final class PortalImagePreparationService
         if ($server === null) {
             throw new RuntimeException('Servidor Orthanc clínico não configurado.');
         }
+        // O pipeline não pode usar o hostname público cadastrado para Viewer/sincronização.
+        // A origem clínica deve ser explicitamente privada (ex.: 10.0.0.3:8042).
+        $privateUrl = trim((string) (getenv('PORTAL_CLINICAL_ORTHANC_PRIVATE_URL') ?: ''));
+        if ($privateUrl === '') {
+            throw new RuntimeException('Endpoint privado do Orthanc clínico não configurado.');
+        }
         return new PortalAnonymizedOrthancClient(
-            (string) $server['url'],
+            $privateUrl,
             empty($server['usuario']) ? null : (string) $server['usuario'],
             Crypto::decrypt(empty($server['senha']) ? null : (string) $server['senha']),
             max(30, (int) ($server['timeout'] ?? 90)),
