@@ -78,6 +78,7 @@ $expectations = [
     [$review, "AuditLogger::log('portal_images.pixel_preview'", 'Abertura de prévia administrativa deve ser auditada.'],
     [$platformRoutes, "portal-imagens/{copyId}/preview", 'Prévia deve ter rota administrativa dedicada.'],
     [$review, 'validCsrf()', 'Revisão de pixels deve exigir CSRF.'],
+    [$review, 'failure_code', 'Revisão deve usar a coluna de falha existente na cópia anonimizada.'],
     [$review, "'approved', 'rejected'", 'Revisão deve aceitar somente decisões explícitas.'],
     [$pg, 'bi_portal_anonymized_studies', 'Migration PostgreSQL das cópias anonimizadas ausente.'],
     [$pg, "pixel_review_status", 'Migration PostgreSQL deve bloquear cópia sem revisão de pixels.'],

@@ -26,7 +26,7 @@ final class PortalImageReviewController extends Controller
         }
         $stmt = Database::getInstance()->prepare(
             "SELECT id, source_estudo_id, state, pixel_review_status, created_at, updated_at,
-                    pixel_reviewed_at, pixel_reviewed_by, error_code
+                    pixel_reviewed_at, pixel_reviewed_by, failure_code
              FROM bi_portal_anonymized_studies
              WHERE tenant_id = :tenant_id
              ORDER BY updated_at DESC, id DESC
@@ -61,7 +61,7 @@ final class PortalImageReviewController extends Controller
                      pixel_reviewed_at = NOW(),
                      pixel_reviewed_by = :reviewer,
                      state = CASE WHEN :decision = 'rejected' THEN 'failed' ELSE state END,
-                     error_code = CASE WHEN :decision = 'rejected' THEN 'pixel_review_rejected' ELSE NULL END,
+                     failure_code = CASE WHEN :decision = 'rejected' THEN 'pixel_review_rejected' ELSE NULL END,
                      updated_at = NOW()
                  WHERE id = :id AND tenant_id = :tenant_id"
             );
