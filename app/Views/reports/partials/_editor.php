@@ -30,16 +30,9 @@ if (trim($corpoLaudo) === '') {
 
 $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
 $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
+// O título pertence exclusivamente à máscara aplicada. Metadados DICOM permanecem no cartão lateral,
+// sem pré-preencher nem identificar visualmente o documento clínico em branco.
 $tituloLaudo = trim((string) ($mascaraTitulo ?? ''));
-if ($tituloLaudo === '') {
-    foreach (['study_description', 'requested_procedure_desc', 'body_part_examined', 'modalities'] as $campo) {
-        $tituloLaudo = trim((string) ($estudo->{$campo} ?? ''));
-        if ($tituloLaudo !== '') {
-            break;
-        }
-    }
-}
-$tituloLaudo = $tituloLaudo !== '' ? $tituloLaudo : 'Laudo Médico';
 ?>
 <div class="pacs-card reports-editor-card<?= $modernoLateral ? ' reports-editor-card--moderno' : '' ?>">
     <div id="editor-toolbar" class="reports-editor-toolbar">
@@ -72,7 +65,7 @@ $tituloLaudo = $tituloLaudo !== '' ? $tituloLaudo : 'Laudo Médico';
         </span>
     </div>
 
-    <h1 id="reports-editor-document-title" class="reports-editor-document-title"><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
+    <h1 id="reports-editor-document-title" class="reports-editor-document-title"<?= $tituloLaudo === '' ? ' hidden' : '' ?>><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
 
     <div id="editor-container" class="reports-editor-container" data-placeholder="Redija, cole ou aplique uma máscara de laudo...">
         <?= $corpoLaudo !== '' ? $corpoLaudo : '<p><br></p>' ?>

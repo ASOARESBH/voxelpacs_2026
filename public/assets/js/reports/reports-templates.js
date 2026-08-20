@@ -48,9 +48,12 @@ window.VoxelReports.templates = (function () {
     }
 
     function atualizarTituloDocumento(titulo) {
-        const elemento = document.getElementById('reports-modern-document-title');
+        const elemento = document.getElementById('reports-editor-document-title');
+        if (!elemento) return;
+
         const texto = String(titulo || '').trim();
-        if (elemento && texto !== '') elemento.textContent = texto;
+        elemento.textContent = texto;
+        elemento.hidden = texto === '';
     }
 
     function parseSecoes(template) {

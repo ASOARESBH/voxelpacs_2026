@@ -38,6 +38,31 @@ exigir(strpos($repository, 'corpo_laudo = :corpo_laudo') !== false, 'Repositóri
 $controller = lerArquivo($root . '/app/Controllers/ReportsController.php');
 exigir(strpos($controller, "array_key_exists('corpo_laudo', \$input)") !== false, 'Controller não aceita corpo_laudo.');
 
+$editorPartial = lerArquivo($root . '/app/Views/reports/partials/_editor.php');
+$templatesJs = lerArquivo($root . '/public/assets/js/reports/reports-templates.js');
+exigir(strpos($editorPartial, "\$tituloLaudo = trim((string) (\$mascaraTitulo ?? ''));" ) !== false, 'Título inicial do Laudário não está restrito à máscara aplicada.');
+exigir(strpos($editorPartial, "['study_description', 'requested_procedure_desc', 'body_part_examined', 'modalities']") === false, 'Metadados DICOM ainda preenchem o título do Laudário sem máscara.');
+exigir(strpos($editorPartial, "\$tituloLaudo === '' ? ' hidden' : ''") !== false, 'Título vazio do Laudário não é ocultado antes de aplicar uma máscara.');
+exigir(strpos($templatesJs, "getElementById('reports-editor-document-title')") !== false && strpos($templatesJs, "elemento.hidden = texto === ''") !== false, 'Aplicação de máscara não atualiza o título real do Laudário com segurança.');
+
+$report = (object) ['conteudo' => '', 'corpo_laudo' => '', 'situacao' => 'rascunho'];
+$estudo = (object) ['study_description' => '', 'requested_procedure_desc' => '', 'body_part_examined' => '', 'modalities' => 'CT'];
+$readonly = false;
+$reportLayoutCodigo = '';
+$reportVisual = [];
+$mascaraTitulo = '';
+ob_start();
+require $root . '/app/Views/reports/partials/_editor.php';
+$editorVazio = (string) ob_get_clean();
+exigir(strpos($editorVazio, '>CT</h1>') === false && strpos($editorVazio, 'Laudo Médico</h1>') === false, 'Estudo sem máscara preencheu indevidamente o título do Laudário.');
+exigir(strpos($editorVazio, 'reports-editor-document-title" class="reports-editor-document-title" hidden') !== false && strpos($editorVazio, '<p><br></p>') !== false, 'Estudo sem máscara não abre com título oculto e corpo em branco.');
+
+$mascaraTitulo = 'Tomografia Computadorizada do Tórax';
+ob_start();
+require $root . '/app/Views/reports/partials/_editor.php';
+$editorComMascara = (string) ob_get_clean();
+exigir(strpos($editorComMascara, '>Tomografia Computadorizada do Tórax</h1>') !== false && strpos($editorComMascara, 'reports-editor-document-title" class="reports-editor-document-title" hidden') === false, 'Título de máscara aplicada não é exibido corretamente no Laudário.');
+
 $dispatcher = lerArquivo($root . '/app/Views/reports/pdf.php');
 exigir(strpos($dispatcher, '$corpoLaudo') !== false, 'Dispatcher PDF não prepara corpoLaudo.');
 
