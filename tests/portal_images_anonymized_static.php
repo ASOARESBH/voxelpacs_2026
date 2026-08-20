@@ -32,6 +32,7 @@ $controller = file_get_contents($root . '/app/Controllers/PortalImageGatewayCont
 $portal = file_get_contents($root . '/app/Controllers/PatientPortalController.php') ?: '';
 $reportService = file_get_contents($root . '/app/Services/ReportService.php') ?: '';
 $preparation = file_get_contents($root . '/app/Services/PortalImagePreparationService.php') ?: '';
+$orthancClient = file_get_contents($root . '/app/Services/PortalAnonymizedOrthancClient.php') ?: '';
 $envExample = file_get_contents($root . '/.env.example') ?: '';
 $routes = file_get_contents($root . '/routes/portal.php') ?: '';
 $platformRoutes = file_get_contents($root . '/routes/platform.php') ?: '';
@@ -60,6 +61,9 @@ $expectations = [
     [$preparation, "'Force' => true", 'Perfil deve autorizar a substituição segura dos identificadores DICOM.'],
     [$preparation, 'UIDs de estudo/série/instância não podem ser preservados', 'Perfil deve exigir novos UIDs anonimizados.'],
     [$preparation, 'public static function documentedRemovedTags()', 'Perfil deve manter a lista auditável de tags removidas.'],
+    [$preparation, 'instanceSanitizationProfile()', 'Transferência deve aplicar sanitização por instância.'],
+    [$preparation, 'sanitizeInstance((string) $instanceId', 'Instância deve ser sanitizada antes do upload ao repositório.'],
+    [$orthancClient, 'public function sanitizeInstance', 'Cliente privado deve suportar sanitização sem persistência.'],
     [$preparation, "'PatientName', 'PatientID'", 'Lista auditável deve incluir identificadores diretos do paciente.'],
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
     [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],

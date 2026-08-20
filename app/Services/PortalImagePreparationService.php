@@ -167,7 +167,10 @@ final class PortalImagePreparationService
                 throw new RuntimeException('Uma série anonimizada não contém instâncias.');
             }
             foreach ($instances as $instanceId) {
-                $dicom = $source->downloadInstance((string) $instanceId);
+                // O estudo temporário já recebeu UIDs novos. A segunda passagem remove
+                // explicitamente tags residuais sem permitir que nenhum DICOM bruto
+                // deixe o Orthanc clínico rumo ao repositório do Portal.
+                $dicom = $source->sanitizeInstance((string) $instanceId, self::instanceSanitizationProfile());
                 $uploaded = $target->uploadInstance($dicom);
                 $parentStudy = trim((string) ($uploaded['ParentStudy'] ?? ''));
                 if ($parentStudy === '') {
@@ -226,7 +229,33 @@ final class PortalImagePreparationService
         ];
     }
 
-    /** @return array<int,array<string,mixed>> */
+    /**
+     * Perfil aplicado por instância após a anonimização do estudo. Os UIDs aqui
+     * preservados pertencem apenas ao estudo temporário já anonimizado; isso mantém
+     * a hierarquia consistente entre séries/instâncias sem reutilizar UIDs clínicos.
+     *
+     * @return array<string,mixed>
+     */
+    public static function instanceSanitizationProfile(): array
+    {
+        return [
+            'DicomVersion' => '2021b',
+            'Force' => true,
+            'KeepPrivateTags' => false,
+            'Keep' => [
+                'StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID',
+                'Modality', 'SOPClassUID', 'Rows', 'Columns', 'BitsAllocated', 'BitsStored',
+                'HighBit', 'PixelRepresentation', 'PhotometricInterpretation', 'SamplesPerPixel',
+                'PlanarConfiguration', 'PixelSpacing', 'ImageOrientationPatient', 'ImagePositionPatient',
+                'SliceThickness', 'SpacingBetweenSlices', 'RescaleIntercept', 'RescaleSlope',
+                'WindowCenter', 'WindowWidth', 'ImageType', 'SeriesNumber', 'InstanceNumber',
+                'BodyPartExamined', 'Laterality', 'ViewPosition',
+            ],
+            'Remove' => self::documentedRemovedTags(),
+        ];
+    }
+
+    /** @return array<int,string> */
     private function pendingCopies(int $limit): array
     {
         $stmt = $this->pdo->prepare(

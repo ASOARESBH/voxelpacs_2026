@@ -48,6 +48,22 @@ final class PortalAnonymizedOrthancClient
         return $this->raw('/instances/' . rawurlencode($instanceId) . '/file', 'GET', null, ['Accept: application/dicom']);
     }
 
+    /**
+     * Aplica o perfil de remoção explícita a uma instância já anonimizada e
+     * devolve o arquivo DICOM resultante sem persistir uma nova cópia no Orthanc.
+     *
+     * @param array<string,mixed> $profile
+     */
+    public function sanitizeInstance(string $instanceId, array $profile): string
+    {
+        return $this->raw(
+            '/instances/' . rawurlencode($instanceId) . '/anonymize',
+            'POST',
+            $profile,
+            ['Content-Type: application/json', 'Accept: application/dicom']
+        );
+    }
+
     /** @return array<string,mixed> */
     public function uploadInstance(string $dicom): array
     {
