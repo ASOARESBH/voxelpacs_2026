@@ -59,6 +59,8 @@ $expectations = [
     [$preparation, "'DicomVersion' => '2021b'", 'Perfil deve documentar a versão DICOM usada na anonimização.'],
     [$preparation, "'Force' => true", 'Perfil deve autorizar a substituição segura dos identificadores DICOM.'],
     [$preparation, 'UIDs de estudo/série/instância não podem ser preservados', 'Perfil deve exigir novos UIDs anonimizados.'],
+    [$preparation, 'public static function documentedRemovedTags()', 'Perfil deve manter a lista auditável de tags removidas.'],
+    [$preparation, "'PatientName', 'PatientID'", 'Lista auditável deve incluir identificadores diretos do paciente.'],
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
     [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],
     [$envExample, 'PORTAL_CLINICAL_ORTHANC_PRIVATE_URL=http://10.0.0.3:8042', 'Ambiente deve documentar a origem privada do Orthanc clínico.'],

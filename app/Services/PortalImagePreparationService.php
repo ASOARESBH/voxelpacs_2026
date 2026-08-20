@@ -202,15 +202,27 @@ final class PortalImagePreparationService
                 'RescaleIntercept', 'RescaleSlope', 'WindowCenter', 'WindowWidth', 'ImageType',
                 'SeriesNumber', 'InstanceNumber', 'BodyPartExamined', 'Laterality', 'ViewPosition',
             ],
-            'Remove' => [
-                'PatientName', 'PatientID', 'PatientBirthDate', 'PatientSex', 'PatientAddress',
-                'PatientTelephoneNumbers', 'OtherPatientIDs', 'OtherPatientNames', 'InstitutionName',
-                'InstitutionAddress', 'InstitutionalDepartmentName', 'AccessionNumber', 'StudyID',
-                'StudyDescription', 'SeriesDescription', 'RequestedProcedureDescription',
-                'ScheduledProcedureStepDescription', 'ReferringPhysicianName', 'PerformingPhysicianName',
-                'NameOfPhysiciansReadingStudy', 'OperatorsName', 'RequestingPhysician',
-                'PatientComments', 'AdditionalPatientHistory', 'ResponsiblePerson', 'ResponsibleOrganization',
-            ],
+        ];
+    }
+
+    /**
+     * Tags removidas pelo perfil padrão de anonimização do Orthanc e verificadas
+     * pela homologação. A lista permanece explícita para auditoria, mas não é
+     * reenviada em `Remove`: versões do Orthanc podem recusar remoções redundantes
+     * em níveis hierárquicos diferentes durante `/studies/{id}/anonymize`.
+     *
+     * @return array<int,string>
+     */
+    public static function documentedRemovedTags(): array
+    {
+        return [
+            'PatientName', 'PatientID', 'PatientBirthDate', 'PatientSex', 'PatientAddress',
+            'PatientTelephoneNumbers', 'OtherPatientIDs', 'OtherPatientNames', 'InstitutionName',
+            'InstitutionAddress', 'InstitutionalDepartmentName', 'AccessionNumber', 'StudyID',
+            'StudyDescription', 'SeriesDescription', 'RequestedProcedureDescription',
+            'ScheduledProcedureStepDescription', 'ReferringPhysicianName', 'PerformingPhysicianName',
+            'NameOfPhysiciansReadingStudy', 'OperatorsName', 'RequestingPhysician',
+            'PatientComments', 'AdditionalPatientHistory', 'ResponsiblePerson', 'ResponsibleOrganization',
         ];
     }
 
