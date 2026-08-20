@@ -190,6 +190,8 @@ final class PortalImagePreparationService
     {
         return [
             'DicomVersion' => '2021b',
+            // Obrigatório no Orthanc ao remover/substituir PatientID e demais identificadores da hierarquia.
+            'Force' => true,
             'KeepPrivateTags' => false,
             'Keep' => [
                 'Modality', 'SOPClassUID',

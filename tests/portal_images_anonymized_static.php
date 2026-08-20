@@ -57,6 +57,7 @@ $expectations = [
     [$preparation, 'PORTAL_CLINICAL_ORTHANC_PRIVATE_URL', 'Pipeline deve exigir origem privada explícita do Orthanc clínico.'],
     [$preparation, 'Endpoint privado do Orthanc clínico não configurado.', 'Pipeline deve falhar fechado sem origem clínica privada.'],
     [$preparation, "'DicomVersion' => '2021b'", 'Perfil deve documentar a versão DICOM usada na anonimização.'],
+    [$preparation, "'Force' => true", 'Perfil deve autorizar a substituição segura dos identificadores DICOM.'],
     [$preparation, 'UIDs de estudo/série/instância não podem ser preservados', 'Perfil deve exigir novos UIDs anonimizados.'],
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
     [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],
