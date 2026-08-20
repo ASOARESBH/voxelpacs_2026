@@ -76,7 +76,9 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
-        <a href="/estudos" class="btn-back">← Worklist</a>
+        <?php if (!$portalPatientPdf): ?>
+            <a href="/estudos" class="btn-back">← Worklist</a>
+        <?php endif; ?>
     </div>
 
     <div class="pdf-band">

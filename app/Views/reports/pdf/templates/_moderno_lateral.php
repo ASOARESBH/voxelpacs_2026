@@ -184,7 +184,9 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
-        <a href="/estudos" data-voxel-voltar="/estudos" data-voxel-return-worklist>Voltar à Worklist</a>
+        <?php if (!$portalPatientPdf): ?>
+            <a href="/estudos" data-voxel-voltar="/estudos" data-voxel-return-worklist>Voltar à Worklist</a>
+        <?php endif; ?>
     </div>
 
     <main class="pdf-page">

@@ -158,6 +158,7 @@ if (trim($corpoLaudo) === '') {
 }
 $paciente = htmlspecialchars($r['patient_name_display'] ?? $r['patient_name'] ?? 'Paciente', ENT_QUOTES);
 $download = $download ?? false;
+$portalPatientPdf = !empty($portalPatientPdf);
 
 $partial = (new \App\Services\ReportLayoutService())->caminhoPartial($templateCodigo);
 

@@ -551,6 +551,7 @@ class ReportsController extends Controller
                 'download'       => $download,
                 'templateCodigo' => $templateCodigo,
                 'customTemplate' => $customTemplate,
+                'portalPatientPdf' => $portalPatientPdf,
                 'qr_data'  => base64_encode(json_encode([
                     'id'   => $reportId,
                     'hash' => $data['assinatura_hash'] ?? '',

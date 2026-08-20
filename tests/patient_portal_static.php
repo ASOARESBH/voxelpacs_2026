@@ -11,6 +11,8 @@ $files = [
     'service' => 'app/Services/PatientPortalService.php',
     'controller' => 'app/Controllers/PatientPortalController.php',
     'reports' => 'app/Controllers/ReportsController.php',
+    'pdf_view' => 'app/Views/reports/pdf.php',
+    'pdf_moderno' => 'app/Views/reports/pdf/templates/_moderno_lateral.php',
     'router' => 'app/Core/Router.php',
     'index' => 'public/index.php',
     'routes' => 'routes/portal.php',
@@ -32,12 +34,14 @@ $expect(str_contains($source['postgres_migration'], 'CREATE TABLE IF NOT EXISTS 
 $expect(!str_contains($source['migration'], 'patient_name_normalized'), 'Migration persiste nome normalizado fora da sessão PHP, contrariando minimização de dados.');
 $expect(str_contains($source['host'], 'portal.voxelpacs.com.br') && str_contains($source['index'], 'PortalHost::isPortal()'), 'Subdomínio do Portal não é separado do despacho interno por host.');
 $expect(str_contains($source['router'], 'if (PortalHost::isPortal()) return true'), 'Router ainda força autenticação interna no host do Portal.');
+$expect(str_contains($source['controller'], "redirect('/resultados')") && str_contains($source['controller'], "redirect('/')") && !str_contains($source['controller'], "redirect('/portal/"), 'Controlador do Portal ainda redireciona para prefixos incompatíveis com o subdomínio dedicado.');
 $expect(str_contains($source['service'], 'FAILURE_LIMIT = 5') && str_contains($source['service'], 'BLOCK_MINUTES = 5') && str_contains($source['service'], 'FAILURE_WINDOW_MINUTES = 15'), 'Rate limit aprovado não está configurado no serviço.');
 $expect(str_contains($source['service'], 'SqlHelper::futureTimestamp') && str_contains($source['service'], 'RANDOM()') && str_contains($source['service'], 'DATE_SUB(NOW()'), 'Portal não mantém as expressões temporais e de seleção compatíveis com PostgreSQL e MySQL.');
 $expect(str_contains($source['service'], 'buildOptions') && str_contains($source['service'], 'Sem correspondência, todas as opções são') && str_contains($source['service'], 'shuffle($options)'), 'Etapa obrigatória de instituição não protege contra oracle de existência.');
 $expect(str_contains($source['service'], "report_status'] ?? '') === 'liberado'") && str_contains($source['service'], 'public_token'), 'Histórico do Portal não restringe abertura a laudos liberados com token opaco.');
 $expect(!str_contains($source['results'], 'estudo_id') && str_contains($source['results'], '/laudo/'), 'View do Portal expõe ID sequencial de estudo ou não usa rota opaca de laudo.');
-$expect(str_contains($source['reports'], 'releasedReportByToken') && str_contains($source['reports'], 'portal_patient_pdf'), 'Renderer existente de PDF não valida escopo de paciente antes de servir o laudo.');
+$expect(str_contains($source['reports'], 'releasedReportByToken') && str_contains($source['reports'], 'portal_patient_pdf') && str_contains($source['reports'], "'portalPatientPdf' => \$portalPatientPdf"), 'Renderer existente de PDF não valida escopo de paciente antes de servir o laudo.');
+$expect(str_contains($source['pdf_view'], '$portalPatientPdf = !empty($portalPatientPdf)') && str_contains($source['pdf_moderno'], 'if (!$portalPatientPdf)'), 'Template de PDF ainda expõe a navegação interna da Worklist no Portal público.');
 $expect(!str_contains($source['routes'], 'viewer') && !str_contains($source['results'], 'Ver imagens'), 'Fase inicial do Portal expõe visualizador de imagens sem ponte de sessão validada.');
 $expect(str_contains($source['login'], 'nome_completo') && str_contains($source['login'], 'data_nascimento') && str_contains($source['login'], 'name="sexo"'), 'Formulário inicial não contém os três campos de identidade especificados.');
 $expect(str_contains($source['challenge'], 'challenge_token') && str_contains($source['challenge'], 'institution_name'), 'Desafio institucional não preserva token opaco e opção selecionada.');

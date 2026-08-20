@@ -10,7 +10,8 @@
 <body class="portal-body">
 <header class="portal-topbar">
     <a class="portal-brand" href="/" aria-label="Portal de Resultados VOXEL PACS">
-        <span class="portal-brand-mark">V</span><span>VOXEL <small>PORTAL DE RESULTADOS</small></span>
+        <img class="portal-brand-logo" src="/assets/img/logo-voxel-pacs.png?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '1' ?>" alt="VOXEL PACS">
+        <span class="portal-brand-label">PORTAL DE RESULTADOS</span>
     </a>
     <?php if (!empty($patientName)): ?>
         <form method="post" action="/sair">

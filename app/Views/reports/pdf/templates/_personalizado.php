@@ -18,10 +18,15 @@ $documento = (new \App\Services\ReportCustomTemplateService())
     ->renderReport($customTemplate, $r, (string) ($corpoLaudo ?? ''), $tituloPersonalizado);
 
 $token = rawurlencode((string) ($r['public_token'] ?? ''));
+$acoesItens = [
+    '<button type="button" onclick="window.print()">Imprimir</button>',
+    '<a href="/reports/r/' . $token . '/pdf?download=1">Baixar PDF</a>',
+];
+if (!$portalPatientPdf) {
+    $acoesItens[] = '<a href="/estudos">Voltar à Worklist</a>';
+}
 $acoes = '<div class="voxel-custom-actions">'
-    . '<button type="button" onclick="window.print()">Imprimir</button>'
-    . '<a href="/reports/r/' . $token . '/pdf?download=1">Baixar PDF</a>'
-    . '<a href="/estudos">Voltar à Worklist</a>'
+    . implode('', $acoesItens)
     . '</div><style>.voxel-custom-actions{display:flex;gap:8px;width:210mm;margin:12px auto}.voxel-custom-actions button,.voxel-custom-actions a{padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b;font:700 12px Arial,sans-serif;text-decoration:none;cursor:pointer}.voxel-custom-actions button{background:#075a9e;color:#fff;border-color:#075a9e}@media print{.voxel-custom-actions{display:none!important}}</style>';
 $documento = str_replace('<body>', '<body>' . $acoes, $documento);
 if (!empty($download)) {

@@ -16,7 +16,7 @@ final class PatientPortalController extends Controller
     public function home(): void
     {
         if ((new PatientPortalService())->activeScope($this->ip()) !== null) {
-            $this->redirect('/portal/resultados');
+            $this->redirect('/resultados');
             return;
         }
         $this->view('portal/login', ['csrf' => $this->csrfToken()], 'portal');
@@ -62,7 +62,7 @@ final class PatientPortalController extends Controller
                 (string) ($_SERVER['HTTP_USER_AGENT'] ?? '')
             );
             if (!$result['ok']) { $this->renderGenericFailure(); return; }
-            $this->redirect('/portal/resultados');
+            $this->redirect('/resultados');
         } catch (\Throwable $e) {
             Logger::error('PatientPortalController::verifyInstitution falhou', ['error' => $e->getMessage(), 'ip' => $this->ip()]);
             $this->renderGenericFailure();
@@ -73,7 +73,7 @@ final class PatientPortalController extends Controller
     {
         $service = new PatientPortalService();
         $scope = $service->activeScope($this->ip());
-        if ($scope === null) { $this->redirect('/portal'); return; }
+        if ($scope === null) { $this->redirect('/'); return; }
         $this->view('portal/results', [
             'studies' => $service->studies($scope),
             'patientName' => $this->displayName((string) $scope['patient_name_normalized']),
@@ -99,7 +99,7 @@ final class PatientPortalController extends Controller
     public function logout(): void
     {
         (new PatientPortalService())->logout();
-        $this->redirect('/portal');
+        $this->redirect('/');
     }
 
     private function validCsrf(string $token): bool
