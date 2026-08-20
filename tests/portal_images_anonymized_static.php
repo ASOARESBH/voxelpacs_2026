@@ -43,6 +43,7 @@ $expectations = [
     [$controller, "'Cache-Control: no-store, private'", 'Gateway deve impedir cache de resposta clínica.'],
     [$controller, "echo \$response['body'];\n            exit;", 'Gateway deve encerrar resposta DICOMweb sem layout HTML.'],
     [$controller, "'session_missing'", 'Gateway deve negar ausência de sessão.'],
+    [$controller, 'private function clientIp()', 'Gateway deve obter o IP sem depender de helper ausente.'],
     [$portal, "PORTAL_IMAGES_ENABLED", 'Portal deve conservar flag explícita de ativação.'],
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],
     [$portal, "'httponly' => true", 'Cookie de sessão de imagens deve ser HttpOnly.'],

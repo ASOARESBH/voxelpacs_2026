@@ -56,7 +56,7 @@ final class PortalImageGatewayController extends Controller
         }
         try {
             $gateway = new PortalImageGatewayService(new PortalImageSessionService(Database::getInstance()));
-            $response = $gateway->proxy($token, $path, $this->ip(), (string) ($_SERVER['HTTP_ACCEPT'] ?? 'application/dicom+json'));
+            $response = $gateway->proxy($token, $path, $this->clientIp(), (string) ($_SERVER['HTTP_ACCEPT'] ?? 'application/dicom+json'));
             if ($response === null) {
                 $this->deny(404, 'gateway_denied');
                 return;
@@ -93,13 +93,18 @@ final class PortalImageGatewayController extends Controller
         };
     }
 
+    private function clientIp(): string
+    {
+        return substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+    }
+
     private function deny(int $status, string $reason): void
     {
         http_response_code($status);
         header('Cache-Control: no-store, private');
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => false, 'error' => 'imagem_indisponivel']);
-        Logger::warning('PortalImageGatewayController: acesso negado', ['reason' => $reason, 'ip' => $this->ip()]);
+        Logger::warning('PortalImageGatewayController: acesso negado', ['reason' => $reason, 'ip' => $this->clientIp()]);
         exit;
     }
 }
