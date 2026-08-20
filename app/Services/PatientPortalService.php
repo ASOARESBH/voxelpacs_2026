@@ -206,6 +206,7 @@ final class PatientPortalService
     {
         $sql = 'SELECT e.id AS estudo_id, e.patient_name, e.patient_name_display, e.patient_birth_date, e.patient_sex,
                        e.study_date, e.modalities, e.study_description, e.institution_name,
+                       e.orthanc_id, e.study_instance_uid,
                        r.id AS report_id, r.public_token, r.situacao AS report_status
                 FROM bi_pacs_estudos e
                 LEFT JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id

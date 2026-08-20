@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Core\Database;
 use App\Core\Logger;
 use App\Core\PatientPortalSession;
 use App\Services\PatientPortalService;
+use App\Services\PortalImageSessionService;
 use App\Services\PortalShareService;
 use App\Services\ReportPdfService;
 
@@ -118,10 +120,42 @@ final class PatientPortalController extends Controller
             return;
         }
 
-        // A ativação exige que o gateway DICOMweb aplique sessão/token e entregue
-        // somente imagens anonimizadas. Sem ambos os controles, o botão permanece bloqueado.
-        http_response_code(503);
-        echo 'A visualização de imagens ainda não está disponível neste ambiente.';
+        $report = $service->releasedReportByToken($token, $scope);
+        if ($report === null) {
+            http_response_code(404);
+            echo 'Exame não encontrado.';
+            return;
+        }
+
+        $imageSession = new PortalImageSessionService(Database::getInstance());
+        $result = $imageSession->issueOrQueue(
+            $report,
+            $scope,
+            $this->ip(),
+            (string) ($_SERVER['HTTP_USER_AGENT'] ?? '')
+        );
+        if (($result['status'] ?? '') !== 'ready' || empty($result['token'])) {
+            $this->view('portal/images_preparing', [
+                'csrf' => $this->csrfToken(),
+                'patientName' => $this->displayName((string) $scope['patient_name_normalized']),
+                'message' => (string) ($result['message'] ?? 'As imagens estão sendo preparadas.'),
+            ], 'portal');
+            return;
+        }
+
+        setcookie('voxel_portal_image_session', (string) $result['token'], [
+            'expires' => time() + 15 * 60,
+            'path' => '/imagens/dicom-web/',
+            'secure' => true,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+        $this->view('portal/images_viewer', [
+            'csrf' => $this->csrfToken(),
+            'patientName' => $this->displayName((string) $scope['patient_name_normalized']),
+            'viewerUrl' => rtrim((string) (getenv('PORTAL_IMAGE_VIEWER_URL') ?: '/imagens/viewer/'), '/')
+                . '/?StudyInstanceUIDs=' . rawurlencode((string) $result['study_uid']),
+        ], 'portal');
     }
 
     public function share(string $token): void
