@@ -189,10 +189,11 @@ final class PortalImagePreparationService
     public static function anonymizationProfile(): array
     {
         return [
-            'DicomVersion' => '2023b',
+            'DicomVersion' => '2021b',
             'KeepPrivateTags' => false,
             'Keep' => [
-                'Modality', 'SOPClassUID', 'StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID',
+                'Modality', 'SOPClassUID',
+                // UIDs de estudo/série/instância não podem ser preservados: Orthanc gera novos valores.
                 'Rows', 'Columns', 'BitsAllocated', 'BitsStored', 'HighBit', 'PixelRepresentation',
                 'PhotometricInterpretation', 'SamplesPerPixel', 'PlanarConfiguration', 'PixelSpacing',
                 'ImageOrientationPatient', 'ImagePositionPatient', 'SliceThickness', 'SpacingBetweenSlices',
