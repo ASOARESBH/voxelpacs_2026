@@ -26,6 +26,46 @@ final class PortalImagePreparationService
     {
     }
 
+    /**
+     * Enfileira a cópia somente para um report efetivamente liberado. A chave
+     * única por estudo impede duplicações em reabertura ou reenvio de eventos.
+     */
+    public function enqueueReleasedReport(int $reportId): void
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT r.id AS report_id, r.tenant_id, e.id AS estudo_id, e.orthanc_id, e.study_instance_uid
+             FROM reports r
+             INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+             WHERE r.id = :report_id AND r.situacao = 'liberado'
+             LIMIT 1"
+        );
+        $stmt->execute(['report_id' => $reportId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($row === null || trim((string) $row['orthanc_id']) === '' || trim((string) $row['study_instance_uid']) === '') {
+            return;
+        }
+        try {
+            $this->pdo->prepare(
+                "INSERT INTO bi_portal_anonymized_studies
+                    (tenant_id, source_estudo_id, source_orthanc_id, source_study_uid, repository_key, profile_version, state)
+                 VALUES
+                    (:tenant_id, :study_id, :source_orthanc_id, :source_study_uid, :repository_key, :profile_version, 'pending')"
+            )->execute([
+                'tenant_id' => (int) $row['tenant_id'],
+                'study_id' => (int) $row['estudo_id'],
+                'source_orthanc_id' => (string) $row['orthanc_id'],
+                'source_study_uid' => (string) $row['study_instance_uid'],
+                'repository_key' => self::REPOSITORY_KEY,
+                'profile_version' => PortalImageSessionService::PROFILE_VERSION,
+            ]);
+            $this->audit(null, (int) $row['tenant_id'], (int) $row['estudo_id'], 'queued', 'info', 'released_report');
+        } catch (\PDOException $e) {
+            if (!str_contains(strtolower($e->getMessage()), 'duplicate') && !str_contains(strtolower($e->getMessage()), 'unique')) {
+                throw $e;
+            }
+        }
+    }
+
     /** @return array{processed:int,ready:int,failed:int,skipped:int} */
     public function processPending(int $limit = 3): array
     {

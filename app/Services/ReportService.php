@@ -536,6 +536,16 @@ class ReportService {
             } catch (\Throwable $e) {
                 \App\Core\Logger::error('[ReportService::assinar] Webhook Copilot liberado falhou: ' . $e->getMessage());
             }
+
+            // Pipeline separado e explicitamente opt-in: a fila nunca altera o
+            // resultado clínico da assinatura e mantém imagens bloqueadas no Portal.
+            if (filter_var(getenv('PORTAL_IMAGES_PIPELINE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) {
+                try {
+                    (new PortalImagePreparationService(Database::getInstance()))->enqueueReleasedReport($reportId);
+                } catch (\Throwable $e) {
+                    \App\Core\Logger::error('[ReportService::assinar] Fila de imagens anonimizadas falhou: ' . $e->getMessage());
+                }
+            }
         }
 
         $situacaoFinal = $modo === 'fechar' ? 'liberado' : 'assinado';

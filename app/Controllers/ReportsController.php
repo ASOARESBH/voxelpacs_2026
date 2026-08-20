@@ -1076,6 +1076,16 @@ class ReportsController extends Controller
                 $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = 'liberado' WHERE id = :estudo_id")
                     ->execute(['estudo_id' => (int) $report->estudo_id]);
             }
+            if (filter_var(getenv('PORTAL_IMAGES_PIPELINE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) {
+                try {
+                    (new \App\Services\PortalImagePreparationService($pdo))->enqueueReleasedReport($reportId);
+                } catch (\Throwable $imageQueueError) {
+                    Logger::error('ReportsController::liberar fila de imagens anonimizadas falhou', [
+                        'report_id' => $reportId,
+                        'error' => $imageQueueError->getMessage(),
+                    ]);
+                }
+            }
             Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
             $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
         } catch (\Throwable $e) {

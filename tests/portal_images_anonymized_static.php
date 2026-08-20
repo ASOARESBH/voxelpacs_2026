@@ -27,6 +27,8 @@ $session = file_get_contents($root . '/app/Services/PortalImageSessionService.ph
 $gateway = file_get_contents($root . '/app/Services/PortalImageGatewayService.php') ?: '';
 $controller = file_get_contents($root . '/app/Controllers/PortalImageGatewayController.php') ?: '';
 $portal = file_get_contents($root . '/app/Controllers/PatientPortalController.php') ?: '';
+$reportService = file_get_contents($root . '/app/Services/ReportService.php') ?: '';
+$envExample = file_get_contents($root . '/.env.example') ?: '';
 $routes = file_get_contents($root . '/routes/portal.php') ?: '';
 $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql') ?: '';
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
@@ -42,6 +44,9 @@ $expectations = [
     [$portal, "PORTAL_IMAGES_ENABLED", 'Portal deve conservar flag explícita de ativação.'],
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],
     [$portal, "'httponly' => true", 'Cookie de sessão de imagens deve ser HttpOnly.'],
+    [$reportService, 'PORTAL_IMAGES_PIPELINE_ENABLED', 'Pipeline deve exigir habilitação explícita.'],
+    [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
+    [$envExample, 'PORTAL_IMAGES_PIPELINE_ENABLED=false', 'Pipeline deve iniciar desabilitado no ambiente.'],
     [$routes, "Router::get('/imagens/dicom-web/studies/{studyUid}/metadata'", 'Gateway deve expor apenas rota DICOMweb específica.'],
     [$pg, 'bi_portal_anonymized_studies', 'Migration PostgreSQL das cópias anonimizadas ausente.'],
     [$pg, "pixel_review_status", 'Migration PostgreSQL deve bloquear cópia sem revisão de pixels.'],
