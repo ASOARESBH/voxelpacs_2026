@@ -251,7 +251,16 @@ final class PortalImagePreparationService
                 'WindowCenter', 'WindowWidth', 'ImageType', 'SeriesNumber', 'InstanceNumber',
                 'BodyPartExamined', 'Laterality', 'ViewPosition',
             ],
-            'Remove' => self::documentedRemovedTags(),
+            'Replace' => [
+                // Orthanc não permite remover estes identificadores principais na segunda passagem.
+                // Valores neutros preservam a hierarquia anonimizada sem carregar qualquer dado clínico.
+                'PatientName' => 'ANONYMOUS',
+                'PatientID' => 'PORTAL-ANON',
+                'StudyID' => 'PORTAL-ANON',
+            ],
+            'Remove' => array_values(array_diff(self::documentedRemovedTags(), [
+                'PatientName', 'PatientID', 'StudyID',
+            ])),
         ];
     }
 

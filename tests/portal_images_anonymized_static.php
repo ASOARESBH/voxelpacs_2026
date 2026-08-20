@@ -63,6 +63,8 @@ $expectations = [
     [$preparation, 'public static function documentedRemovedTags()', 'Perfil deve manter a lista auditável de tags removidas.'],
     [$preparation, 'instanceSanitizationProfile()', 'Transferência deve aplicar sanitização por instância.'],
     [$preparation, 'sanitizeInstance((string) $instanceId', 'Instância deve ser sanitizada antes do upload ao repositório.'],
+    [$preparation, "'PatientName' => 'ANONYMOUS'", 'Perfil deve substituir o nome por valor neutro.'],
+    [$preparation, "'PatientID' => 'PORTAL-ANON'", 'Perfil deve substituir o identificador do paciente por valor neutro.'],
     [$orthancClient, 'public function sanitizeInstance', 'Cliente privado deve suportar sanitização sem persistência.'],
     [$preparation, "'PatientName', 'PatientID'", 'Lista auditável deve incluir identificadores diretos do paciente.'],
     [$reportService, 'enqueueReleasedReport($reportId)', 'Cópia deve ser enfileirada após laudo liberado.'],
