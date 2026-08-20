@@ -8,6 +8,8 @@ use App\Core\Controller;
 use App\Core\Logger;
 use App\Core\PatientPortalSession;
 use App\Services\PatientPortalService;
+use App\Services\PortalShareService;
+use App\Services\ReportPdfService;
 
 final class PatientPortalController extends Controller
 {
@@ -94,6 +96,85 @@ final class PatientPortalController extends Controller
         // o escopo de paciente através de sessão e valida o mesmo token novamente.
         $_GET['portal_patient_token'] = $token;
         (new ReportsController())->pdfByToken($token);
+    }
+
+    public function images(string $token): void
+    {
+        $service = new PatientPortalService();
+        $scope = $service->activeScope($this->ip());
+        if ($scope === null || !$service->releasedReportByToken($token, $scope)) {
+            http_response_code(404);
+            echo 'Exame não encontrado.';
+            return;
+        }
+
+        $enabled = filter_var(getenv('PORTAL_IMAGES_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        $anonymized = filter_var(getenv('PORTAL_IMAGES_ANONYMIZED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        if (!$enabled || !$anonymized) {
+            $this->view('portal/images_unavailable', [
+                'csrf' => $this->csrfToken(),
+                'patientName' => $this->displayName((string) $scope['patient_name_normalized']),
+            ], 'portal');
+            return;
+        }
+
+        // A ativação exige que o gateway DICOMweb aplique sessão/token e entregue
+        // somente imagens anonimizadas. Sem ambos os controles, o botão permanece bloqueado.
+        http_response_code(503);
+        echo 'A visualização de imagens ainda não está disponível neste ambiente.';
+    }
+
+    public function share(string $token): void
+    {
+        if (!$this->validCsrf((string) ($_POST['csrf'] ?? ''))) {
+            $this->json(['ok' => false, 'msg' => 'Sessão inválida. Atualize a página e tente novamente.'], 403);
+            return;
+        }
+        $portal = new PatientPortalService();
+        $scope = $portal->activeScope($this->ip());
+        if ($scope === null || !$portal->releasedReportByToken($token, $scope)) {
+            $this->json(['ok' => false, 'msg' => 'Laudo não encontrado ou não disponível para compartilhamento.'], 404);
+            return;
+        }
+
+        try {
+            $channel = (string) ($_POST['channel'] ?? '');
+            $share = new PortalShareService();
+            if ($channel === 'whatsapp') {
+                $result = $share->createWhatsappLink($token, $scope, (string) ($_POST['phone'] ?? ''), $this->ip());
+                $this->json(['ok' => true, 'action' => 'whatsapp', 'url' => $result['whatsapp_url'], 'expires_at' => $result['expires_at']]);
+                return;
+            }
+            if ($channel === 'email') {
+                $result = $share->sendEmail($token, $scope, (string) ($_POST['email'] ?? ''), $this->ip());
+                $this->json(['ok' => true, 'action' => 'email', 'expires_at' => $result['expires_at']]);
+                return;
+            }
+            $this->json(['ok' => false, 'msg' => 'Canal de compartilhamento inválido.'], 422);
+        } catch (\DomainException $e) {
+            $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Logger::error('PatientPortalController::share falhou', ['error' => $e->getMessage(), 'ip' => $this->ip()]);
+            $this->json(['ok' => false, 'msg' => 'Não foi possível concluir o compartilhamento agora.'], 500);
+        }
+    }
+
+    public function sharedPdf(string $token): void
+    {
+        $share = new PortalShareService();
+        $report = $share->sharedReportByToken($token);
+        if ($report === null) {
+            http_response_code(404);
+            echo 'Link expirado ou inválido.';
+            return;
+        }
+        try {
+            (new ReportPdfService())->stream((object) $report['study'], (object) $report['report']);
+        } catch (\Throwable $e) {
+            Logger::error('PatientPortalController::sharedPdf falhou', ['error' => $e->getMessage()]);
+            http_response_code(500);
+            echo 'Não foi possível gerar o laudo compartilhado.';
+        }
     }
 
     public function logout(): void

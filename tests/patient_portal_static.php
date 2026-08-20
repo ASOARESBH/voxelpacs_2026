@@ -42,7 +42,7 @@ $expect(str_contains($source['service'], "report_status'] ?? '') === 'liberado'"
 $expect(!str_contains($source['results'], 'estudo_id') && str_contains($source['results'], '/laudo/'), 'View do Portal expõe ID sequencial de estudo ou não usa rota opaca de laudo.');
 $expect(str_contains($source['reports'], 'releasedReportByToken') && str_contains($source['reports'], 'portal_patient_pdf') && str_contains($source['reports'], "'portalPatientPdf' => \$portalPatientPdf"), 'Renderer existente de PDF não valida escopo de paciente antes de servir o laudo.');
 $expect(str_contains($source['pdf_view'], '$portalPatientPdf = !empty($portalPatientPdf)') && str_contains($source['pdf_moderno'], 'if (!$portalPatientPdf)'), 'Template de PDF ainda expõe a navegação interna da Worklist no Portal público.');
-$expect(!str_contains($source['routes'], 'viewer') && !str_contains($source['results'], 'Ver imagens'), 'Fase inicial do Portal expõe visualizador de imagens sem ponte de sessão validada.');
+$expect(str_contains($source['routes'], "Router::get('/imagens/{token}'") && str_contains($source['results'], 'Ver imagens') && str_contains($source['controller'], 'PORTAL_IMAGES_ANONYMIZED') && str_contains($source['controller'], 'releasedReportByToken'), 'Visualização de imagens não está protegida por sessão, token opaco e anonimização explícita.');
 $expect(str_contains($source['login'], 'nome_completo') && str_contains($source['login'], 'data_nascimento') && str_contains($source['login'], 'name="sexo"'), 'Formulário inicial não contém os três campos de identidade especificados.');
 $expect(str_contains($source['challenge'], 'challenge_token') && str_contains($source['challenge'], 'institution_name'), 'Desafio institucional não preserva token opaco e opção selecionada.');
 
