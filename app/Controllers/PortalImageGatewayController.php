@@ -69,6 +69,7 @@ final class PortalImageGatewayController extends Controller
             header('Referrer-Policy: no-referrer');
             header('Cross-Origin-Resource-Policy: same-origin');
             echo $response['body'];
+            exit;
         } catch (Throwable $e) {
             Logger::error('PortalImageGatewayController: falha controlada', ['error' => $e->getMessage()]);
             $this->deny(503, 'gateway_unavailable');
@@ -99,5 +100,6 @@ final class PortalImageGatewayController extends Controller
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => false, 'error' => 'imagem_indisponivel']);
         Logger::warning('PortalImageGatewayController: acesso negado', ['reason' => $reason, 'ip' => $this->ip()]);
+        exit;
     }
 }
