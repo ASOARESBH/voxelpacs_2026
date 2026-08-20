@@ -55,18 +55,20 @@ final class PortalImageReviewController extends Controller
 
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare(
-                "UPDATE bi_portal_anonymized_studies
-                 SET pixel_review_status = :decision,
-                     pixel_reviewed_at = NOW(),
-                     pixel_reviewed_by = :reviewer,
-                     state = CASE WHEN :decision = 'rejected' THEN 'failed' ELSE state END,
-                     failure_code = CASE WHEN :decision = 'rejected' THEN 'pixel_review_rejected' ELSE NULL END,
-                     updated_at = NOW()
-                 WHERE id = :id AND tenant_id = :tenant_id"
-            );
+            // Consultas separadas evitam inferência ambígua de tipo no PostgreSQL e
+            // mantêm a atualização compatível com o banco legado MySQL/MariaDB.
+            $sql = $decision === 'rejected'
+                ? "UPDATE bi_portal_anonymized_studies
+                   SET pixel_review_status = 'rejected', pixel_reviewed_at = NOW(),
+                       pixel_reviewed_by = :reviewer, state = 'failed',
+                       failure_code = 'pixel_review_rejected', updated_at = NOW()
+                   WHERE id = :id AND tenant_id = :tenant_id"
+                : "UPDATE bi_portal_anonymized_studies
+                   SET pixel_review_status = 'approved', pixel_reviewed_at = NOW(),
+                       pixel_reviewed_by = :reviewer, failure_code = NULL, updated_at = NOW()
+                   WHERE id = :id AND tenant_id = :tenant_id";
+            $stmt = $pdo->prepare($sql);
             $stmt->execute([
-                'decision' => $decision,
                 'reviewer' => (int) Auth::userId(),
                 'id' => $copyId,
                 'tenant_id' => $tenantId,

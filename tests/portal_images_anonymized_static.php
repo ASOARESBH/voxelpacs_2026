@@ -82,6 +82,8 @@ $expectations = [
     [$review, '], $tenantId);', 'Auditoria administrativa deve receber o tenant explícito.'],
     [$review, 'failure_code', 'Revisão deve usar a coluna de falha existente na cópia anonimizada.'],
     [$review, "'approved', 'rejected'", 'Revisão deve aceitar somente decisões explícitas.'],
+    [$review, "pixel_review_status = 'approved'", 'Aprovação deve usar comando SQL sem parâmetro de tipo ambíguo.'],
+    [$review, "pixel_review_status = 'rejected'", 'Rejeição deve usar comando SQL sem parâmetro de tipo ambíguo.'],
     [$pg, 'bi_portal_anonymized_studies', 'Migration PostgreSQL das cópias anonimizadas ausente.'],
     [$pg, "pixel_review_status", 'Migration PostgreSQL deve bloquear cópia sem revisão de pixels.'],
     [$mysql, 'DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci', 'Migration MySQL deve manter compatibilidade HostGator.'],
