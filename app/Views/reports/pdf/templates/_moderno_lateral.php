@@ -87,6 +87,18 @@ $registroEmpresaNumero = trim((string) ($r['registro_crm_numero'] ?? ''));
 $registroEmpresa = $registroEmpresaNumero === '' ? '' : 'CRM' . ($registroEmpresaUf !== '' ? '-' . $registroEmpresaUf : '') . ' ' . $registroEmpresaNumero;
 $assinadoEmBrasilia = $formatarDataHoraBrasilia($r['assinado_em'] ?? null);
 $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
+
+// O rodapé identifica a unidade que efetivamente realizou o exame. Dados vazios
+// não geram separadores soltos nem substituem a identificação da empresa médica.
+$unidadeCnpj = $formatarCnpj($r['unidade_cnpj'] ?? null);
+$unidadeTelefone = trim((string) ($r['unidade_telefone'] ?? ''));
+$unidadeEnderecoPartes = array_filter([
+    trim((string) ($r['unidade_logradouro'] ?? '') . (($r['unidade_numero'] ?? '') !== '' ? ', ' . $r['unidade_numero'] : '')),
+    trim((string) ($r['unidade_complemento'] ?? '')),
+    trim((string) ($r['unidade_bairro'] ?? '')),
+    trim((string) ($r['unidade_cidade'] ?? '') . (($r['unidade_estado'] ?? '') !== '' ? '/' . $r['unidade_estado'] : '')),
+]);
+$unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -153,7 +165,9 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
         .pdf-company-label { font-weight: 700; }
         .pdf-hash { max-width: 490px; margin: 3px auto 0; color: #737373; font-size: 6.5px; line-height: 1.25; overflow-wrap: anywhere; }
 
-        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; text-align: center; }
+        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; line-height: 1.45; text-align: center; }
+        .pdf-footer-name { color: #404040; font-weight: 700; }
+        .pdf-footer-details { margin-top: 2px; }
 
         @media (max-width: 680px) {
             .pdf-page { min-height: 0; margin: 0; padding: 22px; box-shadow: none; }
@@ -270,8 +284,17 @@ $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
             </div>
         </section>
 
-        <footer class="pdf-footer">
-            <?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?> · Laudo médico digital
+        <footer class="pdf-footer" aria-label="Identificação da unidade">
+            <div class="pdf-footer-name"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+            <?php if ($unidadeCnpj !== '' || $unidadeTelefone !== '' || $unidadeEndereco !== ''): ?>
+                <div class="pdf-footer-details">
+                    <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= htmlspecialchars($unidadeCnpj, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeCnpj !== '' && ($unidadeTelefone !== '' || $unidadeEndereco !== '')): ?> · <?php endif; ?>
+                    <?php if ($unidadeTelefone !== ''): ?>Telefone <?= htmlspecialchars($unidadeTelefone, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeTelefone !== '' && $unidadeEndereco !== ''): ?> · <?php endif; ?>
+                    <?php if ($unidadeEndereco !== ''): ?><?= htmlspecialchars($unidadeEndereco, ENT_QUOTES) ?><?php endif; ?>
+                </div>
+            <?php endif; ?>
         </footer>
     </main>
 

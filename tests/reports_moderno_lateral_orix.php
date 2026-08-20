@@ -48,6 +48,10 @@ foreach ([
     'horário de Brasília',
     'pdf-company-details',
     'registro_crm_numero',
+    'unidade_cnpj',
+    'unidade_telefone',
+    'unidade_logradouro',
+    'pdf-footer-details',
 ] as $required) {
     modernContains($source, $required, "Template Moderno Lateral não contém o elemento obrigatório: {$required}");
 }
@@ -65,6 +69,14 @@ $r = [
     'registro_crm_uf' => 'SP',
     'registro_crm_numero' => '1.045.798',
     'unidade_logo_path' => 'uploads/unidades/orix-logo.png',
+    'unidade_cnpj' => '07679915000114',
+    'unidade_telefone' => '(34) 3251-7788',
+    'unidade_logradouro' => 'Vereador Waldomiro Bueno',
+    'unidade_numero' => '130',
+    'unidade_complemento' => 'Sala 04',
+    'unidade_bairro' => 'São Benedito',
+    'unidade_cidade' => 'Cambuí',
+    'unidade_estado' => 'MG',
     'patient_birth_date' => '1975-11-05',
     'patient_id' => '26175694',
     'study_date' => '2026-08-14',
@@ -109,6 +121,9 @@ foreach ([
     'ORIX TELERRADIOLOGIA LTDA',
     'CNPJ 65.757.819/0001-43',
     'CRM-SP 1.045.798',
+    'CNPJ 07.679.915/0001-14',
+    'Telefone (34) 3251-7788',
+    'Vereador Waldomiro Bueno, 130 — Sala 04 — São Benedito — Cambuí/MG',
 ] as $expected) {
     modernContains($html, $expected, "Renderização Orix não contém: {$expected}");
 }

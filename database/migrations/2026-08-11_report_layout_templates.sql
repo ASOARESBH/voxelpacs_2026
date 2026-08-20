@@ -46,11 +46,11 @@ INSERT IGNORE INTO `report_layout_templates` (`codigo`, `nome`, `descricao`, `or
     ('classico_centralizado', 'Clássico Centralizado',
      'Logo centralizada, corpo justificado à esquerda, assinatura centralizada. Layout padrão do sistema.', 1),
     ('moderno_lateral', 'Moderno Lateral',
-     'Logo à esquerda, corpo centralizado, rodapé minimalista (nome e CNPJ).', 2),
+     'Logo à esquerda, corpo centralizado, rodapé com nome, CNPJ, telefone e endereço da unidade.', 2),
     ('corporativo_faixa', 'Corporativo com Faixa',
      'Faixa de topo colorida com logo e dados da instituição lado a lado, seções com subtítulos em negrito, assinatura à direita.', 3),
     ('minimalista', 'Minimalista',
-     'Cabeçalho em texto (sem logo), espaçamento generoso, rodapé discreto — para unidades sem arte gráfica pronta.', 4);
+     'Cabeçalho em texto (sem logo), espaçamento generoso e rodapé com dados institucionais — para unidades sem arte gráfica pronta.', 4);
 
 -- -----------------------------------------------------------------------------
 -- 2) bi_unidades.report_layout_template_id — template ativo da unidade.

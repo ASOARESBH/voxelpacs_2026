@@ -9,6 +9,20 @@
  * Variáveis recebidas do dispatcher (reports/pdf.php): $r, $paciente, $download.
  */
 $unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['tenant_nome'] ?? 'Clínica';
+$formatarCnpj = static function (?string $valor): string {
+    $digitos = preg_replace('/\\D/', '', (string) $valor) ?? '';
+    if (strlen($digitos) !== 14) return trim((string) $valor);
+    return substr($digitos, 0, 2) . '.' . substr($digitos, 2, 3) . '.' . substr($digitos, 5, 3) . '/' . substr($digitos, 8, 4) . '-' . substr($digitos, 12, 2);
+};
+$unidadeCnpj = $formatarCnpj($r['unidade_cnpj'] ?? null);
+$unidadeTelefone = trim((string) ($r['unidade_telefone'] ?? ''));
+$unidadeEnderecoPartes = array_filter([
+    trim((string) ($r['unidade_logradouro'] ?? '') . (($r['unidade_numero'] ?? '') !== '' ? ', ' . $r['unidade_numero'] : '')),
+    trim((string) ($r['unidade_complemento'] ?? '')),
+    trim((string) ($r['unidade_bairro'] ?? '')),
+    trim((string) ($r['unidade_cidade'] ?? '') . (($r['unidade_estado'] ?? '') !== '' ? '/' . $r['unidade_estado'] : '')),
+]);
+$unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -42,7 +56,9 @@ $unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['
         .pdf-sig-info span { color: #777; }
         .pdf-hash { font-size: .62rem; color: #bbb; word-break: break-all; margin-top: .4rem; }
 
-        .pdf-footer { margin-top: 2rem; font-size: .65rem; color: #aaa; text-align: center; }
+        .pdf-footer { margin-top: 2rem; font-size: .65rem; color: #aaa; line-height: 1.45; text-align: center; }
+        .pdf-footer-name { color: #666; font-weight: 700; }
+        .pdf-footer-details { margin-top: .2rem; }
 
         .pdf-actions { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
         .pdf-actions button, .pdf-actions a {
@@ -105,9 +121,18 @@ $unidadeNome = $r['unidade_nome_fantasia'] ?? $r['unidade_razao_social'] ?? $r['
         </div>
     </div>
 
-    <div class="pdf-footer">
-        <?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?> — Laudo <?= (int)($r['id'] ?? 0) ?>
-    </div>
+    <footer class="pdf-footer" aria-label="Identificação da unidade">
+        <div class="pdf-footer-name"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+        <?php if ($unidadeCnpj !== '' || $unidadeTelefone !== '' || $unidadeEndereco !== ''): ?>
+            <div class="pdf-footer-details">
+                <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= htmlspecialchars($unidadeCnpj, ENT_QUOTES) ?><?php endif; ?>
+                <?php if ($unidadeCnpj !== '' && ($unidadeTelefone !== '' || $unidadeEndereco !== '')): ?> · <?php endif; ?>
+                <?php if ($unidadeTelefone !== ''): ?>Telefone <?= htmlspecialchars($unidadeTelefone, ENT_QUOTES) ?><?php endif; ?>
+                <?php if ($unidadeTelefone !== '' && $unidadeEndereco !== ''): ?> · <?php endif; ?>
+                <?php if ($unidadeEndereco !== ''): ?><?= htmlspecialchars($unidadeEndereco, ENT_QUOTES) ?><?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </footer>
 
 </div>
 <?php if ($download): ?>
