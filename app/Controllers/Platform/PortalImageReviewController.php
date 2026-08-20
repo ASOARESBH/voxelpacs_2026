@@ -77,7 +77,7 @@ final class PortalImageReviewController extends Controller
             AuditLogger::log('portal_images.pixel_review', 'bi_portal_anonymized_studies', $copyId, [
                 'tenant_id' => $tenantId,
                 'decision' => $decision,
-            ]);
+            ], $tenantId);
             $this->json(['success' => true, 'message' => $decision === 'approved' ? 'Cópia aprovada para homologação.' : 'Cópia rejeitada e bloqueada.']);
         } catch (Throwable $e) {
             Logger::error('PortalImageReviewController::review falhou', ['copy_id' => $copyId, 'error' => $e->getMessage()]);
@@ -120,7 +120,7 @@ final class PortalImageReviewController extends Controller
                 return;
             }
             $png = $client->previewInstance($instanceId);
-            AuditLogger::log('portal_images.pixel_preview', 'bi_portal_anonymized_studies', $copyId, ['tenant_id' => $tenantId]);
+            AuditLogger::log('portal_images.pixel_preview', 'bi_portal_anonymized_studies', $copyId, ['tenant_id' => $tenantId], $tenantId);
             header('Content-Type: image/png');
             header('Cache-Control: no-store, private');
             header('X-Content-Type-Options: nosniff');
@@ -129,6 +129,12 @@ final class PortalImageReviewController extends Controller
             Logger::error('PortalImageReviewController::preview falhou', ['copy_id' => $copyId, 'error' => $e->getMessage()]);
             http_response_code(404);
         }
+    }
+
+    private function validCsrf(): bool
+    {
+        $submitted = (string) ($_POST['csrf_token'] ?? '');
+        return $submitted !== '' && hash_equals($this->csrfToken(), $submitted);
     }
 
     private function isPlatformAdmin(): bool
