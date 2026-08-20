@@ -8,6 +8,7 @@ use App\Core\Audit\AuditLogger;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\PatientPortalSession;
+use App\Core\SqlHelper;
 use PDO;
 
 final class PatientPortalService
@@ -45,10 +46,11 @@ final class PatientPortalService
         $rawToken = bin2hex(random_bytes(24));
         $tokenHash = hash('sha256', $rawToken);
 
+        $challengeExpiry = SqlHelper::futureTimestamp('MINUTE', self::CHALLENGE_MINUTES);
         $stmt = $this->pdo->prepare(
             'INSERT INTO bi_portal_challenges
              (token_hash, identity_hash, tenant_id, institution_name, options_json, ip_address, expires_at)
-             VALUES (:token_hash, :identity_hash, :tenant_id, :institution_name, :options_json, :ip_address, DATE_ADD(NOW(), INTERVAL ' . self::CHALLENGE_MINUTES . ' MINUTE))'
+             VALUES (:token_hash, :identity_hash, :tenant_id, :institution_name, :options_json, :ip_address, ' . $challengeExpiry . ')'
         );
         $stmt->execute([
             'token_hash' => $tokenHash,
@@ -98,10 +100,11 @@ final class PatientPortalService
 
         $sessionToken = bin2hex(random_bytes(32));
         $sessionHash = hash('sha256', $sessionToken);
+        $sessionExpiry = SqlHelper::futureTimestamp('MINUTE', self::SESSION_MINUTES);
         $insert = $this->pdo->prepare(
             'INSERT INTO bi_portal_sessions
              (token_hash, identity_hash, tenant_id, institution_name, ip_address, last_seen_at, expires_at)
-             VALUES (:token_hash, :identity_hash, :tenant_id, :institution_name, :ip_address, NOW(), DATE_ADD(NOW(), INTERVAL ' . self::SESSION_MINUTES . ' MINUTE))'
+             VALUES (:token_hash, :identity_hash, :tenant_id, :institution_name, :ip_address, NOW(), ' . $sessionExpiry . ')'
         );
         $insert->execute([
             'token_hash' => $sessionHash,
@@ -138,7 +141,8 @@ final class PatientPortalService
             PatientPortalSession::destroy();
             return null;
         }
-        $this->pdo->prepare('UPDATE bi_portal_sessions SET last_seen_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ' . self::SESSION_MINUTES . ' MINUTE) WHERE token_hash = :token_hash')
+        $sessionExpiry = SqlHelper::futureTimestamp('MINUTE', self::SESSION_MINUTES);
+        $this->pdo->prepare('UPDATE bi_portal_sessions SET last_seen_at = NOW(), expires_at = ' . $sessionExpiry . ' WHERE token_hash = :token_hash')
             ->execute(['token_hash' => hash('sha256', (string) $scope['database_token'])]);
         return $scope;
     }
@@ -246,11 +250,13 @@ final class PatientPortalService
     private function buildOptions(?string $correct, array $matches): array
     {
         $excluded = array_map(static fn(array $row): string => $row['institution_name'], $matches);
-        $sql = "SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE institution_name IS NOT NULL AND TRIM(institution_name) <> ''";
+        $where = "institution_name IS NOT NULL AND TRIM(institution_name) <> ''";
         if ($excluded) {
-            $sql .= ' AND institution_name NOT IN (' . implode(',', array_fill(0, count($excluded), '?')) . ')';
+            $where .= ' AND institution_name NOT IN (' . implode(',', array_fill(0, count($excluded), '?')) . ')';
         }
-        $sql .= ' ORDER BY RAND() LIMIT 12';
+        $sql = SqlHelper::isPostgres()
+            ? 'SELECT institution_name FROM (SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE ' . $where . ') AS portal_institutions ORDER BY RANDOM() LIMIT 12'
+            : 'SELECT DISTINCT institution_name FROM bi_pacs_estudos WHERE ' . $where . ' ORDER BY RAND() LIMIT 12';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($excluded);
         $distractors = [];
@@ -313,25 +319,27 @@ final class PatientPortalService
     private function recordAttempt(string $ip, string $identityHash, int $stage, bool $success, string $userAgent, bool $evaluateLimit = true): void
     {
         try {
+            $failureWindowStart = SqlHelper::isPostgres()
+                ? "NOW() - INTERVAL '" . self::FAILURE_WINDOW_MINUTES . " minutes'"
+                : 'DATE_SUB(NOW(), INTERVAL ' . self::FAILURE_WINDOW_MINUTES . ' MINUTE)';
             $countStmt = $this->pdo->prepare(
                 'SELECT COUNT(*) FROM bi_portal_login_attempts
-                 WHERE sucesso = 0 AND created_at >= DATE_SUB(NOW(), INTERVAL ' . self::FAILURE_WINDOW_MINUTES . ' MINUTE)
+                 WHERE sucesso = 0 AND created_at >= ' . $failureWindowStart . '
                    AND (ip_address = :ip_address OR identity_hash = :identity_hash)'
             );
             $countStmt->execute(['ip_address' => $ip, 'identity_hash' => $identityHash]);
             $previousFailures = (int) $countStmt->fetchColumn();
-            $blockedUntil = ($evaluateLimit && !$success && ($previousFailures + 1) >= self::FAILURE_LIMIT)
-                ? date('Y-m-d H:i:s', time() + self::BLOCK_MINUTES * 60) : null;
+            $shouldBlock = $evaluateLimit && !$success && ($previousFailures + 1) >= self::FAILURE_LIMIT;
+            $blockedUntil = $shouldBlock ? SqlHelper::futureTimestamp('MINUTE', self::BLOCK_MINUTES) : 'NULL';
             $stmt = $this->pdo->prepare(
                 'INSERT INTO bi_portal_login_attempts (ip_address, identity_hash, etapa, sucesso, blocked_until, user_agent)
-                 VALUES (:ip_address, :identity_hash, :etapa, :sucesso, :blocked_until, :user_agent)'
+                 VALUES (:ip_address, :identity_hash, :etapa, :sucesso, ' . $blockedUntil . ', :user_agent)'
             );
             $stmt->execute([
                 'ip_address' => $ip,
                 'identity_hash' => $identityHash,
                 'etapa' => $stage,
                 'sucesso' => $success ? 1 : 0,
-                'blocked_until' => $blockedUntil,
                 'user_agent' => mb_substr($userAgent, 0, 255),
             ]);
         } catch (\Throwable $e) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 $files = [
     'migration' => 'database/migrations/2026-08-16_portal_resultados_pacientes.sql',
+    'postgres_migration' => 'database/migrations/2026-08-20_portal_resultados_pacientes_postgresql.sql',
     'host' => 'app/Core/PortalHost.php',
     'session' => 'app/Core/PatientPortalSession.php',
     'service' => 'app/Services/PatientPortalService.php',
@@ -26,11 +27,13 @@ foreach ($files as $name => $relative) {
 $failures = [];
 $expect = static function (bool $condition, string $message) use (&$failures): void { if (!$condition) $failures[] = $message; };
 
-$expect(str_contains($source['migration'], 'bi_portal_login_attempts') && str_contains($source['migration'], 'bi_portal_challenges') && str_contains($source['migration'], 'bi_portal_sessions'), 'Migration do Portal não cria estruturas isoladas de tentativa, desafio e sessão.');
+$expect(str_contains($source['migration'], 'bi_portal_login_attempts') && str_contains($source['migration'], 'bi_portal_challenges') && str_contains($source['migration'], 'bi_portal_sessions'), 'Migration MySQL do Portal não cria estruturas isoladas de tentativa, desafio e sessão.');
+$expect(str_contains($source['postgres_migration'], 'CREATE TABLE IF NOT EXISTS bi_portal_login_attempts') && str_contains($source['postgres_migration'], 'TIMESTAMPTZ') && str_contains($source['postgres_migration'], 'CREATE INDEX IF NOT EXISTS'), 'Migration PostgreSQL do Portal não está idempotente ou não preserva expiração com fuso horário.');
 $expect(!str_contains($source['migration'], 'patient_name_normalized'), 'Migration persiste nome normalizado fora da sessão PHP, contrariando minimização de dados.');
 $expect(str_contains($source['host'], 'portal.voxelpacs.com.br') && str_contains($source['index'], 'PortalHost::isPortal()'), 'Subdomínio do Portal não é separado do despacho interno por host.');
 $expect(str_contains($source['router'], 'if (PortalHost::isPortal()) return true'), 'Router ainda força autenticação interna no host do Portal.');
 $expect(str_contains($source['service'], 'FAILURE_LIMIT = 5') && str_contains($source['service'], 'BLOCK_MINUTES = 5') && str_contains($source['service'], 'FAILURE_WINDOW_MINUTES = 15'), 'Rate limit aprovado não está configurado no serviço.');
+$expect(str_contains($source['service'], 'SqlHelper::futureTimestamp') && str_contains($source['service'], 'RANDOM()') && str_contains($source['service'], 'DATE_SUB(NOW()'), 'Portal não mantém as expressões temporais e de seleção compatíveis com PostgreSQL e MySQL.');
 $expect(str_contains($source['service'], 'buildOptions') && str_contains($source['service'], 'Sem correspondência, todas as opções são') && str_contains($source['service'], 'shuffle($options)'), 'Etapa obrigatória de instituição não protege contra oracle de existência.');
 $expect(str_contains($source['service'], "report_status'] ?? '') === 'liberado'") && str_contains($source['service'], 'public_token'), 'Histórico do Portal não restringe abertura a laudos liberados com token opaco.');
 $expect(!str_contains($source['results'], 'estudo_id') && str_contains($source['results'], '/laudo/'), 'View do Portal expõe ID sequencial de estudo ou não usa rota opaca de laudo.');
