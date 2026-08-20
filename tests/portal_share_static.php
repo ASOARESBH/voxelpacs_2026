@@ -10,6 +10,7 @@ $files = [
     'routes/portal.php',
     'public/assets/js/portal-share.js',
     'database/migrations/2026-08-20_portal_resultados_compartilhamento_postgresql.sql',
+    'database/migrations/2026-08-20_portal_resultados_compartilhamento_mysql.sql',
 ];
 foreach ($files as $file) {
     if (!is_file($root . '/' . $file)) {
@@ -23,11 +24,15 @@ $controller = file_get_contents($root . '/app/Controllers/PatientPortalControlle
 $view = file_get_contents($root . '/app/Views/portal/results.php') ?: '';
 $routes = file_get_contents($root . '/routes/portal.php') ?: '';
 $migration = file_get_contents($root . '/database/migrations/2026-08-20_portal_resultados_compartilhamento_postgresql.sql') ?: '';
+$mysqlMigration = file_get_contents($root . '/database/migrations/2026-08-20_portal_resultados_compartilhamento_mysql.sql') ?: '';
 
 $expectations = [
     [$service, 'hash(\'sha256\', $rawToken)', 'Tokens de compartilhamento devem ser persistidos como hash.'],
     [$service, 'LINK_HOURS = 24', 'Links de compartilhamento devem expirar.'],
     [$service, 'recipient_hint', 'Destinatários devem ser mascarados para auditoria.'],
+    [$service, 'SqlHelper::isPostgres()', 'O compartilhamento deve selecionar a sintaxe conforme o banco.'],
+    [$mysqlMigration, 'bi_portal_share_links', 'Migration MySQL da trilha de compartilhamento ausente.'],
+    [$mysqlMigration, 'DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci', 'Migration MySQL deve preservar o charset do HostGator.'],
     [$controller, 'PORTAL_IMAGES_ANONYMIZED', 'Imagens do Portal devem exigir anonimização explícita.'],
     [$controller, 'validCsrf', 'Compartilhamento deve exigir CSRF.'],
     [$view, 'Ver imagens', 'Ação de imagens deve estar disponível na interface.'],

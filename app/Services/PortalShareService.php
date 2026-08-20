@@ -98,6 +98,7 @@ final class PortalShareService
         if (!preg_match('/^[a-f0-9]{64}$/i', $rawToken)) {
             return null;
         }
+        $situacaoLiberada = SqlHelper::isPostgres() ? 'CAST(r.situacao AS TEXT)' : 'r.situacao';
         $stmt = $this->pdo->prepare(
             "SELECT r.*, e.*,
                     r.id AS report_id, e.id AS estudo_id,
@@ -108,7 +109,7 @@ final class PortalShareService
              WHERE s.token_hash = :token_hash
                AND s.revoked_at IS NULL
                AND s.expires_at > NOW()
-               AND CAST(r.situacao AS TEXT) = 'liberado'
+               AND {$situacaoLiberada} = 'liberado'
              LIMIT 1"
         );
         $stmt->execute(['token_hash' => hash('sha256', $rawToken)]);
@@ -138,23 +139,32 @@ final class PortalShareService
 
         $rawToken = bin2hex(random_bytes(32));
         $expiresSql = SqlHelper::futureTimestamp('HOUR', self::LINK_HOURS);
-        $insert = $this->pdo->prepare(
-            'INSERT INTO bi_portal_share_links
+        $tokenHash = hash('sha256', $rawToken);
+        $sql = 'INSERT INTO bi_portal_share_links
                 (token_hash, report_id, tenant_id, channel, recipient_hint, creator_identity_hash, ip_address, expires_at)
              VALUES
-                (:token_hash, :report_id, :tenant_id, :channel, :recipient_hint, :identity_hash, :ip_address, ' . $expiresSql . ')
-             RETURNING expires_at'
-        );
-        $insert->execute([
-            'token_hash' => hash('sha256', $rawToken),
+                (:token_hash, :report_id, :tenant_id, :channel, :recipient_hint, :identity_hash, :ip_address, ' . $expiresSql . ')';
+        if (SqlHelper::isPostgres()) {
+            $sql .= ' RETURNING expires_at';
+        }
+        $insert = $this->pdo->prepare($sql);
+        $params = [
+            'token_hash' => $tokenHash,
             'report_id' => (int) $report['report_id'],
             'tenant_id' => (int) $scope['tenant_id'],
             'channel' => $channel,
             'recipient_hint' => $recipientHint,
             'identity_hash' => (string) $scope['identity_hash'],
             'ip_address' => $ip,
-        ]);
-        $expiresAt = (string) $insert->fetchColumn();
+        ];
+        $insert->execute($params);
+        if (SqlHelper::isPostgres()) {
+            $expiresAt = (string) $insert->fetchColumn();
+        } else {
+            $expiry = $this->pdo->prepare('SELECT expires_at FROM bi_portal_share_links WHERE token_hash = :token_hash LIMIT 1');
+            $expiry->execute(['token_hash' => $tokenHash]);
+            $expiresAt = (string) $expiry->fetchColumn();
+        }
         $url = PortalHost::baseUrl() . '/compartilhado/' . $rawToken;
 
         $this->audit('portal.compartilhamento_criado', (int) $report['report_id'], $scope, [
