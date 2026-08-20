@@ -31,6 +31,46 @@ window.VoxelReports.main = (function () {
         window.open(pdfUrl, 'voxel-laudo-pdf');
     }
 
+    function editorHasClinicalContent() {
+        const quill = window.VoxelReports.editor?.getQuill?.();
+        return String(quill?.getText?.() || '').trim() !== '';
+    }
+
+    function updatePdfActions() {
+        const hasContent = editorHasClinicalContent();
+        const message = 'Digite o laudo ou aplique uma máscara antes de imprimir ou visualizar o PDF.';
+
+        ['btn-view-pdf', 'btn-print'].forEach((id) => {
+            const button = document.getElementById(id);
+            if (!button) return;
+            button.disabled = !hasContent;
+            button.setAttribute('aria-disabled', hasContent ? 'false' : 'true');
+            button.title = hasContent ? (id === 'btn-print' ? 'Imprimir' : 'Visualizar PDF') : message;
+        });
+    }
+
+    function openPdfWhenContentIsSaved(config, pdfUrl) {
+        if (!editorHasClinicalContent()) {
+            updatePdfActions();
+            alert('Digite o laudo ou aplique uma máscara antes de imprimir ou visualizar o PDF.');
+            return;
+        }
+
+        // Para o médico em edição, garante que o texto recém-digitado esteja no
+        // servidor antes de a nova aba buscar o PDF protegido pelo token opaco.
+        if (config.readonly) {
+            openSecurePdf(pdfUrl);
+            return;
+        }
+        window.VoxelReports.autosave.save('rascunho').then((data) => {
+            if (!data?.ok) {
+                alert(data?.msg || 'Não foi possível salvar o laudo antes de gerar o PDF.');
+                return;
+            }
+            openSecurePdf(pdfUrl);
+        });
+    }
+
     function wireTopButtons(config) {
         // PDF e impressão usam exclusivamente o token opaco do report. Nunca
         // reconstituir a URL a partir de reportId, que é identificador interno.
@@ -38,10 +78,14 @@ window.VoxelReports.main = (function () {
             ? `/reports/r/${encodeURIComponent(config.reportToken)}/pdf`
             : null;
         const btnViewPdf = document.getElementById('btn-view-pdf');
-        if (btnViewPdf) btnViewPdf.addEventListener('click', () => openSecurePdf(pdfUrl));
+        if (btnViewPdf) btnViewPdf.addEventListener('click', () => openPdfWhenContentIsSaved(config, pdfUrl));
 
         const btnPrint = document.getElementById('btn-print');
-        if (btnPrint) btnPrint.addEventListener('click', () => openSecurePdf(pdfUrl));
+        if (btnPrint) btnPrint.addEventListener('click', () => openPdfWhenContentIsSaved(config, pdfUrl));
+
+        const quill = window.VoxelReports.editor?.getQuill?.();
+        if (quill) quill.on('text-change', updatePdfActions);
+        updatePdfActions();
 
         const btnViewer = document.getElementById('btn-open-viewer');
         if (btnViewer) btnViewer.addEventListener('click', () => window.open(`/estudos/${config.estudoId}/abrir`, '_blank'));

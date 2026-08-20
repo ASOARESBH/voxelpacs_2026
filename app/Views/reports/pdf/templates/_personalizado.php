@@ -10,20 +10,25 @@ if (!is_array($customTemplate)) {
     return;
 }
 
-$tituloPersonalizado = trim((string) ($tituloMascara ?? ''));
-if ($tituloPersonalizado === '') {
-    $tituloPersonalizado = trim((string) ($r['study_description'] ?? $r['modalities'] ?? 'Laudo Médico'));
+$tituloPersonalizado = '';
+if ($laudoPossuiConteudo) {
+    $tituloPersonalizado = trim((string) ($tituloMascara ?? ''));
+    if ($tituloPersonalizado === '') {
+        $tituloPersonalizado = trim((string) ($r['study_description'] ?? $r['modalities'] ?? 'Laudo Médico'));
+    }
 }
 $documento = (new \App\Services\ReportCustomTemplateService())
     ->renderReport($customTemplate, $r, (string) ($corpoLaudo ?? ''), $tituloPersonalizado);
 
 $token = rawurlencode((string) ($r['public_token'] ?? ''));
-$acoesItens = [
-    '<button type="button" onclick="window.print()">Imprimir</button>',
-    '<a href="/reports/r/' . $token . '/pdf?download=1">Baixar PDF</a>',
-];
+$acoesItens = [];
+if ($laudoPossuiConteudo) {
+    $acoesItens[] = '<button type="button" onclick="window.print()">Imprimir</button>';
+    $acoesItens[] = '<a href="/reports/r/' . $token . '/pdf?download=1">Baixar PDF</a>';
+}
 if (!$portalPatientPdf) {
-    $acoesItens[] = '<a href="/estudos">Voltar à Worklist</a>';
+    $returnUrl = htmlspecialchars($reportReturnUrl, ENT_QUOTES);
+    $acoesItens[] = '<a href="' . $returnUrl . '" data-voxel-voltar="' . $returnUrl . '">Voltar ao Laudário</a>';
 }
 $acoes = '<div class="voxel-custom-actions">'
     . implode('', $acoesItens)

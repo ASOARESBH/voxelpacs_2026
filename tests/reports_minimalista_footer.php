@@ -52,6 +52,7 @@ $paciente = 'Flavia Helena Barbosa';
 $corpoLaudo = '<p>Laudo clínico de teste.</p>';
 $download = false;
 $portalPatientPdf = false;
+$reportReturnUrl = '/reports/r/token-teste';
 
 ob_start();
 require $templatePath;

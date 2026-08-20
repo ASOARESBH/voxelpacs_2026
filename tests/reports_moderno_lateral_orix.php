@@ -97,6 +97,8 @@ $paciente = 'Maria José Alves';
 $corpoLaudo = '<p><strong>TÉCNICA:</strong><br>Aquisição volumétrica sem contraste.</p><p><strong>Impressão:</strong><br>Sem alterações significativas.</p>';
 $download = false;
 $portalPatientPdf = false;
+$laudoPossuiConteudo = true;
+$reportReturnUrl = '/reports/r/token-teste';
 
 ob_start();
 require $templatePath;

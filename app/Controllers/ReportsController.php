@@ -506,6 +506,23 @@ class ReportsController extends Controller
                 $data['mascara_conteudo_livre'] = trim((string) ($mascara['conteudo_livre'] ?? '')) !== '';
             }
 
+            // Modalidade, Study Description e título da Máscara identificam o exame,
+            // mas nunca constituem texto clínico. Sem conteúdo real, PDF, impressão
+            // e download devem permanecer indisponíveis para todos os perfis.
+            if (!\App\Services\ReportClinicalContentService::hasReportContent($data)) {
+                if ($portalPatientPdf) {
+                    http_response_code(404);
+                    echo 'Laudo indisponível.';
+                    return;
+                }
+
+                http_response_code(422);
+                $this->view('reports/pdf_empty', [
+                    'reportToken' => (string) ($data['public_token'] ?? ''),
+                ], 'pacs');
+                return;
+            }
+
             // Log de visualização de PDF
             if (!$portalPatientPdf) {
                 $userId = Auth::userId();

@@ -74,7 +74,9 @@ if ($descricaoExame === '') {
 }
 // A Máscara define o título clínico do laudo quando estiver vinculada ao report.
 // Sem Máscara, mantém o Study Description/modalidade como fallback seguro.
-$tituloLaudo = trim((string) ($tituloMascara ?? '')) ?: $descricaoExame;
+$tituloLaudo = $laudoPossuiConteudo
+    ? (trim((string) ($tituloMascara ?? '')) ?: $descricaoExame)
+    : '';
 $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
@@ -199,7 +201,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
         <?php if (!$portalPatientPdf): ?>
-            <a href="/estudos" data-voxel-voltar="/estudos" data-voxel-return-worklist>Voltar à Worklist</a>
+            <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
 
@@ -241,7 +243,9 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             </div>
         </section>
 
-        <h1 class="pdf-exam-title"><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
+        <?php if ($tituloLaudo !== ''): ?>
+            <h1 class="pdf-exam-title"><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
+        <?php endif; ?>
 
         <?php if (!empty($secoesClinicasPdf)): ?>
             <article class="pdf-report-content">

@@ -42,6 +42,8 @@ preg_match_all('/[A-Z0-9]{1,16}/', strtoupper((string) ($estudo->modalities ?? '
 $modalidadesEstudo = array_values(array_unique($modalidadesEncontradas[0] ?? []));
 $modalidadePrincipal = $modalidadesEstudo[0] ?? '';
 $studyDescriptionDicom = \App\Services\StudyDescriptionResolver::text($estudo, '');
+$laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($report);
+$acaoPdfIndisponivel = !$laudoPossuiConteudo;
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -71,6 +73,7 @@ $studyDescriptionDicom = \App\Services\StudyDescriptionResolver::text($estudo, '
      data-readonly="<?= $readonly ? '1' : '0' ?>"
      data-status="<?= htmlspecialchars($situacao) ?>"
      data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
+     data-report-has-content="<?= $laudoPossuiConteudo ? '1' : '0' ?>"
      data-peer-review-pending="<?= $peerReviewAberto ? '1' : '0' ?>"
      data-peer-review-id="<?= (int) (($peerReview['aberta']->id ?? 0)) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">
@@ -140,10 +143,14 @@ $studyDescriptionDicom = \App\Services\StudyDescriptionResolver::text($estudo, '
             <button type="button" class="btn-pacs-outline" id="btn-history" title="Histórico de versões">
                 <i class="fa fa-clock-rotate-left"></i> Histórico
             </button>
-            <button type="button" class="btn-pacs-outline" id="btn-view-pdf" title="Visualizar PDF">
+            <button type="button" class="btn-pacs-outline" id="btn-view-pdf"
+                    title="<?= $acaoPdfIndisponivel ? 'Digite o laudo ou aplique uma máscara antes de visualizar o PDF' : 'Visualizar PDF' ?>"
+                    <?= $acaoPdfIndisponivel ? 'disabled aria-disabled="true"' : '' ?>>
                 <i class="fa fa-file-pdf"></i> PDF
             </button>
-            <button type="button" class="pacs-btn" id="btn-print" title="Imprimir">
+            <button type="button" class="pacs-btn" id="btn-print"
+                    title="<?= $acaoPdfIndisponivel ? 'Digite o laudo ou aplique uma máscara antes de imprimir' : 'Imprimir' ?>"
+                    <?= $acaoPdfIndisponivel ? 'disabled aria-disabled="true"' : '' ?>>
                 <i class="fa fa-print"></i>
             </button>
         </div>

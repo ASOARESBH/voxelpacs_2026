@@ -8,6 +8,7 @@
  */
 $r = $report ?? [];
 $templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
+$laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($r);
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
 $corpoLaudo = (string) ($r['corpo_laudo'] ?? '');
@@ -159,6 +160,8 @@ if (trim($corpoLaudo) === '') {
 $paciente = htmlspecialchars($r['patient_name_display'] ?? $r['patient_name'] ?? 'Paciente', ENT_QUOTES);
 $download = $download ?? false;
 $portalPatientPdf = !empty($portalPatientPdf);
+$reportToken = trim((string) ($r['public_token'] ?? ''));
+$reportReturnUrl = $reportToken !== '' ? '/reports/r/' . rawurlencode($reportToken) : '/estudos';
 
 $partial = (new \App\Services\ReportLayoutService())->caminhoPartial($templateCodigo);
 

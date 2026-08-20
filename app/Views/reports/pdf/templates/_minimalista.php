@@ -77,7 +77,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
         <?php if (!$portalPatientPdf): ?>
-            <a href="/estudos" class="btn-back">← Worklist</a>
+            <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
 
