@@ -81,6 +81,12 @@ final class PortalAnonymizedOrthancClient
         $this->raw('/studies/' . rawurlencode($studyId), 'DELETE');
     }
 
+    /** Retorna uma prévia PNG apenas para a revisão administrativa de pixels. */
+    public function previewInstance(string $instanceId): string
+    {
+        return $this->raw('/instances/' . rawurlencode($instanceId) . '/preview', 'GET', null, ['Accept: image/png']);
+    }
+
     /**
      * Proxy restrito para o gateway. Só aceita URI já validada pelo controlador.
      * @return array{body:string,content_type:string,status:int}

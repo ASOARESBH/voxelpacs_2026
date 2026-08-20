@@ -46,6 +46,7 @@ Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platfor
 
 // Revisão humana de pixels das cópias anonimizadas do Portal (somente superadmin).
 Router::get('/platform/negocios/{id}/portal-imagens', 'Platform\PortalImageReviewController@index');
+Router::get('/platform/negocios/{id}/portal-imagens/{copyId}/preview', 'Platform\PortalImageReviewController@preview');
 Router::post('/platform/negocios/{id}/portal-imagens/{copyId}/revisar', 'Platform\PortalImageReviewController@review');
 
 // Token de acesso para admin (Etapa 4)

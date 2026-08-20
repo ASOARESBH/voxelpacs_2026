@@ -31,6 +31,7 @@
                         <td><?= htmlspecialchars((string) ($copy['error_code'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                         <td>
                             <?php if (($copy['state'] ?? '') === 'ready'): ?>
+                                <a class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" href="/platform/negocios/<?= (int) $tenantId ?>/portal-imagens/<?= (int) $copy['id'] ?>/preview">Ver amostra</a>
                                 <form method="post" action="/platform/negocios/<?= (int) $tenantId ?>/portal-imagens/<?= (int) $copy['id'] ?>/revisar" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <button class="btn btn-sm btn-success" name="decision" value="approved" type="submit">Aprovar</button>
