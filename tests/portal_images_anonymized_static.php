@@ -19,7 +19,6 @@ $required = [
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql',
     'infrastructure/portal-ohif/voxel-patient-viewer.css',
-    'infrastructure/portal-ohif/voxel-patient-viewer.js',
     'infrastructure/portal-ohif/apply-patient-viewer-assets.sh',
 ];
 foreach ($required as $file) {
@@ -44,7 +43,7 @@ $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
 $viewer = file_get_contents($root . '/app/Views/portal/images_viewer.php') ?: '';
 $patientViewerCss = file_get_contents($root . '/infrastructure/portal-ohif/voxel-patient-viewer.css') ?: '';
-$patientViewerJs = file_get_contents($root . '/infrastructure/portal-ohif/voxel-patient-viewer.js') ?: '';
+$patientViewerAssets = file_get_contents($root . '/infrastructure/portal-ohif/apply-patient-viewer-assets.sh') ?: '';
 
 $expectations = [
     [$session, 'hash(\'sha256\', $token)', 'Sessão de imagem deve persistir somente hash do token.'],
@@ -105,9 +104,10 @@ $expectations = [
     [$patientViewerCss, 'VOXEL Imagens do Paciente', 'Viewer do paciente deve possuir identidade VOXEL exclusiva.'],
     [$patientViewerCss, '[data-cy="MeasurementTools"]', 'Ferramentas de medição devem permanecer ocultas no Viewer do paciente.'],
     [$patientViewerCss, '[data-cy="Capture"]', 'Captura e exportação devem permanecer ocultas no Viewer do paciente.'],
-    [$patientViewerJs, 'blockedControls', 'Viewer do paciente deve restringir controles avançados dinamicamente.'],
-    [$patientViewerJs, 'VOXEL IMAGENS', 'Viewer do paciente deve exibir a marca VOXEL.'],
-    [$patientViewerJs, 'Visualização de imagens anonimizadas', 'Aviso de uso seguro deve permanecer no Viewer do paciente.'],
+    [$patientViewerCss, '#root::before', 'Marca VOXEL deve ser aplicada por CSS estático no Viewer do paciente.'],
+    [$patientViewerCss, 'Visualização de imagens anonimizadas', 'Aviso de uso seguro deve permanecer no Viewer do paciente.'],
+    [$patientViewerAssets, 'perl -0pi', 'Preparador deve remover scripts de personalização que possam interromper o bootstrap OHIF.'],
+    [$patientViewerAssets, 'voxel-patient-viewer\\.js', 'Preparador deve remover o script de personalização do índice estático.'],
 ];
 foreach ($expectations as [$content, $needle, $message]) {
     if (!str_contains($content, $needle)) {
