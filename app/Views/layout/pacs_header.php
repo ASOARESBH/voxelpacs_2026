@@ -10,8 +10,9 @@
     <?php endif; ?>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
-    <link rel="stylesheet" href="/assets/css/mobile-responsive.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
+    <link rel="preload" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" as="style" fetchpriority="high">
+    <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" fetchpriority="high">
+    <link rel="stylesheet" href="/assets/css/mobile-responsive.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" fetchpriority="high">
     <!-- PWA: manifest + meta tags para instalação como app nativo -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1d4ed8">

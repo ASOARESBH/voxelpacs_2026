@@ -1403,12 +1403,16 @@ body {
     flex-shrink: 0;
 }
 
-/* ── Animação de entrada ── */
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
+/* ── Estabilidade de renderização ───────────────────────────────────────────
+   A animação global de entrada causava um segundo paint da Worklist logo após
+   cada filtro, paginação ou navegação. Em conexões com CSS ainda em validação
+   pelo browser, isso expunha badges de modalidade como texto simples por uma
+   fração de segundo. A Worklist deve pintar diretamente no estado final. */
+#pacs-page > .wl-page-header,
+#pacs-page > #formFiltros,
+#pacs-page > .wl-worklist-body {
+    animation: none;
 }
-.pacs-content > *, #pacs-page > * { animation: fadeInUp .2s ease; }
 
 /* ── Modalidade DICOM com tooltip (App\Services\DicomModalityService) ──────
    Compartilhado por toda tela que exiba a tag Modality (0008,0060): Worklist,
