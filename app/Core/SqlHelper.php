@@ -112,6 +112,53 @@ final class SqlHelper
     }
 
     /**
+     * Normaliza a expressão SQL de texto usada em filtros de pesquisa clínica.
+     *
+     * A expressão recebida deve ser uma coluna ou expressão constante definida
+     * pelo código. Nunca passe conteúdo de requisição para este método.
+     */
+    public static function normalizedSearchExpression(string $expression): string
+    {
+        if (!self::isPostgres()) {
+            return "LOWER(COALESCE({$expression}, '')) COLLATE utf8_unicode_ci";
+        }
+
+        // A extensão unaccent não é habilitada como pré-requisito do VOXEL PACS.
+        // TRANSLATE mantém a busca tolerante a acentos sem alterar o banco.
+        return "TRANSLATE(LOWER(COALESCE(({$expression})::text, '')), "
+            . "'áàãâäéèêëíìîïóòôõöúùûüçñýÿ', "
+            . "'aaaaaeeeeiiiiooooouuuucnyy')";
+    }
+
+    /**
+     * Converte uma busca humana em termos previsíveis. Cada termo pode ser
+     * combinado com AND no SQL, permitindo encontrar nomes em qualquer caixa,
+     * com ou sem acento, com espaços repetidos ou separadores diferentes.
+     *
+     * @return list<string>
+     */
+    public static function searchTokens(string $value): array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return [];
+        }
+
+        $value = mb_strtolower($value, 'UTF-8');
+        $value = strtr($value, [
+            'á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a', 'ä' => 'a',
+            'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u',
+            'ç' => 'c', 'ñ' => 'n', 'ý' => 'y', 'ÿ' => 'y',
+        ]);
+
+        $tokens = preg_split('/[^a-z0-9]+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        return array_values(array_unique($tokens));
+    }
+
+    /**
      * Lista colunas de tabela sem usar SHOW COLUMNS no PostgreSQL.
      *
      * @return list<string>

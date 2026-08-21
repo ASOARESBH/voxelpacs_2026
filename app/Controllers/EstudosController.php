@@ -20,19 +20,16 @@ use App\Services\PedidoMedicoService;
  * Filtros:
  *   q             → pesquisa global (patient_name, patient_id, study_instance_uid,
  *                                    accession_number, study_description, institution_name)
- *   paciente      → patient_name LIKE
+ *   paciente      → patient_name normalizado por termos
  *   periodo       → hoje|ontem|7dias|30dias|90dias|ano|todos|personalizado
  *   dt_inicio/dt_fim → usado com periodo=personalizado
  *   unidade       → institution_name LIKE
  *   modalidade    → modalities LIKE
- *   especialidade → especialidade LIKE (rótulo exibido na tela é "Solicitante" desde
- *                   2026-07-12 — a coluna bi_pacs_estudos.especialidade nunca é escrita
- *                   em nenhum fluxo, então este filtro nunca encontra nada; o que a
- *                   célula da tabela mostra de fato é o fallback referring_physician_name,
- *                   não filtrado aqui. Ver modules/worklist-estudos.md)
+ *   especialidade → solicitante normalizado por termos (especialidade e
+ *                   referring_physician_name)
  *   situacao      → novo|aberto|pendente|a_laudar|em_laudo|rascunho|assinado|liberado|peer_review
  *   prioridade    → normal|urgente|critico
- *   medico        → assumido_por LIKE
+ *   medico        → assumido_por normalizado por termos
  *   ordenar       → whitelist de colunas
  *   direcao       → ASC|DESC
  *   pagina        → int
@@ -98,6 +95,39 @@ class EstudosController extends Controller
         }
 
         return compact('where', 'params', 'institutionNames', 'usaInstitutionFilter', 'isMedicoFiltro');
+    }
+
+    /**
+     * Acrescenta termos normalizados à cláusula WHERE sem interpolar dados do
+     * usuário. Cada termo deve ocorrer em algum campo informado, enquanto os
+     * termos entre si são combinados com AND.
+     *
+     * @param list<string> $where
+     * @param list<mixed> $params
+     * @param list<string> $fields
+     */
+    private function aplicarBuscaNormalizada(array &$where, array &$params, string $consulta, array $fields): void
+    {
+        $tokens = SqlHelper::searchTokens($consulta);
+        if ($tokens === [] || $fields === []) {
+            return;
+        }
+
+        $normalizedFields = array_map(
+            static fn (string $field): string => SqlHelper::normalizedSearchExpression($field),
+            $fields
+        );
+
+        foreach ($tokens as $token) {
+            $where[] = '(' . implode(' OR ', array_map(
+                static fn (string $field): string => "{$field} LIKE ?",
+                $normalizedFields
+            )) . ')';
+
+            foreach ($normalizedFields as $_) {
+                $params[] = '%' . $token . '%';
+            }
+        }
     }
 
     public function index(): void
@@ -201,30 +231,21 @@ class EstudosController extends Controller
         $where  = $escopoWorklist['where'];
         $params = $escopoWorklist['params'];
 
-        // Pesquisa global — todos os valores usam parâmetros posicionais.
-        if ($filtros['q'] !== '') {
-            $like = '%' . $filtros['q'] . '%';
-            $searchFields = [
-                'e.patient_name LIKE ?',
-                'e.patient_id LIKE ?',
-                'e.study_instance_uid LIKE ?',
-                'e.accession_number LIKE ?',
-                'e.study_description LIKE ?',
-                'e.institution_name LIKE ?',
-            ];
-            if ($hasScheduledProcedureStepDescription) {
-                $searchFields[] = 'e.scheduled_procedure_step_desc LIKE ?';
-            }
-            $where[] = '(' . implode(' OR ', $searchFields) . ')';
-            foreach ($searchFields as $_) {
-                $params[] = $like;
-            }
+        // Pesquisa global: cada termo é normalizado e comparado por parâmetros
+        // preparados contra os campos clínicos permitidos no escopo do tenant.
+        $searchFields = [
+            'e.patient_name',
+            'e.patient_id',
+            'e.study_instance_uid',
+            'e.accession_number',
+            'e.study_description',
+            'e.institution_name',
+        ];
+        if ($hasScheduledProcedureStepDescription) {
+            $searchFields[] = 'e.scheduled_procedure_step_desc';
         }
-
-        if ($filtros['paciente'] !== '') {
-            $where[]  = 'e.patient_name LIKE ?';
-            $params[] = '%' . $filtros['paciente'] . '%';
-        }
+        $this->aplicarBuscaNormalizada($where, $params, $filtros['q'], $searchFields);
+        $this->aplicarBuscaNormalizada($where, $params, $filtros['paciente'], ['e.patient_name']);
         $campoDataPeriodo = $this->campoDataPeriodoParaSituacao($filtros['situacao']);
         if ($filtros['dt_inicio'] !== '') {
             $where[]  = $campoDataPeriodo . ' >= ?';
@@ -254,13 +275,13 @@ class EstudosController extends Controller
             }
             $where[] = '(' . implode(' OR ', $modClauses) . ')';
         }
-        if ($filtros['especialidade'] !== '') {
-            // Busca em especialidade e também em referring_physician_name
-            $like    = '%' . $filtros['especialidade'] . '%';
-            $where[] = '(e.especialidade LIKE ? OR e.referring_physician_name LIKE ?)';
-            $params[] = $like;
-            $params[] = $like;
-        }
+        // Solicitante: aceita variações de caixa, acento e composição do nome.
+        $this->aplicarBuscaNormalizada(
+            $where,
+            $params,
+            $filtros['especialidade'],
+            ['e.especialidade', 'e.referring_physician_name']
+        );
         if ($filtros['situacao'] !== '') {
             $where[]  = "COALESCE(e.situacao,'novo') = ?";
             $params[] = $filtros['situacao'];
@@ -269,10 +290,7 @@ class EstudosController extends Controller
             $where[]  = 'e.prioridade = ?';
             $params[] = $filtros['prioridade'];
         }
-        if ($filtros['medico'] !== '') {
-            $where[]  = 'e.assumido_por LIKE ?';
-            $params[] = '%' . $filtros['medico'] . '%';
-        }
+        $this->aplicarBuscaNormalizada($where, $params, $filtros['medico'], ['e.assumido_por']);
 
         $whereStr = implode(' AND ', $where);
         $orderCol = 'e.' . $filtros['ordenar'];
