@@ -39,6 +39,8 @@ pdfEmptyAssert(strpos($controller, 'ReportClinicalContentService::hasReportConte
 pdfEmptyAssert(strpos($header, 'Digite o laudo ou aplique uma máscara antes de imprimir') !== false, 'Cabeçalho não desabilita a impressão vazia.');
 pdfEmptyAssert(strpos($mainJs, 'function editorHasClinicalContent()') !== false && strpos($mainJs, "autosave.save('rascunho')") !== false, 'Frontend não valida e salva conteúdo antes de abrir o PDF.');
 pdfEmptyAssert(strpos($custom, '$laudoPossuiConteudo') !== false, 'Layout Personalizado não respeita o estado de conteúdo clínico.');
+pdfEmptyAssert(strpos($custom, "study_description") === false && strpos($custom, "['modalities']") === false,
+    'Layout Personalizado não removeu o título automático de metadados DICOM.');
 
 foreach (['_classico_centralizado.php', '_moderno_lateral.php', '_corporativo_faixa.php', '_minimalista.php'] as $template) {
     $source = (string) file_get_contents($root . '/app/Views/reports/pdf/templates/' . $template);

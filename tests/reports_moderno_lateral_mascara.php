@@ -38,16 +38,12 @@ foreach ([
     [$editorView, 'TEMPLATE_ID_ATUAL'],
     [$editorView, 'template_id: TEMPLATE_ID_ATUAL || null'],
     [$editorView, "<strong>' + secao.rotulo + '</strong>"],
-    [$template, '$tituloLaudo'],
     [$template, 'pdf-clinical-section-title'],
-    [$template, 'font-size: 17px'],
     [$template, 'font-size: 13px'],
     [$template, '$temPersonalizadoInstitucional'],
     [$template, 'pdf-header-unit'],
     [$template, "'site' => 'Site institucional'"],
     [$template, "\$r['unidade_personalizado_' . \$canalInstitucional . '_habilitado']"],
-    [$template, "requested_procedure_desc"],
-    [$template, "body_part_examined"],
     [$header, 'data-template-id'],
     [$mainJs, 'templateId: parseInt(app.dataset.templateId'],
     [$autosaveJs, 'template_id: templateId || null'],
@@ -92,7 +88,6 @@ require $templatePath;
 $html = (string) ob_get_clean();
 
 foreach ([
-    'ANGIOTOMOGRAFIA DA AORTA',
     '>TÉCNICA<',
     '>ACHADOS<',
     '>IMPRESSÃO<',
@@ -103,7 +98,8 @@ foreach ([
     mascaraPdfAssert(strpos($html, $expected) !== false, "Renderização de Máscara não contém: {$expected}");
 }
 mascaraPdfAssert(strpos($html, 'Tomografia Computadorizada do Tórax') === false, 'Nome do Template não pode ser impresso como título clínico.');
-mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título clínico do estudo deve ter fonte ampliada.');
+mascaraPdfAssert(strpos($html, 'ANGIOTOMOGRAFIA DA AORTA') === false, 'Descrição do estudo não pode ser impressa como título automático.');
+mascaraPdfAssert(strpos($html, '<h1 class="pdf-exam-title">') === false, 'Modalidade ou descrição do estudo não pode gerar cabeçalho automático.');
 mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico deve ter fonte ampliada para leitura.');
 mascaraPdfAssert(strpos($html, '<strong>Laudo Médico</strong>') === false, 'O cabeçalho não pode manter o título padrão Laudo Médico.');
 mascaraPdfAssert(strpos($html, 'pdf-header-unit">NOVA IMAGEM</span>') !== false, 'Sem canal ativo, o cabeçalho deve exibir somente o Nome Fantasia.');

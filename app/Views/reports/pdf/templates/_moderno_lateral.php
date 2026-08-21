@@ -62,19 +62,9 @@ $formatarCnpj = static function (?string $valor): string {
 };
 
 $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name'] ?? null) ?: '—';
-$descricaoExame = trim((string) ($r['study_description'] ?? ''));
-if ($descricaoExame === '') {
-    $descricaoExame = trim((string) ($r['requested_procedure_desc'] ?? ''));
-}
-if ($descricaoExame === '') {
-    $descricaoExame = trim((string) ($r['body_part_examined'] ?? ''));
-}
-if ($descricaoExame === '') {
-    $descricaoExame = trim((string) ($r['modalities'] ?? 'Laudo Médico'));
-}
-// O título do documento é clínico e vem do estudo. O Nome do Template é
-// administrativo, identifica a máscara somente na busca e nunca é impresso.
-$tituloLaudo = $laudoPossuiConteudo ? $descricaoExame : '';
+// O conteúdo clínico configurado pelo médico é a única abertura do laudo.
+// Study Description, procedimento, região anatômica e modalidade DICOM não
+// são promovidos automaticamente a título de impressão.
 $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
@@ -135,7 +125,6 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
         .pdf-patient-line strong { font-weight: 700; }
 
-        .pdf-exam-title { margin: 29px 0 24px; color: #111; font-size: 17px; font-weight: 700; line-height: 1.34; text-align: center; text-transform: uppercase; }
         .pdf-report-content { color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
         .pdf-clinical-section { margin: 0 0 21px; page-break-inside: avoid; }
         .pdf-clinical-section:last-child { margin-bottom: 0; }
@@ -186,7 +175,6 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             .pdf-page { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; margin: 0; padding: 18mm 18mm 23mm; box-shadow: none; }
             .pdf-header, .pdf-patient, .pdf-signature, .pdf-footer { position: static; }
             .pdf-patient { margin-top: 11px; }
-            .pdf-exam-title { margin-top: 29px; }
             .pdf-signature { margin-top: auto; padding-top: 50px; }
             .pdf-footer { margin-top: 12px; }
             .pdf-report-content, .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
@@ -241,9 +229,6 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             </div>
         </section>
 
-        <?php if ($tituloLaudo !== ''): ?>
-            <h1 class="pdf-exam-title"><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
-        <?php endif; ?>
 
         <?php if (!empty($secoesClinicasPdf)): ?>
             <article class="pdf-report-content">

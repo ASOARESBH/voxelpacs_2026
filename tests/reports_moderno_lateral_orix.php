@@ -31,7 +31,6 @@ foreach ([
     'class="pdf-header-right"',
     'class="pdf-patient"',
     'class="pdf-patient-col"',
-    'class="pdf-exam-title"',
     'class="pdf-report-content"',
     'class="pdf-signature"',
     'class="pdf-footer"',
@@ -40,7 +39,6 @@ foreach ([
     '.pdf-header, .pdf-patient, .pdf-signature, .pdf-footer { position: static; }',
     'window.print()',
     '$corpoLaudo',
-    'study_description',
     'unidade_logo_path',
     'assinatura_caminho_arquivo',
     'pdf-validation-token',
@@ -57,6 +55,7 @@ foreach ([
 }
 modernRequire(strpos($source, 'secao_exame') === false, 'O template reintroduziu uma seção clínica legada.');
 modernRequire(strpos($source, 'pdf-patient-box') === false, 'O card cinza legado ainda está presente no Moderno Lateral.');
+modernRequire(strpos($source, 'pdf-exam-title') === false, 'A modalidade ou descrição do estudo não pode gerar cabeçalho automático no PDF.');
 modernRequire(strpos($source, 'onclick="window.print()"') !== false, 'A impressão manual não está disponível no template.');
 modernRequire(strpos($source, 'position: fixed;') === false, 'Elementos fixos podem deslocar cabeçalho ou assinatura entre páginas.');
 
@@ -104,6 +103,11 @@ ob_start();
 require $templatePath;
 $html = (string) ob_get_clean();
 
+modernRequire(strpos($html, 'Tomografia Computadorizada do Tórax') === false,
+    'Descrição do estudo não pode ser impressa como cabeçalho automático.');
+modernRequire(strpos($html, '<h1') === false,
+    'PDF não pode inserir título automático antes do conteúdo clínico.');
+
 foreach ([
     'ORIX TELERRADIOLOGIA LTDA',
     'Maria José Alves',
@@ -113,7 +117,6 @@ foreach ([
     '14/08/2026',
     'Prontuário:',
     '241098',
-    'Tomografia Computadorizada do Tórax',
     'Aquisição volumétrica sem contraste.',
     'Dr. Paulo Vitor M. M. de Brito',
     'Radiologia e Diagnóstico por Imagem',

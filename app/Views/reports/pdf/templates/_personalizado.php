@@ -10,9 +10,9 @@ if (!is_array($customTemplate)) {
     return;
 }
 
-$tituloPersonalizado = $laudoPossuiConteudo
-    ? trim((string) ($r['study_description'] ?? $r['modalities'] ?? 'Laudo Médico'))
-    : '';
+// O layout personalizado recebe somente o conteúdo clínico redigido ou
+// aplicado pela máscara. Metadados DICOM não viram título automaticamente.
+$tituloPersonalizado = '';
 $documento = (new \App\Services\ReportCustomTemplateService())
     ->renderReport($customTemplate, $r, (string) ($corpoLaudo ?? ''), $tituloPersonalizado);
 
