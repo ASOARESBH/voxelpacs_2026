@@ -43,12 +43,29 @@ class GruposController extends Controller
         return $id;
     }
 
+    private function requireUserManagement(): bool
+    {
+        if (Auth::canManageTenantUsers()) {
+            return true;
+        }
+
+        Logger::error('[GruposController] Operação administrativa negada', [
+            'user_id' => Auth::userId(),
+            'tenant_id' => TenantContext::id(),
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+        ]);
+        $this->redirect('/usuarios?error=acesso_negado');
+        return false;
+    }
+
     // -------------------------------------------------------------------------
     // READ — Listagem
     // -------------------------------------------------------------------------
 
     public function index(): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
         $grupos   = $this->service->listar($tenantId);
 
@@ -66,6 +83,8 @@ class GruposController extends Controller
 
     public function novo(): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $this->tenantId();
 
         $erros     = $_SESSION['grupo_form_erros'] ?? [];
@@ -82,6 +101,8 @@ class GruposController extends Controller
 
     public function store(): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
 
         $resultado = $this->service->cadastrar($_POST, $tenantId);
@@ -104,6 +125,8 @@ class GruposController extends Controller
 
     public function editar(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
         $grupo    = $this->service->buscarPorId($id, $tenantId);
 
@@ -137,6 +160,8 @@ class GruposController extends Controller
 
     public function atualizar(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
 
         $resultado = $this->service->atualizar($id, $_POST, $tenantId);
@@ -158,6 +183,8 @@ class GruposController extends Controller
 
     public function excluir(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
         $this->service->toggleStatus($id, $tenantId);
         $this->redirect('/usuarios/grupos?sucesso=grupo_status_alterado');
@@ -169,6 +196,8 @@ class GruposController extends Controller
 
     public function adicionarUsuarios(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId   = $this->tenantId();
         $usuarioIds = $_POST['usuario_ids'] ?? [];
         if (!is_array($usuarioIds)) {
@@ -181,6 +210,8 @@ class GruposController extends Controller
 
     public function removerUsuario(int $id, int $usuarioId): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = $this->tenantId();
         $this->service->removerMembro($id, $usuarioId, $tenantId);
         $this->redirect("/usuarios/grupos/{$id}/editar?sucesso=membro_removido");

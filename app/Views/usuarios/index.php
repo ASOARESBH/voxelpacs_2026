@@ -2,6 +2,7 @@
 $usuarios = $usuarios ?? [];
 $sucesso  = $sucesso  ?? '';
 $error    = $error    ?? '';
+$canManageUsuarios = $canManageUsuarios ?? false;
 
 $perfilLabel = [
     'admin'      => ['Administrador',  'pacs-badge-admin'],
@@ -36,12 +37,16 @@ $perfilLabel = [
             <i class="fa fa-users me-2 text-pacs-primary"></i>Usuários
         </h1>
         <p class="text-muted small mb-0 mt-1">
-            Gerencie os usuários e permissões de acesso do seu negócio
+            <?= $canManageUsuarios
+                ? 'Gerencie os usuários e permissões de acesso do seu negócio'
+                : 'Consulte os dados e permissões da sua conta de acesso' ?>
         </p>
     </div>
+    <?php if ($canManageUsuarios): ?>
     <a href="/usuarios/create" class="btn-pacs-primary">
         <i class="fa fa-plus me-1"></i> Novo Usuário
     </a>
+    <?php endif; ?>
 </div>
 
 <!-- Navegação Usuários / Grupos -->
@@ -49,9 +54,11 @@ $perfilLabel = [
     <a href="/usuarios" class="usuarios-tab-btn active">
         <i class="fa fa-users"></i> <?= htmlspecialchars(t('usuarios.tabs.usuarios')) ?>
     </a>
+    <?php if ($canManageUsuarios): ?>
     <a href="/usuarios/grupos" class="usuarios-tab-btn">
         <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('usuarios.tabs.grupos')) ?>
     </a>
+    <?php endif; ?>
 </div>
 
 <!-- Alertas -->
@@ -74,6 +81,10 @@ $perfilLabel = [
 <div class="pacs-alert pacs-alert-danger mb-3">
     <i class="fa fa-triangle-exclamation me-2"></i> Você não pode desativar sua própria conta.
 </div>
+<?php elseif ($error === 'acesso_negado'): ?>
+<div class="pacs-alert pacs-alert-danger mb-3">
+    <i class="fa fa-shield-halved me-2"></i> Somente administradores autorizados podem gerenciar outros usuários e grupos.
+</div>
 <?php elseif ($error): ?>
 <div class="pacs-alert pacs-alert-danger mb-3">
     <i class="fa fa-triangle-exclamation me-2"></i> Ocorreu um erro. Tente novamente.
@@ -88,7 +99,9 @@ $perfilLabel = [
             <div style="font-size:2.5rem;opacity:.3;margin-bottom:.75rem;"><i class="fa fa-users"></i></div>
             <div style="font-weight:600;color:var(--pacs-text-secondary);">Nenhum usuário cadastrado</div>
             <div style="font-size:.85rem;color:var(--pacs-text-muted);margin-top:.4rem;">
-                Clique em <strong>Novo Usuário</strong> para adicionar o primeiro.
+                <?= $canManageUsuarios
+                    ? 'Clique em <strong>Novo Usuário</strong> para adicionar o primeiro.'
+                    : 'Seu cadastro não foi localizado neste negócio. Procure o administrador responsável.' ?>
             </div>
         </div>
         <?php else: ?>
@@ -101,7 +114,9 @@ $perfilLabel = [
                     <th style="width:160px;">Médico vinculado</th>
                     <th style="width:90px;text-align:center;">Status</th>
                     <th style="width:110px;text-align:center;">Último acesso</th>
+                    <?php if ($canManageUsuarios): ?>
                     <th style="width:120px;text-align:right;padding-right:1rem;">Ações</th>
+                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
@@ -158,6 +173,7 @@ $perfilLabel = [
                         </span>
                     <?php endif; ?>
                 </td>
+                <?php if ($canManageUsuarios): ?>
                 <td style="text-align:right;padding-right:1rem;">
                     <div style="display:flex;gap:.3rem;justify-content:flex-end;align-items:center;">
                         <a href="/usuarios/<?= $u['id'] ?>/edit"
@@ -186,6 +202,7 @@ $perfilLabel = [
                         </form>
                     </div>
                 </td>
+                <?php endif; ?>
             </tr>
             <?php endforeach; ?>
             </tbody>
@@ -195,6 +212,7 @@ $perfilLabel = [
 </div>
 
 <!-- Legenda de perfis -->
+<?php if ($canManageUsuarios): ?>
 <div class="pacs-card mt-3" style="background:rgba(14,26,46,.5);">
     <div class="pacs-card-body" style="padding:.75rem 1rem;">
         <div style="font-size:.72rem;color:var(--pacs-text-muted);font-weight:600;margin-bottom:.5rem;">
@@ -209,3 +227,4 @@ $perfilLabel = [
         </div>
     </div>
 </div>
+<?php endif; ?>

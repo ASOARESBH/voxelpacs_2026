@@ -116,6 +116,15 @@ class Auth {
         return null;
     }
 
+    /**
+     * Administração de contas pertence somente ao administrador do tenant
+     * atualmente selecionado ou ao superadmin da plataforma. Outros perfis
+     * podem consultar apenas o próprio cadastro no módulo Usuários.
+     */
+    public static function canManageTenantUsers(): bool {
+        return self::isPlatformAdmin() || self::perfilAtual() === 'admin';
+    }
+
     public static function setTenant(int $tenantId): void {
         $_SESSION['tenant_id'] = $tenantId;
     }

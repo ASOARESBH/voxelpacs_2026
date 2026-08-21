@@ -49,6 +49,7 @@ class UsuariosController extends Controller
         $tenantId = TenantContext::id();
         $pdo      = Database::getInstance();
         $usuarios = [];
+        $canManageUsuarios = Auth::canManageTenantUsers();
 
         if ($tenantId) {
             try {
@@ -78,9 +79,10 @@ class UsuariosController extends Controller
                     FROM bi_users u
                     INNER JOIN bi_user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = ?
                     LEFT  JOIN bi_medicos m ON m.tenant_id = ? AND m.usuario_id = u.id AND m.ativo = 1
+                    WHERE (? = 1 OR u.id = ?)
                     ORDER BY {$perfilOrderSql}, u.name ASC
                 ");
-                $stmt->execute([$tenantId, $tenantId]);
+                $stmt->execute([$tenantId, $tenantId, $canManageUsuarios ? 1 : 0, Auth::userId() ?: 0]);
                 $usuarios = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             } catch (\Throwable $e) {
                 Logger::error('[UsuariosController::index] ' . $e->getMessage());
@@ -90,7 +92,7 @@ class UsuariosController extends Controller
         $sucesso = $_GET['sucesso'] ?? '';
         $error   = $_GET['error']   ?? '';
 
-        $this->view('usuarios/index', compact('usuarios','sucesso','error'), 'pacs');
+        $this->view('usuarios/index', compact('usuarios','sucesso','error','canManageUsuarios'), 'pacs');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -98,6 +100,8 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function create(): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $tenantId = TenantContext::id();
         $pdo      = Database::getInstance();
         $medicos  = [];
@@ -132,6 +136,8 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function store(): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
 
@@ -206,6 +212,8 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function edit(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
 
@@ -265,8 +273,14 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function update(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
+        if (!$this->usuarioPertenceAoTenant($pdo, $id, $tenantId)) {
+            $this->redirect('/usuarios?error=nao_encontrado');
+            return;
+        }
 
         $name     = trim($_POST['name']       ?? '');
         $perfil   = $_POST['perfil']          ?? 'viewer';
@@ -312,6 +326,8 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function toggleStatus(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
 
@@ -337,12 +353,19 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function reenviarLink(int $id): void
     {
+        if (!$this->requireUserManagement()) return;
+
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
 
         try {
-            $stmt = $pdo->prepare("SELECT name, email FROM bi_users WHERE id = ?");
-            $stmt->execute([$id]);
+            $stmt = $pdo->prepare(
+                "SELECT u.name, u.email
+                 FROM bi_users u
+                 INNER JOIN bi_user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = ?
+                 WHERE u.id = ?"
+            );
+            $stmt->execute([$tenantId, $id]);
             $user = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($user) {
                 $this->enviarLinkCriarSenha($pdo, $id, $tenantId, $user['email'], $user['name']);
@@ -357,6 +380,34 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     // HELPERS PRIVADOS
     // ─────────────────────────────────────────────────────────────────────────
+    private function requireUserManagement(): bool
+    {
+        if (Auth::canManageTenantUsers()) {
+            return true;
+        }
+
+        Logger::error('[UsuariosController] Operação administrativa negada', [
+            'user_id' => Auth::userId(),
+            'tenant_id' => TenantContext::id(),
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+        ]);
+        $this->redirect('/usuarios?error=acesso_negado');
+        return false;
+    }
+
+    private function usuarioPertenceAoTenant(\PDO $pdo, int $userId, ?int $tenantId): bool
+    {
+        if (!$tenantId) {
+            return false;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM bi_user_tenants WHERE user_id = ? AND tenant_id = ? LIMIT 1'
+        );
+        $stmt->execute([$userId, $tenantId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
     private function salvarPermissoes(\PDO $pdo, int $userId, int $tenantId, array $modulos): void
     {
         $pdo->prepare(
