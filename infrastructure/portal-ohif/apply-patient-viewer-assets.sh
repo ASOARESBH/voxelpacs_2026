@@ -11,6 +11,7 @@ TARGET="${1:-$ROOT/../ohif-portal-static/viewer.ohif.org}"
 }
 
 install -m 0644 "$ROOT/infrastructure/portal-ohif/voxel-patient-viewer.css" "$TARGET/voxel-patient-viewer.css"
+install -m 0644 "$ROOT/infrastructure/portal-ohif/app-config.js" "$TARGET/app-config.js"
 
 # A personalização é deliberadamente somente CSS: não há observador JavaScript
 # adicional no ciclo de inicialização do OHIF.
@@ -22,4 +23,5 @@ fi
 
 grep -q 'voxel-patient-viewer.css' "$TARGET/index.html"
 ! grep -q 'voxel-patient-viewer.js' "$TARGET/index.html"
+grep -q "investigationalUseDialog: { option: 'never' }" "$TARGET/app-config.js"
 printf 'VOXEL_PATIENT_VIEWER_ASSETS_READY\n'

@@ -19,6 +19,7 @@ $required = [
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql',
     'infrastructure/portal-ohif/voxel-patient-viewer.css',
+    'infrastructure/portal-ohif/app-config.js',
     'infrastructure/portal-ohif/apply-patient-viewer-assets.sh',
 ];
 foreach ($required as $file) {
@@ -43,7 +44,9 @@ $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
 $viewer = file_get_contents($root . '/app/Views/portal/images_viewer.php') ?: '';
 $patientViewerCss = file_get_contents($root . '/infrastructure/portal-ohif/voxel-patient-viewer.css') ?: '';
+$patientViewerConfig = file_get_contents($root . '/infrastructure/portal-ohif/app-config.js') ?: '';
 $patientViewerAssets = file_get_contents($root . '/infrastructure/portal-ohif/apply-patient-viewer-assets.sh') ?: '';
+$portalCss = file_get_contents($root . '/public/assets/css/portal.css') ?: '';
 
 $expectations = [
     [$session, 'hash(\'sha256\', $token)', 'Sessão de imagem deve persistir somente hash do token.'],
@@ -108,6 +111,10 @@ $expectations = [
     [$patientViewerCss, 'Visualização de imagens anonimizadas', 'Aviso de uso seguro deve permanecer no Viewer do paciente.'],
     [$patientViewerAssets, 'perl -0pi', 'Preparador deve remover scripts de personalização que possam interromper o bootstrap OHIF.'],
     [$patientViewerAssets, 'voxel-patient-viewer\\.js', 'Preparador deve remover o script de personalização do índice estático.'],
+    [$patientViewerAssets, 'infrastructure/portal-ohif/app-config.js', 'Preparador deve sincronizar a configuração exclusiva do Viewer do paciente.'],
+    [$patientViewerConfig, "investigationalUseDialog: { option: 'never' }", 'Viewer do paciente não pode exibir o aviso externo de marca.'],
+    [$patientViewerConfig, "friendlyName: 'VOXEL Imagens do Paciente'", 'Datasource do Viewer do paciente deve usar somente a identidade VOXEL.'],
+    [$portalCss, 'height:calc(100vh - 190px)', 'Viewer do paciente deve ocupar área clínica ampliada no Portal.'],
 ];
 foreach ($expectations as [$content, $needle, $message]) {
     if (!str_contains($content, $needle)) {

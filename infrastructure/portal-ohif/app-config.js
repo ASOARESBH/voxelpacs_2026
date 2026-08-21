@@ -15,6 +15,8 @@ window.config = {
   showLoadingIndicator: true,
   showWarningMessageForCrossOrigin: false,
   showCPUFallbackMessage: false,
+  // A orientação de uso do paciente é exibida pela camada VOXEL do Portal.
+  investigationalUseDialog: { option: 'never' },
   dangerouslyUseDynamicConfig: { enabled: false },
   defaultDataSourceName: 'voxelPortalDicomWeb',
   dataSources: [
@@ -22,7 +24,7 @@ window.config = {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'voxelPortalDicomWeb',
       configuration: {
-        friendlyName: 'VOXEL Portal Anonymized DICOMWeb',
+        friendlyName: 'VOXEL Imagens do Paciente',
         name: 'VOXEL_PORTAL',
         wadoUriRoot: '/imagens/dicom-web',
         qidoRoot: '/imagens/dicom-web',
