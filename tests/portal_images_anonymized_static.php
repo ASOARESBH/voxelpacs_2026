@@ -39,6 +39,7 @@ $platformRoutes = file_get_contents($root . '/routes/platform.php') ?: '';
 $review = file_get_contents($root . '/app/Controllers/Platform/PortalImageReviewController.php') ?: '';
 $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql') ?: '';
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
+$viewer = file_get_contents($root . '/app/Views/portal/images_viewer.php') ?: '';
 
 $expectations = [
     [$session, 'hash(\'sha256\', $token)', 'Sessão de imagem deve persistir somente hash do token.'],
@@ -88,6 +89,7 @@ $expectations = [
     [$pg, "pixel_review_status", 'Migration PostgreSQL deve bloquear cópia sem revisão de pixels.'],
     [$mysql, 'DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci', 'Migration MySQL deve manter compatibilidade HostGator.'],
     [$mysql, 'bi_portal_image_sessions', 'Migration MySQL de sessão temporária ausente.'],
+    [$viewer, 'src="<?= htmlspecialchars($viewerUrl, ENT_QUOTES, \'UTF-8\') ?>"', 'Iframe deve preservar a URL do estudo anonimizado sem alterar o parâmetro.'],
 ];
 foreach ($expectations as [$content, $needle, $message]) {
     if (!str_contains($content, $needle)) {
@@ -97,6 +99,7 @@ foreach ($expectations as [$content, $needle, $message]) {
 }
 
 $forbidden = [
+    [$viewer, 'htmlspecialchars($viewerUrl, ENT_QUOTES, \'UTF-8\') ?>/', 'Iframe não pode acrescentar barra ao UID anonimizado.'],
     [$routes, "Router::get('/imagens/dicom-web/studies'", 'Gateway não pode expor QIDO-RS genérico de estudos.'],
     [$routes, 'Router::post(\'/imagens/dicom-web', 'Gateway não pode expor STOW-RS.'],
 ];

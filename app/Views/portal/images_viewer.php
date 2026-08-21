@@ -8,7 +8,7 @@
     </section>
     <iframe
         class="portal-image-viewer__frame"
-        src="<?= htmlspecialchars($viewerUrl, ENT_QUOTES, 'UTF-8') ?>/"
+        src="<?= htmlspecialchars($viewerUrl, ENT_QUOTES, 'UTF-8') ?>"
         title="Viewer de imagens anonimizadas"
         referrerpolicy="no-referrer"
         allow="fullscreen"
