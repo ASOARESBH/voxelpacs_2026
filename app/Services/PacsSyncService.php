@@ -9,9 +9,9 @@ use App\Core\SqlHelper;
 /**
  * VOXEL PACS — Sincronização automática incremental do(s) servidor(es) Orthanc.
  *
- * Chamado a cada 2 minutos por um cron externo (cron-job.org, mesmo padrão já
- * usado pelo robô de Regras de SLA — hospedagem compartilhada não tem crontab
- * real). Cada servidor ativo é sincronizado exatamente 1 vez por ciclo, mesmo
+ * Chamado pelo robô interno CLI a cada 2 minutos. A rota HTTP legada pode
+ * coexistir temporariamente durante a observação. Cada servidor ativo é
+ * sincronizado exatamente 1 vez por ciclo, mesmo
  * que esteja associado a vários negócios (N:N) — nunca 1 ping/import por negócio.
  *
  * Usa o endpoint incremental GET /changes?since=cursor do Orthanc: o cursor é
@@ -321,9 +321,10 @@ class PacsSyncService
         $r = ['servidor_id' => $servidorId, 'nome' => $servidor['nome']];
 
         // Lock de concorrência — evita 2 ciclos simultâneos no mesmo servidor
+        $lockAgeMinutesSql = SqlHelper::timestampDiff('MINUTE', 'sync_lock_at', 'NOW()');
         $lockStmt = $pdo->prepare("
             UPDATE bi_pacs_servidor SET sync_lock_at = NOW()
-            WHERE id = ? AND (sync_lock_at IS NULL OR sync_lock_at < NOW() - INTERVAL " . self::LOCK_STALE_MINUTES . " MINUTE)
+            WHERE id = ? AND (sync_lock_at IS NULL OR {$lockAgeMinutesSql} > " . self::LOCK_STALE_MINUTES . ")
         ");
         $lockStmt->execute([$servidorId]);
         if ($lockStmt->rowCount() === 0) {
