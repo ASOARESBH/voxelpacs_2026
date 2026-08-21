@@ -696,8 +696,8 @@ $periodoLabel = [
                         </button>
                         <?php if ($podeConsultarLaudoGestao): ?>
                         <a class="wl-btn-laudo wl-btn-laudo-gestao"
-                           href="/reports/r/<?= rawurlencode($reportTokenGestao) ?>?origem=gestao"
-                           target="voxel-laudario" rel="noopener"
+                           href="/reports/r/<?= rawurlencode($reportTokenGestao) ?>/pdf?origem=gestao"
+                           target="_self"
                            title="<?= htmlspecialchars(t('gestao_gerenciar.menu.ver_laudo_desc'), ENT_QUOTES) ?>">
                             <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
                         </a>

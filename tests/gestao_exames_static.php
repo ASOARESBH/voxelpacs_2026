@@ -75,7 +75,7 @@ $managementBranch = ($branchStart !== false && $branchEnd !== false)
 $expect($managementBranch !== '', 'Não foi possível delimitar o branch da Gestão.');
 $expect(!str_contains($managementBranch, 'wl-btn-assumir'), 'Gestão expõe botão Assumir.');
 $expect(str_contains($managementBranch, 'wl-btn-laudo-gestao'), 'Gestão não expõe o botão Laudo administrativo.');
-$expect(str_contains($managementBranch, 'target="voxel-laudario"') && str_contains($managementBranch, 'rawurlencode($reportTokenGestao)'), 'Laudo administrativo não usa a rota opaca em nova aba.');
+$expect(str_contains($managementBranch, 'target="_self"') && str_contains($managementBranch, 'rawurlencode($reportTokenGestao)') && str_contains($managementBranch, '/pdf?origem=gestao'), 'Laudo administrativo não abre o PDF opaco no contexto da Gestão.');
 $expect(str_contains($managementBranch, 'aria-disabled="true"') && str_contains($managementBranch, 'is-disabled'), 'Laudo administrativo indisponível não possui estado desabilitado acessível.');
 $expect(!str_contains($managementBranch, 'wl-btn-abrir'), 'Gestão expõe botão Abrir.');
 $expect(!str_contains($managementBranch, '/abrir'), 'Gestão expõe rota de abertura.');
