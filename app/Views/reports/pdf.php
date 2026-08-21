@@ -12,10 +12,11 @@ $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportCont
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
 $corpoLaudo = (string) ($r['corpo_laudo'] ?? '');
+$corpoLaudoAtual = trim(strip_tags($corpoLaudo)) !== '';
 
-// Para laudos antigos, preserva as seções da própria persistência ou da
-// Máscara vinculada. O Moderno Lateral usa esses blocos com rótulo em negrito;
-// os demais layouts continuam consumindo corpoLaudo normalmente.
+// O corpo atual persistido pelo editor é a fonte única de verdade do PDF.
+// Se estiver vazio, mantém compatibilidade com laudos históricos em seções ou
+// com máscaras antigas ainda não convertidas para corpo livre.
 $rotulosSecoesPdf = [
     'tecnica' => 'TÉCNICA',
     'achados' => 'ACHADOS',
@@ -23,11 +24,8 @@ $rotulosSecoesPdf = [
 ];
 $secoesClinicasPdf = [];
 
-// Laudos com Máscara vinculada possuem três seções persistidas pelo editor
-// ativo. Elas são a fonte de verdade do Moderno Lateral: um corpo_laudo
-// histórico pode conter a aplicação antiga do mesmo template e não deve ser
-// mesclado novamente na impressão. Sem seções atuais, preserva-se o corpo livre
-// e o fallback de laudos antigos.
+// Seções são exclusivamente um fallback de compatibilidade para laudos
+// históricos. Elas nunca podem sobrepor o HTML atual salvo pelo médico.
 $secoesPersistidas = [];
 foreach ($rotulosSecoesPdf as $chave => $rotulo) {
     $valor = (string) ($r['secao_' . $chave] ?? '');
@@ -35,7 +33,8 @@ foreach ($rotulosSecoesPdf as $chave => $rotulo) {
         $secoesPersistidas[$chave] = ['rotulo' => $rotulo, 'conteudo' => $valor];
     }
 }
-$usarSecoesPersistidas = $templateCodigo === 'moderno_lateral'
+$usarSecoesPersistidas = !$corpoLaudoAtual
+    && $templateCodigo === 'moderno_lateral'
     && (int) ($r['template_id'] ?? 0) > 0
     && empty($r['mascara_conteudo_livre'])
     && !empty($secoesPersistidas);
@@ -95,10 +94,9 @@ if ($usarSecoesPersistidas) {
     );
 }
 
-// O editor livre persiste títulos em <h*> ou <p><strong>. Quando existirem,
-// eles são a fonte de verdade para laudos sem Máscara vinculada ou sem seções
-// atuais. Sem marcadores, aplica o fallback das colunas/Máscara.
-if (!$usarSecoesPersistidas && empty($r['mascara_conteudo_livre'])
+// Para laudos legados sem corpo persistido, converte marcadores conhecidos
+// em seções de compatibilidade. O HTML atual nunca é reinterpretado.
+if (!$corpoLaudoAtual && !$usarSecoesPersistidas && empty($r['mascara_conteudo_livre'])
     && trim($corpoLaudo) !== '' && class_exists('DOMDocument')) {
     $dom = new \DOMDocument('1.0', 'UTF-8');
     $previousErrors = libxml_use_internal_errors(true);
@@ -134,7 +132,7 @@ if (!$usarSecoesPersistidas && empty($r['mascara_conteudo_livre'])
     $secoesClinicasPdf = array_filter($secoesClinicasPdf, static fn(array $secao): bool => trim(strip_tags($secao['conteudo'] ?? '')) !== '');
 }
 
-if (empty($secoesClinicasPdf) && empty($r['mascara_conteudo_livre'])) {
+if (!$corpoLaudoAtual && empty($secoesClinicasPdf) && empty($r['mascara_conteudo_livre'])) {
     foreach ($rotulosSecoesPdf as $chave => $rotulo) {
         $valor = (string) ($r['secao_' . $chave] ?? '');
         if (trim(strip_tags($valor)) === '' && isset($r['mascara_secoes'][$chave])) {
@@ -146,7 +144,7 @@ if (empty($secoesClinicasPdf) && empty($r['mascara_conteudo_livre'])) {
     }
 }
 
-if (trim($corpoLaudo) === '') {
+if (!$corpoLaudoAtual && trim($corpoLaudo) === '') {
     $blocosLegados = array_filter([
         (string) ($r['secao_exame'] ?? ''),
         (string) ($r['secao_tecnica'] ?? ''),

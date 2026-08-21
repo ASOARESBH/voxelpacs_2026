@@ -10,23 +10,27 @@ if (is_file($autoload)) {
 
 $dispatcher = $root . '/app/Views/reports/pdf.php';
 $failures = [];
-
 $require = static function (bool $condition, string $message) use (&$failures): void {
     if (!$condition) {
         $failures[] = $message;
     }
 };
 
-$tecnica = '<p>Aquisição volumétrica multislice de alta resolução, sem uso de meio de contraste iodado endovenoso. Impressão: Ausência de alterações significativas detectáveis pelo método.</p>';
-$achados = '<p>Aquisição volumétrica multislice de alta resolução, sem uso de meio de contraste iodado endovenoso. Impressão: Ausência de alterações significativas detectáveis pelo método.</p><p>Estruturas vasculares do mediastino de calibre e trajeto preservados.</p>';
-$impressao = '<p>Ausência de alterações significativas detectáveis pelo método.</p>';
+$tecnicaAtual = '<p>Aquisição volumétrica multislice de alta resolução, sem uso de meio de contraste iodado endovenoso.</p>';
+$achadosAtuais = '<p>Estruturas vasculares do mediastino de calibre e trajeto preservados.</p>';
+$impressaoAtual = '<p>Ausência de alterações significativas detectáveis pelo método.</p>';
+$corpoAtual = '<h4>Técnica</h4>' . $tecnicaAtual
+    . '<h4>Achados</h4>' . $achadosAtuais
+    . '<h4>Impressão</h4>' . $impressaoAtual;
 
 $report = [
     'template_id' => 77,
-    'corpo_laudo' => '<h4>Técnica</h4>' . $tecnica . '<h4>Achados</h4>' . $achados . '<h4>Impressão</h4>' . $impressao,
-    'secao_tecnica' => $tecnica,
-    'secao_achados' => $achados,
-    'secao_conclusao' => $impressao,
+    'corpo_laudo' => $corpoAtual,
+    // Campos históricos deliberadamente divergentes: não podem ser mesclados
+    // ao corpo atual e causar repetição na impressão.
+    'secao_tecnica' => $tecnicaAtual . $impressaoAtual,
+    'secao_achados' => $tecnicaAtual . $achadosAtuais,
+    'secao_conclusao' => $impressaoAtual,
     'patient_name' => 'Paciente de Teste',
     'study_description' => 'TC Tórax',
     'modalities' => 'CT',
@@ -39,12 +43,14 @@ ob_start();
 require $dispatcher;
 $html = (string) ob_get_clean();
 
-$require(substr_count($html, 'Aquisição volumétrica multislice de alta resolução') === 1, 'Técnica foi impressa mais de uma vez.');
-$require(substr_count($html, 'Estruturas vasculares do mediastino de calibre e trajeto preservados.') === 1, 'Achados foram impressos mais de uma vez.');
-$require(substr_count($html, 'Ausência de alterações significativas detectáveis pelo método.') === 1, 'Impressão foi impressa mais de uma vez.');
-$require(substr_count($html, '<h2 class="pdf-clinical-section-title">') === 3, 'Os três títulos clínicos não foram renderizados uma única vez cada.');
-$require(strpos($html, '.pdf-clinical-section-title {') !== false && strpos($html, 'font-weight: 700') !== false, 'Títulos clínicos não mantêm negrito explícito na impressão.');
-$require(strpos($html, 'Tomografia Computadorizada do Tórax') === false, 'Nome do Template não pode ser impresso como título clínico.');
+$require(substr_count($html, 'Aquisição volumétrica multislice de alta resolução') === 1,
+    'PDF mesclou conteúdo histórico e repetiu a Técnica atual.');
+$require(substr_count($html, 'Estruturas vasculares do mediastino de calibre e trajeto preservados.') === 1,
+    'PDF mesclou conteúdo histórico e repetiu os Achados atuais.');
+$require(substr_count($html, 'Ausência de alterações significativas detectáveis pelo método.') === 1,
+    'PDF mesclou conteúdo histórico e repetiu a Impressão atual.');
+$require(strpos($html, '<h2 class="pdf-clinical-section-title">') === false,
+    'PDF reinterpretou o corpo atual do editor como seções legadas.');
 
 if ($failures !== []) {
     fwrite(STDERR, "REPORTS_PDF_MASCARA_DEDUPLICACAO_FALHOU\n- " . implode("\n- ", $failures) . "\n");
