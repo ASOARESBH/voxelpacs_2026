@@ -55,6 +55,7 @@ $expectations = [
     [$portal, "PORTAL_IMAGES_ENABLED", 'Portal deve conservar flag explícita de ativação.'],
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],
     [$portal, "'httponly' => true", 'Cookie de sessão de imagens deve ser HttpOnly.'],
+    [$portal, "'/viewer?StudyInstanceUIDs='", 'Portal deve abrir a rota de modo do OHIF com o estudo anonimizado.'],
     [$reportService, 'PORTAL_IMAGES_PIPELINE_ENABLED', 'Pipeline deve exigir habilitação explícita.'],
     [$preparation, 'PORTAL_CLINICAL_ORTHANC_PRIVATE_URL', 'Pipeline deve exigir origem privada explícita do Orthanc clínico.'],
     [$preparation, 'Endpoint privado do Orthanc clínico não configurado.', 'Pipeline deve falhar fechado sem origem clínica privada.'],
@@ -100,6 +101,7 @@ foreach ($expectations as [$content, $needle, $message]) {
 
 $forbidden = [
     [$viewer, 'htmlspecialchars($viewerUrl, ENT_QUOTES, \'UTF-8\') ?>/', 'Iframe não pode acrescentar barra ao UID anonimizado.'],
+    [$portal, "'/?StudyInstanceUIDs='", 'Portal não pode apontar o Viewer para a raiz sem uma rota de modo.'],
     [$routes, "Router::get('/imagens/dicom-web/studies'", 'Gateway não pode expor QIDO-RS genérico de estudos.'],
     [$routes, 'Router::post(\'/imagens/dicom-web', 'Gateway não pode expor STOW-RS.'],
 ];

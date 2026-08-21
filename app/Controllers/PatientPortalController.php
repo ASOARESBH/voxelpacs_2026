@@ -153,8 +153,8 @@ final class PatientPortalController extends Controller
         $this->view('portal/images_viewer', [
             'csrf' => $this->csrfToken(),
             'patientName' => $this->displayName((string) $scope['patient_name_normalized']),
-            'viewerUrl' => rtrim((string) (getenv('PORTAL_IMAGE_VIEWER_URL') ?: '/imagens/viewer/'), '/')
-                . '/?StudyInstanceUIDs=' . rawurlencode((string) $result['study_uid']),
+            'viewerUrl' => rtrim((string) (getenv('PORTAL_IMAGE_VIEWER_URL') ?: '/imagens/viewer'), '/')
+                . '/viewer?StudyInstanceUIDs=' . rawurlencode((string) $result['study_uid']),
         ], 'portal');
     }
 
