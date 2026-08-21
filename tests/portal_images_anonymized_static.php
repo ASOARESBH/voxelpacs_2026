@@ -55,6 +55,8 @@ $expectations = [
     [$controller, 'StudyInstanceUID=\' . rawurlencode($studyUid)', 'Gateway deve normalizar a consulta QIDO para um único UID.'],
     [$controller, 'if ($pathOnly === \'/studies\')', 'Gateway deve validar a consulta QIDO limitada antes do proxy.'],
     [$gateway, "hash_equals(\$studyUid, \$query['StudyInstanceUID'])", 'Gateway deve aceitar QIDO somente para o UID exato da sessão.'],
+    [$gateway, 'private function normalizeQidoPath', 'Gateway deve normalizar consultas neutras antes do proxy.'],
+    [$gateway, "'/studies?StudyInstanceUID=' . rawurlencode(\$studyUid)", 'Gateway deve encaminhar QIDO ao repositório apenas pelo UID da sessão.'],
     [$controller, 'private function clientIp()', 'Gateway deve obter o IP sem depender de helper ausente.'],
     [$portal, "PORTAL_IMAGES_ENABLED", 'Portal deve conservar flag explícita de ativação.'],
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],

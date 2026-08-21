@@ -25,11 +25,20 @@ final class PortalImageGatewayController extends Controller
     public function qidoStudy(): void
     {
         $studyUid = trim((string) ($_GET['StudyInstanceUID'] ?? ''));
-        if (!preg_match('/^[0-9.]{1,255}$/', $studyUid)) {
-            $this->deny(404, 'qido_study_missing');
+        if (preg_match('/^[0-9.]{1,255}$/', $studyUid)) {
+            $this->serve('/studies?StudyInstanceUID=' . rawurlencode($studyUid));
             return;
         }
-        $this->serve('/studies?StudyInstanceUID=' . rawurlencode($studyUid));
+
+        // O OHIF consulta o Patient ID neutro após QIDO. Nunca repassamos filtros,
+        // paginação ou valores arbitrários: o serviço converte este alias no único
+        // StudyInstanceUID autorizado pela sessão opaca.
+        if ((string) ($_GET['00100020'] ?? '') === 'PORTAL-ANON') {
+            $this->serve('/studies?00100020=PORTAL-ANON');
+            return;
+        }
+
+        $this->deny(404, 'qido_study_missing');
     }
 
     public function study(string $studyUid): void
@@ -100,9 +109,10 @@ final class PortalImageGatewayController extends Controller
         if ($pathOnly === '/studies') {
             parse_str((string) parse_url($path, PHP_URL_QUERY), $query);
             return count($query) === 1
-                && isset($query['StudyInstanceUID'])
-                && is_string($query['StudyInstanceUID'])
-                && preg_match('/^[0-9.]{1,255}$/', $query['StudyInstanceUID']) === 1;
+                && ((isset($query['StudyInstanceUID'])
+                    && is_string($query['StudyInstanceUID'])
+                    && preg_match('/^[0-9.]{1,255}$/', $query['StudyInstanceUID']) === 1)
+                    || (($query['00100020'] ?? '') === 'PORTAL-ANON'));
         }
         return preg_match('#^/studies/[0-9.]+(?:/metadata|/series/[0-9.]+/metadata|/series/[0-9.]+/instances/[0-9.]+(?:/rendered|/frames/[1-9][0-9]*)?)?$#', $pathOnly) === 1;
     }

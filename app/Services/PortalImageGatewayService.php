@@ -28,8 +28,9 @@ final class PortalImageGatewayService
             Logger::warning('PortalImageGatewayService: caminho negado', ['session_id' => $session['session_id'] ?? null]);
             return null;
         }
+        $targetPath = $this->normalizeQidoPath($requestPath, $uid);
         try {
-            return $this->targetClient()->dicomWeb($requestPath, $accept);
+            return $this->targetClient()->dicomWeb($targetPath, $accept);
         } catch (Throwable $e) {
             Logger::error('PortalImageGatewayService: proxy falhou', ['session_id' => $session['session_id'] ?? null, 'error' => $e->getMessage()]);
             throw new RuntimeException('Falha ao recuperar imagem anonimizada.');
@@ -45,9 +46,10 @@ final class PortalImageGatewayService
         if ($pathOnly === '/studies') {
             parse_str((string) parse_url($path, PHP_URL_QUERY), $query);
             return count($query) === 1
-                && isset($query['StudyInstanceUID'])
-                && is_string($query['StudyInstanceUID'])
-                && hash_equals($studyUid, $query['StudyInstanceUID']);
+                && ((isset($query['StudyInstanceUID'])
+                    && is_string($query['StudyInstanceUID'])
+                    && hash_equals($studyUid, $query['StudyInstanceUID']))
+                    || (($query['00100020'] ?? '') === 'PORTAL-ANON'));
         }
         $prefix = '/studies/' . rawurlencode($studyUid);
         if (!str_starts_with($pathOnly, $prefix)) {
@@ -60,6 +62,18 @@ final class PortalImageGatewayService
         // Bloqueia busca QIDO genérica, STOW, delete, bulk e quaisquer recursos fora do estudo autorizado.
         return !preg_match('#/(?:studies|series|instances)(?:/|$)#', $suffix)
             || preg_match('#^/(?:metadata|series(?:/[^/]+(?:/metadata|/instances/[^/]+(?:/frames(?:/[^/]+)?(?:/rendered)?|/rendered)?)?)?)?$#', $suffix) === 1;
+    }
+
+    /**
+     * O datasource do OHIF pode repetir QIDO pelo Patient ID neutro. Depois da
+     * validação, convertemos essa consulta no UID único da sessão antes de tocar
+     * o repositório, eliminando qualquer possibilidade de enumeração.
+     */
+    private function normalizeQidoPath(string $path, string $studyUid): string
+    {
+        return (string) strtok($path, '?') === '/studies'
+            ? '/studies?StudyInstanceUID=' . rawurlencode($studyUid)
+            : $path;
     }
 
     private function targetClient(): PortalAnonymizedOrthancClient
