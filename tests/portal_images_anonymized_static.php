@@ -51,6 +51,9 @@ $expectations = [
     [$controller, "'Cache-Control: no-store, private'", 'Gateway deve impedir cache de resposta clínica.'],
     [$controller, "echo \$response['body'];\n            exit;", 'Gateway deve encerrar resposta DICOMweb sem layout HTML.'],
     [$controller, "'session_missing'", 'Gateway deve negar ausência de sessão.'],
+    [$controller, 'public function qidoStudy()', 'Gateway deve expor apenas QIDO-RS limitado ao estudo da sessão.'],
+    [$controller, 'StudyInstanceUID=\' . rawurlencode($studyUid)', 'Gateway deve normalizar a consulta QIDO para um único UID.'],
+    [$controller, 'if ($pathOnly === \'/studies\')', 'Gateway deve validar a consulta QIDO limitada antes do proxy.'],
     [$controller, 'private function clientIp()', 'Gateway deve obter o IP sem depender de helper ausente.'],
     [$portal, "PORTAL_IMAGES_ENABLED", 'Portal deve conservar flag explícita de ativação.'],
     [$portal, "PORTAL_IMAGES_ANONYMIZED", 'Portal deve exigir anonimização explícita.'],
@@ -102,7 +105,7 @@ foreach ($expectations as [$content, $needle, $message]) {
 $forbidden = [
     [$viewer, 'htmlspecialchars($viewerUrl, ENT_QUOTES, \'UTF-8\') ?>/', 'Iframe não pode acrescentar barra ao UID anonimizado.'],
     [$portal, "'/?StudyInstanceUIDs='", 'Portal não pode apontar o Viewer para a raiz sem uma rota de modo.'],
-    [$routes, "Router::get('/imagens/dicom-web/studies'", 'Gateway não pode expor QIDO-RS genérico de estudos.'],
+    [$routes, "Router::get('/imagens/dicom-web/studies/{studyUid}/series'", 'Gateway não pode expor QIDO-RS de série fora do estudo autorizado.'],
     [$routes, 'Router::post(\'/imagens/dicom-web', 'Gateway não pode expor STOW-RS.'],
 ];
 foreach ($forbidden as [$content, $needle, $message]) {

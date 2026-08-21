@@ -17,6 +17,21 @@ use Throwable;
  */
 final class PortalImageGatewayController extends Controller
 {
+    /**
+     * Consulta QIDO-RS limitada: o OHIF a usa para localizar o estudo informado
+     * na URL, porém o gateway descarta todos os demais filtros e valida o UID
+     * novamente contra a sessão opaca antes de encaminhar ao repositório isolado.
+     */
+    public function qidoStudy(): void
+    {
+        $studyUid = trim((string) ($_GET['StudyInstanceUID'] ?? ''));
+        if (!preg_match('/^[0-9.]{1,255}$/', $studyUid)) {
+            $this->deny(404, 'qido_study_missing');
+            return;
+        }
+        $this->serve('/studies?StudyInstanceUID=' . rawurlencode($studyUid));
+    }
+
     public function study(string $studyUid): void
     {
         $suffix = (string) ($_GET['path'] ?? '');
@@ -78,8 +93,18 @@ final class PortalImageGatewayController extends Controller
 
     private function validUidPath(string $path): bool
     {
-        return strlen($path) <= 1024
-            && preg_match('#^/studies/[0-9.]+(?:/metadata|/series/[0-9.]+/metadata|/series/[0-9.]+/instances/[0-9.]+(?:/rendered|/frames/[1-9][0-9]*)?)?$#', $path) === 1;
+        if (strlen($path) > 1024) {
+            return false;
+        }
+        $pathOnly = (string) strtok($path, '?');
+        if ($pathOnly === '/studies') {
+            parse_str((string) parse_url($path, PHP_URL_QUERY), $query);
+            return count($query) === 1
+                && isset($query['StudyInstanceUID'])
+                && is_string($query['StudyInstanceUID'])
+                && preg_match('/^[0-9.]{1,255}$/', $query['StudyInstanceUID']) === 1;
+        }
+        return preg_match('#^/studies/[0-9.]+(?:/metadata|/series/[0-9.]+/metadata|/series/[0-9.]+/instances/[0-9.]+(?:/rendered|/frames/[1-9][0-9]*)?)?$#', $pathOnly) === 1;
     }
 
     private function safeContentType(string $contentType): string

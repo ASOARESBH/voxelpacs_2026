@@ -10,6 +10,8 @@ Router::post('/instituicao', 'PatientPortalController@verifyInstitution');
 Router::get('/resultados', 'PatientPortalController@results');
 Router::get('/laudo/{token}', 'PatientPortalController@pdf');
 // Gateway DICOMweb: somente GET em um estudo autorizado por cookie opaco.
+// A consulta QIDO exige StudyInstanceUID e o gateway aceita apenas o UID da sessão.
+Router::get('/imagens/dicom-web/studies', 'PortalImageGatewayController@qidoStudy');
 Router::get('/imagens/dicom-web/studies/{studyUid}/metadata', 'PortalImageGatewayController@metadata');
 Router::get('/imagens/dicom-web/studies/{studyUid}/series/{seriesUid}/metadata', 'PortalImageGatewayController@seriesMetadata');
 Router::get('/imagens/dicom-web/studies/{studyUid}/series/{seriesUid}/instances/{instanceUid}/rendered', 'PortalImageGatewayController@rendered');
