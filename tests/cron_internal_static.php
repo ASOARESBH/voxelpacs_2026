@@ -33,6 +33,12 @@ $assertScript = static function (string $relativePath, string $service, string $
 $assertScript('cron/sync-pacs.php', 'PacsSyncService', 'executarParaTodosServidores', '[PACS-CRON]', 'pacs-sync.log');
 $assertScript('cron/sync-sla.php', 'SlaRulesEngineService', 'executarParaTodosTenants', '[SLA-CRON]', 'sla-sync.log');
 
+$pacsScript = (string) file_get_contents($root . '/cron/sync-pacs.php');
+$require(strpos($pacsScript, "['erro', 'offline']") !== false && strpos($pacsScript, "'failed_servers'") !== false,
+    'O cron PACS deve identificar falhas retornadas pelo serviço por servidor.');
+$require(strpos($pacsScript, 'fwrite(STDERR, $encodedPayload);') !== false && strpos($pacsScript, 'exit(1);') !== false,
+    'O cron PACS deve terminar com erro quando algum Orthanc não conclui o ciclo.');
+
 $routes = (string) file_get_contents($root . '/routes/web.php');
 $require(strpos($routes, "/api/servidor-pacs/sync-robo") !== false, 'A rota HTTP PACS legada deve permanecer durante a observação.');
 $require(strpos($routes, "/api/sla-regras/executar") !== false, 'A rota HTTP SLA legada deve permanecer durante a observação.');

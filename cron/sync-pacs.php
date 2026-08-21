@@ -44,13 +44,25 @@ try {
 
     $startedAt = microtime(true);
     $summary = \App\Services\PacsSyncService::executarParaTodosServidores();
+    $failedServers = array_values(array_filter(
+        is_array($summary['servidores'] ?? null) ? $summary['servidores'] : [],
+        static fn(array $server): bool => in_array((string) ($server['status'] ?? ''), ['erro', 'offline'], true)
+    ));
     $payload = [
-        'ok' => true,
+        'ok' => $failedServers === [],
         'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         'summary' => $summary,
     ];
+    if ($failedServers !== []) {
+        $payload['failed_servers'] = $failedServers;
+    }
     $writeLog($payload);
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    $encodedPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+    if ($failedServers !== []) {
+        fwrite(STDERR, $encodedPayload);
+        exit(1);
+    }
+    echo $encodedPayload;
     exit(0);
 } catch (\Throwable $exception) {
     $payload = [
