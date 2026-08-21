@@ -18,6 +18,9 @@ $required = [
     'routes/platform.php',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql',
     'database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql',
+    'infrastructure/portal-ohif/voxel-patient-viewer.css',
+    'infrastructure/portal-ohif/voxel-patient-viewer.js',
+    'infrastructure/portal-ohif/apply-patient-viewer-assets.sh',
 ];
 foreach ($required as $file) {
     if (!is_file($root . '/' . $file)) {
@@ -40,6 +43,8 @@ $review = file_get_contents($root . '/app/Controllers/Platform/PortalImageReview
 $pg = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_postgresql.sql') ?: '';
 $mysql = file_get_contents($root . '/database/migrations/2026-08-20_portal_imagens_anonimizadas_mysql.sql') ?: '';
 $viewer = file_get_contents($root . '/app/Views/portal/images_viewer.php') ?: '';
+$patientViewerCss = file_get_contents($root . '/infrastructure/portal-ohif/voxel-patient-viewer.css') ?: '';
+$patientViewerJs = file_get_contents($root . '/infrastructure/portal-ohif/voxel-patient-viewer.js') ?: '';
 
 $expectations = [
     [$session, 'hash(\'sha256\', $token)', 'Sessão de imagem deve persistir somente hash do token.'],
@@ -97,6 +102,12 @@ $expectations = [
     [$mysql, 'DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci', 'Migration MySQL deve manter compatibilidade HostGator.'],
     [$mysql, 'bi_portal_image_sessions', 'Migration MySQL de sessão temporária ausente.'],
     [$viewer, 'src="<?= htmlspecialchars($viewerUrl, ENT_QUOTES, \'UTF-8\') ?>"', 'Iframe deve preservar a URL do estudo anonimizado sem alterar o parâmetro.'],
+    [$patientViewerCss, 'VOXEL Imagens do Paciente', 'Viewer do paciente deve possuir identidade VOXEL exclusiva.'],
+    [$patientViewerCss, '[data-cy="MeasurementTools"]', 'Ferramentas de medição devem permanecer ocultas no Viewer do paciente.'],
+    [$patientViewerCss, '[data-cy="Capture"]', 'Captura e exportação devem permanecer ocultas no Viewer do paciente.'],
+    [$patientViewerJs, 'blockedControls', 'Viewer do paciente deve restringir controles avançados dinamicamente.'],
+    [$patientViewerJs, 'VOXEL IMAGENS', 'Viewer do paciente deve exibir a marca VOXEL.'],
+    [$patientViewerJs, 'Visualização de imagens anonimizadas', 'Aviso de uso seguro deve permanecer no Viewer do paciente.'],
 ];
 foreach ($expectations as [$content, $needle, $message]) {
     if (!str_contains($content, $needle)) {

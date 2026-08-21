@@ -1,0 +1,107 @@
+/*
+ * VOXEL Imagens do Paciente
+ * Aplicado exclusivamente ao bundle estático do Portal. Não é carregado pelo
+ * VOXEL View interno nem pelas rotas clínicas.
+ */
+:root {
+  --voxel-patient-blue: #063260;
+  --voxel-patient-cyan: #2ab6df;
+  --voxel-patient-ink: #d7effa;
+}
+
+#voxel-patient-brand {
+  position: fixed;
+  z-index: 10000;
+  top: 10px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid rgba(42, 182, 223, .5);
+  border-radius: 6px;
+  background: rgba(6, 50, 96, .96);
+  color: var(--voxel-patient-ink);
+  font: 700 12px/1.1 Arial, sans-serif;
+  letter-spacing: .11em;
+  pointer-events: none;
+}
+
+#voxel-patient-brand::before {
+  content: "V";
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--voxel-patient-cyan);
+  color: var(--voxel-patient-blue);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+#voxel-patient-brand small {
+  display: block;
+  margin-top: 2px;
+  color: #a9d9e9;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+/* O painel nativo de marca é substituído pela identidade VOXEL acima. */
+[data-cy="header-logo"],
+[data-cy="ohif-logo"],
+.ohif-logo,
+#root a[href*="ohif.org"] {
+  display: none !important;
+}
+
+/* Controles avançados, criação de medidas, captura, layout e configurações. */
+[data-cy="MeasurementTools"],
+[data-cy="MoreTools"],
+[data-cy="Layout"],
+[data-cy="Capture"],
+[data-cy="RotateRight"],
+[data-cy="FlipHorizontal"],
+[data-cy="Invert"],
+[data-cy="CalibrationLine"],
+[data-cy="Crosshairs"],
+[data-cy="ReferenceLines"],
+[data-cy="Cine"],
+[data-cy="Settings"],
+[data-cy="panelSegmentation-btn"],
+[data-cy="trackedMeasurements-panel"] {
+  display: none !important;
+}
+
+/* Mantém a área de imagem, séries, zoom, pan, janela/nível e redefinir. */
+#root [data-cy="Zoom"],
+#root [data-cy="Pan"],
+#root [data-cy="WindowLevelGroup"],
+#root [data-cy="WindowLevelGroup-split-button-primary"],
+#root [data-cy="Reset"] {
+  display: inline-flex !important;
+}
+
+#voxel-patient-disclaimer {
+  position: fixed;
+  z-index: 10001;
+  right: 14px;
+  bottom: 12px;
+  max-width: min(420px, calc(100vw - 28px));
+  padding: 8px 12px;
+  border: 1px solid rgba(42, 182, 223, .4);
+  border-radius: 6px;
+  background: rgba(6, 50, 96, .96);
+  color: #d7effa;
+  font: 500 11px/1.35 Arial, sans-serif;
+  pointer-events: none;
+}
+
+@media (max-width: 700px) {
+  #voxel-patient-brand { left: 8px; top: 8px; padding: 5px 8px; }
+  #voxel-patient-disclaimer { right: 8px; bottom: 8px; font-size: 10px; }
+}
