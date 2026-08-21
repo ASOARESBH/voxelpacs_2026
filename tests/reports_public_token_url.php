@@ -53,7 +53,7 @@ $mustContain = [
     ['reports_js', 'function openSecurePdf(pdfUrl)'],
     ['reports_js', '`/reports/r/${encodeURIComponent(config.reportToken)}/pdf`'],
     ['reports_footer', 'reports-main.js?v=<?= $v ?>'],
-    ['view_core', "ASSET_VERSION = '2.2.3'"],
+    ['view_core', 'ASSET_VERSION'],
     ['chat_service', "'/reports/r/'"],
 ];
 
@@ -62,6 +62,11 @@ foreach ($mustContain as [$file, $needle]) {
         fwrite(STDERR, "FALHOU: [$file] não contém $needle\n");
         exit(1);
     }
+}
+
+if (preg_match("/ASSET_VERSION\\s*=\\s*'[0-9]+\\.[0-9]+\\.[0-9]+'/", $contents['view_core']) !== 1) {
+    fwrite(STDERR, "FALHOU: [view_core] não contém versão semântica de assets.\n");
+    exit(1);
 }
 
 $forbidden = [

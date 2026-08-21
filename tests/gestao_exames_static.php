@@ -62,16 +62,25 @@ $expect(str_contains($view, "body.set('pedido', cameraFile"), 'Foto capturada n�
 $expect(str_contains($view, 'new FormData(form)') , 'Upload multipart não está implementado.');
 $expect(str_contains($view, '<?php if ($modoGestao): ?>'), 'Branch administrativa ausente.');
 
-$branchStart = strpos($view, '<?php if ($modoGestao): ?>');
-$branchEnd   = $branchStart === false ? false : strpos($view, '<?php else: ?>', $branchStart);
+$actionsStart = strpos($view, '<!-- Ações -->');
+$branchStart = $actionsStart === false ? false : strpos($view, '<?php if ($modoGestao): ?>', $actionsStart);
+$branchEnd   = $branchStart === false ? false : strpos(
+    $view,
+    '<?php else: ?>' . "\n                        <?php if (\$podePeerReview",
+    $branchStart
+);
 $managementBranch = ($branchStart !== false && $branchEnd !== false)
     ? substr($view, $branchStart, $branchEnd - $branchStart)
     : '';
 $expect($managementBranch !== '', 'Não foi possível delimitar o branch da Gestão.');
 $expect(!str_contains($managementBranch, 'wl-btn-assumir'), 'Gestão expõe botão Assumir.');
-$expect(!str_contains($managementBranch, 'wl-btn-laudo'), 'Gestão expõe botão Laudo.');
+$expect(str_contains($managementBranch, 'wl-btn-laudo-gestao'), 'Gestão não expõe o botão Laudo administrativo.');
+$expect(str_contains($managementBranch, 'target="voxel-laudario"') && str_contains($managementBranch, 'rawurlencode($reportTokenGestao)'), 'Laudo administrativo não usa a rota opaca em nova aba.');
+$expect(str_contains($managementBranch, 'aria-disabled="true"') && str_contains($managementBranch, 'is-disabled'), 'Laudo administrativo indisponível não possui estado desabilitado acessível.');
 $expect(!str_contains($managementBranch, 'wl-btn-abrir'), 'Gestão expõe botão Abrir.');
 $expect(!str_contains($managementBranch, '/abrir'), 'Gestão expõe rota de abertura.');
+$expect(str_contains($view, '$podeConsultarLaudoGestao = $modoGestao') && str_contains($view, 'in_array($reportSituacaoGestao, [\'assinado\', \'liberado\'], true)'), 'Laudo administrativo não está restrito a laudos assinados ou liberados.');
+$expect(str_contains($view, '$podeGerenciarPedido') && str_contains($view, 'preg_match(\'/^[a-f0-9]{48}$/\', $reportTokenGestao)'), 'Laudo administrativo não exige permissão e token opaco válido.');
 $expect(str_contains($view, '<?php if (!$modoGestao): ?>'), 'Duplo clique do viewer não está condicionado ao modo médico.');
 $expect(!str_contains($view, '<?php if ($modoGestao && $podeGerenciarPedido): ?>\n<script>'), 'Modal do pedido contém script aninhado dentro do bloco principal.');
 $expect(substr_count($view, '<script>') === 1 && substr_count($view, '</script>') === 2, 'Worklist possui quantidade inconsistente de tags script.');
@@ -93,6 +102,7 @@ $expect(str_contains($reportCard, "pedido_medico.status.anexado"), 'Card do repo
 $expect(str_contains($gerenciarController, 'public function gerenciarContext') && str_contains($gerenciarController, 'public function alterarPrioridade'), 'Endpoints do Gerenciar ausentes no Controller.');
 $expect(str_contains($gerenciarController, 'autorizadoGerenciar') && str_contains($gerenciarController, 'validarCsrf'), 'Gerenciar não centraliza autorização e CSRF.');
 $expect(str_contains($gerenciarService, 'dicom_priority_override') && str_contains($gerenciarService, 'addPriorityAudit'), 'Service não separa override DICOM da auditoria.');
+$expect(str_contains($gerenciarService, "'can_view_report' => in_array(\$reportSituacao, ['assinado', 'liberado'], true)"), 'Serviço administrativo não restringe a consulta a laudos assinados ou liberados.');
 $expect(str_contains($gerenciarService, "mb_strlen(\$reason, 'UTF-8') < 20"), 'Motivo de prioridade não exige pelo menos 20 caracteres.');
 $expect(str_contains($gerenciarService, "'chat_pendente'"), 'Alteração de prioridade não bloqueia Chat pendente.');
 $expect(str_contains($gerenciarRepository, 'WHERE id = :study_id AND tenant_id = :tenant_id'), 'Repository do Gerenciar não está tenant-scoped.');

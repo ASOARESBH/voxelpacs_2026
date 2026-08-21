@@ -507,6 +507,16 @@ $periodoLabel = [
                 && in_array($sit, ['assinado', 'liberado'], true)
                 && !empty($e['study_instance_uid']);
 
+            // Gestão: consulta administrativa apenas para quem possui a permissão
+            // já exigida pelo menu Gerenciar. A rota por token opaco preserva o
+            // isolamento do tenant e abre o laudo assinado/liberado em read-only.
+            $reportSituacaoGestao = strtolower(trim((string) ($e['report_situacao'] ?? '')));
+            $reportTokenGestao = strtolower(trim((string) ($e['report_public_token'] ?? '')));
+            $podeConsultarLaudoGestao = $modoGestao
+                && $podeGerenciarPedido
+                && in_array($reportSituacaoGestao, ['assinado', 'liberado'], true)
+                && preg_match('/^[a-f0-9]{48}$/', $reportTokenGestao) === 1;
+
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);
         ?>
@@ -684,6 +694,20 @@ $periodoLabel = [
                                 title="<?= htmlspecialchars(t('gestao_gerenciar.acao.gerenciar')) ?>">
                             <i class="fa fa-sliders"></i> <?= htmlspecialchars(t('gestao_gerenciar.acao.gerenciar')) ?>
                         </button>
+                        <?php if ($podeConsultarLaudoGestao): ?>
+                        <a class="wl-btn-laudo wl-btn-laudo-gestao"
+                           href="/reports/r/<?= rawurlencode($reportTokenGestao) ?>?origem=gestao"
+                           target="voxel-laudario" rel="noopener"
+                           title="<?= htmlspecialchars(t('gestao_gerenciar.menu.ver_laudo_desc'), ENT_QUOTES) ?>">
+                            <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
+                        </a>
+                        <?php else: ?>
+                        <span class="wl-btn-laudo wl-btn-laudo-gestao is-disabled"
+                              aria-disabled="true"
+                              title="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_laudo'), ENT_QUOTES) ?>">
+                            <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
+                        </span>
+                        <?php endif; ?>
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if ($podePeerReview && !empty($e['report_public_token'])): ?>
@@ -1318,8 +1342,11 @@ $periodoLabel = [
 .wl-btn-assumir:hover{opacity:.88;transform:scale(1.02);}
 .wl-btn-assumir:disabled{opacity:.4;cursor:not-allowed;}
 .wl-btn-laudo{background:rgba(124,58,237,.12);color:#7c3aed;border:1px solid rgba(124,58,237,.3);
-    border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;cursor:not-allowed;
-    display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;width:100%;justify-content:center;}
+    border-radius:5px;padding:.22rem .55rem;font-size:.7rem;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;width:100%;justify-content:center;
+    text-decoration:none;transition:opacity .15s,transform .1s;}
+.wl-btn-laudo:hover{opacity:.88;transform:scale(1.02);color:#6d28d9;}
+.wl-btn-laudo.is-disabled{opacity:.45;cursor:not-allowed;pointer-events:none;transform:none;}
 .wl-viewer-wrap{position:relative;width:100%;}
 .wl-btn-abrir{background:var(--pacs-primary);color:#fff;border:none;border-radius:5px;
     padding:.22rem .55rem;font-size:.7rem;font-weight:600;cursor:pointer;
