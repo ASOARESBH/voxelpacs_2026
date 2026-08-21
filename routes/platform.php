@@ -94,6 +94,18 @@ Router::post('/platform/servidor-pacs/{id}/negocios/associar',      'Platform\Se
 Router::post('/platform/servidor-pacs/{id}/negocios/{tenantId}/desassociar', 'Platform\ServidorPacsController@desassociarNegocio');
 
 // ============================================================
+// Conectores de Comunicação Globais (somente superadmin)
+// ============================================================
+Router::get('/platform/conectores',                    'Platform\ConectoresController@index');
+Router::get('/platform/conectores/whatsapp',           'Platform\ConectoresController@whatsapp');
+Router::post('/platform/conectores/whatsapp/salvar',   'Platform\ConectoresController@salvarWhatsapp');
+Router::post('/platform/conectores/whatsapp/testar',   'Platform\ConectoresController@testarWhatsapp');
+Router::get('/platform/conectores/telegram',           'Platform\ConectoresController@telegram');
+Router::post('/platform/conectores/telegram/salvar',   'Platform\ConectoresController@salvarTelegram');
+Router::post('/platform/conectores/telegram/testar',   'Platform\ConectoresController@testarTelegram');
+Router::get('/platform/conectores/logs',               'Platform\ConectoresController@logs');
+
+// ============================================================
 // VOXEL Copilot — Integração sistêmica por negócio
 // ============================================================
 Router::get( '/platform/negocios/{id}/copilot',                                'Platform\CopilotIntegracaoController@show');

@@ -520,6 +520,24 @@ class ReportService {
 
         AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
 
+        // Conectores globais são pós-commit e estritamente fail-safe: uma
+        // indisponibilidade externa jamais altera o resultado clínico do laudo.
+        try {
+            \App\Services\ConectorNotificacaoService::notificarLaudoRealizado(
+                $estudo,
+                ['nome' => $medico['nome'] ?? $user->name ?? '', 'crm' => $crm ?? ''],
+                $report,
+                $modo === 'fechar' ? 'liberado' : 'assinado'
+            );
+        } catch (\Throwable $e) {
+            Logger::error('[ReportService::assinar] Conectores de comunicação falharam', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'modo' => $modo,
+                'error' => $e->getMessage(),
+            ]);
+                }
+
         // ── Notifica o VoxelCopilot sobre o laudo liberado (só quando o estudo
         // de fato é finalizado — "Somente Assinar" não dispara este webhook,
         // já que o estudo continua em 'assinado', não 'liberado') ───────────

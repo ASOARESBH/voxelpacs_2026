@@ -25,6 +25,7 @@
             <a href="/platform/reports" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/reports')?'active':'' ?>"><i class="fa fa-chart-line"></i><span>Relatórios</span></a>
             <div class="sidebar-section-title">Infraestrutura</div>
             <a href="/platform/servidor-pacs" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/servidor-pacs')?'active':'' ?>"><i class="fa fa-server"></i><span>Servidor PACS</span></a>
+            <a href="/platform/conectores" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/conectores')?'active':'' ?>"><i class="fa fa-plug"></i><span>Conectores</span></a>
             <div class="sidebar-section-title">Acesso</div>
             <a href="/estudos" class="nav-link"><i class="fa fa-arrow-left"></i><span>Voltar ao PACS</span></a>
         </div>
