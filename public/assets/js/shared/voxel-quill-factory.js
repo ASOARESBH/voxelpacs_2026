@@ -18,6 +18,37 @@ window.VoxelQuill.factory = (function () {
         quill.clipboard.dangerouslyPasteHTML(range ? range.index : quill.getLength(), html, 'user');
     }
 
+    function normalizeHttpsUrl(rawUrl) {
+        const value = String(rawUrl || '').trim();
+        if (!value) return '';
+
+        try {
+            const url = new URL(value);
+            return url.protocol === 'https:' ? url.toString() : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function insertSecureLink(quill, enabled) {
+        const range = quill.getSelection(true);
+        if (!range) return;
+
+        if (!enabled) {
+            quill.format('link', false, 'user');
+            return;
+        }
+
+        const typedUrl = window.prompt('Informe um endereço HTTPS para o link:');
+        const href = normalizeHttpsUrl(typedUrl);
+        if (!href) {
+            window.alert('Informe um endereço HTTPS válido.');
+            return;
+        }
+
+        quill.format('link', href, 'user');
+    }
+
     function create(target, options = {}) {
         if (!window.Quill) throw new Error('Quill não está disponível.');
 
@@ -37,6 +68,7 @@ window.VoxelQuill.factory = (function () {
                     container: toolbar,
                     handlers: {
                         table: () => insertBasicTable(quill),
+                        link: (enabled) => insertSecureLink(quill, enabled),
                         undo: () => quill.history.undo(),
                         redo: () => quill.history.redo(),
                     },
@@ -49,7 +81,7 @@ window.VoxelQuill.factory = (function () {
         return quill;
     }
 
-    return { create, insertBasicTable };
+    return { create, insertBasicTable, normalizeHttpsUrl };
 })();
 
 window.createVoxelQuillEditor = function (target, options) {

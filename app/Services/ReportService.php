@@ -222,6 +222,7 @@ class ReportService {
      * POST /reports/save — autosave (modo=auto), salvar rascunho ou salvar explícito.
      */
     public function salvar(int $reportId, array $secoes, string $modo, ?int $templateId = null): array {
+        $secoes = ReportClinicalHtmlSanitizer::sanitizeSections($secoes);
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 

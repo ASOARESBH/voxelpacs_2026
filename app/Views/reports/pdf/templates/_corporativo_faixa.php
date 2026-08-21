@@ -50,6 +50,10 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
         .pdf-section { margin-bottom: 1.1rem; }
         .pdf-section-title { font-size: .85rem; font-weight: 800; color: #0f3d63; margin-bottom: .35rem; }
         .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; text-align: justify; }
+        .pdf-section-content .ql-align-center { text-align: center; }
+        .pdf-section-content .ql-align-right { text-align: right; }
+        .pdf-section-content .ql-align-justify { text-align: justify; }
+        .pdf-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #aaa; font-style: italic; }
 
         .pdf-signature { border-top: 2px solid #0f3d63; padding-top: 1rem; margin-top: 2rem; display: flex; justify-content: flex-end; }

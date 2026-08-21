@@ -42,6 +42,10 @@
         .pdf-section { margin-bottom: 1.2rem; }
         .pdf-section-title { font-size: .85rem; font-weight: 700; text-transform: uppercase; color: #003366; border-bottom: 1px solid #ccd; padding-bottom: .25rem; margin-bottom: .5rem; letter-spacing: .5px; }
         .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; }
+        .pdf-section-content .ql-align-center { text-align: center; }
+        .pdf-section-content .ql-align-right { text-align: right; }
+        .pdf-section-content .ql-align-justify { text-align: justify; }
+        .pdf-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #aaa; font-style: italic; }
 
         /* Assinatura */

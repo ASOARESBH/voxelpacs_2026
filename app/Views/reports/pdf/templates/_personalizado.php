@@ -28,7 +28,7 @@ if (!$portalPatientPdf) {
 }
 $acoes = '<div class="voxel-custom-actions">'
     . implode('', $acoesItens)
-    . '</div><style>.voxel-custom-actions{display:flex;gap:8px;width:210mm;margin:12px auto}.voxel-custom-actions button,.voxel-custom-actions a{padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b;font:700 12px Arial,sans-serif;text-decoration:none;cursor:pointer}.voxel-custom-actions button{background:#075a9e;color:#fff;border-color:#075a9e}@media print{.voxel-custom-actions{display:none!important}}</style>';
+    . '</div><style>.voxel-custom-actions{display:flex;gap:8px;width:210mm;margin:12px auto}.voxel-custom-actions button,.voxel-custom-actions a{padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b;font:700 12px Arial,sans-serif;text-decoration:none;cursor:pointer}.voxel-custom-actions button{background:#075a9e;color:#fff;border-color:#075a9e}.ql-align-center{text-align:center}.ql-align-right{text-align:right}.ql-align-justify{text-align:justify}.voxel-custom-document a{color:#075a9e;text-decoration: underline;word-break:break-word}@media print{.voxel-custom-actions{display:none!important}}</style>';
 $documento = str_replace('<body>', '<body>' . $acoes, $documento);
 if (!empty($download)) {
     $documento = str_replace('</body>', '<script>window.addEventListener("load",function(){window.print();});</script></body>', $documento);

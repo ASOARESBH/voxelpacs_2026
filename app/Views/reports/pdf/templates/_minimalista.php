@@ -46,6 +46,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-section { margin-bottom: 1.6rem; }
         .pdf-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; color: #555; letter-spacing: .8px; margin-bottom: .5rem; }
         .pdf-section-content { font-size: .85rem; line-height: 1.8; color: #222; text-align: justify; }
+        .pdf-section-content .ql-align-center { text-align: center; }
+        .pdf-section-content .ql-align-right { text-align: right; }
+        .pdf-section-content .ql-align-justify { text-align: justify; }
+        .pdf-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #bbb; font-style: italic; }
 
         .pdf-signature { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid #ddd; text-align: left; }

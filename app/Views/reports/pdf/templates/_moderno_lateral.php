@@ -140,6 +140,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-report-content th, .pdf-report-content td { border: 1px solid #aab4c0; padding: .4rem .5rem; vertical-align: top; }
         .pdf-report-content th { font-weight: 700; background: #f0f4f8; }
         .pdf-report-content u { text-decoration: underline; }
+        .pdf-report-content .ql-align-center, .pdf-clinical-section-content .ql-align-center { text-align: center; }
+        .pdf-report-content .ql-align-right, .pdf-clinical-section-content .ql-align-right { text-align: right; }
+        .pdf-report-content .ql-align-justify, .pdf-clinical-section-content .ql-align-justify { text-align: justify; }
+        .pdf-report-content a, .pdf-clinical-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-report-empty { color: #737373; font-style: italic; }
 
         .pdf-signature { margin-top: auto; padding-top: 50px; text-align: center; page-break-inside: avoid; }

@@ -1264,11 +1264,12 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
 
             <div class="mascara-editor-section mascara-editor-section--livre">
                 <span class="mascara-editor-label">Texto livre da Máscara</span>
-                <span class="medico-hint">Use a mesma formatação disponível no Laudário. O conteúdo será aplicado ao laudo como foi redigido.</span>
+                <span class="medico-hint">Use a mesma formatação disponível no Laudário. Parágrafos, espaçamento, alinhamento, listas, tabelas e links HTTPS serão aplicados ao laudo como foram redigidos.</span>
                 <div id="mEd-conteudo-toolbar" class="reports-editor-toolbar mascara-editor-toolbar" aria-label="Ferramentas de formatação da máscara">
                     <span class="ql-formats"><button class="ql-bold" title="Negrito"></button><button class="ql-italic" title="Itálico"></button><button class="ql-underline" title="Sublinhado"></button></span>
                     <span class="ql-formats"><select class="ql-header" title="Cabeçalho"><option value="1"></option><option value="2"></option><option value="3"></option><option selected></option></select></span>
                     <span class="ql-formats"><button class="ql-list" value="ordered" title="Numeração"></button><button class="ql-list" value="bullet" title="Marcadores"></button></span>
+                    <span class="ql-formats"><select class="ql-align" title="Alinhamento"><option selected></option><option value="center"></option><option value="right"></option><option value="justify"></option></select><button class="ql-link" title="Inserir link HTTPS"></button></span>
                     <span class="ql-formats"><button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button></span>
                     <span class="ql-formats"><button class="ql-undo" title="Desfazer"><i class="fa fa-rotate-left"></i></button><button class="ql-redo" title="Refazer"><i class="fa fa-rotate-right"></i></button></span>
                     <span class="ql-formats"><button class="ql-clean" title="Limpar formatação"></button></span>

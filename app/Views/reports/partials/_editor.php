@@ -49,6 +49,15 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
             <button class="ql-list" value="bullet" title="Marcadores"></button>
         </span>
         <span class="ql-formats">
+            <select class="ql-align" title="Alinhamento">
+                <option selected></option>
+                <option value="center"></option>
+                <option value="right"></option>
+                <option value="justify"></option>
+            </select>
+            <button class="ql-link" title="Inserir link HTTPS"></button>
+        </span>
+        <span class="ql-formats">
             <button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button>
         </span>
         <span class="ql-formats">

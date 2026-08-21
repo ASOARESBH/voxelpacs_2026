@@ -9,6 +9,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\MascaraDocxImportService;
+use App\Services\ReportClinicalHtmlSanitizer;
 
 /**
  * TemplatesController — Módulo de Máscaras/Templates de Laudo
@@ -47,23 +48,13 @@ class TemplatesController extends Controller
     }
 
     /**
-     * Preserva somente marcação clínica produzida pela toolbar comum do Quill.
-     * Atributos são eliminados para impedir estilos, URLs e handlers executáveis
-     * vindos de colagem ou importação de DOCX.
+     * Aplica a allowlist clínica comum aos dois editores. A máscara mantém
+     * parágrafos, espaçamento, alinhamento e links HTTPS, mas não aceita imagens,
+     * estilos arbitrários, handlers ou URLs executáveis.
      */
     private function sanitizeSectionHtml($value): string
     {
-        $html = (string) $value;
-        $allowed = '<p><br><strong><b><em><i><u><h1><h2><h3><h4><h5><h6><ul><ol><li><table><thead><tbody><tr><th><td>';
-        $html = strip_tags($html, $allowed);
-        $html = preg_replace('/<(?:strong|b)\\b[^>]*>/i', '<strong>', $html) ?? '';
-        $html = preg_replace('/<\\/(?:strong|b)>/i', '</strong>', $html) ?? '';
-        $html = preg_replace('/<(?:em|i)\\b[^>]*>/i', '<em>', $html) ?? '';
-        $html = preg_replace('/<\\/(?:em|i)>/i', '</em>', $html) ?? '';
-        $html = preg_replace_callback('/<(p|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|u|br)\\b[^>]*>/i', static function (array $match): string {
-            return '<' . strtolower($match[1]) . '>';
-        }, $html) ?? '';
-        return trim($html);
+        return ReportClinicalHtmlSanitizer::sanitize((string) $value);
     }
 
     /** Bloqueia médico restrito de consultar ou manipular máscaras de outro cadastro. */
