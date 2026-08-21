@@ -65,6 +65,12 @@ foreach ([
 }
 exigirBuscaInline(strpos($templates, 'new bootstrap.Modal') === false,
     'A lógica do modal Bootstrap ainda está ativa no seletor de Máscaras.');
+exigirBuscaInline(strpos($templates, 'function tituloTemplate(template)') !== false,
+    'Busca inline não centraliza o título canônico da máscara.');
+exigirBuscaInline(strpos($templates, 'normalizarBusca(tituloTemplate(template))') !== false,
+    'Busca inline não filtra pelo Nome do Template.');
+exigirBuscaInline(strpos($templates, 'escapeHtml(tituloTemplate(template))') !== false,
+    'Busca inline não apresenta o Nome do Template como título.');
 
 $css = lerBuscaInline($root . '/public/assets/css/reports.css');
 foreach (['.reports-mascara-search-dropdown', 'position: absolute;', 'overflow-y: auto;', '.reports-mascara-search-option.is-active'] as $contrato) {
@@ -73,10 +79,19 @@ foreach (['.reports-mascara-search-dropdown', 'position: absolute;', 'overflow-y
 
 $model = lerBuscaInline($root . '/app/Models/ReportTemplate.php');
 $controller = lerBuscaInline($root . '/app/Controllers/TemplatesController.php');
+$reportsController = lerBuscaInline($root . '/app/Controllers/ReportsController.php');
 exigirBuscaInline(strpos($model, "protected string \$table = 'report_templates'") !== false,
     'O model de Templates não aponta para report_templates.');
 exigirBuscaInline(strpos($controller, 'Módulo de Máscaras/Templates de Laudo') !== false,
     'O controller de Máscaras não confirma a origem compartilhada da funcionalidade.');
+exigirBuscaInline(strpos($reportsController, '$where = "WHERE ativo = 1 AND tenant_id = :tenant_id";') !== false,
+    'Busca do Laudário não está estritamente isolada ao tenant atual.');
+exigirBuscaInline(strpos($reportsController, 'WHERE id = :id AND ativo = 1 AND tenant_id = :tenant_id') !== false,
+    'Aplicação de máscara não valida o tenant atual.');
+exigirBuscaInline(strpos($reportsController, 'WHERE id = :id AND tenant_id = :tenant_id LIMIT 1') !== false,
+    'PDF do laudo não valida o tenant da máscara vinculada.');
+exigirBuscaInline(strpos($reportsController, '$titulo = trim((string) ($row[\'nome\'] ?? \'\'));') !== false,
+    'Normalização não prioriza o Nome do Template cadastrado.');
 
 if ($falhas !== []) {
     fwrite(STDERR, "FALHOU\n- " . implode("\n- ", $falhas) . "\n");

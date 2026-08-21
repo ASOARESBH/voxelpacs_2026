@@ -650,7 +650,9 @@ class ReportsController extends Controller
             $medicoId = $this->medicoIdAtual($pdo, $tenantId);
             $perfilMedico = strtolower((string) Auth::perfilAtual()) === 'medico';
 
-            $where = "WHERE ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
+            // O campo nome é o Nome do Template cadastrado pelo médico. A busca
+            // do laudário nunca mistura máscaras globais ou de outro tenant.
+            $where = "WHERE ativo = 1 AND tenant_id = :tenant_id";
             $params = ['tenant_id' => $tenantId, 'medico_ordem' => $medicoId];
             if ($perfilMedico) {
                 $where .= " AND (medico_id = :medico_id OR compartilhar = 1 OR medico_id IS NULL)";
@@ -736,7 +738,7 @@ class ReportsController extends Controller
             $pdo = \App\Core\Database::getInstance();
             $tenantId = (int) (Auth::tenantId() ?? 0);
             $medicoId = $this->medicoIdAtual($pdo, $tenantId);
-            $where = "WHERE id = :id AND ativo = 1 AND (tenant_id IS NULL OR tenant_id = :tenant_id)";
+            $where = "WHERE id = :id AND ativo = 1 AND tenant_id = :tenant_id";
             $params = ['id' => $templateId, 'tenant_id' => $tenantId];
             if (strtolower((string) Auth::perfilAtual()) === 'medico') {
                 $where .= " AND (medico_id = :medico_id OR compartilhar = 1 OR medico_id IS NULL)";
@@ -1117,8 +1119,17 @@ class ReportsController extends Controller
                 : (string) ($secoesJson[$chave] ?? '');
             $secoes[$chave] = $valor;
         }
-        $titulo = (string) ($row['nome'] ?? $row['titulo'] ?? ('Template #' . ($row['id'] ?? '')));
-                return [
+        // nome é o valor salvo em mascaraNome (Nome do Template). titulo existe
+        // apenas como fallback de schemas legados e nunca prevalece sobre nome.
+        $titulo = trim((string) ($row['nome'] ?? ''));
+        if ($titulo === '') {
+            $titulo = trim((string) ($row['titulo'] ?? ''));
+        }
+        if ($titulo === '') {
+            $titulo = 'Template #' . (int) ($row['id'] ?? 0);
+        }
+
+        return [
             'id' => (int) ($row['id'] ?? 0),
             'titulo' => $titulo,
             'nome' => $titulo,
@@ -1219,7 +1230,7 @@ class ReportsController extends Controller
             return null;
         }
 
-        $where = 'WHERE id = :id AND (tenant_id IS NULL OR tenant_id = :tenant_id) LIMIT 1';
+        $where = 'WHERE id = :id AND tenant_id = :tenant_id LIMIT 1';
         $params = ['id' => $templateId, 'tenant_id' => $tenantId];
         $queries = [
             "SELECT id, nome, modalidade, conteudo_livre, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_templates {$where}",

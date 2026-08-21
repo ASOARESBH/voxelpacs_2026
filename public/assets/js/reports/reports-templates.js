@@ -114,12 +114,22 @@ window.VoxelReports.templates = (function () {
         return new Set((lastPayload?.sugeridos || []).map((template) => String(template.id)));
     }
 
+    function tituloTemplate(template) {
+        const titulo = String(template?.titulo || '').trim();
+        if (titulo !== '') return titulo;
+
+        // Compatibilidade apenas para respostas legadas: o backend normaliza
+        // titulo e nome para o valor salvo em mascaraNome.
+        const nome = String(template?.nome || '').trim();
+        return nome !== '' ? nome : 'Máscara sem título';
+    }
+
     function filtrarTemplates(consulta) {
         const templates = Array.isArray(lastPayload?.templates) ? lastPayload.templates : [];
         const termo = normalizarBusca(consulta);
         if (!termo) return templates;
         return templates.filter((template) => {
-            const nome = normalizarBusca(template.titulo || template.nome);
+            const nome = normalizarBusca(tituloTemplate(template));
             const modalidade = normalizarBusca(template.modalidade);
             const descricao = normalizarBusca(template.study_description_tag);
             return nome.includes(termo) || modalidade.includes(termo) || descricao.includes(termo);
@@ -157,7 +167,7 @@ window.VoxelReports.templates = (function () {
 
         const sugeridos = sugeridosIds();
         search.dropdown.innerHTML = visibleTemplates.map((template, index) => {
-            const titulo = escapeHtml(template.titulo || template.nome || 'Máscara sem título');
+            const titulo = escapeHtml(tituloTemplate(template));
             const modalidade = escapeHtml(template.modalidade || 'Todas as modalidades');
             const tag = escapeHtml(template.study_description_tag || '');
             const sugerida = sugeridos.has(String(template.id));
