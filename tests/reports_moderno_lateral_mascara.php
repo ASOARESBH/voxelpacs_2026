@@ -30,10 +30,8 @@ $templatesJs = (string) file_get_contents($root . '/public/assets/js/reports/rep
 
 foreach ([
     [$controller, 'carregarMascaraParaPdf'],
-    [$controller, "'mascara_titulo'"],
     [$controller, "'mascara_secoes'"],
     [$controller, 'titulo AS nome, modalidade, conteudo_livre, secao_exame'],
-    [$dispatcher, '$tituloMascara'],
     [$dispatcher, "'TÉCNICA'"],
     [$dispatcher, "'ACHADOS'"],
     [$dispatcher, "'IMPRESSÃO'"],
@@ -70,14 +68,13 @@ $r = [
     'patient_birth_date' => '1928-01-15',
     'study_date' => '2026-08-14',
     'accession_number' => '51113',
-    'study_description' => '',
+    'study_description' => 'ANGIOTOMOGRAFIA DA AORTA',
     'modalities' => 'CR',
     'medico_nome' => 'Dr. João de Teste',
     'medico_crm' => 'CRM-MG 12345',
     'assinado_em' => '2026-08-14 22:00:00',
     'public_token' => 'token-teste',
 ];
-$tituloMascara = 'Tomografia Computadorizada do Tórax';
 $secoesClinicasPdf = [
     'tecnica' => ['rotulo' => 'TÉCNICA', 'conteudo' => '<p>Aquisição volumétrica multislice de alta resolução.</p>'],
     'achados' => ['rotulo' => 'ACHADOS', 'conteudo' => '<p>Estruturas vasculares e parênquima preservados.</p>'],
@@ -85,6 +82,9 @@ $secoesClinicasPdf = [
 ];
 $corpoLaudo = '<p>Conteúdo alternativo que não deve substituir as seções.</p>';
 $paciente = 'RAPOSO MESSIAS';
+$laudoPossuiConteudo = true;
+$portalPatientPdf = false;
+$reportReturnUrl = '/reports/r/token-teste';
 $download = false;
 
 ob_start();
@@ -92,7 +92,7 @@ require $templatePath;
 $html = (string) ob_get_clean();
 
 foreach ([
-    'Tomografia Computadorizada do Tórax',
+    'ANGIOTOMOGRAFIA DA AORTA',
     '>TÉCNICA<',
     '>ACHADOS<',
     '>IMPRESSÃO<',
@@ -102,8 +102,8 @@ foreach ([
 ] as $expected) {
     mascaraPdfAssert(strpos($html, $expected) !== false, "Renderização de Máscara não contém: {$expected}");
 }
-mascaraPdfAssert(strpos($html, '>CR</h1>') === false, 'A modalidade CR não pode substituir o título da Máscara.');
-mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título da Máscara deve ter fonte ampliada.');
+mascaraPdfAssert(strpos($html, 'Tomografia Computadorizada do Tórax') === false, 'Nome do Template não pode ser impresso como título clínico.');
+mascaraPdfAssert(strpos($html, 'font-size: 17px') !== false, 'O título clínico do estudo deve ter fonte ampliada.');
 mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico deve ter fonte ampliada para leitura.');
 mascaraPdfAssert(strpos($html, '<strong>Laudo Médico</strong>') === false, 'O cabeçalho não pode manter o título padrão Laudo Médico.');
 mascaraPdfAssert(strpos($html, 'pdf-header-unit">NOVA IMAGEM</span>') !== false, 'Sem canal ativo, o cabeçalho deve exibir somente o Nome Fantasia.');
@@ -124,12 +124,11 @@ ob_start();
 require $templatePath;
 $htmlComQr = (string) ob_get_clean();
 mascaraPdfAssert(strpos($htmlComQr, 'class="voxel-institutional-qr"') !== false, 'QR institucional ativo deve ser renderizado no cabeçalho do Moderno Lateral.');
-mascaraPdfAssert(strpos($htmlComQr, 'width: 56px; height: 56px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
+mascaraPdfAssert(strpos($htmlComQr, 'width: 78px; height: 78px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm
-// precedência sobre a Máscara e permanecem estruturados até a impressão.
+// precedência e permanecem estruturados até a impressão, sem título administrativo.
 $report = array_merge($r, [
-    'mascara_titulo' => 'Tomografia Computadorizada do Tórax',
     'mascara_secoes' => [],
     'corpo_laudo' => '<p><strong>TÉCNICA</strong></p><p>Técnica revisada pelo médico.</p><p><strong>ACHADOS</strong></p><p>Achados revisados pelo médico.</p><p><strong>IMPRESSÃO</strong></p><p>Impressão revisada pelo médico.</p>',
 ]);

@@ -23,8 +23,7 @@ pdfEmptyAssert(!ReportClinicalContentService::hasReportContent([
     'corpo_laudo' => '<p><br></p>',
     'modalities' => 'CR OT',
     'study_description' => 'RX TÓRAX',
-    'mascara_titulo' => 'Título sem corpo',
-]), 'Metadados DICOM ou título de máscara foram aceitos como conteúdo clínico.');
+]), 'Metadados DICOM foram aceitos como conteúdo clínico.');
 pdfEmptyAssert(ReportClinicalContentService::hasReportContent([
     'corpo_laudo' => '<p>Texto clínico do médico.</p>',
 ]), 'Texto clínico livre não foi aceito para PDF.');

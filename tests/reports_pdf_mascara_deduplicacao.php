@@ -27,7 +27,6 @@ $report = [
     'secao_tecnica' => $tecnica,
     'secao_achados' => $achados,
     'secao_conclusao' => $impressao,
-    'mascara_titulo' => 'Tomografia Computadorizada do Tórax',
     'patient_name' => 'Paciente de Teste',
     'study_description' => 'TC Tórax',
     'modalities' => 'CT',
@@ -45,6 +44,7 @@ $require(substr_count($html, 'Estruturas vasculares do mediastino de calibre e t
 $require(substr_count($html, 'Ausência de alterações significativas detectáveis pelo método.') === 1, 'Impressão foi impressa mais de uma vez.');
 $require(substr_count($html, '<h2 class="pdf-clinical-section-title">') === 3, 'Os três títulos clínicos não foram renderizados uma única vez cada.');
 $require(strpos($html, '.pdf-clinical-section-title {') !== false && strpos($html, 'font-weight: 700') !== false, 'Títulos clínicos não mantêm negrito explícito na impressão.');
+$require(strpos($html, 'Tomografia Computadorizada do Tórax') === false, 'Nome do Template não pode ser impresso como título clínico.');
 
 if ($failures !== []) {
     fwrite(STDERR, "REPORTS_PDF_MASCARA_DEDUPLICACAO_FALHOU\n- " . implode("\n- ", $failures) . "\n");

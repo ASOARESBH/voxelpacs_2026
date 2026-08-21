@@ -4,8 +4,6 @@
 /** @var bool $readonly */
 /** @var string $reportLayoutCodigo */
 /** @var array<string,mixed> $reportVisual */
-/** @var string $mascaraTitulo */
-
 $conteudo = [];
 if (isset($report->conteudo) && is_string($report->conteudo) && trim($report->conteudo) !== '') {
     $conteudo = json_decode($report->conteudo, true) ?: [];
@@ -30,9 +28,6 @@ if (trim($corpoLaudo) === '') {
 
 $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
 $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
-// O título pertence exclusivamente à máscara aplicada. Metadados DICOM permanecem no cartão lateral,
-// sem pré-preencher nem identificar visualmente o documento clínico em branco.
-$tituloLaudo = trim((string) ($mascaraTitulo ?? ''));
 ?>
 <div class="pacs-card reports-editor-card<?= $modernoLateral ? ' reports-editor-card--moderno' : '' ?>">
     <div id="editor-toolbar" class="reports-editor-toolbar">
@@ -65,7 +60,6 @@ $tituloLaudo = trim((string) ($mascaraTitulo ?? ''));
         </span>
     </div>
 
-    <h1 id="reports-editor-document-title" class="reports-editor-document-title"<?= $tituloLaudo === '' ? ' hidden' : '' ?>><?= htmlspecialchars($tituloLaudo, ENT_QUOTES) ?></h1>
 
     <div id="editor-container" class="reports-editor-container" data-placeholder="Redija, cole ou aplique uma máscara de laudo...">
         <?= $corpoLaudo !== '' ? $corpoLaudo : '<p><br></p>' ?>

@@ -117,24 +117,6 @@ class ReportsController extends Controller
                 ? (int) $contextoVisual['report_layout_template_id']
                 : null
         );
-        $mascaraTitulo = '';
-        try {
-            $templateId = (int) ($report->template_id ?? 0);
-            if ($templateId > 0) {
-                $mascara = $this->carregarMascaraParaPdf(
-                    \App\Core\Database::getInstance(),
-                    $templateId,
-                    (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id())
-                );
-                $mascaraTitulo = trim((string) ($mascara['titulo'] ?? ''));
-            }
-        } catch (\Throwable $ex) {
-            Logger::warning('ReportsController::showByToken contexto visual de mascara indisponivel', [
-                'report_id' => (int) ($report->id ?? 0),
-                'error' => $ex->getMessage(),
-            ]);
-        }
-
         $this->view('reports/show', [
             'estudo'            => $estudo,
             'report'            => $report,
@@ -149,7 +131,6 @@ class ReportsController extends Controller
             'medicoIdLogado'    => $medicoIdLogado,
             'reportLayoutCodigo' => $reportLayoutCodigo,
             'reportVisual'       => $contextoVisual,
-            'mascaraTitulo'      => $mascaraTitulo,
         ], 'reports');
     }
     // ══════════════════════════════════════════════════════════════════════════
@@ -493,15 +474,14 @@ class ReportsController extends Controller
             }
 
             // O report guarda somente template_id. Resolve a Máscara no momento
-            // do PDF para exibir seu título e recuperar as seções como fallback
-            // de laudos antigos que salvaram apenas corpo_laudo.
+            // do PDF apenas para recuperar conteúdo clínico de compatibilidade;
+            // o Nome do Template nunca é impresso como título do laudo.
             $mascara = $this->carregarMascaraParaPdf(
                 $pdo,
                 (int) ($data['template_id'] ?? 0),
                 (int) ($data['tenant_id'] ?? 0)
             );
             if ($mascara !== null) {
-                $data['mascara_titulo'] = $mascara['titulo'];
                 $data['mascara_secoes'] = $mascara['secoes'];
                 $data['mascara_conteudo_livre'] = trim((string) ($mascara['conteudo_livre'] ?? '')) !== '';
             }

@@ -26,16 +26,10 @@ $templatesJs = (string) file_get_contents($root . '/public/assets/js/reports/rep
 foreach ([
     [$controller, 'carregarContextoVisualLaudo'],
     [$controller, "'reportLayoutCodigo'"],
-    [$controller, "'mascaraTitulo'"],
     [$show, 'reports-col-right--moderno'],
-    [$editor, 'reports-modern-document-header'],
-    [$editor, 'reports-modern-document-title'],
-    [$editor, 'reports-modern-document-patient'],
     [$css, '.reports-editor-card--moderno'],
-    [$css, '.reports-modern-document-header'],
     [$css, 'font-size: 17px'],
     [$css, 'font-size: 13px'],
-    [$templatesJs, 'atualizarTituloDocumento'],
 ] as [$source, $needle]) {
     modernoFormAssert(strpos($source, $needle) !== false, "Item obrigatório ausente: {$needle}");
 }
@@ -61,17 +55,12 @@ $reportVisual = [
     'unidade_nome' => 'NOVA IMAGEM',
     'unidade_logo_path' => '',
 ];
-$mascaraTitulo = 'TOMOGRAFIA COMPUTADORIZADA DO TÓRAX';
-
 ob_start();
 require $root . '/app/Views/reports/partials/_editor.php';
 $html = (string) ob_get_clean();
 
 foreach ([
     'reports-editor-card--moderno',
-    'NOVA IMAGEM',
-    'TOMOGRAFIA COMPUTADORIZADA DO TÓRAX',
-    'Paciente:',
     'Técnica',
     'Achados',
     'Impressão',
@@ -79,6 +68,10 @@ foreach ([
     modernoFormAssert(strpos($html, $expected) !== false, "Formulário Moderno Lateral não renderizou: {$expected}");
 }
 
+modernoFormAssert(strpos($html, 'TOMOGRAFIA COMPUTADORIZADA DO TÓRAX') === false,
+    'O formulário Moderno Lateral não pode exibir o Nome do Template.');
+modernoFormAssert(strpos($html, 'reports-editor-document-title') === false,
+    'O formulário Moderno Lateral não pode renderizar título administrativo de máscara.');
 modernoFormAssert(strpos($html, 'Exame</h4>') === false, 'O formulário Moderno Lateral não pode criar seção Exame.');
 modernoFormAssert(strpos($html, 'Recomendação</h4>') === false, 'O formulário Moderno Lateral não pode criar seção Recomendação.');
 

@@ -10,13 +10,9 @@ if (!is_array($customTemplate)) {
     return;
 }
 
-$tituloPersonalizado = '';
-if ($laudoPossuiConteudo) {
-    $tituloPersonalizado = trim((string) ($tituloMascara ?? ''));
-    if ($tituloPersonalizado === '') {
-        $tituloPersonalizado = trim((string) ($r['study_description'] ?? $r['modalities'] ?? 'Laudo Médico'));
-    }
-}
+$tituloPersonalizado = $laudoPossuiConteudo
+    ? trim((string) ($r['study_description'] ?? $r['modalities'] ?? 'Laudo Médico'))
+    : '';
 $documento = (new \App\Services\ReportCustomTemplateService())
     ->renderReport($customTemplate, $r, (string) ($corpoLaudo ?? ''), $tituloPersonalizado);
 

@@ -72,11 +72,9 @@ if ($descricaoExame === '') {
 if ($descricaoExame === '') {
     $descricaoExame = trim((string) ($r['modalities'] ?? 'Laudo Médico'));
 }
-// A Máscara define o título clínico do laudo quando estiver vinculada ao report.
-// Sem Máscara, mantém o Study Description/modalidade como fallback seguro.
-$tituloLaudo = $laudoPossuiConteudo
-    ? (trim((string) ($tituloMascara ?? '')) ?: $descricaoExame)
-    : '';
+// O título do documento é clínico e vem do estudo. O Nome do Template é
+// administrativo, identifica a máscara somente na busca e nunca é impresso.
+$tituloLaudo = $laudoPossuiConteudo ? $descricaoExame : '';
 $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));

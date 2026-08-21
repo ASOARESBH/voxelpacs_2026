@@ -47,15 +47,6 @@ window.VoxelReports.templates = (function () {
         }
     }
 
-    function atualizarTituloDocumento(titulo) {
-        const elemento = document.getElementById('reports-editor-document-title');
-        if (!elemento) return;
-
-        const texto = String(titulo || '').trim();
-        elemento.textContent = texto;
-        elemento.hidden = texto === '';
-    }
-
     function parseSecoes(template) {
         if (template && typeof template.secoes === 'object' && template.secoes) return template.secoes;
         if (typeof template?.conteudo !== 'string') return {};
@@ -80,7 +71,8 @@ window.VoxelReports.templates = (function () {
             // Máscaras legadas continuam disponíveis sem conversão destrutiva.
             editor.loadSecoes(parseSecoes(template), ['tecnica', 'achados', 'conclusao']);
         }
-        atualizarTituloDocumento(template.titulo);
+        // O Nome do Template identifica a máscara somente na busca. O editor
+        // recebe exclusivamente o conteúdo clínico configurado pelo médico.
         config.templateId = Number(template.id) || 0;
         window.VoxelReports.autosave.setTemplateId(config.templateId);
         window.VoxelReports.autosave.save('rascunho');

@@ -12,7 +12,6 @@ $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportCont
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
 $corpoLaudo = (string) ($r['corpo_laudo'] ?? '');
-$tituloMascara = trim((string) ($r['mascara_titulo'] ?? ''));
 
 // Para laudos antigos, preserva as seções da própria persistência ou da
 // Máscara vinculada. O Moderno Lateral usa esses blocos com rótulo em negrito;
