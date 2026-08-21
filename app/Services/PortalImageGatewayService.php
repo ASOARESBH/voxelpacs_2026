@@ -42,6 +42,13 @@ final class PortalImageGatewayService
             return false;
         }
         $pathOnly = (string) strtok($path, '?');
+        if ($pathOnly === '/studies') {
+            parse_str((string) parse_url($path, PHP_URL_QUERY), $query);
+            return count($query) === 1
+                && isset($query['StudyInstanceUID'])
+                && is_string($query['StudyInstanceUID'])
+                && hash_equals($studyUid, $query['StudyInstanceUID']);
+        }
         $prefix = '/studies/' . rawurlencode($studyUid);
         if (!str_starts_with($pathOnly, $prefix)) {
             return false;
