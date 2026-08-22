@@ -44,6 +44,11 @@ Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Plat
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 
+// Imagiflow — integração de apuração por negócio (somente superadmin)
+Router::get('/platform/negocios/{id}/imagiflow',          'Platform\ImagiflowIntegrationController@show');
+Router::post('/platform/negocios/{id}/imagiflow/gerar',   'Platform\ImagiflowIntegrationController@generate');
+Router::post('/platform/negocios/{id}/imagiflow/revogar', 'Platform\ImagiflowIntegrationController@revoke');
+
 // Revisão humana de pixels das cópias anonimizadas do Portal (somente superadmin).
 Router::get('/platform/negocios/{id}/portal-imagens', 'Platform\PortalImageReviewController@index');
 Router::get('/platform/negocios/{id}/portal-imagens/{copyId}/preview', 'Platform\PortalImageReviewController@preview');

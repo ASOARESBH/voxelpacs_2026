@@ -34,6 +34,10 @@ Router::post('/api/estudos/assumir',    'EstudosController@assumirEstudo');
 Router::post('/api/estudos/laudo-url',  'EstudosController@obterUrlLaudoAssumido');
 Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopilotStatus');
 
+// Imagiflow — API pública autenticada por código, timestamp e assinatura HMAC.
+Router::post('/api/integracoes/imagiflow/v1/medicos/consultar', 'ImagiflowApiController@medico');
+Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos', 'ImagiflowApiController@apuracao');
+
 // ============================================================
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar
 // ============================================================

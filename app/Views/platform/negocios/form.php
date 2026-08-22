@@ -39,6 +39,9 @@
                 <li class="nav-item" role="presentation">
                     <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/report-delivery"><i class="fa fa-paper-plane me-1"></i> Devolutiva de Laudos</a>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/imagiflow"><i class="fa fa-link me-1"></i> Conector Imagiflow</a>
+                </li>
             <?php endif; ?>
         </ul>
     </div>
