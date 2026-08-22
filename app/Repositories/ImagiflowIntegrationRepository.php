@@ -58,18 +58,17 @@ final class ImagiflowIntegrationRepository
     public function log(?int $integrationId, ?int $tenantId, string $requestId, string $method, string $endpoint, int $httpStatus, bool $success, ?string $requestHash, ?string $remoteIp, array $details = []): void
     {
         $stmt = $this->pdo->prepare('INSERT INTO bi_imagiflow_integration_logs (integration_id, tenant_id, request_id, method, endpoint, http_status, success, request_hash, remote_ip, details) VALUES (:integration_id, :tenant_id, :request_id, :method, :endpoint, :http_status, :success, :request_hash, :remote_ip, CAST(:details AS JSONB))');
-        $stmt->execute([
-            ':integration_id' => $integrationId,
-            ':tenant_id' => $tenantId,
-            ':request_id' => $requestId,
-            ':method' => $method,
-            ':endpoint' => $endpoint,
-            ':http_status' => $httpStatus,
-            ':success' => $success,
-            ':request_hash' => $requestHash,
-            ':remote_ip' => $remoteIp ?: null,
-            ':details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        ]);
+        $stmt->bindValue(':integration_id', $integrationId, $integrationId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $stmt->bindValue(':tenant_id', $tenantId, $tenantId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $stmt->bindValue(':request_id', $requestId);
+        $stmt->bindValue(':method', $method);
+        $stmt->bindValue(':endpoint', $endpoint);
+        $stmt->bindValue(':http_status', $httpStatus, PDO::PARAM_INT);
+        $stmt->bindValue(':success', $success, PDO::PARAM_BOOL);
+        $stmt->bindValue(':request_hash', $requestHash, $requestHash === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $stmt->bindValue(':remote_ip', $remoteIp ?: null, $remoteIp ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $stmt->bindValue(':details', json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $stmt->execute();
     }
 
     /** @return array<int,array<string,mixed>> */
