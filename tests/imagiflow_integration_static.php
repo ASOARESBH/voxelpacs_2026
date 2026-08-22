@@ -13,6 +13,7 @@ $files = [
     'routes' => $root . '/routes/web.php',
     'platform_routes' => $root . '/routes/platform.php',
     'form' => $root . '/app/Views/platform/negocios/form.php',
+    'router' => $root . '/app/Core/Router.php',
 ];
 foreach ($files as $name => $file) {
     if (!is_file($file)) throw new RuntimeException("Arquivo ausente: {$name}");
@@ -32,6 +33,7 @@ $must($files['auth'], 'findActiveByCode', 'API deve exigir integração ativa.')
 $must($files['apuracao'], "r.situacao::text IN ('assinado', 'liberado')", 'Apuração deve expor somente laudos concluídos.');
 $must($files['apuracao'], 'r.tenant_id = :tenant_id', 'Consulta de apuração deve ter escopo de tenant.');
 $must($files['platform'], 'Auth::isPlatformAdmin()', 'Administração Imagiflow deve ser exclusiva de superadmin.');
+$must($files['router'], "'/api/integracoes/imagiflow/'", 'Prefixo Imagiflow deve alcançar a autenticação HMAC sem sessão.');
 $must($files['routes'], "Router::post('/api/integracoes/imagiflow/v1/medicos/consultar'", 'Rota de médico Imagiflow ausente.');
 $must($files['routes'], "Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos'", 'Rota de apuração Imagiflow ausente.');
 $must($files['platform_routes'], "Router::get('/platform/negocios/{id}/imagiflow'", 'Rota administrativa Imagiflow ausente.');

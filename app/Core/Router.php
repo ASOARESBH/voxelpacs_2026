@@ -15,6 +15,8 @@ class Router {
         '/api/sla-regras/executar',
         '/api/servidor-pacs/sync-robo',
         '/api/report-delivery/',
+        // A API Imagiflow não usa sessão; cada chamada é validada por HMAC no controlador.
+        '/api/integracoes/imagiflow/',
 
     ];
 
