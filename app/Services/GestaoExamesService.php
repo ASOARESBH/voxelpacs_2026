@@ -49,6 +49,7 @@ class GestaoExamesService
             'study_id' => (int) $study['id'],
             'tenant_id' => (int) $study['tenant_id'],
             'study_instance_uid' => (string) ($study['study_instance_uid'] ?? ''),
+            'modalities' => (string) ($study['modalities'] ?? ''),
             'patient_name' => (string) ($study['patient_name'] ?? ''),
             'modalidade' => $this->primaryModality((string) ($study['modalities'] ?? '')),
             'study_description' => (string) ($study['study_description'] ?? ''),
@@ -137,11 +138,22 @@ class GestaoExamesService
                 'audit_id' => $auditId,
             ]);
 
+            $alerts = ['groups' => 0, 'email_sent' => 0, 'email_failed' => 0];
+            try {
+                $alerts = (new GrupoAlertaService())->notifyPriorityChanged($study, $tenantId, $previous, $priority, $auditId);
+            } catch (\Throwable $notificationError) {
+                Logger::warning('[GestaoExamesService::changePriority] alertas não bloquearam a prioridade', [
+                    'study_id' => $studyId, 'tenant_id' => $tenantId, 'audit_id' => $auditId,
+                    'error' => $notificationError->getMessage(),
+                ]);
+            }
+
             return [
                 'ok' => true,
                 'audit_id' => $auditId,
                 'priority' => $priority,
                 'label' => $this->priorityLabel($priority),
+                'alerts' => $alerts,
             ];
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();

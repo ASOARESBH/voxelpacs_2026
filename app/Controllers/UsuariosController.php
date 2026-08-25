@@ -196,7 +196,9 @@ class UsuariosController extends Controller
                 $this->vincularMedico($pdo, $medicoId, $userId, $tenantId);
             }
 
-            $this->enviarLinkCriarSenha($pdo, $userId, $tenantId, $email, $name);
+            if (!$this->enviarLinkCriarSenha($pdo, $userId, $tenantId, $email, $name)) {
+                Logger::warning("[UsuariosController::store] conta criada, mas o SMTP recusou o convite para user_id={$userId}");
+            }
 
             Logger::info("[UsuariosController::store] user_id={$userId} tenant_id={$tenantId} perfil={$perfil}");
             $this->redirect('/usuarios?sucesso=usuario_criado');
@@ -368,7 +370,9 @@ class UsuariosController extends Controller
             $stmt->execute([$tenantId, $id]);
             $user = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($user) {
-                $this->enviarLinkCriarSenha($pdo, $id, $tenantId, $user['email'], $user['name']);
+                if (!$this->enviarLinkCriarSenha($pdo, $id, $tenantId, $user['email'], $user['name'])) {
+                    Logger::warning("[UsuariosController::reenviarLink] SMTP recusou o convite para user_id={$id}");
+                }
             }
         } catch (\Throwable $e) {
             Logger::error('[UsuariosController::reenviarLink] ' . $e->getMessage());
@@ -440,7 +444,7 @@ class UsuariosController extends Controller
         )->execute([$userId, $medicoId, $tenantId]);
     }
 
-    private function enviarLinkCriarSenha(\PDO $pdo, int $userId, int $tenantId, string $email, string $name): void
+    private function enviarLinkCriarSenha(\PDO $pdo, int $userId, int $tenantId, string $email, string $name): bool
     {
         try {
             $pdo->prepare(
@@ -475,11 +479,17 @@ class UsuariosController extends Controller
                 . '<p style="color:#64748b;font-size:.85rem;">Link válido por 48 horas. Use apenas uma vez.</p>'
                 . '</div>';
 
-            Mailer::send($email, 'Acesso ao VOXEL PACS — Crie sua senha', $html);
-            Logger::info("[UsuariosController::enviarLinkCriarSenha] user_id={$userId} email={$email}");
+            if (Mailer::send($email, 'Acesso ao VOXEL PACS — Crie sua senha', $html)) {
+                Logger::info("[UsuariosController::enviarLinkCriarSenha] SMTP aceitou o convite para user_id={$userId}");
+                return true;
+            }
+
+            Logger::warning("[UsuariosController::enviarLinkCriarSenha] SMTP recusou o convite para user_id={$userId}");
+            return false;
 
         } catch (\Throwable $e) {
             Logger::error('[UsuariosController::enviarLinkCriarSenha] ' . $e->getMessage());
+            return false;
         }
     }
 }

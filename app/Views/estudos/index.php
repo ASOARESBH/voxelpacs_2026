@@ -1004,6 +1004,10 @@ $periodoLabel = [
                         <textarea id="gerenciarPrioridadeMotivo" name="motivo" class="form-control" rows="4" minlength="20" maxlength="1000" required></textarea>
                     </label>
                     <div class="d-flex justify-content-between mt-1"><small class="text-muted"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.minimo')) ?></small><small id="gerenciarPrioridadeCount" class="text-muted">0/20</small></div>
+                    <div id="gerenciarPrioridadeDestinatarios" class="alert alert-info py-2 small mt-3" style="display:none;">
+                        <div class="fw-semibold mb-1"><i class="fa fa-bell me-1"></i><?= htmlspecialchars(t('gestao_gerenciar.prioridade.destinatarios_titulo')) ?></div>
+                        <div id="gerenciarPrioridadeDestinatariosLista"></div>
+                    </div>
                     <div id="gerenciarPrioridadeAviso" class="alert alert-warning py-2 small mt-3" style="display:none;"><i class="fa fa-lock"></i> <?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></div>
                     <div id="gerenciarPrioridadeErro" class="alert alert-danger py-2 small mt-3" style="display:none;"></div>
                 </div>
@@ -1064,6 +1068,11 @@ $periodoLabel = [
      data-sem-override="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_override')) ?>"
      data-motivo-curto="<?= htmlspecialchars(t('gestao_gerenciar.js.motivo_curto')) ?>"
      data-confirmar-prioridade="<?= htmlspecialchars(t('gestao_gerenciar.js.confirmar_prioridade')) ?>"
+     data-destinatarios-carregando="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_carregando')) ?>"
+     data-destinatarios-nenhum="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_nenhum')) ?>"
+     data-destinatarios-grupo="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_grupo')) ?>"
+     data-destinatarios-membros="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_membros')) ?>"
+     data-destinatarios-canais="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_canais')) ?>"
      data-erro-contexto="<?= htmlspecialchars(t('gestao_gerenciar.erro.contexto')) ?>"
      data-erro-operacao="<?= htmlspecialchars(t('gestao_gerenciar.erro.interno')) ?>"
      data-status-assinado="<?= htmlspecialchars(t('gestao_gerenciar.js.status_assinado')) ?>"

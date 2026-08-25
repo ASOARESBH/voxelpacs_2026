@@ -42,6 +42,7 @@ Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos', 'ImagiflowApiCont
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar
 // ============================================================
 Router::get('/api/gestao-exames/estudos/{id}/gerenciar',        'GestaoExamesController@gerenciarContext');
+Router::get('/api/gestao-exames/estudos/{id}/destinatarios-prioridade', 'GestaoExamesController@destinatariosPrioridade');
 Router::get('/api/gestao-exames/descricoes-por-modalidade',     'GestaoExamesController@descricoesPorModalidade');
 Router::post('/api/gestao-exames/estudos/{id}/descricao',       'GestaoExamesController@alterarDescricao');
 Router::post('/api/gestao-exames/estudos/{id}/descricao/previa-lote', 'GestaoExamesController@previaDescricaoLote');
@@ -185,6 +186,10 @@ Router::post('/usuarios/grupos/{id}/atualizar',                     'GruposContr
 Router::post('/usuarios/grupos/{id}/excluir',                       'GruposController@excluir');
 Router::post('/usuarios/grupos/{id}/usuarios/adicionar',            'GruposController@adicionarUsuarios');
 Router::post('/usuarios/grupos/{id}/usuarios/{usuario_id}/remover', 'GruposController@removerUsuario');
+
+// ── Notificações por Grupo — prioridade, canais e escopo de modalidades ──
+Router::get('/usuarios/notificacoes',                         'GrupoNotificacoesController@index');
+Router::post('/usuarios/notificacoes/{id}/salvar',             'GrupoNotificacoesController@salvar');
 
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');

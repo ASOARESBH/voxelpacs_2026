@@ -367,6 +367,34 @@
         $('#gerenciarPrioridadeAviso').style.display = 'none';
         $('#gerenciarPrioridadeErro').style.display = 'none';
         modal('gerenciarPrioridadeModal')?.show();
+        loadPriorityRecipients();
+    }
+
+    async function loadPriorityRecipients() {
+        const box = $('#gerenciarPrioridadeDestinatarios');
+        const list = $('#gerenciarPrioridadeDestinatariosLista');
+        const prioritySelect = $('#gerenciarPrioridadeSelect');
+        if (!box || !list || !prioritySelect || !state.studyId) return;
+        box.style.display = 'block';
+        list.textContent = text('destinatariosCarregando');
+        try {
+            const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/destinatarios-prioridade?prioridade=${encodeURIComponent(prioritySelect.value)}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            const groups = payload.preview?.groups || [];
+            if (!groups.length) {
+                list.textContent = text('destinatariosNenhum');
+                return;
+            }
+            list.innerHTML = groups.map((group) => {
+                const channels = (group.channels || []).map(escapeHtml).join(', ');
+                return `<div class="border-top pt-1 mt-1"><strong>${escapeHtml(group.name)}</strong><br><span class="text-muted">${escapeHtml(text('destinatariosGrupo'))}: ${escapeHtml(String(group.member_count || 0))} ${escapeHtml(text('destinatariosMembros'))} · ${escapeHtml(text('destinatariosCanais'))}: ${channels}</span></div>`;
+            }).join('');
+        } catch (error) {
+            list.textContent = error.message || text('erroOperacao');
+        }
     }
 
     async function savePriority(event) {
@@ -413,6 +441,7 @@
             modal('gerenciarModal')?.show();
         });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
+        $('#gerenciarPrioridadeSelect')?.addEventListener('change', loadPriorityRecipients);
         $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
             sendChat(event).catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));

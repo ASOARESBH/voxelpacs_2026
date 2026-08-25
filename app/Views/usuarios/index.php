@@ -58,6 +58,9 @@ $perfilLabel = [
     <a href="/usuarios/grupos" class="usuarios-tab-btn">
         <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('usuarios.tabs.grupos')) ?>
     </a>
+    <a href="/usuarios/notificacoes" class="usuarios-tab-btn">
+        <i class="fa fa-bell"></i> <?= htmlspecialchars(t('usuarios.tabs.notificacoes')) ?>
+    </a>
     <?php endif; ?>
 </div>
 

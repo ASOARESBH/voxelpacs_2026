@@ -95,7 +95,7 @@ set_exception_handler(function (\Throwable $e): void {
 // Função simples para ler .env sem dependência externa
 if (!function_exists('loadEnv')) {
     function loadEnv(string $path): void {
-        if (!file_exists($path)) return;
+        if (!is_readable($path)) return;
 
         $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         foreach ($lines as $line) {
@@ -123,7 +123,13 @@ if (!function_exists('loadEnv')) {
     }
 }
 
-// Carrega variáveis de ambiente
+// Carrega primeiro segredos operacionais fora do repositório. O arquivo é
+// opcional e deve ser legível somente por root e pelo processo PHP-FPM.
+// Variáveis já definidas aqui não são sobrescritas pelo arquivo de ambiente
+// do projeto, evitando que credenciais SMTP sejam versionadas acidentalmente.
+loadEnv('/etc/voxelpacs/mail-credentials.conf');
+
+// Carrega as variáveis não sensíveis e a configuração legada do projeto.
 loadEnv(BASE_PATH . '/.env');
 
 // Configura timezone

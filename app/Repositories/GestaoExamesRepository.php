@@ -94,7 +94,7 @@ class GestaoExamesRepository
     {
         $stmt = $this->pdo->prepare("
             SELECT
-                id, tenant_id, study_instance_uid, situacao,
+                id, tenant_id, study_instance_uid, situacao, modalities, study_description,
                 COALESCE(dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(dicom_priority_override, ''), dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                 dicom_priority_override

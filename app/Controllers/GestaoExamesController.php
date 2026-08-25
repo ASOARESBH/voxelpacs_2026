@@ -8,6 +8,7 @@ use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Logger;
 use App\Services\GestaoExamesService;
+use App\Services\GrupoAlertaService;
 use App\Services\ModalidadeDescricaoService;
 use App\Services\PedidoMedicoService;
 
@@ -201,6 +202,7 @@ class GestaoExamesController extends Controller
                 'priority' => $result['priority'],
                 'label' => $result['label'],
                 'audit_id' => $result['audit_id'],
+                'alerts' => $result['alerts'] ?? ['groups' => 0, 'email_sent' => 0, 'email_failed' => 0],
             ]);
         } catch (\Throwable $e) {
             Logger::error('[GestaoExamesController::alterarPrioridade] falha', [
@@ -210,6 +212,29 @@ class GestaoExamesController extends Controller
                 'error' => $e->getMessage(),
             ]);
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.persistencia')], 500);
+        }
+    }
+
+    /** Prévia sem disparo dos grupos que receberão um alerta para a prioridade escolhida. */
+    public function destinatariosPrioridade(int $estudoId): void
+    {
+        if (!$this->autorizadoGerenciar()) return;
+        $tenantId = (int) (Auth::tenantId() ?? 0);
+        $priority = strtoupper(trim((string) ($_GET['prioridade'] ?? '')));
+        if ($tenantId <= 0 || !in_array($priority, ['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'], true)) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.contexto')], 422);
+            return;
+        }
+        try {
+            $context = $this->gerenciarService->context($estudoId, $tenantId, (int) Auth::userId());
+            if (!$context) {
+                $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.estudo')], 404);
+                return;
+            }
+            $this->json(['ok' => true, 'preview' => (new GrupoAlertaService())->preview($context, $tenantId, $priority)]);
+        } catch (\Throwable $e) {
+            Logger::warning('[GestaoExamesController::destinatariosPrioridade] falha', ['estudo_id' => $estudoId, 'tenant_id' => $tenantId, 'error' => $e->getMessage()]);
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.contexto')], 500);
         }
     }
 

@@ -1,90 +1,155 @@
 <?php
+
 namespace App\Core;
 
+use PHPMailer\PHPMailer\PHPMailer;
+
 /**
- * Mailer mínimo via mail() nativo do PHP — sem dependências externas,
- * compatível com hospedagem compartilhada (ver bootstrap.php: "Compatível
- * com HostGator Compartilhado"). Não existia nenhum mecanismo de envio de
- * e-mail no projeto antes desta classe, apesar das variáveis MAIL_* já
- * presentes em .env.example.
+ * Transporte central de mensagens do VOXEL PACS.
  *
- * Caso a entregabilidade via mail() nativo seja insuficiente em produção
- * (comum em hosts compartilhados), trocar a implementação de send() por
- * SMTP/PHPMailer é a única mudança necessária — nenhum chamador precisa
- * ser alterado.
+ * A entrega usa SMTP autenticado; não há fallback para mail() porque a
+ * instância de produção não possui MTA local. Todas as credenciais são lidas
+ * somente de variáveis de ambiente carregadas fora do controle de versão.
  */
-class Mailer {
+class Mailer
+{
     /**
-     * Envia mensagem HTML com anexos binários (por exemplo, PDF de laudo).
-     * Cada anexo usa as chaves content, filename e mime.
+     * Envia uma mensagem HTML.
+     */
+    public static function send(string $to, string $subject, string $htmlBody): bool
+    {
+        return self::deliver($to, $subject, $htmlBody);
+    }
+
+    /**
+     * Envia uma mensagem HTML com anexos binários em memória.
      *
      * @param array<int,array{content:string,filename:string,mime:string}> $attachments
      */
-    public static function sendWithAttachment(string $to, string $subject, string $htmlBody, array $attachments): bool {
-        if (!filter_var($to, FILTER_VALIDATE_EMAIL) || $attachments === []) {
+    public static function sendWithAttachment(string $to, string $subject, string $htmlBody, array $attachments): bool
+    {
+        if ($attachments === []) {
+            Logger::warning('[Mailer::sendWithAttachment] anexo ausente', [
+                'recipient_hint' => self::maskEmail($to),
+            ]);
+
             return false;
         }
-        $from     = $_ENV['MAIL_FROM']      ?? 'noreply@voxelpacs.com.br';
-        $fromName = $_ENV['MAIL_FROM_NAME'] ?? 'VOXEL PACS';
-        $boundary = '=_Voxel_' . bin2hex(random_bytes(16));
-        $headers  = "MIME-Version: 1.0\r\n";
-        $headers .= "From: {$fromName} <{$from}>\r\n";
-        $headers .= "Reply-To: {$from}\r\n";
-        $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
 
-        $body  = "--{$boundary}\r\n";
-        $body .= "Content-Type: text/html; charset=UTF-8\r\n";
-        $body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
-        $body .= $htmlBody . "\r\n";
-        foreach ($attachments as $attachment) {
-            $filename = preg_replace('/[^A-Za-z0-9._-]/', '-', (string) ($attachment['filename'] ?? 'anexo.pdf')) ?: 'anexo.pdf';
-            $mime = preg_match('#^[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+$#', (string) ($attachment['mime'] ?? ''))
-                ? (string) $attachment['mime']
-                : 'application/octet-stream';
-            $content = (string) ($attachment['content'] ?? '');
-            if ($content === '') {
-                throw new \InvalidArgumentException('Anexo vazio não pode ser enviado.');
-            }
-            $body .= "--{$boundary}\r\n";
-            $body .= "Content-Type: {$mime}; name=\"{$filename}\"\r\n";
-            $body .= "Content-Transfer-Encoding: base64\r\n";
-            $body .= "Content-Disposition: attachment; filename=\"{$filename}\"\r\n\r\n";
-            $body .= chunk_split(base64_encode($content)) . "\r\n";
+        return self::deliver($to, $subject, $htmlBody, $attachments);
+    }
+
+    /**
+     * @param array<int,array{content:string,filename:string,mime:string}> $attachments
+     */
+    private static function deliver(string $to, string $subject, string $htmlBody, array $attachments = []): bool
+    {
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            Logger::warning('[Mailer] destinatário inválido');
+
+            return false;
         }
-        $body .= "--{$boundary}--\r\n";
-        $subjectEncoded = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+
         try {
-            $ok = mail($to, $subjectEncoded, $body, $headers);
-            if (!$ok) {
-                Logger::error('[Mailer::sendWithAttachment] mail() retornou false', ['to' => $to, 'subject' => $subject]);
+            $mail = self::client();
+            $mail->addAddress($to);
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body = $htmlBody;
+            $mail->AltBody = trim(html_entity_decode(strip_tags($htmlBody), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+            foreach ($attachments as $attachment) {
+                $content = (string) ($attachment['content'] ?? '');
+                if ($content === '') {
+                    throw new \InvalidArgumentException('Anexo vazio não pode ser enviado.');
+                }
+
+                $filename = preg_replace('/[^A-Za-z0-9._-]/', '-', (string) ($attachment['filename'] ?? 'anexo.pdf')) ?: 'anexo.pdf';
+                $mime = preg_match('#^[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+$#', (string) ($attachment['mime'] ?? ''))
+                    ? (string) $attachment['mime']
+                    : 'application/octet-stream';
+
+                $mail->addStringAttachment($content, $filename, PHPMailer::ENCODING_BASE64, $mime);
             }
-            return $ok;
+
+            $mail->send();
+
+            Logger::info('[Mailer] mensagem SMTP aceita', [
+                'recipient_hint' => self::maskEmail($to),
+                'has_attachments' => $attachments !== [],
+            ]);
+
+            return true;
         } catch (\Throwable $e) {
-            Logger::error('[Mailer::sendWithAttachment] ' . $e->getMessage(), ['to' => $to]);
+            Logger::error('[Mailer] falha de entrega SMTP: ' . $e->getMessage(), [
+                'recipient_hint' => self::maskEmail($to),
+                'has_attachments' => $attachments !== [],
+            ]);
+
             return false;
         }
     }
 
-    public static function send(string $to, string $subject, string $htmlBody): bool {
-        $from     = $_ENV['MAIL_FROM']      ?? 'noreply@voxelpacs.com.br';
-        $fromName = $_ENV['MAIL_FROM_NAME'] ?? 'VOXEL PACS';
+    private static function client(): PHPMailer
+    {
+        $host = trim(self::env('MAIL_SMTP_HOST'));
+        $username = trim(self::env('MAIL_SMTP_USERNAME'));
+        $password = self::env('MAIL_SMTP_PASSWORD');
+        $from = trim(self::env('MAIL_FROM', $username));
+        $fromName = trim(self::env('MAIL_FROM_NAME', 'VOXEL PACS'));
+        $port = (int) self::env('MAIL_SMTP_PORT', '465');
+        $encryption = strtolower(trim(self::env('MAIL_SMTP_ENCRYPTION', 'ssl')));
 
-        $headers  = "MIME-Version: 1.0\r\n";
-        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-        $headers .= "From: {$fromName} <{$from}>\r\n";
-        $headers .= "Reply-To: {$from}\r\n";
-
-        $subjectEncoded = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-
-        try {
-            $ok = mail($to, $subjectEncoded, $htmlBody, $headers);
-            if (!$ok) {
-                Logger::error('[Mailer::send] mail() retornou false', ['to' => $to, 'subject' => $subject]);
-            }
-            return $ok;
-        } catch (\Throwable $e) {
-            Logger::error('[Mailer::send] ' . $e->getMessage(), ['to' => $to]);
-            return false;
+        if ($host === '' || $username === '' || $password === '' || !filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            throw new \RuntimeException('SMTP não configurado: defina MAIL_SMTP_HOST, MAIL_SMTP_USERNAME, MAIL_SMTP_PASSWORD e MAIL_FROM.');
         }
+
+        if ($port < 1 || $port > 65535) {
+            throw new \RuntimeException('Porta SMTP inválida.');
+        }
+
+        if (!in_array($encryption, ['ssl', 'tls'], true)) {
+            throw new \RuntimeException('Criptografia SMTP inválida; use ssl ou tls.');
+        }
+
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host = $host;
+        $mail->Port = $port;
+        $mail->SMTPAuth = true;
+        $mail->Username = $username;
+        $mail->Password = $password;
+        $mail->SMTPSecure = $encryption === 'ssl'
+            ? PHPMailer::ENCRYPTION_SMTPS
+            : PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->SMTPAutoTLS = true;
+        $mail->Timeout = 20;
+        $mail->SMTPDebug = 0;
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
+        $mail->setFrom($from, $fromName);
+        $mail->addReplyTo($from, $fromName);
+
+        return $mail;
+    }
+
+    private static function env(string $name, string $default = ''): string
+    {
+        $value = getenv($name);
+
+        if ($value === false || $value === '') {
+            $value = $_ENV[$name] ?? $default;
+        }
+
+        return (string) $value;
+    }
+
+    private static function maskEmail(string $email): string
+    {
+        $parts = explode('@', strtolower(trim($email)), 2);
+        if (count($parts) !== 2 || $parts[0] === '') {
+            return '[inválido]';
+        }
+
+        return substr($parts[0], 0, 1) . '***@' . $parts[1];
     }
 }

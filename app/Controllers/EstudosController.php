@@ -8,6 +8,7 @@ use App\Core\Auth;
 use App\Core\Access\MedicoAccess;
 use App\Services\DesktopViewerService;
 use App\Services\InstitutionResolverService;
+use App\Services\GrupoModalidadeService;
 use App\Services\PedidoMedicoService;
 
 /**
@@ -94,7 +95,24 @@ class EstudosController extends Controller
             $params[] = $usuarioLogadoId;
         }
 
-        return compact('where', 'params', 'institutionNames', 'usaInstitutionFilter', 'isMedicoFiltro');
+        // Tenant admins respeitam as regras do próprio negócio. Somente o
+        // superadmin fora de impersonação mantém bypass do escopo clínico.
+        $modalityScope = ['restricted' => false, 'modalities' => []];
+        if ($tenantId && !$bypassGlobal && $usuarioLogadoId > 0) {
+            $modalidadeService = new GrupoModalidadeService();
+            $modalityScope = $modalidadeService->scopeForUser($usuarioLogadoId, $tenantId);
+            $modalidadeService->appendStudyScope($where, $params, $modalityScope);
+        }
+
+        return compact('where', 'params', 'institutionNames', 'usaInstitutionFilter', 'isMedicoFiltro', 'modalityScope');
+    }
+
+    private function podeAbrirPorModalidade(array $estudo, ?int $tenantId, bool $bypassGlobal): bool
+    {
+        if (!$tenantId || $bypassGlobal || !(int) Auth::userId()) return true;
+        $service = new GrupoModalidadeService();
+        $scope = $service->scopeForUser((int) Auth::userId(), (int) $tenantId);
+        return $service->allowsStoredModalities((string) ($estudo['modalities'] ?? ''), $scope);
     }
 
     /**
@@ -671,7 +689,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id, servidor_id
+                "SELECT id, orthanc_id, study_instance_uid, patient_name, modalities, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
             $stmt->execute($params);
@@ -680,7 +698,7 @@ class EstudosController extends Controller
             error_log('[EstudosController::abrir] ' . $ex->getMessage());
         }
 
-        if (!$estudo) {
+        if (!$estudo || !$this->podeAbrirPorModalidade($estudo, $tenantId, $bypassGlobal)) {
             $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
             return;
         }
@@ -806,7 +824,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_name, tenant_id
+                "SELECT id, orthanc_id, study_instance_uid, patient_name, modalities, tenant_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
             $stmt->execute($params);
@@ -815,7 +833,7 @@ class EstudosController extends Controller
             error_log('[EstudosController::abrirVoxelDesktop] ' . $ex->getMessage());
         }
 
-        if (!$estudo) {
+        if (!$estudo || !$this->podeAbrirPorModalidade($estudo, $tenantId, $bypassGlobal)) {
             $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
             return;
         }
@@ -1008,7 +1026,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name,
+                "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name, modalities,
                         accession_number, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
@@ -1018,7 +1036,7 @@ class EstudosController extends Controller
             error_log("[EstudosController::abrirDesktop:{$viewer}] " . $ex->getMessage());
         }
 
-        if (!$estudo) {
+        if (!$estudo || !$this->podeAbrirPorModalidade($estudo, $tenantId, $bypassGlobal)) {
             $service->registrarAcesso($contexto + [
                 'status'        => 'erro',
                 'mensagem_erro' => 'Estudo não encontrado ou sem permissão de acesso.',

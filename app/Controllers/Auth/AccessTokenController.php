@@ -5,6 +5,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Mailer;
+use App\Core\SqlHelper;
 
 /**
  * AccessTokenController
@@ -183,13 +184,22 @@ class AccessTokenController extends Controller
                 if ($tenantId) {
                     // Evita reenvio em rajada: reaproveita token válido gerado
                     // há menos de 2 minutos em vez de criar um novo a cada clique.
-                    $stmtRecente = $pdo->prepare("
+                    $recentTokenSql = SqlHelper::isPostgres()
+                        ? "
+                            SELECT token FROM bi_tenant_access_tokens
+                            WHERE user_id = :uid AND tipo = 'redefinir_senha'
+                              AND usado = 0 AND expires_at > NOW()
+                              AND created_at > (NOW() - INTERVAL '2 minutes')
+                            ORDER BY id DESC LIMIT 1
+                        "
+                        : "
                         SELECT token FROM bi_tenant_access_tokens
                         WHERE user_id = :uid AND tipo = 'redefinir_senha'
                           AND usado = 0 AND expires_at > NOW()
                           AND created_at > (NOW() - INTERVAL 2 MINUTE)
                         ORDER BY id DESC LIMIT 1
-                    ");
+                        ";
+                    $stmtRecente = $pdo->prepare($recentTokenSql);
                     $stmtRecente->execute([':uid' => $user['id']]);
                     $token = $stmtRecente->fetchColumn();
 
@@ -217,8 +227,12 @@ class AccessTokenController extends Controller
                         . '<p style="color:#64748b;font-size:.85rem;">Este link expira em 1 hora e só pode ser usado uma vez. '
                         . 'Se você não solicitou isso, apenas ignore este e-mail — sua senha atual continua válida.</p>';
 
-                    Mailer::send($email, 'Redefinição de senha — VOXEL PACS', $html);
-                    Logger::info("[AccessToken::enviarLinkRedefinicao] Link enviado para user_id={$user['id']}");
+                    if (Mailer::send($email, 'Redefinição de senha — VOXEL PACS', $html)) {
+                        Logger::info("[AccessToken::enviarLinkRedefinicao] SMTP aceitou a redefinição para user_id={$user['id']}");
+                    } else {
+                        // A resposta externa permanece genérica para não revelar contas válidas.
+                        Logger::warning("[AccessToken::enviarLinkRedefinicao] SMTP recusou a redefinição para user_id={$user['id']}");
+                    }
                 } else {
                     // Conta existe mas sem tenant vinculado (ex: superadmin
                     // puro) — não há como gerar o token (FK obrigatória).
