@@ -153,6 +153,8 @@ class ModalidadeDescricaoService
     private function normalizeDescricao(string $descricao): string
     {
         $descricao = trim(strip_tags($descricao));
+        $descricao = preg_replace('/\s+/u', ' ', $descricao) ?? '';
+        $descricao = mb_strtoupper($descricao, 'UTF-8');
         if (strlen($descricao) < 3 || strlen($descricao) > 255) return '';
         return $descricao;
     }

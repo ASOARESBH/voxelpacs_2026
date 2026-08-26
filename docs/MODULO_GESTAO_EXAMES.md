@@ -72,3 +72,11 @@ O menu **Gerenciar** inclui o cartão **Médico solicitante**. O valor é uma so
 | Histórico clínico | A tabela de histórico preserva antes/depois, autor e data/hora no tenant para investigação autorizada. |
 
 Cada abertura do menu agora registra `estudo.gerenciamento_visualizado`. As ações de prioridade, descrição individual ou lote, pedido, Chat e médico solicitante mantêm eventos próprios em `bi_audit_logs`. O contexto acrescentado pelo logger é sanitizado e inclui somente perfil efetivo, indicador de administração de plataforma e identificadores de grupos efetivos; ele não inclui nome de paciente, texto de chat, conteúdo de laudo, nome do solicitante, credenciais ou anexos.
+
+O médico solicitante manual também segue o padrão institucional de **caixa alta Unicode**. O campo converte a digitação e os valores colados no navegador; `GestaoExamesService::changeRequestingPhysician()` reaplica `mb_strtoupper(..., 'UTF-8')` antes da validação, persistência, histórico e auditoria. Assim, acesso direto ao endpoint não consegue gravar a sobrescrita em minúsculas. A normalização não altera a tag DICOM de origem nem registros históricos já existentes.
+
+## Padrão de caixa alta para Descrição do Estudo
+
+A Descrição do Estudo segue o padrão institucional de **caixa alta**. O formulário converte a digitação e valores colados imediatamente no navegador, inclusive caracteres acentuados. A camada `ModalidadeDescricaoService` reaplica a normalização Unicode antes de prévia, gravação individual, sugestão e aplicação em lote. Portanto, chamadas diretas à API ou clientes com JavaScript desativado não conseguem persistir uma descrição em minúsculas.
+
+O valor é submetido a remoção de tags, compactação de espaços, `mb_strtoupper(..., 'UTF-8')` e validação do limite existente de três a 255 caracteres. Os eventos de auditoria de descrição recebem o valor já padronizado, mantendo a rastreabilidade consistente sem modificar descrições históricas preexistentes.

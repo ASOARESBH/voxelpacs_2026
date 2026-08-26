@@ -284,8 +284,18 @@
         }
         list.innerHTML = values.map((item) => `<button type="button" class="btn btn-outline-secondary btn-sm gerenciar-descricao-sugestao" data-descricao="${escapeHtml(item.descricao)}">${escapeHtml(item.descricao)}</button>`).join('');
         list.querySelectorAll('.gerenciar-descricao-sugestao').forEach((button) => {
-            button.addEventListener('click', () => { $('#gerenciarDescricaoInput').value = button.dataset.descricao || ''; });
+            button.addEventListener('click', () => {
+                $('#gerenciarDescricaoInput').value = normalizeDescriptionInput(button.dataset.descricao || '');
+            });
         });
+    }
+
+    function normalizeDescriptionInput(value) {
+        return String(value || '').toLocaleUpperCase();
+    }
+
+    function normalizeRequestingPhysicianInput(value) {
+        return String(value || '').toLocaleUpperCase();
     }
 
     async function openDescriptionModal() {
@@ -295,7 +305,7 @@
             showFeedback(text('erroOperacao'), 'danger');
             return;
         }
-        $('#gerenciarDescricaoInput').value = state.context?.study_description || '';
+        $('#gerenciarDescricaoInput').value = normalizeDescriptionInput(state.context?.study_description || '');
         $('#gerenciarDescricaoModalidade').textContent = format(text('descricaoModalidade'), modalidade);
         $('#gerenciarDescricaoLote').style.display = state.context?.can_apply_description_batch ? 'inline-flex' : 'none';
         renderDescriptionSuggestions([]);
@@ -326,7 +336,9 @@
     }
 
     async function applyDescription(batch) {
-        const descricao = String($('#gerenciarDescricaoInput').value || '').trim();
+        const input = $('#gerenciarDescricaoInput');
+        const descricao = normalizeDescriptionInput(input.value).trim();
+        input.value = descricao;
         if (!state.studyId || descricao.length < 3) {
             showDescriptionStatus(text('erroOperacao'), 'danger');
             return;
@@ -384,7 +396,7 @@
 
     function openRequestingPhysicianModal() {
         if (!state.studyId || state.context?.chat_pending) return;
-        $('#gerenciarSolicitanteInput').value = state.context?.requesting_physician_manual || '';
+        $('#gerenciarSolicitanteInput').value = normalizeRequestingPhysicianInput(state.context?.requesting_physician_manual || '');
         showRequestingPhysicianStatus('', 'info');
         modal('gerenciarSolicitanteModal')?.show();
     }
@@ -392,7 +404,9 @@
     async function saveRequestingPhysician(event) {
         event.preventDefault();
         if (!state.studyId || state.context?.chat_pending) return;
-        const value = String($('#gerenciarSolicitanteInput').value || '').trim();
+        const input = $('#gerenciarSolicitanteInput');
+        const value = normalizeRequestingPhysicianInput(input.value).trim();
+        input.value = value;
         const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/medico-solicitante`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -458,6 +472,28 @@
     }
 
     function bind() {
+        const descriptionInput = $('#gerenciarDescricaoInput');
+        if (descriptionInput) descriptionInput.style.textTransform = 'uppercase';
+        descriptionInput?.addEventListener('input', (event) => {
+            const input = event.currentTarget;
+            const normalized = normalizeDescriptionInput(input.value);
+            if (input.value !== normalized) input.value = normalized;
+        });
+        descriptionInput?.addEventListener('change', (event) => {
+            const input = event.currentTarget;
+            input.value = normalizeDescriptionInput(input.value);
+        });
+        const requestingPhysicianInput = $('#gerenciarSolicitanteInput');
+        if (requestingPhysicianInput) requestingPhysicianInput.style.textTransform = 'uppercase';
+        requestingPhysicianInput?.addEventListener('input', (event) => {
+            const input = event.currentTarget;
+            const normalized = normalizeRequestingPhysicianInput(input.value);
+            if (input.value !== normalized) input.value = normalized;
+        });
+        requestingPhysicianInput?.addEventListener('change', (event) => {
+            const input = event.currentTarget;
+            input.value = normalizeRequestingPhysicianInput(input.value);
+        });
         document.querySelectorAll('.gerenciar-trigger').forEach((button) => {
             button.addEventListener('click', async () => {
                 modal('gerenciarModal')?.show();

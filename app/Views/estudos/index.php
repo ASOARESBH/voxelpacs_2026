@@ -952,7 +952,7 @@ $periodoLabel = [
                     <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
                     <div id="gerenciarSolicitanteStatus" class="alert py-2 small" style="display:none;"></div>
                     <label class="w-100"><?= htmlspecialchars(t('gestao_gerenciar.solicitante.campo')) ?>
-                        <input id="gerenciarSolicitanteInput" name="medico_solicitante" class="form-control mt-1" maxlength="180" autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.placeholder')) ?>">
+                        <input id="gerenciarSolicitanteInput" name="medico_solicitante" class="form-control mt-1" style="text-transform:uppercase !important" oninput="this.value=this.value.toLocaleUpperCase()" maxlength="180" autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.placeholder')) ?>">
                     </label>
                     <small class="text-muted d-block mt-2"><?= htmlspecialchars(t('gestao_gerenciar.solicitante.ajuda')) ?></small>
                 </div>
@@ -1059,7 +1059,7 @@ $periodoLabel = [
                     <div id="gerenciarDescricaoStatus" class="alert py-2 small" style="display:none;"></div>
                     <p id="gerenciarDescricaoModalidade" class="text-muted small mb-3">—</p>
                     <label class="w-100"><?= htmlspecialchars(t('gestao_gerenciar.descricao.campo')) ?>
-                        <input id="gerenciarDescricaoInput" name="descricao" class="form-control mt-1" list="gerenciarDescricaoSugestoes" maxlength="255" required autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.descricao.placeholder')) ?>">
+                        <input id="gerenciarDescricaoInput" name="descricao" class="form-control mt-1" style="text-transform:uppercase !important" oninput="this.value=this.value.toLocaleUpperCase()" list="gerenciarDescricaoSugestoes" maxlength="255" required autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.descricao.placeholder')) ?>">
                     </label>
                     <datalist id="gerenciarDescricaoSugestoes"></datalist>
                     <div class="mt-3">
@@ -2248,5 +2248,5 @@ function resetDownloadUI() {
 }());
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-medico-solicitante"></script>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-solicitante-caixa-alta-v1"></script>
 <?php endif; ?>

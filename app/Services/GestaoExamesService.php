@@ -148,6 +148,7 @@ class GestaoExamesService
     public function changeRequestingPhysician(int $studyId, int $tenantId, int $userId, string $value): array
     {
         $value = preg_replace('/\s+/u', ' ', trim($value)) ?? '';
+        $value = mb_strtoupper($value, 'UTF-8');
         if ($value !== '' && (mb_strlen($value, 'UTF-8') < 3 || mb_strlen($value, 'UTF-8') > 180)) {
             return ['ok' => false, 'error' => 'solicitante_invalido'];
         }
