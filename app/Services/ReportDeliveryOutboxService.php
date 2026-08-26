@@ -45,6 +45,9 @@ class ReportDeliveryOutboxService
         $estabelecimentoId = (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null;
         $rawInstitutionName = trim((string) ($estudo->institution_name ?? ''));
         $institutionName = InstitutionResolverService::canonicalForTenant($tenantId, $rawInstitutionName);
+        $issuer = DicomIssuerService::sanitizeIssuer($estudo->issuer_of_patient_id ?? null);
+        $issuerNormalized = DicomIssuerService::normalize($issuer);
+        $routingBasis = $issuerNormalized !== null ? 'issuer' : ($institutionName !== null ? 'institution_name_fallback' : 'none');
         $eventType = 'report.released';
         $eventKey = hash('sha256', implode('|', [
             $tenantId,
@@ -55,7 +58,7 @@ class ReportDeliveryOutboxService
         ]));
 
         $payload = [
-            'schema_version' => 1,
+            'schema_version' => 2,
             'event_type' => $eventType,
             'tenant_id' => $tenantId,
             'estabelecimento_id' => $estabelecimentoId,
@@ -64,6 +67,9 @@ class ReportDeliveryOutboxService
             'estudo_id' => $estudoId,
             'institution_name' => $institutionName,
             'institution_name_received' => $rawInstitutionName,
+            'issuer_of_patient_id' => $issuer,
+            'issuer_of_patient_id_normalized' => $issuerNormalized,
+            'routing_basis' => $routingBasis,
             'study_instance_uid' => (string) ($estudo->study_instance_uid ?? $report->study_instance_uid ?? ''),
             'accession_number' => (string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''),
             'patient_id' => (string) ($estudo->patient_id ?? $estudo->paciente_id_externo ?? ''),
@@ -90,9 +96,7 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
-            $destinations = $institutionName !== null
-                ? $repository->findActiveDestinations($tenantId, $estabelecimentoId, $institutionName)
-                : [];
+            $destinations = $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName);
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations);
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
                 $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);
@@ -100,11 +104,13 @@ class ReportDeliveryOutboxService
 
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
-                Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado ao InstitutionName do estudo', [
+                Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado à origem de devolução do estudo', [
                     'tenant_id' => $tenantId,
                     'estudo_id' => $estudoId,
                     'institution_name_received' => $rawInstitutionName,
                     'institution_name_canonical' => $institutionName,
+                    'issuer_of_patient_id_normalized' => $issuerNormalized,
+                    'routing_basis' => $routingBasis,
                 ]);
             }
 

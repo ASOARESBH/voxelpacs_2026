@@ -19,28 +19,40 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, string $institutionName): array
+    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
     {
-        if (trim($institutionName) === '') {
+        $issuerNormalized = trim((string) $issuerNormalized);
+        $institutionName = trim((string) $institutionName);
+        if ($issuerNormalized === '' && $institutionName === '') {
             return [];
         }
 
+        // Issuer presente nunca cai para InstitutionName: isso evita a devolução
+        // para uma origem que apenas compartilha a mesma instituição.
+        $sourceJoin = $issuerNormalized !== ''
+            ? 'INNER JOIN pacs_report_delivery_destination_issuers ds
+                     ON ds.destination_id = d.id
+                    AND ds.tenant_id = d.tenant_id'
+            : 'INNER JOIN pacs_report_delivery_destination_institutions di
+                     ON di.destination_id = d.id
+                    AND di.tenant_id = d.tenant_id';
+        $sourceWhere = $issuerNormalized !== ''
+            ? 'ds.issuer_of_patient_id_normalized = :source_value'
+            : 'di.institution_name = :source_value';
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.timeout_seconds, d.max_attempts,
                     d.configuration_json, d.configuration_secret
              FROM pacs_report_delivery_destinations d
-             INNER JOIN pacs_report_delivery_destination_institutions di
-                     ON di.destination_id = d.id
-                    AND di.tenant_id = d.tenant_id
+             {$sourceJoin}
              WHERE d.tenant_id = :tenant_id
-               AND di.institution_name = :institution_name
+               AND {$sourceWhere}
                AND d.enabled = 1
                AND d.disparar_na_liberacao = 1
                AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id = :estabelecimento_id)
              ORDER BY d.id ASC"
         );
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
-        $stmt->bindValue(':institution_name', trim($institutionName), PDO::PARAM_STR);
+        $stmt->bindValue(':source_value', $issuerNormalized !== '' ? $issuerNormalized : $institutionName, PDO::PARAM_STR);
         if ($estabelecimentoId === null) {
             $stmt->bindValue(':estabelecimento_id', null, PDO::PARAM_NULL);
         } else {
@@ -55,13 +67,17 @@ class ReportDeliveryRepository
     public function listDestinations(int $tenantId): array
     {
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
+        $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
                     COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
-                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
+                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
+                    COALESCE((SELECT {$issuersSql}
+                              FROM pacs_report_delivery_destination_issuers ds
+                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers
              FROM pacs_report_delivery_destinations d
              WHERE d.tenant_id = :tenant_id
              ORDER BY d.id DESC"
@@ -79,11 +95,15 @@ class ReportDeliveryRepository
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
+        $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
             "SELECT {$columns},
                     COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
-                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names
+                              WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
+                    COALESCE((SELECT {$issuersSql}
+                              FROM pacs_report_delivery_destination_issuers ds
+                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers
              FROM pacs_report_delivery_destinations d
              WHERE d.id = :id AND d.tenant_id = :tenant_id
              LIMIT 1"
@@ -162,7 +182,7 @@ class ReportDeliveryRepository
                 ':id' => $destinationId,
                 ':tenant_id' => $tenantId,
             ]);
-            $this->replaceDestinationInstitutions($destinationId, $tenantId, $data['institution_names'] ?? []);
+            $this->replaceDestinationSources($destinationId, $tenantId, $data);
 
             return $destinationId;
         }
@@ -199,9 +219,16 @@ class ReportDeliveryRepository
         ]);
 
         $savedId = (int) $this->pdo->lastInsertId();
-        $this->replaceDestinationInstitutions($savedId, $tenantId, $data['institution_names'] ?? []);
+        $this->replaceDestinationSources($savedId, $tenantId, $data);
 
         return $savedId;
+    }
+
+    /** @param array<string,mixed> $data */
+    private function replaceDestinationSources(int $destinationId, int $tenantId, array $data): void
+    {
+        $this->replaceDestinationInstitutions($destinationId, $tenantId, $data['institution_names'] ?? []);
+        $this->replaceDestinationIssuers($destinationId, $tenantId, $data['issuers'] ?? []);
     }
 
     /** @param array<int, string> $institutionNames */
@@ -211,10 +238,6 @@ class ReportDeliveryRepository
             static fn($name): string => trim((string) $name),
             $institutionNames
         ), static fn(string $name): bool => $name !== '')));
-
-        if (!$names) {
-            throw new DomainException('Selecione ao menos um InstitutionName de origem para o destino.');
-        }
 
         $ownsTransaction = !$this->pdo->inTransaction();
         if ($ownsTransaction) {
@@ -248,6 +271,64 @@ class ReportDeliveryRepository
             }
             throw $e;
         }
+    }
+
+    /** @param array<int,array{issuer:string,normalized:string}> $issuers */
+    private function replaceDestinationIssuers(int $destinationId, int $tenantId, array $issuers): void
+    {
+        $unique = [];
+        foreach ($issuers as $issuer) {
+            $value = trim((string) ($issuer['issuer'] ?? ''));
+            $normalized = trim((string) ($issuer['normalized'] ?? ''));
+            if ($value !== '' && $normalized !== '') {
+                $unique[$normalized] = ['issuer' => $value, 'normalized' => $normalized];
+            }
+        }
+
+        $delete = $this->pdo->prepare(
+            'DELETE FROM pacs_report_delivery_destination_issuers
+             WHERE destination_id = :destination_id AND tenant_id = :tenant_id'
+        );
+        $delete->execute([':destination_id' => $destinationId, ':tenant_id' => $tenantId]);
+
+        $insert = $this->pdo->prepare(
+            'INSERT INTO pacs_report_delivery_destination_issuers
+                (destination_id, tenant_id, issuer_of_patient_id, issuer_of_patient_id_normalized)
+             VALUES (:destination_id, :tenant_id, :issuer, :normalized)'
+        );
+        foreach ($unique as $issuer) {
+            $insert->execute([
+                ':destination_id' => $destinationId,
+                ':tenant_id' => $tenantId,
+                ':issuer' => $issuer['issuer'],
+                ':normalized' => $issuer['normalized'],
+            ]);
+        }
+    }
+
+    /** @return array<int,array{issuer:string,normalized:string}> */
+    public function listTenantIssuers(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT issuer_of_patient_id AS issuer, issuer_of_patient_id_normalized AS normalized
+             FROM (
+                 SELECT DISTINCT e.issuer_of_patient_id, e.issuer_of_patient_id_normalized
+                 FROM bi_pacs_estudos e
+                 INNER JOIN bi_negocio_servidor_pacs bsp ON bsp.servidor_id = e.servidor_id
+                 WHERE bsp.tenant_id = :tenant_studies
+                   AND NULLIF(btrim(e.issuer_of_patient_id), '') IS NOT NULL
+                   AND NULLIF(btrim(e.issuer_of_patient_id_normalized), '') IS NOT NULL
+                 UNION
+                 SELECT DISTINCT im.issuer_of_patient_id, im.issuer_of_patient_id_normalized
+                 FROM bi_tenant_issuer_modalidades im
+                 WHERE im.tenant_id = :tenant_configured
+                   AND im.status = 'ativo'
+             ) issuers
+             ORDER BY issuer_of_patient_id_normalized ASC"
+        );
+        $stmt->execute([':tenant_studies' => $tenantId, ':tenant_configured' => $tenantId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function createOutboxIfAbsent(

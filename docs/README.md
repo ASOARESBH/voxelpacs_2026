@@ -13,6 +13,7 @@
 - **[CONFIGURACAO_MODULOS_E_WORKLIST.md](CONFIGURACAO_MODULOS_E_WORKLIST.md)** — política global exclusiva do superadmin, guard de rotas, permissões individuais e refresh parcial configurável da Worklist.
 - **[MODULO_REPORTS.md](MODULO_REPORTS.md)** — detalhe do módulo de laudos (⚠️ ver `MANUAL_TECNICO.md` §14 — está com bug crítico em produção no código atual).
 - **[CHAT_LAUDO.md](CHAT_LAUDO.md)** — contratos de acesso, persistência e compatibilidade PostgreSQL do Chat contextual de Reports.
+- **[DEVOLUCAO_LAUDOS_ISSUER.md](DEVOLUCAO_LAUDOS_ISSUER.md)** — prioridade de roteamento por Issuer, fallback seguro por InstitutionName e controles de homologação da devolução de laudos.
 - **[SYNC_AUTOMATICO_PACS.md](SYNC_AUTOMATICO_PACS.md)** — ⚠️ **desatualizado**: descreve a sincronização automática via cron externo, mas essa funcionalidade foi removida do código em um merge posterior (ver `MANUAL_TECNICO.md` §4.1). Mantido como referência histórica.
 - **[DEPLOY_HOSTGATOR.md](DEPLOY_HOSTGATOR.md)** — passo a passo de deploy em hospedagem compartilhada.
 

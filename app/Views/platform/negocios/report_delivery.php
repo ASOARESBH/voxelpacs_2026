@@ -6,6 +6,7 @@
 /** @var string $csrfToken */
 /** @var array<int,string> $transports */
 /** @var array<int,string> $institutionNames */
+/** @var array<int,array{issuer:string,normalized:string}> $issuers */
 
 $escape = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $transportLabels = [
@@ -41,7 +42,7 @@ $transportLabels = [
     <div class="card border-warning shadow-sm mb-4">
         <div class="card-header bg-warning-subtle"><h2 class="h5 mb-0"><i class="fa fa-vial-circle-check me-1"></i> Envio único de homologação</h2></div>
         <div class="card-body">
-            <p class="small mb-3">Use somente após confirmar o destino e o PACS de origem. O laudo deve estar <strong>liberado</strong>; o Hub aplicará o InstitutionName do estudo e somente criará job para destinos habilitados em homologação.</p>
+            <p class="small mb-3">Use somente após confirmar o destino e o PACS de origem. O laudo deve estar <strong>liberado</strong>; o Hub prioriza o Issuer e usa InstitutionName somente quando o estudo não tiver Issuer, criando job apenas para destinos habilitados em homologação.</p>
             <form id="manual-delivery-form" method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/enqueue" class="row g-3">
                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
                 <div class="col-lg-8">
@@ -86,8 +87,25 @@ $transportLabels = [
                             </div>
                         </div>
                         <div class="border rounded-3 bg-light-subtle p-3 mt-3" id="institution-routing">
-                            <h3 class="h6 mb-1"><i class="fa fa-building-circle-check me-1"></i> PACS de origem dos estudos</h3>
-                            <p class="small text-muted mb-3">Selecione os <strong>InstitutionNames</strong> que este destino pode receber. Um laudo será devolvido somente quando o estudo vier de um PACS de origem selecionado.</p>
+                            <h3 class="h6 mb-1"><i class="fa fa-fingerprint me-1"></i> Issuers dos servidores PACS</h3>
+                            <p class="small text-muted mb-3">Selecione os <strong>Issuers</strong> observados ou configurados nos servidores PACS deste negócio. Com Issuer presente no estudo, somente este vínculo é usado para devolução.</p>
+                            <?php if (!$issuers): ?>
+                                <div class="alert alert-warning mb-3 small">Nenhum Issuer foi encontrado nos servidores PACS deste negócio. Use InstitutionName como fallback até que o PACS envie Issuer.</div>
+                            <?php else: ?>
+                                <div class="row g-2 mb-3">
+                                    <?php foreach ($issuers as $issuer): ?>
+                                        <?php $issuerInputId = 'destination-issuer-' . substr(sha1((string) $issuer['normalized']), 0, 12); ?>
+                                        <div class="col-12 col-md-6">
+                                            <div class="form-check border rounded bg-white px-3 py-2 h-100">
+                                                <input class="form-check-input issuer-selector" type="checkbox" name="issuer_of_patient_ids[]" value="<?= $escape($issuer['issuer']) ?>" id="<?= $issuerInputId ?>">
+                                                <label class="form-check-label w-100" for="<?= $issuerInputId ?>"><?= $escape($issuer['issuer']) ?></label>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                            <h3 class="h6 mb-1 mt-3"><i class="fa fa-building-circle-check me-1"></i> InstitutionName de fallback</h3>
+                            <p class="small text-muted mb-3">Marque também os <strong>InstitutionNames</strong> aceitos quando o estudo não tiver Issuer. Eles não substituem Issuer presente no estudo.</p>
                             <?php if (!$institutionNames): ?>
                                 <div class="alert alert-warning mb-0 small">Nenhum InstitutionName ativo foi encontrado neste negócio. Cadastre primeiro as Unidades/PACS de origem antes de criar um destino.</div>
                             <?php else: ?>
@@ -172,7 +190,7 @@ $transportLabels = [
                 <div class="card-header bg-white d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Destinos configurados</h2><span class="badge text-bg-secondary"><?= count($destinations) ?></span></div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th>Nome</th><th>PACS de origem</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
+                        <thead><tr><th>Nome</th><th>Origem e prioridade</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
                         <tbody>
                             <?php if (!$destinations): ?>
                                 <tr><td colspan="6" class="text-center text-muted py-4">Nenhum destino cadastrado para este negócio.</td></tr>
@@ -182,7 +200,12 @@ $transportLabels = [
                                 <tr>
                                     <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div></td>
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
-                                    <td class="small"><?php if ($destinationInstitutions !== ''): ?><?= $escape($destinationInstitutions) ?><?php else: ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?></td>
+                                    <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
+                                    <td class="small">
+                                        <?php if ($destinationIssuers !== ''): ?><div><strong>Issuer:</strong> <?= $escape($destinationIssuers) ?></div><?php endif; ?>
+                                        <?php if ($destinationInstitutions !== ''): ?><div><strong>Fallback:</strong> <?= $escape($destinationInstitutions) ?></div><?php endif; ?>
+                                        <?php if ($destinationIssuers === '' && $destinationInstitutions === ''): ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?>
+                                    </td>
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
@@ -248,6 +271,7 @@ $transportLabels = [
     const configInput = document.getElementById('destination-config');
     const secretInput = document.getElementById('destination-secret');
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
+    const issuerSelectors = Array.from(form.querySelectorAll('.issuer-selector'));
     const baseAction = form.action;
     const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
     const guideText = {
@@ -299,6 +323,11 @@ $transportLabels = [
         institutionSelectors.forEach((input) => { input.checked = selected.has(input.value); });
     }
 
+    function setSelectedIssuers(rawIssuers) {
+        const selected = new Set(String(rawIssuers || '').split('||').filter(Boolean));
+        issuerSelectors.forEach((input) => { input.checked = selected.has(input.value); });
+    }
+
     function syncEnvironment() {
         const production = environment.value === 'producao';
         if (production) enabled.checked = false;
@@ -333,6 +362,7 @@ $transportLabels = [
         configInput.value = '{}';
         secretInput.value = '';
         setSelectedInstitutions('');
+        setSelectedIssuers('');
         title.textContent = 'Novo destino';
         cancel.classList.add('d-none');
         renderTransportFields();
@@ -384,6 +414,7 @@ $transportLabels = [
             document.getElementById('destination-release').checked = Number(item.disparar_na_liberacao) === 1;
             enabled.checked = Number(item.enabled) === 1;
             setSelectedInstitutions(item.institution_names);
+            setSelectedIssuers(item.issuers);
             cancel.classList.remove('d-none');
             renderTransportFields();
             syncEnvironment();
@@ -394,9 +425,9 @@ $transportLabels = [
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        if (!institutionSelectors.some((input) => input.checked)) {
+        if (!institutionSelectors.some((input) => input.checked) && !issuerSelectors.some((input) => input.checked)) {
             feedback.className = 'alert alert-danger';
-            feedback.textContent = 'Selecione ao menos um PACS de origem (InstitutionName) para este destino.';
+            feedback.textContent = 'Selecione ao menos um Issuer ou InstitutionName de fallback para este destino.';
             feedback.classList.remove('d-none');
             return;
         }

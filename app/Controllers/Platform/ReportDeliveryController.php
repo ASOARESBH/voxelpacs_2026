@@ -10,6 +10,7 @@ use App\Core\Logger;
 use App\Models\Tenant;
 use App\Repositories\ReportDeliveryRepository;
 use App\Services\InstitutionResolverService;
+use App\Services\DicomIssuerService;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\ReportDeliveryManualQueueService;
 use DomainException;
@@ -58,6 +59,7 @@ class ReportDeliveryController extends Controller
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
             'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
+            'issuers' => $this->repository->listTenantIssuers($tenantId),
         ], 'platform');
     }
 
@@ -82,6 +84,7 @@ class ReportDeliveryController extends Controller
                 'ambiente' => $data['ambiente'],
                 'enabled' => $data['enabled'],
                 'institution_names' => $data['institution_names'],
+                'issuers' => array_map(static fn(array $issuer): string => $issuer['normalized'], $data['issuers']),
             ]);
             $this->json([
                 'success' => true,
@@ -130,7 +133,7 @@ class ReportDeliveryController extends Controller
                 'success' => true,
                 'message' => $result['job_count'] > 0
                     ? 'Laudo liberado reenfileirado para a homologação.'
-                    : 'Evento registrado, mas nenhum destino habilitado corresponde ao InstitutionName do estudo.',
+                    : 'Evento registrado, mas nenhum destino habilitado corresponde ao Issuer ou ao InstitutionName de fallback do estudo.',
                 'outbox_id' => $result['outbox_id'],
                 'job_count' => $result['job_count'],
             ]);
@@ -224,8 +227,29 @@ class ReportDeliveryController extends Controller
             $institutionNames[$canonical] = $canonical;
         }
 
-        if (!$institutionNames) {
-            throw new DomainException('Selecione ao menos um PACS de origem (InstitutionName) para o destino.');
+        $availableIssuers = [];
+        foreach ($this->repository->listTenantIssuers($tenantId) as $issuer) {
+            $normalized = DicomIssuerService::normalize((string) ($issuer['normalized'] ?? $issuer['issuer'] ?? ''));
+            if ($normalized !== null) {
+                $availableIssuers[$normalized] = (string) ($issuer['issuer'] ?? '');
+            }
+        }
+        $requestedIssuers = $_POST['issuer_of_patient_ids'] ?? [];
+        $requestedIssuers = is_array($requestedIssuers) ? $requestedIssuers : [];
+        $issuers = [];
+        foreach ($requestedIssuers as $requestedIssuer) {
+            $normalized = DicomIssuerService::normalize((string) $requestedIssuer);
+            if ($normalized === null || !isset($availableIssuers[$normalized])) {
+                throw new DomainException('Selecione apenas Issuers ativos dos servidores PACS vinculados a este negócio.');
+            }
+            $issuers[$normalized] = [
+                'issuer' => $availableIssuers[$normalized],
+                'normalized' => $normalized,
+            ];
+        }
+
+        if (!$institutionNames && !$issuers) {
+            throw new DomainException('Selecione ao menos um Issuer ou InstitutionName de fallback para o destino.');
         }
 
         if ($name === '' || mb_strlen($name) > 120) {
@@ -267,6 +291,7 @@ class ReportDeliveryController extends Controller
             'timeout_seconds' => max(5, min(120, (int) ($_POST['timeout_seconds'] ?? 30))),
             'max_attempts' => max(1, min(10, (int) ($_POST['max_attempts'] ?? 5))),
             'institution_names' => array_values($institutionNames),
+            'issuers' => array_values($issuers),
         ];
     }
 
