@@ -24,11 +24,26 @@ class InstitutionResolverService
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare("
                 SELECT institution_name 
-                FROM bi_negocio_institution_names 
-                WHERE tenant_id = :tenant_id AND ativo = 1
+                FROM bi_tenant_unidades_dicom
+                WHERE tenant_id = :tenant_id AND status = 'ativo'
+                ORDER BY institution_name
             ");
             $stmt->execute([':tenant_id' => $tenantId]);
-            return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            $names = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            if ($names !== []) {
+                return array_values(array_unique(array_map('strval', $names)));
+            }
+
+            // Compatibilidade durante a migração de instalações que ainda não
+            // receberam as Unidades DICOM consolidadas.
+            $legacy = $pdo->prepare("
+                SELECT institution_name
+                FROM bi_negocio_institution_names
+                WHERE tenant_id = :tenant_id AND ativo = 1
+                ORDER BY institution_name
+            ");
+            $legacy->execute([':tenant_id' => $tenantId]);
+            return array_values(array_unique(array_map('strval', $legacy->fetchAll(\PDO::FETCH_COLUMN))));
         } catch (\Throwable $ex) {
             Logger::error('[InstitutionResolverService::getInstitutionNamesByTenant] Erro: ' . $ex->getMessage());
             return [];

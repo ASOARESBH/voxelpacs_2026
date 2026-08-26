@@ -6,6 +6,7 @@ class Router {
 
     private static array $publicRoutes = [
         '/login',
+        '/login/2fa',
         '/logout',
         '/selecionar-empresa',
         '/open/',
@@ -15,6 +16,7 @@ class Router {
         '/api/sla-regras/executar',
         '/api/servidor-pacs/sync-robo',
         '/api/report-delivery/',
+        '/validar/auditoria/',
         // A API Imagiflow não usa sessão; cada chamada é validada por HMAC no controlador.
         '/api/integracoes/imagiflow/',
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Audit\AuditLogger;
 use App\Core\Controller;
 use App\Core\Logger;
 use App\Services\GestaoExamesService;
@@ -70,6 +71,10 @@ class GestaoExamesController extends Controller
                 return;
             }
 
+            AuditLogger::log('pedido.anexado', 'bi_pacs_estudos', $estudoId, [
+                'substituido' => (bool) $resultado['substituido'],
+                'possui_anexo' => true,
+            ], (int) Auth::tenantId(), 'gestao_estudos');
             $this->json([
                 'ok'          => true,
                 'msg'         => $resultado['substituido']
@@ -121,6 +126,7 @@ class GestaoExamesController extends Controller
                 ], $this->statusErro($resultado['error'] ?? null));
                 return;
             }
+            AuditLogger::log('pedido.removido', 'bi_pacs_estudos', $estudoId, [], (int) Auth::tenantId(), 'gestao_estudos');
             $this->json(['ok' => true, 'msg' => t('pedido_medico.msg.removido')]);
         } catch (\Throwable $e) {
             Logger::error('[GestaoExamesController::remover] ' . $e->getMessage(), [
@@ -280,6 +286,10 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => $this->mensagemDescricao($result['error'] ?? null)], $this->statusDescricao($result['error'] ?? null));
             return;
         }
+        AuditLogger::log('estudo.descricao_alterada', 'bi_pacs_estudos', $estudoId, [
+            'modalidade' => $result['modalidade'] ?? null,
+            'alteracao_manual' => true,
+        ], $tenantId, 'gestao_estudos');
         $this->json([
             'ok' => true,
             'msg' => t('gestao_gerenciar.descricao.msg.individual_aplicada'),
@@ -333,6 +343,10 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => $this->mensagemDescricao($result['error'] ?? null)], $this->statusDescricao($result['error'] ?? null));
             return;
         }
+        AuditLogger::log('estudo.descricao_lote_alterada', 'bi_pacs_estudos', $estudoId, [
+            'modalidade' => $result['modalidade'] ?? null,
+            'total_afetado' => (int) ($result['total'] ?? 0),
+        ], (int) Auth::tenantId(), 'gestao_estudos');
         $this->json([
             'ok' => true,
             'msg' => t('gestao_gerenciar.descricao.msg.lote_aplicado'),

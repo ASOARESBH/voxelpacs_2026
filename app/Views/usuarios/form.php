@@ -4,6 +4,8 @@ $modulosAtivos = $modulosAtivos ?? [];
 $medicos       = $medicos       ?? [];
 $modulos       = $modulos       ?? [];
 $modPadrao     = $modPadrao     ?? [];
+$relatorioModulos = $relatorioModulos ?? [];
+$relatorioSubmodulos = $relatorioSubmodulos ?? [];
 $title         = $title         ?? 'Usuário';
 $error         = $error         ?? '';
 $isEdit        = $usuario !== null;
@@ -184,6 +186,20 @@ $errorMsgs = [
             </label>
             <?php endforeach; ?>
         </div>
+
+        <div id="relatorioSubmodulos" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--pacs-border);">
+            <div class="form-section-title" style="font-size:.92rem;margin-bottom:.25rem;"><i class="fa fa-chart-line me-2"></i>Submódulos de Relatórios</div>
+            <p style="font-size:.78rem;color:var(--pacs-text-muted);margin:.25rem 0 .65rem;">Disponíveis somente quando o módulo Relatórios estiver habilitado.</p>
+            <div class="modulo-grid">
+                <?php foreach ($relatorioSubmodulos as $rKey => $rInfo): $checked = in_array($rKey, $relatorioModulos, true); ?>
+                <label class="modulo-item <?= $checked ? 'checked' : '' ?>" data-report-module>
+                    <input type="checkbox" name="relatorio_modulos[]" value="<?= htmlspecialchars($rKey) ?>" <?= $checked ? 'checked' : '' ?> onchange="this.closest('.modulo-item').classList.toggle('checked', this.checked)">
+                    <i class="fa <?= htmlspecialchars($rInfo['icon']) ?> mod-icon"></i>
+                    <span class="mod-label"><?= htmlspecialchars($rInfo['label']) ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -250,6 +266,17 @@ $errorMsgs = [
 </form>
 
 <script>
+function atualizarSubmodulosRelatorios() {
+    const enabled = document.querySelector('input[name="modulos[]"][value="relatorios"]')?.checked;
+    document.querySelectorAll('[data-report-module] input').forEach((input) => {
+        input.disabled = !enabled;
+        input.closest('[data-report-module]').style.opacity = enabled ? '1' : '.45';
+    });
+}
+document.addEventListener('DOMContentLoaded', () => {
+    atualizarSubmodulosRelatorios();
+    document.querySelector('input[name="modulos[]"][value="relatorios"]')?.addEventListener('change', atualizarSubmodulosRelatorios);
+});
 // Módulos padrão por perfil (espelha PHP)
 const modPadrao = <?= json_encode($modPadrao, JSON_UNESCAPED_UNICODE) ?>;
 

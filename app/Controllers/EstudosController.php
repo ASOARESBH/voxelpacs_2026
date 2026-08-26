@@ -61,8 +61,12 @@ class EstudosController extends Controller
         $isMedicoFiltro       = MedicoAccess::isRestricted();
 
         if ($tenantId && !$bypassGlobal) {
-            $institutionNames     = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
-            $usaInstitutionFilter = true;
+            $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+            // A Worklist deve partir do tenant já resolvido pelo motor PACS.
+            // Institution Name continua servindo a filtros de unidade/médico,
+            // mas não pode expandir o escopo para outro Issuer ou outro tenant.
+            $where[]  = 'e.tenant_id = ?';
+            $params[] = $tenantId;
         }
 
         if ($isMedicoFiltro) {
@@ -80,12 +84,8 @@ class EstudosController extends Controller
             } elseif ($isMedicoFiltro) {
                 // Médico sem Unidade vinculada não pode herdar a visão do tenant.
                 $where[] = '1=0';
-            } else {
-                // Preserva o fallback histórico para tenant sem InstitutionName.
-                $where[]  = 'e.tenant_id = ?';
-                $params[] = $tenantId;
             }
-        } elseif (!$bypassGlobal) {
+        } elseif (!$tenantId && !$bypassGlobal) {
             $where[] = '1=0';
         }
 

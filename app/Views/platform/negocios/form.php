@@ -30,7 +30,7 @@
                 <button class="nav-link fw-bold" id="plano-tab" data-bs-toggle="tab" data-bs-target="#plano" type="button" role="tab"><i class="fa fa-star me-1"></i> Plano</button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link fw-bold" id="dicom-tab" data-bs-toggle="tab" data-bs-target="#dicom" type="button" role="tab"><i class="fa fa-x-ray me-1"></i> DICOM (InstitutionName)</button>
+                <button class="nav-link fw-bold" id="dicom-tab" data-bs-toggle="tab" data-bs-target="#dicom" type="button" role="tab"><i class="fa fa-x-ray me-1"></i><?= htmlspecialchars(t('negocios.dicom.aba_titulo')) ?></button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="webhook-tab" data-bs-toggle="tab" data-bs-target="#webhook" type="button" role="tab"><i class="fa fa-plug me-1"></i> Webhooks HUB</button>
@@ -261,21 +261,77 @@
                     </div>
                 </div>
 
-                <!-- ABA 5: DICOM (InstitutionName) -->
+                <!-- ABA 5: DICOM — InstitutionName e Issuer por modalidade são controles independentes -->
                 <div class="tab-pane fade" id="dicom" role="tabpanel">
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="alert alert-info">
-                                <i class="fa fa-info-circle me-2"></i> 
-                                <strong>InstitutionName (0008,0080)</strong> é o campo do cabeçalho DICOM usado para identificar a origem do exame. 
-                                Cadastre aqui todos os nomes que este negócio utiliza em seus equipamentos para que o VOXEL B.I possa rotear os exames corretamente.
-                            </div>
-                            
-                            <label class="form-label fw-semibold">Nomes DICOM (separados por vírgula)</label>
-                            <textarea name="institution_names" class="form-control" rows="4" placeholder="Ex: CLINICA_CENTRO, HOSPITAL_SAO_JOAO, MATRIZ_RM"><?= htmlspecialchars($institutionNames ?? '') ?></textarea>
-                            <small class="text-muted mt-1 d-block">Estes nomes serão usados na importação automática via PACS ou HL7.</small>
-                        </div>
+                    <?php
+                    $institutionValues = array_values(array_filter(array_map('trim', explode(',', (string) ($institutionNames ?? '')))));
+                    $issuerModalidadeRules = $issuerModalidadeRules ?? [];
+                    ?>
+                    <div class="alert alert-info">
+                        <i class="fa fa-shield-alt me-2"></i>
+                        <strong><?= htmlspecialchars(t('negocios.dicom.controle_independente_titulo')) ?></strong>
+                        <?= htmlspecialchars(t('negocios.dicom.controle_independente_ajuda')) ?>
                     </div>
+
+                    <section class="border rounded p-3 mb-4">
+                        <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+                            <div>
+                                <h6 class="mb-1 fw-bold"><i class="fa fa-building me-1"></i><?= htmlspecialchars(t('negocios.dicom.institution_section')) ?></h6>
+                                <p class="small text-muted mb-0"><?= htmlspecialchars(t('negocios.dicom.institution_section_ajuda')) ?></p>
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="dicom_add_institution"><i class="fa fa-plus me-1"></i><?= htmlspecialchars(t('negocios.dicom.institution_adicionar')) ?></button>
+                        </div>
+                        <input type="hidden" name="institution_names" id="institution_names_legacy" value="">
+                        <div id="dicom_institutions_body" class="row g-2">
+                            <?php foreach ($institutionValues as $institution): ?>
+                                <div class="col-md-6 dicom-institution-row"><div class="input-group"><input class="form-control form-control-sm dicom-institution" value="<?= htmlspecialchars($institution) ?>" maxlength="128"><button type="button" class="btn btn-sm btn-outline-danger dicom-institution-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></div></div>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+
+                    <section class="border rounded p-3">
+                        <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+                            <div>
+                                <h6 class="mb-1 fw-bold"><i class="fa fa-id-card me-1"></i><?= htmlspecialchars(t('negocios.dicom.issuer_section')) ?></h6>
+                                <p class="small text-muted mb-0"><?= htmlspecialchars(t('negocios.dicom.issuer_section_ajuda')) ?></p>
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="issuer_add_rule"><i class="fa fa-plus me-1"></i><?= htmlspecialchars(t('negocios.dicom.issuer_adicionar')) ?></button>
+                        </div>
+                        <div class="table-responsive border rounded">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light"><tr><th><?= htmlspecialchars(t('negocios.dicom.issuer')) ?></th><th><?= htmlspecialchars(t('negocios.dicom.modalidades')) ?></th><th class="text-end"><?= htmlspecialchars(t('comum.acoes.titulo')) ?></th></tr></thead>
+                                <tbody id="issuer_rules_body">
+                                    <?php foreach ($issuerModalidadeRules as $index => $rule): ?>
+                                        <tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" name="issuer_modalidades[<?= (int) $index ?>][issuer_of_patient_id]" value="<?= htmlspecialchars($rule['issuer_of_patient_id'] ?? '') ?>" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities" name="issuer_modalidades[<?= (int) $index ?>][modalidades]" value="<?= htmlspecialchars(implode(', ', $rule['modalidades'] ?? [])) ?>" placeholder="CT, CR, US" required></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="small text-muted mt-3 mb-0"><?= htmlspecialchars(t('negocios.dicom.issuer_regra_seguranca')) ?></p>
+                    </section>
+
+                    <template id="dicom_institution_template"><div class="col-md-6 dicom-institution-row"><div class="input-group"><input class="form-control form-control-sm dicom-institution" maxlength="128"><button type="button" class="btn btn-sm btn-outline-danger dicom-institution-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></div></div></template>
+                    <template id="issuer_rule_template"><tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities" placeholder="CT, CR, US" required></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr></template>
+                    <script>
+                    (() => {
+                        const institutionBody = document.getElementById('dicom_institutions_body');
+                        const institutionTemplate = document.getElementById('dicom_institution_template');
+                        const institutionLegacy = document.getElementById('institution_names_legacy');
+                        const issuerBody = document.getElementById('issuer_rules_body');
+                        const issuerTemplate = document.getElementById('issuer_rule_template');
+                        const syncInstitutions = () => { institutionLegacy.value = [...institutionBody.querySelectorAll('.dicom-institution')].map(input => input.value.trim()).filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(', '); };
+                        const renumberIssuers = () => issuerBody.querySelectorAll('.issuer-rule-row').forEach((row, index) => { row.querySelector('.issuer-value').name = `issuer_modalidades[${index}][issuer_of_patient_id]`; row.querySelector('.issuer-modalities').name = `issuer_modalidades[${index}][modalidades]`; });
+                        const bindInstitution = row => row.querySelector('.dicom-institution-remove').addEventListener('click', () => { row.remove(); syncInstitutions(); });
+                        const bindIssuer = row => row.querySelector('.issuer-remove').addEventListener('click', () => { row.remove(); renumberIssuers(); });
+                        institutionBody.querySelectorAll('.dicom-institution-row').forEach(bindInstitution);
+                        issuerBody.querySelectorAll('.issuer-rule-row').forEach(bindIssuer);
+                        institutionBody.addEventListener('input', syncInstitutions);
+                        document.getElementById('dicom_add_institution').addEventListener('click', () => { const row = institutionTemplate.content.firstElementChild.cloneNode(true); bindInstitution(row); institutionBody.appendChild(row); row.querySelector('.dicom-institution').focus(); });
+                        document.getElementById('issuer_add_rule').addEventListener('click', () => { const row = issuerTemplate.content.firstElementChild.cloneNode(true); bindIssuer(row); issuerBody.appendChild(row); renumberIssuers(); row.querySelector('.issuer-value').focus(); });
+                        document.querySelector('#formNegocio')?.addEventListener('submit', () => { syncInstitutions(); renumberIssuers(); });
+                        syncInstitutions(); renumberIssuers();
+                    })();
+                    </script>
                 </div>
 
                 <!-- ABA 6: WEBHOOKS HUB -->

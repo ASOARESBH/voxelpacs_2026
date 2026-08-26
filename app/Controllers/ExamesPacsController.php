@@ -44,17 +44,11 @@ class ExamesPacsController extends Controller
         $perPage = 50;
         $offset  = ($filtros['page'] - 1) * $perPage;
 
-        // Monta WHERE dinâmico
-        // FONTE ÚNICA DA VERDADE: InstitutionResolverService
-        $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
-        if (!empty($institutionNames)) {
-            $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
-            $where  = ["e.institution_name IN ({$placeholders})"];
-            $params = $institutionNames;
-        } else {
-            $where  = ['e.tenant_id = :tenant_id'];
-            $params = [':tenant_id' => $tenantId];
-        }
+        // O tenant_id é a decisão já tomada pelo motor de roteamento. Institution
+        // Name e Issuer são critérios de entrada, nunca uma substituição do
+        // escopo multi-tenant na leitura clínica.
+        $where  = ['e.tenant_id = :tenant_id'];
+        $params = [':tenant_id' => $tenantId];
 
         if ($filtros['data_ini']) {
             $where[]              = 'e.study_date >= :data_ini';

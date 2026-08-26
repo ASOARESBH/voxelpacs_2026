@@ -78,29 +78,18 @@ class DownloadLoteController extends Controller
                 return;
             }
 
-            // ── 3. Buscar estudos no banco e validar permissão por unidade ─
+            // ── 3. Buscar estudos no banco e validar escopo definitivo ─────
             $pdo         = Database::getInstance();
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
-            // Unidades autorizadas para este tenant (deny-by-default)
-            $institutionNames = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
-
-            if (!empty($institutionNames)) {
-                $iPlaceholders = implode(',', array_fill(0, count($institutionNames), '?'));
-                $sql = "SELECT id, orthanc_id, institution_name, patient_name
-                        FROM bi_pacs_estudos
-                        WHERE id IN ({$placeholders})
-                          AND tenant_id = ?
-                          AND institution_name IN ({$iPlaceholders})";
-                $params = array_merge($ids, [$tenantId], $institutionNames);
-            } else {
-                // Fallback: apenas tenant_id (sem InstitutionNames cadastradas)
-                $sql = "SELECT id, orthanc_id, institution_name, patient_name
-                        FROM bi_pacs_estudos
-                        WHERE id IN ({$placeholders})
-                          AND tenant_id = ?";
-                $params = array_merge($ids, [$tenantId]);
-            }
+            // tenant_id é preenchido somente após o roteamento seguro pelo par
+            // Institution Name + Issuer. Exigir novamente apenas o nome da
+            // instituição poderia negar uma unidade válida ou reabrir ambiguidade.
+            $sql = "SELECT id, orthanc_id, institution_name, patient_name
+                    FROM bi_pacs_estudos
+                    WHERE id IN ({$placeholders})
+                      AND tenant_id = ?";
+            $params = array_merge($ids, [$tenantId]);
 
             $stmt   = $pdo->prepare($sql);
             $stmt->execute($params);

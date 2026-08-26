@@ -45,33 +45,60 @@ nenhuma usada em código — exatamente o tipo de "fila esquecida" que o enuncia
 disso, o estado vive na própria `bi_pacs_estudos` (a mesma tabela que já é a UI principal), e a tela de
 estudos apenas filtra por esse status. Um estudo nunca fica fora da tabela onde o Platform Admin já olha.
 
-### Fonte de verdade do InstitutionName: `bi_tenant_unidades_dicom`
-O motor de roteamento novo (`PacsRoutingService`) usa **exclusivamente** `bi_tenant_unidades_dicom` — a
-tabela "Unidades" (CNPJ/endereço) já existente, não uma estrutura paralela nova, conforme pedido. As tabelas
-antigas (`bi_pacs_roteamento`, `bi_negocio_institution_names`) continuam existindo e funcionando exatamente
-como antes (tela `/platform/servidor-pacs/roteamento` intocada) — só não são mais consultadas pelo motor novo.
-Para não regredir o roteamento das produções já configuradas por essas tabelas, a migration
-`2026-07-27_pacs_servidores_nn_roteamento.sql` faz um **backfill** (`INSERT IGNORE`) copiando todo InstitutionName
-já cadastrado nelas para `bi_tenant_unidades_dicom`, e associa ao pivot N:N os negócios que já recebiam
-estudos do servidor global antes desta mudança.
+### Fontes independentes: InstitutionName e Issuer por modalidade
+`InstitutionName (0008,0080)` continua sendo administrado em `bi_negocio_institution_names`, que representa
+as origens institucionais autorizadas de cada negócio. Ele é normalizado para comparação sem distinção de
+caixa, espaço e acento, mas seu valor original segue preservado como evidência DICOM.
+
+`Issuer of Patient ID (0010,0021)` **não é vinculado a InstitutionName**. A migration
+`2026-08-25_issuer_por_modalidade_postgresql.sql` cria `bi_tenant_issuer_modalidades`, cuja chave é
+`tenant_id + issuer_of_patient_id_normalized + modalidade`. Cada regra informa quais modalidades DICOM um
+Issuer pode receber para um negócio; nenhuma linha contém InstitutionName. Valores legados de Issuer nas
+Unidades não são migrados automaticamente, porque não trazem a modalidade necessária para uma autorização
+segura.
+
+Enquanto não houver regra ativa para uma modalidade, o roteamento permanece compatível usando InstitutionName.
+Quando existe ao menos uma regra de Issuer para a modalidade recebida, Issuer torna-se obrigatório e apenas
+valores explicitamente autorizados são elegíveis. Assim, cadastrar o primeiro Issuer de CT, por exemplo, não
+altera MR, US ou demais modalidades até que elas também recebam uma política explícita.
 
 ## 2. Algoritmo de roteamento (`App\Services\PacsRoutingService::resolveTenant`)
 
-Entrada: `servidor_id` + `InstitutionName` (tag DICOM 0008,0080) do estudo importado.
+Entrada: `servidor_id`, `InstitutionName (0008,0080)`, `Issuer of Patient ID (0010,0021)` e
+`ModalitiesInStudy (0008,0061)` do estudo importado.
 
-1. Busca os negócios **ativos** associados àquele servidor (`bi_negocio_servidor_pacs`).
-2. Se nenhum negócio está associado ao servidor → `nao_identificado` (nada a checar).
-3. Entre esses negócios, busca em `bi_tenant_unidades_dicom` quais têm uma Unidade com aquele
-   InstitutionName — comparação normalizada (case/acento-insensitive, reaproveitando
-   `InstitutionResolverService::normalize()` já existente, não duplicada).
-4. **0 negócios batem** → `nao_identificado`. Estudo é importado e fica visível na fila de pendências,
-   nunca invisível.
-5. **Exatamente 1 negócio bate** → `roteado`, `tenant_id` preenchido normalmente.
-6. **2+ negócios batem** (mesma InstitutionName cadastrada em mais de um negócio do mesmo servidor) →
-   `conflito`. O sistema **não decide sozinho** — grava os candidatos em `roteamento_candidatos` e aparece
-   na seção "Conflitos" da tela de estudos para o Platform Admin resolver manualmente.
+1. Busca os negócios ativos associados àquele servidor (`bi_negocio_servidor_pacs`). Sem associação, o estudo
+   permanece `nao_identificado`.
+2. Busca candidatos por InstitutionName exclusivamente em `bi_negocio_institution_names`; essa busca é
+   independente do Issuer e pode retornar zero, um ou vários negócios.
+3. Normaliza todas as modalidades do estudo. A existência de qualquer política ativa em
+   `bi_tenant_issuer_modalidades` para uma dessas modalidades ativa o controle de Issuer para o estudo.
+4. Com política ativa, Issuer ausente ou não autorizado resulta em `nao_identificado`, sem fallback para
+   InstitutionName. Um Issuer autorizado por uma modalidade candidata a um único negócio resulta em `roteado`,
+   mesmo quando InstitutionName estiver ausente.
+5. Quando InstitutionName e Issuer autorizados estão presentes, os dois conjuntos de candidatos devem
+   convergir. Interseção vazia ou mais de um negócio resulta em `conflito`; o sistema nunca escolhe um destino
+   silenciosamente.
+6. Sem política ativa para as modalidades do estudo, InstitutionName mantém o fallback compatível. Se ele for
+   ambíguo, o resultado continua `conflito`; se não houver cadastro, `nao_identificado`.
 
-Uma resolução manual (`ServidorPacsController::resolverEstudo`) grava `roteamento_resolvido_por`/`_em`.
+`Issuer of Patient ID` identifica a autoridade que emitiu o identificador administrativo do paciente. Ele não
+é `Issuer of Admission ID`, não é o campo `iss` de um token e não deve ser inferido a partir de texto livre.
+O Orthanc fornece a tag preferencialmente por `shared-tags?simplify`; se ela não existir ali, o cliente busca
+somente a primeira instância do estudo como fallback controlado. A origem e a estrutura da tag permanecem no
+dump DICOM, enquanto a coluna estruturada permite filtro e roteamento sem varrer JSON.
+
+`Issuer of Patient ID` identifica a autoridade que emitiu o identificador administrativo do paciente. Ele não
+é `Issuer of Admission ID`, não é o campo `iss` de um token e não deve ser inferido a partir de texto livre.
+O Orthanc fornece a tag preferencialmente por `shared-tags?simplify`; se ela não existir ali, o cliente busca
+somente a primeira instância do estudo como fallback controlado. A origem e a estrutura da tag permanecem no
+dump DICOM, enquanto a coluna estruturada permite filtro e roteamento sem varrer JSON.
+
+Uma resolução manual (`ServidorPacsController::resolverEstudo`) verifica antes se o negócio está associado ao
+servidor PACS, grava `roteamento_resolvido_por`/`_em` e registra o evento `roteamento.manual_resolvido` na
+auditoria sem conteúdo clínico. O roteamento automático, a Worklist, Exames PACS e download em lote usam
+`tenant_id` como escopo final de leitura: InstitutionName e Issuer definem a entrada, mas jamais substituem a
+barreira multi-tenant de saída.
 A partir daí, `PacsSyncService::upsertEstudo()` **nunca mais sobrescreve** o roteamento daquele estudo em
 ciclos futuros (só atualiza metadados/tags) — validado explicitamente (ver seção de testes).
 
@@ -80,6 +107,11 @@ ciclos futuros (só atualiza metadados/tags) — validado explicitamente (ver se
 Decisão: coluna `bi_pacs_estudos.dicom_tags_completas` (LONGTEXT/JSON), alimentada por
 `GET /studies/{id}/shared-tags` (mais completo que o `MainDicomTags` usado nas colunas estruturadas — inclui
 qualquer tag compartilhada por todas as instâncias do estudo, não só o subconjunto que o Orthanc indexa).
+
+`Issuer of Patient ID` é uma exceção intencional à regra "somente JSON": ele também é preservado em
+`bi_pacs_estudos.issuer_of_patient_id` e na chave normalizada correspondente, com índice por servidor e
+InstitutionName. Isso é necessário para a decisão determinística de roteamento e para o filtro administrativo
+da tela de Estudos DICOM.
 
 **Por que não uma tabela genérica `(estudo_id, tag_group, tag_element, tag_name, tag_value)`:**
 - As ~120 tags mais usadas em filtro/ordenação do worklist já são colunas estruturadas dedicadas — isso não
@@ -146,14 +178,28 @@ Sem acesso a Docker neste ambiente para subir um Orthanc real, a validação foi
 | Resolução manual de conflito, depois novo evento do mesmo estudo no Orthanc | `tenant_id`/`roteamento_status` preservados da resolução manual; só metadados/tags atualizados |
 | Isolamento multi-tenant | `WHERE tenant_id=1` e `WHERE tenant_id=2` não se sobrepõem; estudo `nao_identificado` não aparece em nenhum dos dois |
 | Tags DICOM completas | `dicom_tags_completas` bate exatamente com o `shared-tags` retornado pelo Orthanc fake |
+| Matriz independente | Tabela, chave única e quatro índices criados no schema ativo; nenhuma regra foi pré-semeada, portanto não houve alteração automática de rota existente |
+| Issuer autorizado por CT sem InstitutionName | Diagnóstico transacional retornou `roteado` pelo critério `issuer_modalidade` e fez rollback ao final |
+| Issuer desconhecido ou ausente em CT controlado | Diagnóstico transacional retornou `nao_identificado`; não houve fallback para InstitutionName |
+| Compatibilidade institucional | Todas as Unidades DICOM ativas possuíam InstitutionName canônico ativo antes da ativação do novo motor |
+| Interface operacional | Formulário de Negócios validado no navegador: InstitutionNames e regras de Issuer por modalidade aparecem em seções independentes; nenhuma regra foi gravada no teste visual |
+
+## Referências técnicas
+
+- [DICOM PS3.3 — Patient Identification and Issuer of Patient ID](https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_10.15.html)
+- [DICOM Data Dictionary — (0010,0021) Issuer of Patient ID](https://dicom.nema.org/medical/dicom/current/output/chtml/part06/chapter_6.html)
+- [Orthanc Book — DICOM guide](https://orthanc.uclouvain.be/book/dicom-guide.html)
 
 ## Legado — não tocado nesta tarefa
 
 - `bi_orthanc_servidores` / `ServidorController` / rota `/servidor`: sistema per-tenant anterior ao modelo
   global, sem rota ativa hoje. Não migrado, não removido.
-- `bi_pacs_roteamento` / tela `/platform/servidor-pacs/roteamento`: de-para manual antigo, continua
-  funcionando exatamente como antes, mas não é mais consultado pelo motor de roteamento novo.
-- `bi_negocio_institution_names`: idem — só consultado pelo card antigo "InstitutionNames no PACS", que foi
-  removido do dashboard nesta reforma (substituído pela visão N:N por servidor).
+- `bi_pacs_roteamento` / tela `/platform/servidor-pacs/roteamento`: de-para manual antigo, mantido apenas
+  como registro de compatibilidade. Seus botões não alteram mais estudos automaticamente por InstitutionName;
+  decisões retroativas usam a resolução manual auditável.
+- Campos legados de Issuer em `bi_tenant_unidades_dicom`: preservados para compatibilidade histórica, mas não
+  participam do motor novo. A autorização efetiva está em `bi_tenant_issuer_modalidades`.
+- `bi_negocio_institution_names`: continua sendo a fonte de InstitutionName usada pelo motor novo e permanece
+  independente da matriz de Issuer.
 - `bi_institution_name_pendentes` (as duas versões): permanecem no schema, continuam não usadas por nenhum
   código — decisão explícita de não ressuscitá-las (ver seção 1).

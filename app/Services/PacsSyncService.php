@@ -38,6 +38,8 @@ class PacsSyncService
             'last_update_orthanc'           => $study['last_update_orthanc']           ?? null,
             'tags_raw'                      => $study['tags_raw']                      ?? null,
             'patient_id'                    => $study['patient_id']                    ?? null,
+            'issuer_of_patient_id'          => $study['issuer_of_patient_id']          ?? null,
+            'issuer_of_patient_id_normalized'=> DicomIssuerService::normalize($study['issuer_of_patient_id'] ?? null),
             'patient_name'                  => $study['patient_name']                  ?? null,
             'patient_name_display'          => $study['patient_name_display']          ?? null,
             'patient_birth_date'            => $study['patient_birth_date']            ?? null,
@@ -199,6 +201,7 @@ class PacsSyncService
 
         if (!$jaResolvidoManualmente) {
             $cols['tenant_id']             = $routing['tenant_id'];
+            $cols['unidade_id']            = $routing['unidade_id'] ?? null;
             $cols['roteamento_status']     = $routing['status'];
             $cols['roteamento_candidatos'] = $routing['candidatos']
                 ? json_encode($routing['candidatos'], JSON_UNESCAPED_UNICODE)
@@ -397,6 +400,11 @@ class PacsSyncService
                             : null;
                         $dicomTagsJson = $sharedTags !== null ? json_encode($sharedTags, JSON_UNESCAPED_UNICODE) : null;
 
+                        $issuer = $orthanc->getIssuerOfPatientId($studyId, $sharedTags);
+                        if ($issuer !== null) {
+                            $study['issuer_of_patient_id'] = $issuer;
+                        }
+
                         // O RIS/HIS pode gravar (0040,0007) somente nas instâncias.
                         // Consulta a primeira instância apenas quando a descrição
                         // principal está vazia, evitando chamadas extras no ciclo normal.
@@ -408,7 +416,12 @@ class PacsSyncService
                             }
                         }
 
-                        $routing = PacsRoutingService::resolveTenant($servidorId, $study['institution_name'] ?? null);
+                        $routing = PacsRoutingService::resolveTenant(
+                            $servidorId,
+                            $study['institution_name'] ?? null,
+                            $study['issuer_of_patient_id'] ?? null,
+                            $study['modalities'] ?? null
+                        );
                         match ($routing['status']) {
                             PacsRoutingService::STATUS_ROTEADO          => $roteados++,
                             PacsRoutingService::STATUS_NAO_IDENTIFICADO => $naoIdentificados++,

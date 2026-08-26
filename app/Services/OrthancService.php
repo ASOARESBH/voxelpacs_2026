@@ -139,6 +139,42 @@ class OrthancService {
         ];
     }
 
+    /**
+     * Obtém Issuer of Patient ID (0010,0021). A tag normalmente já está nas
+     * shared-tags; quando não está, consulta somente a primeira instância do
+     * estudo, seguindo o mesmo fallback controlado da Worklist.
+     */
+    public function getIssuerOfPatientId(string $studyId, ?array $sharedTags = null): ?string
+    {
+        $issuer = DicomIssuerService::extractIssuerOfPatientId($sharedTags ?? []);
+        if ($issuer !== null) {
+            return $issuer;
+        }
+
+        $study = $this->getStudy($studyId);
+        if (!($study['success'] ?? false) || !is_array($study['data'] ?? null)) {
+            return null;
+        }
+
+        $seriesId = $study['data']['Series'][0] ?? null;
+        if (!is_string($seriesId) || $seriesId === '') {
+            return null;
+        }
+
+        $series = $this->request('/series/' . rawurlencode($seriesId));
+        $instanceId = ($series['success'] ?? false) && is_array($series['data'] ?? null)
+            ? ($series['data']['Instances'][0] ?? null)
+            : null;
+        if (!is_string($instanceId) || $instanceId === '') {
+            return null;
+        }
+
+        $tags = $this->request('/instances/' . rawurlencode($instanceId) . '/tags?simplify');
+        return ($tags['success'] ?? false) && is_array($tags['data'] ?? null)
+            ? DicomIssuerService::extractIssuerOfPatientId($tags['data'])
+            : null;
+    }
+
     /** @param array<string,mixed> $node */
     private function findScheduledProcedureStepDescription(array $node): ?string
     {
@@ -313,6 +349,7 @@ class OrthancService {
 
             // --- Patient ---
             'patient_id'                    => $t($patient['PatientID']              ?? null),
+            'issuer_of_patient_id'          => DicomIssuerService::sanitizeIssuer($patient['IssuerOfPatientID'] ?? null),
             'patient_name'                  => $nameClean,
             'patient_name_display'          => $nameDisplay,
             'patient_birth_date'            => $this->parseDicomDate($patient['PatientBirthDate'] ?? ''),

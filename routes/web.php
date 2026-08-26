@@ -6,6 +6,10 @@ use App\Core\Router;
 // ============================================================
 Router::get('/login',  'AuthController@showLogin');
 Router::post('/login', 'AuthController@login');
+Router::get('/login/2fa',             'AuthController@showTwoFactor');
+Router::post('/login/2fa/verificar',  'AuthController@verifyTwoFactor');
+Router::post('/login/2fa/reenviar',   'AuthController@resendTwoFactor');
+Router::post('/login/2fa/cancelar',   'AuthController@cancelTwoFactor');
 Router::post('/login/idioma', 'AuthController@setLoginLocale');
 Router::get('/logout', 'AuthController@logout');
 Router::get('/selecionar-empresa',  'AuthController@selectTenant');
@@ -165,6 +169,9 @@ Router::get('/relatorios/medicos',             'RelatorioMedicosController@index
 Router::get('/relatorios/medicos/exportar',    'RelatorioMedicosController@exportar');
 Router::get('/relatorios/sla-medicos',         'RelatorioSlaController@index');
 Router::get('/relatorios/sla-medicos/exportar','RelatorioSlaController@exportar');
+Router::get('/relatorios/auditoria',           'RelatorioAuditoriaController@index');
+Router::get('/relatorios/auditoria/exportar',  'RelatorioAuditoriaController@exportar');
+Router::get('/validar/auditoria/{token}',      'ValidacaoAuditoriaController@verificar');
 
 // ============================================================
 // SISTEMA
@@ -176,6 +183,7 @@ Router::get('/usuarios/{id}/edit',     'UsuariosController@edit');
 Router::post('/usuarios/{id}/update',  'UsuariosController@update');
 Router::post('/usuarios/{id}/toggle',        'UsuariosController@toggleStatus');
 Router::post('/usuarios/{id}/reenviar-link', 'UsuariosController@reenviarLink');
+Router::post('/usuarios/{id}/2fa/toggle',    'UsuariosController@toggleTwoFactor');
 
 // ── Grupos (Sistema > Usuários > Grupos) — Fase 1: CRUD + vínculo de usuários ──
 Router::get('/usuarios/grupos',                                    'GruposController@index');

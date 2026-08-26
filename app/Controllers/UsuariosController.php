@@ -8,6 +8,7 @@ use App\Core\Logger;
 use App\Core\Mailer;
 use App\Core\SqlHelper;
 use App\Core\TenantContext;
+use App\Core\Audit\AuditLogger;
 
 /**
  * UsuariosController — Módulo de Usuários do Negócio (tenant)
@@ -39,6 +40,13 @@ class UsuariosController extends Controller
         'secretaria' => ['estudos','agendamentos','imagens_dicom'],
         'analista'   => ['estudos','agendamentos','imagens_dicom','medicos','relatorios','sla'],
         'viewer'     => ['estudos'],
+    ];
+
+    private const RELATORIO_SUBMODULOS = [
+        'sla_medicos'       => ['label' => 'SLA Médicos',           'icon' => 'fa-gauge-high'],
+        'auditoria_acesso'  => ['label' => 'Auditoria de Acesso',  'icon' => 'fa-right-to-bracket'],
+        'auditoria_estudos' => ['label' => 'Gestão de Estudos',    'icon' => 'fa-clipboard-list'],
+        'auditoria_clinica' => ['label' => 'Auditoria Clínica',    'icon' => 'fa-stethoscope'],
     ];
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -75,10 +83,12 @@ class UsuariosController extends Controller
                         ut.ativo   AS tenant_ativo,
                         m.id       AS medico_id,
                         m.nome     AS medico_nome,
-                        m.crm      AS medico_crm
+                        m.crm      AS medico_crm,
+                        COALESCE(tf.email_enabled, FALSE) AS two_factor_email_enabled
                     FROM bi_users u
                     INNER JOIN bi_user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = ?
                     LEFT  JOIN bi_medicos m ON m.tenant_id = ? AND m.usuario_id = u.id AND m.ativo = 1
+                    LEFT  JOIN bi_user_two_factor_settings tf ON tf.tenant_id = ut.tenant_id AND tf.user_id = u.id
                     WHERE (? = 1 OR u.id = ?)
                     ORDER BY {$perfilOrderSql}, u.name ASC
                 ");
@@ -123,9 +133,11 @@ class UsuariosController extends Controller
         $this->view('usuarios/form', [
             'usuario'      => null,
             'modulosAtivos'=> [],
+            'relatorioModulos' => [],
             'medicos'      => $medicos,
             'modulos'      => self::MODULOS,
             'modPadrao'    => self::MODULOS_PADRAO,
+            'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
             'title'        => 'Novo Usuário',
             'error'        => $_GET['error'] ?? '',
         ], 'pacs');
@@ -146,6 +158,7 @@ class UsuariosController extends Controller
         $perfil   = $_POST['perfil']                  ?? 'viewer';
         $medicoId = (int)($_POST['medico_id']         ?? 0);
         $modulos  = $_POST['modulos']                 ?? (self::MODULOS_PADRAO[$perfil] ?? []);
+        $relatorioModulos = $_POST['relatorio_modulos'] ?? [];
 
         if (!in_array($perfil, ['admin','medico','secretaria','analista','viewer'])) {
             $perfil = 'viewer';
@@ -191,6 +204,7 @@ class UsuariosController extends Controller
             }
 
             $this->salvarPermissoes($pdo, $userId, $tenantId, $modulos);
+            $this->salvarPermissoesRelatorios($pdo, $userId, $tenantId, $relatorioModulos, in_array('relatorios', $modulos, true));
 
             if ($medicoId > 0) {
                 $this->vincularMedico($pdo, $medicoId, $userId, $tenantId);
@@ -245,6 +259,10 @@ class UsuariosController extends Controller
             $stmtMod->execute([$id, $tenantId]);
             $modulosAtivos = $stmtMod->fetchAll(\PDO::FETCH_COLUMN);
 
+            $stmtRel = $pdo->prepare('SELECT report_key FROM bi_user_report_permissions WHERE user_id = ? AND tenant_id = ?');
+            $stmtRel->execute([$id, $tenantId]);
+            $relatorioModulos = $stmtRel->fetchAll(\PDO::FETCH_COLUMN);
+
             $stmtMed = $pdo->prepare(
                 "SELECT id, nome, crm FROM bi_medicos
                  WHERE tenant_id = ? AND ativo = 1
@@ -257,9 +275,11 @@ class UsuariosController extends Controller
             $this->view('usuarios/form', [
                 'usuario'      => $usuario,
                 'modulosAtivos'=> $modulosAtivos,
+                'relatorioModulos' => $relatorioModulos,
                 'medicos'      => $medicos,
                 'modulos'      => self::MODULOS,
                 'modPadrao'    => self::MODULOS_PADRAO,
+                'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
                 'title'        => 'Editar Usuário',
                 'error'        => $_GET['error'] ?? '',
             ], 'pacs');
@@ -288,6 +308,7 @@ class UsuariosController extends Controller
         $perfil   = $_POST['perfil']          ?? 'viewer';
         $medicoId = (int)($_POST['medico_id'] ?? 0);
         $modulos  = $_POST['modulos']         ?? [];
+        $relatorioModulos = $_POST['relatorio_modulos'] ?? [];
 
         if (!in_array($perfil, ['admin','medico','secretaria','analista','viewer'])) {
             $perfil = 'viewer';
@@ -303,6 +324,7 @@ class UsuariosController extends Controller
             )->execute([$perfil, $id, $tenantId]);
 
             $this->salvarPermissoes($pdo, $id, $tenantId, $modulos);
+            $this->salvarPermissoesRelatorios($pdo, $id, $tenantId, $relatorioModulos, in_array('relatorios', $modulos, true));
 
             // Remove vínculo anterior com outro médico
             $pdo->prepare(
@@ -348,6 +370,41 @@ class UsuariosController extends Controller
         }
 
         $this->redirect('/usuarios');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TOGGLE 2F POR E-MAIL — tenant-scoped e protegido por CSRF
+    // ─────────────────────────────────────────────────────────────────────────
+    public function toggleTwoFactor(int $id): void
+    {
+        if (!$this->requireUserManagement()) return;
+        if (!$this->validCsrfPost()) {
+            $this->redirect('/usuarios?error=erro_interno');
+            return;
+        }
+
+        $tenantId = TenantContext::id();
+        $pdo = Database::getInstance();
+        if (!$tenantId || !$this->usuarioPertenceAoTenant($pdo, $id, $tenantId)) {
+            $this->redirect('/usuarios?error=nao_encontrado');
+            return;
+        }
+
+        try {
+            $stmt = $pdo->prepare('SELECT COALESCE(email_enabled, FALSE) FROM bi_user_two_factor_settings WHERE tenant_id = ? AND user_id = ?');
+            $stmt->execute([$tenantId, $id]);
+            $enabled = (bool) $stmt->fetchColumn();
+            $next = !$enabled;
+            $pdo->prepare('INSERT INTO bi_user_two_factor_settings (tenant_id, user_id, email_enabled, changed_by_user_id) VALUES (?,?,?,?) ON CONFLICT (tenant_id, user_id) DO UPDATE SET email_enabled = EXCLUDED.email_enabled, changed_by_user_id = EXCLUDED.changed_by_user_id, updated_at = NOW()')
+                ->execute([$tenantId, $id, $next, Auth::userId()]);
+
+            AuditLogger::log($next ? 'usuario.2fa_habilitado' : 'usuario.2fa_desabilitado', 'bi_users', $id, ['tenant_id' => $tenantId], $tenantId);
+            Logger::info('[UsuariosController::toggleTwoFactor] configuração atualizada', ['user_id' => $id, 'tenant_id' => $tenantId, 'enabled' => $next]);
+            $this->redirect('/usuarios?sucesso=' . ($next ? '2fa_habilitado' : '2fa_desabilitado'));
+        } catch (\Throwable $e) {
+            Logger::error('[UsuariosController::toggleTwoFactor] ' . $e->getMessage());
+            $this->redirect('/usuarios?error=erro_interno');
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -412,6 +469,12 @@ class UsuariosController extends Controller
         return (bool) $stmt->fetchColumn();
     }
 
+    private function validCsrfPost(): bool
+    {
+        $csrf = (string) ($_POST['_csrf_token'] ?? '');
+        return $csrf !== '' && !empty($_SESSION['csrf_token']) && hash_equals((string) $_SESSION['csrf_token'], $csrf);
+    }
+
     private function salvarPermissoes(\PDO $pdo, int $userId, int $tenantId, array $modulos): void
     {
         $pdo->prepare(
@@ -428,6 +491,18 @@ class UsuariosController extends Controller
             $modulo = trim((string)$modulo);
             if ($modulo === '' || !isset(self::MODULOS[$modulo])) continue;
             $ins->execute([$userId, $tenantId, $modulo]);
+        }
+    }
+
+    private function salvarPermissoesRelatorios(\PDO $pdo, int $userId, int $tenantId, array $chaves, bool $relatoriosAtivo): void
+    {
+        $pdo->prepare('DELETE FROM bi_user_report_permissions WHERE user_id = ? AND tenant_id = ?')->execute([$userId, $tenantId]);
+        if (!$relatoriosAtivo) return;
+        $insert = $pdo->prepare('INSERT INTO bi_user_report_permissions (tenant_id, user_id, report_key, granted_by_user_id) VALUES (?,?,?,?) ON CONFLICT (tenant_id, user_id, report_key) DO NOTHING');
+        foreach ($chaves as $chave) {
+            $chave = (string) $chave;
+            if (!isset(self::RELATORIO_SUBMODULOS[$chave])) continue;
+            $insert->execute([$tenantId, $userId, $chave, Auth::userId()]);
         }
     }
 

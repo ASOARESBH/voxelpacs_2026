@@ -2,15 +2,30 @@
 namespace App\Core;
 
 class Auth {
-    public static function login(string $email, string $password): bool {
+    /** Valida a credencial sem iniciar uma sessão autenticada. */
+    public static function credentials(string $email, string $password): ?object {
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare("SELECT * FROM bi_users WHERE email = :email AND status = 'ativo' LIMIT 1");
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
 
         if (!$user || !password_verify($password, $user->password)) {
-            return false;
+            return null;
         }
+
+        return $user;
+    }
+
+    /** Mantido para consumidores legados: valida e conclui o login em uma única etapa. */
+    public static function login(string $email, string $password): bool {
+        $user = self::credentials($email, $password);
+        return $user ? self::completeLogin($user) : false;
+    }
+
+    /** Cria a sessão autenticada somente após credenciais e, se aplicável, 2F válidos. */
+    public static function completeLogin(object $user): bool {
+        if (empty($user->id) || ($user->status ?? '') !== 'ativo') return false;
+        $pdo = Database::getInstance();
 
         // Atualiza último login
         $pdo->prepare("UPDATE bi_users SET ultimo_login = NOW() WHERE id = :id")
@@ -44,6 +59,13 @@ class Auth {
         }
 
         return true;
+    }
+
+    public static function completeLoginById(int $userId): bool {
+        $stmt = Database::getInstance()->prepare("SELECT * FROM bi_users WHERE id = :id AND status = 'ativo' LIMIT 1");
+        $stmt->execute(['id' => $userId]);
+        $user = $stmt->fetch();
+        return $user ? self::completeLogin($user) : false;
     }
 
     public static function logout(): void {

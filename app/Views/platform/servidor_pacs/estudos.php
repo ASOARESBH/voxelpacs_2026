@@ -27,25 +27,27 @@ $statusLabelMap = [
     <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
         <h6 class="mb-0 fw-bold text-danger"><i class="fa fa-exclamation-triangle me-2"></i><?= htmlspecialchars(t('servidor_pacs.estudos.secao_conflitos')) ?> (<?= count($conflitos) ?>)</h6>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_paciente')) ?></th>
-                        <th>InstitutionName</th>
-                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
+<div class="card-body p-0">
+<div class="table-responsive">
+<table class="table table-sm table-hover mb-0">
+<thead class="table-light">
+<tr>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_paciente')) ?></th>
+<th>InstitutionName</th>
+                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.issuer')) ?></th>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
                         <th><?= htmlspecialchars(t('servidor_pacs.estudos.candidatos')) ?></th>
                         <th><?= htmlspecialchars(t('servidor_pacs.estudos.resolver_para')) ?></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($conflitos as $e): ?>
-                        <?php $candidatos = json_decode($e['roteamento_candidatos'] ?? '[]', true) ?: []; ?>
-                        <tr>
-                            <td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
-                            <td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '—') ?></code></td>
-                            <td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
+<?php foreach ($conflitos as $e): ?>
+<?php $candidatos = json_decode($e['roteamento_candidatos'] ?? '[]', true) ?: []; ?>
+<tr>
+<td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
+<td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '—') ?></code></td>
+                        <td><code class="small"><?= htmlspecialchars($e['issuer_of_patient_id'] ?? '—') ?></code></td>
+<td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
                             <td class="small">
                                 <?php foreach ($candidatos as $c): ?>
                                     <span class="badge bg-secondary bg-opacity-25 text-dark border me-1"><?= htmlspecialchars($c['nome']) ?></span>
@@ -73,26 +75,28 @@ $statusLabelMap = [
 
 <?php if (!empty($naoIdentificados)): ?>
 <div class="card border-warning shadow-sm mb-4">
-    <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
-        <h6 class="mb-0 fw-bold text-warning-emphasis"><i class="fa fa-question-circle me-2"></i><?= htmlspecialchars(t('servidor_pacs.estudos.secao_nao_identificados')) ?> (<?= count($naoIdentificados) ?>)</h6>
+<div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
+<h6 class="mb-0 fw-bold text-warning-emphasis"><i class="fa fa-question-circle me-2"></i><?= htmlspecialchars(t('servidor_pacs.estudos.secao_nao_identificados')) ?> (<?= count($naoIdentificados) ?>)</h6>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive" style="max-height:400px;">
             <table class="table table-sm table-hover mb-0">
                 <thead class="table-light sticky-top">
-                    <tr>
-                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_paciente')) ?></th>
-                        <th>InstitutionName</th>
-                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
+<tr>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_paciente')) ?></th>
+<th>InstitutionName</th>
+                        <th><?= htmlspecialchars(t('servidor_pacs.estudos.issuer')) ?></th>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
                         <th><?= htmlspecialchars(t('servidor_pacs.estudos.resolver_para')) ?></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($naoIdentificados as $e): ?>
-                        <tr>
-                            <td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
-                            <td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '(vazio)') ?></code></td>
-                            <td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
+<?php foreach ($naoIdentificados as $e): ?>
+<tr>
+<td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
+<td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '(vazio)') ?></code></td>
+                        <td><code class="small"><?= htmlspecialchars($e['issuer_of_patient_id'] ?? '—') ?></code></td>
+<td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
                             <td>
                                 <form class="d-flex gap-1 form-resolver" data-id="<?= (int)$e['id'] ?>">
                                     <select name="tenant_id" class="form-select form-select-sm" required style="max-width:200px;">
@@ -115,8 +119,8 @@ $statusLabelMap = [
 
 <!-- FILTROS -->
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-body py-3">
-        <form method="GET" action="/platform/servidor-pacs/estudos" class="row g-2 align-items-end">
+<div class="card-body py-3">
+<form method="GET" action="/platform/servidor-pacs/estudos" class="row g-2 align-items-end">
             <div class="col-md-2">
                 <label class="form-label small fw-semibold"><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></label>
                 <select name="servidor" class="form-select form-select-sm">
@@ -135,10 +139,19 @@ $statusLabelMap = [
                             <?= htmlspecialchars($inst) ?>
                         </option>
                     <?php endforeach; ?>
+</select>
+</div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold"><?= htmlspecialchars(t('servidor_pacs.estudos.issuer')) ?></label>
+                <select name="issuer" class="form-select form-select-sm">
+                    <option value=""><?= htmlspecialchars(t('servidor_pacs.estudos.todos_issuers')) ?></option>
+                    <?php foreach ($issuers as $issuer): ?>
+                        <option value="<?= htmlspecialchars($issuer) ?>" <?= $filtroIssuer === $issuer ? 'selected' : '' ?>><?= htmlspecialchars($issuer) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold"><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_negocio')) ?></label>
+<div class="col-md-3">
+<label class="form-label small fw-semibold"><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_negocio')) ?></label>
                 <select name="tenant" class="form-select form-select-sm">
                     <option value="">Todos os negócios</option>
                     <?php foreach ($negocios as $n): ?>
@@ -169,7 +182,7 @@ $statusLabelMap = [
 
 <!-- TABELA DE ESTUDOS -->
 <div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
+<div class="card-body p-0">
         <?php if (empty($estudos)): ?>
             <div class="p-5 text-center text-muted">
                 <i class="fa fa-x-ray fa-3x mb-3"></i>
@@ -181,9 +194,10 @@ $statusLabelMap = [
                     <thead class="table-light sticky-top">
                         <tr>
                             <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_paciente')) ?></th>
-                            <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_data')) ?></th>
-                            <th>InstitutionName</th>
-                            <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_data')) ?></th>
+<th>InstitutionName</th>
+                            <th><?= htmlspecialchars(t('servidor_pacs.estudos.issuer')) ?></th>
+<th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_servidor')) ?></th>
                             <th><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_negocio')) ?></th>
                             <th class="text-center"><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_series')) ?></th>
                             <th class="text-center"><?= htmlspecialchars(t('servidor_pacs.estudos.coluna_status')) ?></th>
@@ -199,10 +213,11 @@ $statusLabelMap = [
                                     <div class="text-muted" style="font-size:.75rem;">ID: <?= htmlspecialchars($e['patient_id'] ?? '—') ?></div>
                                 </td>
                                 <td class="small">
-                                    <?= $e['study_date'] ? date('d/m/Y', strtotime($e['study_date'])) : '—' ?>
-                                </td>
-                                <td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '(vazio)') ?></code></td>
-                                <td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
+<?= $e['study_date'] ? date('d/m/Y', strtotime($e['study_date'])) : '—' ?>
+</td>
+<td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '(vazio)') ?></code></td>
+                                <td><code class="small"><?= htmlspecialchars($e['issuer_of_patient_id'] ?? '—') ?></code></td>
+<td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
                                 <td class="small">
                                     <?= $e['negocio_nome'] ? htmlspecialchars($e['negocio_nome']) : '<span class="text-muted">—</span>' ?>
                                 </td>
@@ -223,7 +238,7 @@ $statusLabelMap = [
 
             <!-- PAGINAÇÃO -->
             <?php if ($totalPaginas > 1): ?>
-                <?php $qs = "&servidor={$filtroServidor}&institution=" . urlencode($filtroInstitution) . "&tenant={$filtroTenant}&status={$filtroStatus}"; ?>
+                <?php $qs = "&servidor={$filtroServidor}&institution=" . urlencode($filtroInstitution) . "&issuer=" . urlencode($filtroIssuer) . "&tenant={$filtroTenant}&status={$filtroStatus}"; ?>
                 <div class="d-flex justify-content-between align-items-center p-3 border-top">
                     <small class="text-muted">
                         <?= (($pagina - 1) * $porPagina) + 1 ?>–<?= min($pagina * $porPagina, $total) ?> / <?= number_format($total) ?>

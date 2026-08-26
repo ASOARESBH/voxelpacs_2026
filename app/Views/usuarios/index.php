@@ -78,6 +78,11 @@ $perfilLabel = [
 <div class="pacs-alert pacs-alert-success mb-3">
     <i class="fa fa-envelope me-2"></i> Link de acesso reenviado com sucesso.
 </div>
+<?php elseif ($sucesso === '2fa_habilitado' || $sucesso === '2fa_desabilitado'): ?>
+<div class="pacs-alert pacs-alert-success mb-3">
+    <i class="fa fa-shield-halved me-2"></i>
+    <?= htmlspecialchars(t($sucesso === '2fa_habilitado' ? 'usuarios.2fa.sucesso_habilitado' : 'usuarios.2fa.sucesso_desabilitado')) ?>
+</div>
 <?php endif; ?>
 
 <?php if ($error === 'nao_pode_desativar_proprio'): ?>
@@ -118,7 +123,7 @@ $perfilLabel = [
                     <th style="width:90px;text-align:center;">Status</th>
                     <th style="width:110px;text-align:center;">Último acesso</th>
                     <?php if ($canManageUsuarios): ?>
-                    <th style="width:120px;text-align:right;padding-right:1rem;">Ações</th>
+                    <th style="width:150px;text-align:center;">Ações</th>
                     <?php endif; ?>
                 </tr>
             </thead>
@@ -177,8 +182,8 @@ $perfilLabel = [
                     <?php endif; ?>
                 </td>
                 <?php if ($canManageUsuarios): ?>
-                <td style="text-align:right;padding-right:1rem;">
-                    <div style="display:flex;gap:.3rem;justify-content:flex-end;align-items:center;">
+                <td style="text-align:center;">
+                    <div style="display:flex;gap:.3rem;justify-content:center;align-items:center;">
                         <a href="/usuarios/<?= $u['id'] ?>/edit"
                            class="btn-pacs-outline" style="padding:.2rem .5rem;font-size:.72rem;"
                            title="Editar usuário">
@@ -191,6 +196,14 @@ $perfilLabel = [
                                     style="padding:.2rem .5rem;font-size:.72rem;cursor:pointer;"
                                     title="Reenviar link de criação de senha">
                                 <i class="fa fa-envelope"></i>
+                            </button>
+                        </form>
+                        <form method="POST" action="/usuarios/<?= $u['id'] ?>/2fa/toggle" style="display:inline;">
+                            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                            <button type="submit" class="btn-pacs-outline"
+                                    style="padding:.2rem .5rem;font-size:.72rem;cursor:pointer;<?= !empty($u['two_factor_email_enabled']) ? 'color:#34d399;' : 'color:#94a3b8;' ?>"
+                                    title="<?= htmlspecialchars(t(!empty($u['two_factor_email_enabled']) ? 'usuarios.2fa.desabilitar' : 'usuarios.2fa.habilitar')) ?>">
+                                <i class="fa fa-shield-halved"></i>
                             </button>
                         </form>
                         <form method="POST" action="/usuarios/<?= $u['id'] ?>/toggle"

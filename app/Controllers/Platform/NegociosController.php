@@ -8,8 +8,11 @@ use App\Core\Audit\AuditLogger;
 use App\Models\Tenant;
 use App\Models\TenantPlan;
 use App\Models\User;
+use App\Services\DicomIssuerService;
+use App\Services\InstitutionResolverService;
 
 class NegociosController extends Controller {
+    use DicomRoutesTrait;
 
     public function index(): void {
         $pdo      = Database::getInstance();
@@ -162,6 +165,9 @@ class NegociosController extends Controller {
                 }
             }
 
+            $issuerRules = $this->regrasIssuerModalidadeDaRequisicao();
+            $this->sincronizarRegrasIssuerModalidade($pdo, $tenantId, $issuerRules);
+
             // Usuário admin do negócio — opcional (o formulário só exige o e-mail
             // para tentar criar), mas se informado PRECISA ser criado com sucesso:
             // um negócio sem nenhum admin vinculado é um estado incompleto (o
@@ -199,6 +205,7 @@ class NegociosController extends Controller {
                 'nome'             => $tenantData['nome'],
                 'slug'             => $tenantData['slug'],
                 'admin_criado'     => $adminUserId !== null,
+                'regras_issuer_modalidade' => count($issuerRules),
                 'admin_email'      => $_POST['admin_email'] ?? null,
                 'user_agent'       => $_SERVER['HTTP_USER_AGENT'] ?? null,
                 'resultado'        => 'sucesso',
@@ -270,6 +277,7 @@ class NegociosController extends Controller {
         $planos  = [];
         $contatos = [];
         $institutionNames = '';
+        $issuerModalidadeRules = [];
 
         try {
             $negocio = $pdo->prepare("SELECT * FROM bi_tenants WHERE id = ? LIMIT 1");
@@ -306,6 +314,21 @@ class NegociosController extends Controller {
             $rows->execute([$id]);
             $institutionNames = implode(', ', array_column($rows->fetchAll(\PDO::FETCH_ASSOC), 'institution_name'));
         } catch (\Throwable $e) { $institutionNames = ''; }
+        try {
+            $rules = $pdo->prepare("
+                SELECT issuer_of_patient_id, issuer_of_patient_id_normalized, modalidade
+                FROM bi_tenant_issuer_modalidades
+                WHERE tenant_id = ? AND status = 'ativo'
+                ORDER BY issuer_of_patient_id, modalidade
+            ");
+            $rules->execute([$id]);
+            foreach ($rules->fetchAll(\PDO::FETCH_ASSOC) as $rule) {
+                $key = (string) $rule['issuer_of_patient_id_normalized'];
+                $issuerModalidadeRules[$key] ??= ['issuer_of_patient_id' => $rule['issuer_of_patient_id'], 'modalidades' => []];
+                $issuerModalidadeRules[$key]['modalidades'][] = $rule['modalidade'];
+            }
+            $issuerModalidadeRules = array_values($issuerModalidadeRules);
+        } catch (\Throwable $e) { $issuerModalidadeRules = []; }
         // Busca admin principal do tenant para exibir no Perfil/Acesso
         $admin = null;
         try {
@@ -319,7 +342,7 @@ class NegociosController extends Controller {
             $stmtAdmin->execute([$id]);
             $admin = $stmtAdmin->fetch(\PDO::FETCH_ASSOC) ?: null;
         } catch (\Throwable $e) { $admin = null; }
-        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames', 'admin'), 'platform');
+        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames', 'issuerModalidadeRules', 'admin'), 'platform');
     }
 
     public function update(int $id): void {
@@ -439,13 +462,7 @@ class NegociosController extends Controller {
             // Isso impede que sincronizarInstitutionNames (UnidadesController)
             // reinsira automaticamente nomes que o operador removeu.
             try {
-                $novosNomes = [];
-                if (!empty($_POST['institution_names'])) {
-                    $novosNomes = array_values(array_filter(
-                        array_map('trim', explode(',', $_POST['institution_names'])),
-                        fn($n) => $n !== ''
-                    ));
-                }
+                $novosNomes = $this->nomesInstituicaoDaRequisicao();
 
                 // 1. Marcar TODOS os nomes atuais do tenant como excluidos_manualmente
                 $pdo->prepare("
@@ -501,12 +518,16 @@ class NegociosController extends Controller {
                 error_log("[NegociosController::update] InstitutionNames: " . $e->getMessage());
             }
 
+            $issuerRules = $this->regrasIssuerModalidadeDaRequisicao();
+            $this->sincronizarRegrasIssuerModalidade($pdo, $id, $issuerRules);
+
             $pdo->commit();
             $_SESSION['success'] = "Negócio atualizado com sucesso!";
 
             AuditLogger::log('negocio.editar', 'bi_tenants', $id, [
                 'nome'         => $tenantData['nome'],
                 'admin_criado' => $adminUserId !== null,
+                'regras_issuer_modalidade' => count($issuerRules),
                 'admin_email'  => $_POST['admin_email'] ?? null,
                 'user_agent'   => $_SERVER['HTTP_USER_AGENT'] ?? null,
                 'resultado'    => 'sucesso',
@@ -645,13 +666,13 @@ class NegociosController extends Controller {
         }
     }
 
-    public function criarUnidade(int $id): void {
+public function criarUnidade(int $id): void {
         $pdo = Database::getInstance();
-
         $institutionName = trim($_POST['institution_name'] ?? '');
-        $nome             = trim($_POST['nome'] ?? '');
+        $issuerOfPatientId = DicomIssuerService::sanitizeIssuer($_POST['issuer_of_patient_id'] ?? null);
+        $nome = trim($_POST['nome'] ?? '');
 
-        if (empty($nome) || empty($institutionName)) {
+        if ($nome === '' || $institutionName === '') {
             $this->json(['success' => false, 'message' => 'Nome da unidade e InstitutionName são obrigatórios.'], 400);
             return;
         }
@@ -666,49 +687,42 @@ class NegociosController extends Controller {
 
             $stmt = $pdo->prepare("
                 INSERT INTO bi_tenant_unidades_dicom
-                (tenant_id, nome, cnpj, logradouro, numero, complemento, bairro, cidade, uf, cep,
-                 institution_name, ae_title, codigo_interno, status, observacoes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (tenant_id, nome, cnpj, logradouro, numero, complemento, bairro, cidade, uf, cep,
+                     institution_name, institution_name_normalized, issuer_of_patient_id, issuer_of_patient_id_normalized,
+                     ae_title, codigo_interno, status, observacoes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
-                $id,
-                $nome,
-                trim($_POST['cnpj'] ?? '') ?: null,
-                trim($_POST['logradouro'] ?? '') ?: null,
-                trim($_POST['numero'] ?? '') ?: null,
-                trim($_POST['complemento'] ?? '') ?: null,
-                trim($_POST['bairro'] ?? '') ?: null,
-                trim($_POST['cidade'] ?? '') ?: null,
-                trim($_POST['uf'] ?? '') ?: null,
-                trim($_POST['cep'] ?? '') ?: null,
-                $institutionName,
-                trim($_POST['ae_title'] ?? '') ?: null,
+                $id, $nome, trim($_POST['cnpj'] ?? '') ?: null, trim($_POST['logradouro'] ?? '') ?: null,
+                trim($_POST['numero'] ?? '') ?: null, trim($_POST['complemento'] ?? '') ?: null,
+                trim($_POST['bairro'] ?? '') ?: null, trim($_POST['cidade'] ?? '') ?: null,
+                trim($_POST['uf'] ?? '') ?: null, trim($_POST['cep'] ?? '') ?: null,
+                $institutionName, InstitutionResolverService::normalize($institutionName), $issuerOfPatientId,
+                DicomIssuerService::normalize($issuerOfPatientId), trim($_POST['ae_title'] ?? '') ?: null,
                 trim($_POST['codigo_interno'] ?? '') ?: null,
-                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo']) ? $_POST['status'] : 'ativo',
+                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo'], true) ? $_POST['status'] : 'ativo',
                 trim($_POST['observacoes'] ?? '') ?: null,
             ]);
 
-            $this->json(['success' => true, 'message' => 'Unidade criada com sucesso.', 'id' => (int)$pdo->lastInsertId()]);
+            $this->json(['success' => true, 'message' => 'Unidade criada com sucesso.', 'id' => (int) $pdo->lastInsertId()]);
         } catch (\Throwable $e) {
             error_log("[NegociosController::criarUnidade] " . $e->getMessage());
-            $msg = str_contains($e->getMessage(), 'uq_tenant_institution')
-                ? 'Este InstitutionName já está cadastrado para este negócio.'
+            $msg = str_contains($e->getMessage(), 'uq_dicom_unidade_tenant_identity')
+                ? 'Este par InstitutionName + Issuer já está cadastrado para este negócio.'
                 : 'Erro ao criar unidade.';
             $this->json(['success' => false, 'message' => $msg], 500);
         }
-    }
+}
 
-    public function atualizarUnidade(int $id, int $uid): void {
+public function atualizarUnidade(int $id, int $uid): void {
         $pdo = Database::getInstance();
-
         $institutionName = trim($_POST['institution_name'] ?? '');
-        $nome             = trim($_POST['nome'] ?? '');
-
-        if (empty($nome) || empty($institutionName)) {
+        $issuerOfPatientId = DicomIssuerService::sanitizeIssuer($_POST['issuer_of_patient_id'] ?? null);
+        $nome = trim($_POST['nome'] ?? '');
+        if ($nome === '' || $institutionName === '') {
             $this->json(['success' => false, 'message' => 'Nome da unidade e InstitutionName são obrigatórios.'], 400);
             return;
         }
-
         try {
             $existe = $pdo->prepare("SELECT id FROM bi_tenant_unidades_dicom WHERE id = ? AND tenant_id = ?");
             $existe->execute([$uid, $id]);
@@ -716,41 +730,33 @@ class NegociosController extends Controller {
                 $this->json(['success' => false, 'message' => 'Unidade não encontrada.'], 404);
                 return;
             }
-
             $stmt = $pdo->prepare("
                 UPDATE bi_tenant_unidades_dicom
                 SET nome=?, cnpj=?, logradouro=?, numero=?, complemento=?, bairro=?, cidade=?, uf=?, cep=?,
-                    institution_name=?, ae_title=?, codigo_interno=?, status=?, observacoes=?, updated_at=NOW()
-                WHERE id = ? AND tenant_id = ?
+                    institution_name=?, institution_name_normalized=?, issuer_of_patient_id=?, issuer_of_patient_id_normalized=?,
+                    ae_title=?, codigo_interno=?, status=?, observacoes=?, updated_at=NOW()
+                WHERE id=? AND tenant_id=?
             ");
             $stmt->execute([
-                $nome,
-                trim($_POST['cnpj'] ?? '') ?: null,
-                trim($_POST['logradouro'] ?? '') ?: null,
-                trim($_POST['numero'] ?? '') ?: null,
-                trim($_POST['complemento'] ?? '') ?: null,
-                trim($_POST['bairro'] ?? '') ?: null,
-                trim($_POST['cidade'] ?? '') ?: null,
-                trim($_POST['uf'] ?? '') ?: null,
-                trim($_POST['cep'] ?? '') ?: null,
-                $institutionName,
-                trim($_POST['ae_title'] ?? '') ?: null,
+                $nome, trim($_POST['cnpj'] ?? '') ?: null, trim($_POST['logradouro'] ?? '') ?: null,
+                trim($_POST['numero'] ?? '') ?: null, trim($_POST['complemento'] ?? '') ?: null,
+                trim($_POST['bairro'] ?? '') ?: null, trim($_POST['cidade'] ?? '') ?: null,
+                trim($_POST['uf'] ?? '') ?: null, trim($_POST['cep'] ?? '') ?: null,
+                $institutionName, InstitutionResolverService::normalize($institutionName), $issuerOfPatientId,
+                DicomIssuerService::normalize($issuerOfPatientId), trim($_POST['ae_title'] ?? '') ?: null,
                 trim($_POST['codigo_interno'] ?? '') ?: null,
-                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo']) ? $_POST['status'] : 'ativo',
-                trim($_POST['observacoes'] ?? '') ?: null,
-                $uid,
-                $id,
+                in_array($_POST['status'] ?? 'ativo', ['ativo', 'inativo'], true) ? $_POST['status'] : 'ativo',
+                trim($_POST['observacoes'] ?? '') ?: null, $uid, $id,
             ]);
-
             $this->json(['success' => true, 'message' => 'Unidade atualizada com sucesso.']);
         } catch (\Throwable $e) {
             error_log("[NegociosController::atualizarUnidade] " . $e->getMessage());
-            $msg = str_contains($e->getMessage(), 'uq_tenant_institution')
-                ? 'Este InstitutionName já está cadastrado para este negócio.'
+            $msg = str_contains($e->getMessage(), 'uq_dicom_unidade_tenant_identity')
+                ? 'Este par InstitutionName + Issuer já está cadastrado para este negócio.'
                 : 'Erro ao atualizar unidade.';
             $this->json(['success' => false, 'message' => $msg], 500);
         }
-    }
+}
 
     public function excluirUnidade(int $id, int $uid): void {
         $pdo = Database::getInstance();

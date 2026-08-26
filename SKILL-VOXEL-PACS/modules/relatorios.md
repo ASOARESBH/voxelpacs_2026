@@ -78,6 +78,62 @@ Achados durante a análise que não batiam com dados reais do schema — resolvi
 - PDF usa `isPhpEnabled: true` no Dompdf só pra rodar o `<script type="text/php">` do rodapé de paginação (`page_text`) — seguro porque os templates são arquivos próprios (não HTML de terceiros) e todo dado dinâmico neles passa por `htmlspecialchars()`.
 - XLSX usa `PhpSpreadsheet` diretamente (não o `ExportService::exportarXlsx()` genérico já existente, que só faz array→planilha sem nenhuma formatação — insuficiente pro padrão pedido: cabeçalho/tenant, resumo de filtros, zebra, cor de status SLA).
 
+## Auditoria e rastreabilidade de qualidade
+
+O menu **Relatórios → Auditoria** é a superfície de consulta para qualidade e administração. Ele é estritamente somente leitura e não revela texto de laudo, dados de pacientes, credenciais, tokens ou o nome de arquivos anexados. A página é atendida por `RelatorioAuditoriaController`, `RelatorioAuditoriaRepository` e `app/Views/relatorios/auditoria.php`.
+
+| Tipo | Fonte e escopo | Conteúdo apresentado |
+|---|---|---|
+| Auditoria de Acesso | `bi_audit_logs.category = acesso` | Data/hora, autor, evento, IP, região informada por proxy confiável e contexto sanitizado. Inclui login, logout, visualização de relatórios e exportação de SLA. |
+| Gestão de Estudos | `bi_audit_logs.category = gestao_estudos` | Autor, alteração de prioridade, anexação/remoção de pedido, mudança individual ou em lote de descrição e demais eventos operacionais de estudo. |
+| Auditoria Clínica | `bi_audit_logs.category = clinica` | Médico/autor, horário de assunção, duração clínica calculada, IP, região e indicador de Peer Review. A consulta associa somente IDs de estudo/laudo, nunca conteúdo clínico livre. |
+| SLA Médicos | `RelatorioSlaController` | Relatório especializado existente, sujeito à mesma autorização granular e com eventos de visualização/exportação registrados em `bi_audit_logs`. |
+
+### Dados, privacidade e cadeia de contexto
+
+`AuditLogger` grava `tenant_id`, `user_id`, ação, entidade e identificador, contexto JSON sanitizado, IP, user-agent, `request_id`, categoria e região. A sanitização recusa chaves sensíveis, incluindo senha, token, e-mail, CPF/CNPJ, identificadores de paciente, nome de paciente e texto clínico. Região **não** faz consulta externa: só é preenchida a partir de cabeçalhos do proxy quando `AUDIT_TRUST_PROXY` está habilitado. Caso contrário, o IP vem de `REMOTE_ADDR` e região permanece vazia por segurança.
+
+As consultas de auditoria exigem `a.tenant_id = :tenant_id`; filtros de grupo usam uma subconsulta vinculada ao mesmo tenant. A auditoria clínica só associa `reports`, `bi_pacs_estudos` e `pacs_report_peer_reviews` com predicado de tenant. Os índices `tenant_id + category + created_at`, `tenant_id + user_id + created_at` e `tenant_id + action + created_at` sustentam os filtros de período, autor e categoria.
+
+### Autorização granular
+
+Administradores do tenant têm acesso de leitura aos quatro submódulos. Para os demais perfis, `RelatorioPermissaoService` exige simultaneamente o módulo geral `relatorios` em `bi_user_permissoes` e a chave específica em `bi_user_report_permissions`.
+
+| Chave | Permite consultar |
+|---|---|
+| `sla_medicos` | SLA Médicos e exportações correspondentes |
+| `auditoria_acesso` | Auditoria de Acesso |
+| `auditoria_estudos` | Gestão de Estudos |
+| `auditoria_clinica` | Auditoria Clínica |
+
+As chaves são administradas em **Usuários → Módulos Habilitados → Submódulos de Relatórios**. Quando a conta não está autorizada, o sistema devolve HTTP 403 com uma página independente e segura (`app/Views/errors/403.php`), sem cair em erro 500.
+
+### Migration e implantação
+
+`database/migrations/2026-08-25_auditoria_relatorios_postgresql.sql` é a fonte versionável do schema de auditoria: amplia `bi_audit_logs`, cria as permissões de relatório e os índices de consulta. A migration é idempotente para a aplicação no schema PostgreSQL ativo; nunca executar migrações destrutivas contra dados clínicos sem backup e autorização explícita.
+
+### Exportação verificável de auditoria
+
+As auditorias de Acesso, Gestão de Estudos e Clínica podem ser exportadas em **PDF** ou **CSV** pelo próprio filtro em uso. Cada emissão cria um identificador exclusivo em `bi_audit_report_exports`, registra `relatorio.auditoria_exportado` na trilha e recebe um QR Code gerado localmente pela biblioteca já instalada `chillerlan/php-qrcode`; não há chamada a serviços externos de QR Code.
+
+| Elemento | Regra aplicada |
+|---|---|
+| Documento PDF | Cabeçalho com logo local do tenant quando disponível, razão social/nome, CNPJ, tipo, período, emissor, data/hora, código de verificação, resumo de integridade e QR Code. |
+| Documento CSV | Cabeçalho textual com a mesma identidade e metadados, mais URL de validação. Valores são protegidos contra fórmulas de planilha iniciadas por `=`, `+`, `-` ou `@`. |
+| Token e integridade | Token aleatório de 32 bytes, armazenado somente como SHA-256. O manifesto da emissão é assinado por HMAC-SHA-256 e inclui escopo, período e hashes de eventos, sem conteúdo clínico. |
+| Validade | Cada emissão recebe token próprio e prazo de 365 dias. A primeira autenticação e consultas posteriores ficam registradas como data/hora e contador. |
+| Logo | São aceitos somente arquivos locais sob `public/`, em PNG/JPEG/WEBP, com caminho resolvido e limite de 1 MB. URLs remotas e caminhos com travessia são ignorados. |
+
+O segredo de assinatura usa, nesta ordem, a configuração de ambiente dedicada, o segredo de sessão disponível ou `/etc/voxelpacs/audit-export-signing-key`. O último arquivo é operacional, fora do Git, com dono `root:voxel` e modo `0640`. Não registrar, copiar ou publicar seu conteúdo.
+
+#### Validação pública do QR Code
+
+`GET /validar/auditoria/{token}` é propositalmente público para funcionar após o escaneamento do QR Code, mas retorna somente o status de autenticidade, tenant emissor, tipo/formato, data/hora de emissão e validação, código e resumo de integridade. **Nunca** retorna nome do usuário emissor, filtros, eventos, IPs, conteúdo de laudo, pacientes ou anexos. Tokens inválidos devolvem uma página neutra de “Documento não autenticado”, sem permitir enumeração de emissões.
+
+O QR Code prova que uma emissão e seu manifesto foram gerados pelo sistema; a integridade é verificada contra o HMAC armazenado. A validação não transforma o documento em autorização de acesso a dados clínicos: ela é apenas uma confirmação pública e mínima da origem do artefato.
+
+`database/migrations/2026-08-25_auditoria_exportacao_verificavel_postgresql.sql` cria a tabela, índices de tenant/token/expiração e os privilégios mínimos `SELECT`, `INSERT`, `UPDATE` da conta de aplicação, além do uso da sequência. Não conceder `DELETE` à aplicação para preservar a cadeia de emissão.
+
 ## Validação executada nesta tarefa
 
 - `php -l` em todos os 15 arquivos novos/alterados — limpo.
@@ -85,6 +141,7 @@ Achados durante a análise que não batiam com dados reais do schema — resolvi
 - Testes isolados (sem DB) de `RelatorioSlaCalcService`: resolução de regra por especificidade (4 cenários + sem-regra), congelamento de tempo decorrido em estudo concluído vs. aberto, classificação verde/vermelho, filtro "tempo maior que" isolado, ordenação por maior tempo decorrido, agregação por médico incluindo bucket `sem_sla`, e resolução de período (`hoje`/`7dias`/`mensal`) — todos passaram.
 - **Não testado nesta sessão** (sem MySQL/navegador ao vivo neste ambiente): as queries reais do repositório contra `bi_pacs_estudos`/`bi_sla_regras`/`reports`, renderização visual das duas telas e do sidebar, e isolamento multi-tenant fim-a-fim com dados de dois tenants distintos. Precisa de validação manual num ambiente com banco antes de produção.
 - **Validado em 2026-08-13**: Dompdf foi carregado pelo autoloader e gerou um PDF com assinatura `%PDF`; o ZIP de deploy foi inspecionado e contém `vendor/autoload.php` e `vendor/dompdf/dompdf/src/Dompdf.php`.
+- **Validado em 2026-08-25**: lint dos arquivos novos e alterados, paridade das chaves `auditoria.*` nos três idiomas, visualização autenticada da auditoria humanizada, geração local do QR SVG, emissão real em PDF e CSV sem dados clínicos, assinatura `%PDF` e página pública de token inválido. O ciclo de emissão/autenticação foi exercitado com registro temporário e removido; não foram criados laudos, anexos ou exports com dados de pacientes para teste.
 
 ## Última análise
-2026-08-07
+2026-08-25

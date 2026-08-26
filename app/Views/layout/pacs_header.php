@@ -153,6 +153,10 @@
                     <i class="fa fa-gauge-high"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.sla_medicos')) ?></span>
                 </a>
+                <a href="/relatorios/auditoria" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/auditoria') ? 'active' : '' ?>">
+                    <i class="fa fa-shield-halved"></i>
+                    <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.auditoria')) ?></span>
+                </a>
             </div>
 
             <!-- SISTEMA -->

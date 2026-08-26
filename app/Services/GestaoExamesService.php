@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Logger;
+use App\Core\Audit\AuditLogger;
 use App\Repositories\GestaoExamesRepository;
 
 /**
@@ -137,6 +138,16 @@ class GestaoExamesService
                 'next' => $priority,
                 'audit_id' => $auditId,
             ]);
+
+            AuditLogger::logChange(
+                'prioridade.alterada',
+                'estudo',
+                $studyId,
+                ['prioridade' => $previous],
+                ['prioridade' => $priority, 'audit_id' => $auditId, 'motivo_informado' => true],
+                $tenantId,
+                'gestao_estudos'
+            );
 
             $alerts = ['groups' => 0, 'email_sent' => 0, 'email_failed' => 0];
             try {

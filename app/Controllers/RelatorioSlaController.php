@@ -10,6 +10,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Audit\AuditLogger;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
@@ -17,6 +18,7 @@ use App\Core\TenantContext;
 use App\Repositories\RelatorioEstudosRepository;
 use App\Services\RelatorioExportService;
 use App\Services\RelatorioFiltrosService;
+use App\Services\RelatorioPermissaoService;
 use App\Services\RelatorioSlaCalcService;
 
 class RelatorioSlaController extends Controller
@@ -35,6 +37,7 @@ class RelatorioSlaController extends Controller
     public function index(): void
     {
         $tenantId  = $this->tenantId();
+        (new RelatorioPermissaoService())->exigir('sla_medicos');
         $pdo       = Database::getInstance();
         $repo      = new RelatorioEstudosRepository($pdo);
         $filtroSvc = new RelatorioFiltrosService($repo);
@@ -46,6 +49,12 @@ class RelatorioSlaController extends Controller
         $bruto      = $repo->buscarEstudos($filtros, paginar: false);
         $regras     = $repo->getRegrasSlaAtivas($tenantId);
         $resultado  = $calcSvc->processar($bruto['linhas'], $regras, $filtros);
+
+        AuditLogger::log('relatorio.sla_medicos_visualizado', 'relatorio_sla', null, [
+            'periodo' => [$filtros['data_de'], $filtros['data_ate']],
+            'modalidades_filtradas' => count($filtros['modalidades'] ?? []),
+            'prioridades_filtradas' => count($filtros['prioridades'] ?? []),
+        ], $tenantId, 'acesso');
 
         $this->view('relatorios/sla_medicos', [
             'title'        => 'Relatório SLA Médicos',
@@ -62,6 +71,7 @@ class RelatorioSlaController extends Controller
     public function exportar(): void
     {
         $tenantId  = $this->tenantId();
+        (new RelatorioPermissaoService())->exigir('sla_medicos');
         $formato   = ($_GET['formato'] ?? 'xlsx') === 'pdf' ? 'pdf' : 'xlsx';
 
         if ($formato === 'pdf' && !RelatorioExportService::pdfDisponivel()) {
@@ -95,6 +105,14 @@ class RelatorioSlaController extends Controller
         $usuarioNome = Auth::user()->name ?? '—';
         $resumo      = $this->resumoFiltros($filtros);
         $filename    = 'RELATORIO_SLA_MEDICOS_' . date('Ymd_Hi');
+
+        AuditLogger::log('relatorio.sla_medicos_exportado', 'relatorio_sla', null, [
+            'formato' => $formato,
+            'periodo' => [$filtros['data_de'], $filtros['data_ate']],
+            'modalidades_filtradas' => count($filtros['modalidades'] ?? []),
+            'prioridades_filtradas' => count($filtros['prioridades'] ?? []),
+            'total_linhas' => (int) $resultado['total'],
+        ], $tenantId, 'acesso');
 
         if ($formato === 'pdf') {
             $exportSvc->streamPdf(

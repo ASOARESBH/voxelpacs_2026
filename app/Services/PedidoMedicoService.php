@@ -44,8 +44,15 @@ class PedidoMedicoService
      */
     public function podeGerenciar(?int $tenantId, bool $bypassGlobal): bool
     {
-        if (!Auth::can('manage_pedidos')) return false;
         if ($bypassGlobal) return true;
+
+        // O perfil ativo no tenant é a autoridade para operações administrativas
+        // da Gestão de Exames. O papel global pode ser "viewer" em contas
+        // antigas compartilhadas entre tenants e não deve ocultar ações de um
+        // administrador legítimo do tenant atual.
+        if (strtolower((string) Auth::perfilAtual()) === 'admin') return true;
+
+        if (!Auth::can('manage_pedidos')) return false;
 
         $userId = Auth::userId();
         if (!$tenantId || !$userId) return false;

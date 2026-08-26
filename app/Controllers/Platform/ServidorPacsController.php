@@ -6,6 +6,7 @@ use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\SqlHelper;
 use App\Core\Auth;
+use App\Core\Audit\AuditLogger;
 use App\Services\OrthancService;
 use App\Services\PacsRoutingService;
 use App\Services\PacsSyncService;
@@ -401,6 +402,11 @@ class ServidorPacsController extends Controller
                         : null;
                     $dicomTagsJson = $sharedTags !== null ? json_encode($sharedTags, JSON_UNESCAPED_UNICODE) : null;
 
+                    $issuer = $orthanc->getIssuerOfPatientId($study['orthanc_id'], $sharedTags);
+                    if ($issuer !== null) {
+                        $study['issuer_of_patient_id'] = $issuer;
+                    }
+
                     if (trim((string) ($study['study_description'] ?? '')) === ''
                         && trim((string) ($study['scheduled_procedure_step_desc'] ?? '')) === '') {
                         $scheduled = $orthanc->getScheduledProcedureStepDescription($study['orthanc_id'], $sharedTags);
@@ -409,7 +415,12 @@ class ServidorPacsController extends Controller
                         }
                     }
 
-                    $routing = PacsRoutingService::resolveTenant($id, $study['institution_name'] ?? null);
+                    $routing = PacsRoutingService::resolveTenant(
+                        $id,
+                        $study['institution_name'] ?? null,
+                        $study['issuer_of_patient_id'] ?? null,
+                        $study['modalities'] ?? null
+                    );
                     match ($routing['status']) {
                         PacsRoutingService::STATUS_ROTEADO          => $roteados++,
                         PacsRoutingService::STATUS_NAO_IDENTIFICADO => $naoIdentificados++,
@@ -552,18 +563,16 @@ class ServidorPacsController extends Controller
                 ")->execute([$tenantId, $institutionName, $aetitle, $descricao]);
             }
 
-            $updateStmt = $pdo->prepare("
-                UPDATE bi_pacs_estudos SET tenant_id = ?
-                WHERE servidor_id = 1 AND institution_name = ? AND tenant_id IS NULL
-            ");
-            $updateStmt->execute([$tenantId, $institutionName]);
-            $afetados = $updateStmt->rowCount();
+            // A tabela existe apenas como registro de compatibilidade. Não é
+            // permitido alterar estudos por InstitutionName isoladamente: o
+            // roteamento efetivo agora avalia tenant, Issuer e modalidade.
+            $afetados = 0;
 
-            error_log("[PACS] Roteamento salvo: institution='$institutionName' → tenant_id=$tenantId, $afetados estudos roteados retroativamente");
+            error_log("[PACS] Registro legado de InstitutionName salvo: institution='$institutionName' → tenant_id=$tenantId; nenhum estudo foi alterado automaticamente");
 
             echo json_encode([
                 'success'  => true,
-                'message'  => "Roteamento salvo! {$afetados} estudos roteados retroativamente.",
+                'message'  => 'InstitutionName registrado. Estudos existentes não foram alterados automaticamente; use a resolução manual auditável quando necessário.',
                 'afetados' => $afetados,
             ]);
         } catch (\Exception $e) {
@@ -582,13 +591,6 @@ class ServidorPacsController extends Controller
             $rotStmt = $pdo->prepare("SELECT institution_name FROM bi_pacs_roteamento WHERE id = ? AND servidor_id = 1");
             $rotStmt->execute([$id]);
             $row = $rotStmt->fetch(\PDO::FETCH_ASSOC);
-
-            if ($row) {
-                $pdo->prepare("
-                    UPDATE bi_pacs_estudos SET tenant_id = NULL
-                    WHERE servidor_id = 1 AND institution_name = ?
-                ")->execute([$row['institution_name']]);
-            }
 
             $pdo->prepare("DELETE FROM bi_pacs_roteamento WHERE id = ? AND servidor_id = 1")->execute([$id]);
 
@@ -609,6 +611,7 @@ class ServidorPacsController extends Controller
 
         $filtroServidor    = (int) ($_GET['servidor'] ?? 0);
         $filtroInstitution = $_GET['institution'] ?? '';
+        $filtroIssuer      = trim((string) ($_GET['issuer'] ?? ''));
         $filtroTenant      = (int) ($_GET['tenant'] ?? 0);
         $filtroStatus      = $_GET['status'] ?? ''; // roteado|nao_identificado|conflito
         $pagina            = max(1, (int) ($_GET['pagina'] ?? 1));
@@ -626,6 +629,10 @@ class ServidorPacsController extends Controller
             $where[]  = 'institution_name = ?';
             $params[] = $filtroInstitution;
         }
+        if ($filtroIssuer !== '') {
+            $where[]  = 'issuer_of_patient_id = ?';
+            $params[] = $filtroIssuer;
+        }
         if ($filtroTenant > 0) {
             $where[]  = 'tenant_id = ?';
             $params[] = $filtroTenant;
@@ -639,6 +646,7 @@ class ServidorPacsController extends Controller
         $estudos  = [];
         $total    = 0;
         $institutions = [];
+        $issuers = [];
         $negocios     = [];
         $servidores   = [];
         $naoIdentificados = [];
@@ -664,6 +672,11 @@ class ServidorPacsController extends Controller
             $institutions = $pdo->query("
                 SELECT DISTINCT institution_name FROM bi_pacs_estudos
                 WHERE institution_name IS NOT NULL ORDER BY institution_name
+            ")->fetchAll(\PDO::FETCH_COLUMN);
+            $issuers = $pdo->query("
+                SELECT DISTINCT issuer_of_patient_id FROM bi_pacs_estudos
+                WHERE issuer_of_patient_id IS NOT NULL AND btrim(issuer_of_patient_id) <> ''
+                ORDER BY issuer_of_patient_id
             ")->fetchAll(\PDO::FETCH_COLUMN);
 
             $negocios   = $this->listarNegociosAtivos($pdo);
@@ -695,8 +708,8 @@ class ServidorPacsController extends Controller
 
         $this->view('platform/servidor_pacs/estudos', compact(
             'estudos', 'total', 'pagina', 'totalPaginas', 'porPagina',
-            'filtroServidor', 'filtroInstitution', 'filtroTenant', 'filtroStatus',
-            'institutions', 'negocios', 'servidores', 'naoIdentificados', 'conflitos'
+            'filtroServidor', 'filtroInstitution', 'filtroIssuer', 'filtroTenant', 'filtroStatus',
+            'institutions', 'issuers', 'negocios', 'servidores', 'naoIdentificados', 'conflitos'
         ), 'platform');
     }
 
@@ -739,12 +752,40 @@ class ServidorPacsController extends Controller
         }
 
         try {
+            $studyStmt = $pdo->prepare("SELECT servidor_id, institution_name, issuer_of_patient_id, modalities FROM bi_pacs_estudos WHERE id = ? LIMIT 1");
+            $studyStmt->execute([$id]);
+            $study = $studyStmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$study) {
+                echo json_encode(['success' => false, 'message' => 'Estudo não encontrado.']);
+                return;
+            }
+            $allowed = $pdo->prepare("SELECT 1 FROM bi_negocio_servidor_pacs WHERE tenant_id=? AND servidor_id=? AND ativo=1 LIMIT 1");
+            $allowed->execute([$tenantId, (int) $study['servidor_id']]);
+            if (!$allowed->fetchColumn()) {
+                echo json_encode(['success' => false, 'message' => 'O negócio selecionado não está associado a este servidor PACS.']);
+                return;
+            }
+            $route = PacsRoutingService::resolveTenant(
+                (int) $study['servidor_id'],
+                $study['institution_name'] ?? null,
+                $study['issuer_of_patient_id'] ?? null,
+                $study['modalities'] ?? null
+            );
+            $unidadeId = ($route['tenant_id'] ?? null) === $tenantId ? ($route['unidade_id'] ?? null) : null;
             $pdo->prepare("
                 UPDATE bi_pacs_estudos
                 SET tenant_id = ?, roteamento_status = 'roteado', roteamento_candidatos = NULL,
-                    roteamento_resolvido_por = ?, roteamento_resolvido_em = NOW()
+                    unidade_id = ?, roteamento_resolvido_por = ?, roteamento_resolvido_em = NOW()
                 WHERE id = ?
-            ")->execute([$tenantId, Auth::userId(), $id]);
+            ")->execute([$tenantId, $unidadeId, Auth::userId(), $id]);
+
+            AuditLogger::log('roteamento.manual_resolvido', 'bi_pacs_estudos', $id, [
+                'servidor_id' => (int) $study['servidor_id'],
+                'tenant_id_destino' => $tenantId,
+                'institution_name' => $study['institution_name'] ?? null,
+                'issuer_of_patient_id' => $study['issuer_of_patient_id'] ?? null,
+                'unidade_id' => $unidadeId,
+            ], $tenantId);
 
             echo json_encode(['success' => true, 'message' => 'Estudo roteado manualmente com sucesso.']);
         } catch (\Exception $e) {
