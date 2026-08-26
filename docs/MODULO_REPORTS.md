@@ -94,3 +94,17 @@ O cartão de paciente calcula a idade a partir de `patient_birth_date` quando h�
 | Sem data válida e sem `patient_age` utilizável | Exibe `—`, sem inferir informação clínica. |
 
 Essa lógica é somente de apresentação do laudo. Ela não modifica `patient_birth_date`, `patient_age` ou qualquer registro DICOM no banco.
+
+## 9. Máquina de estados: assinatura e liberação
+
+O laudo possui dois marcos clínicos distintos. A **assinatura** confirma o conteúdo e congela o documento para edição; a **liberação** conclui o fluxo operacional e habilita somente então os efeitos externos autorizados.
+
+| Ação do médico | Estado do Report e Estudo | Efeito clínico e operacional |
+|---|---|---|
+| **Somente Assinar** | `assinado` | Registra a assinatura, o hash, a versão e o instante de assinatura. O laudo torna-se somente leitura, mas continua **não liberado**. Não cria outbox de devolução nem dispara webhook de laudo liberado. |
+| **Assinar e Fechar** | `liberado` | Registra primeiro a assinatura e, na mesma transação, promove o laudo a liberado. Cria os efeitos de liberação autorizados: auditoria, outbox de devolução, conectores de laudo liberado, webhook e pipeline opcional de imagens. |
+| **Liberar** após assinatura | `liberado` | Não cria segunda assinatura. Promove o laudo assinado a liberado, registra versão e auditoria de liberação e executa os mesmos efeitos de uma liberação direta. |
+
+O campo `bi_pacs_estudos.laudo_assinado_em` representa o primeiro instante de assinatura clínica e não é sobrescrito pela liberação posterior. As transições exigem sessão autenticada, escopo de empresa e instituição, posse clínica quando o perfil é restrito, assinatura médica ativa e ausência de pendência de Chat. A tentativa de assinar novamente ou de liberar um laudo que não esteja assinado é recusada de forma segura.
+
+> Um laudo **assinado** pode ser consultado em modo somente leitura, porém não representa laudo liberado para devolução DICOM, webhook de liberação ou pipeline externo.

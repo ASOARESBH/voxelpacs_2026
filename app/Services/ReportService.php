@@ -466,13 +466,14 @@ class ReportService {
             $this->repo->createSignature($reportId, $userId, $user->name ?? '', $crm, $hash, $_SERVER['REMOTE_ADDR'] ?? null);
             $this->repo->salvarAssinaturaVisual($reportId, $hash, $crm, $assinaturaAtiva['tipo'], $caminhoCongelado);
 
-            // "Somente Assinar" para em assinado; "Assinar e Fechar" libera.
+            // Toda assinatura registra primeiro o ato médico em "assinado".
+            // "Assinar e Fechar" promove em seguida para "liberado", sem
+            // substituir o instante clínico da assinatura no estudo.
             $this->repo->marcarAssinado($reportId, 'assinado');
+            $this->repo->atualizarSituacaoEstudo($estudoId, 'assinado');
             if ($modo === 'fechar') {
                 $this->repo->marcarAssinado($reportId, 'liberado');
                 $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
-            } else {
-                $this->repo->atualizarSituacaoEstudo($estudoId, 'assinado');
             }
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
@@ -524,6 +525,12 @@ class ReportService {
         }
 
         AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
+        if ($modo === 'fechar') {
+            AuditLogger::log('report.liberar', 'reports', $reportId, [
+                'origem' => 'assinar_e_fechar',
+                'hash' => $hash,
+            ]);
+        }
 
         // Conectores globais são pós-commit e estritamente fail-safe: uma
         // indisponibilidade externa jamais altera o resultado clínico do laudo.
@@ -580,6 +587,111 @@ class ReportService {
             'hash' => $hash,
             'pdf_url' => $this->urlPublica($report) . '/pdf',
             'peer_review_concluido' => $peerReviewAberto !== null,
+        ];
+    }
+
+    /**
+     * Promove um laudo já assinado para liberado sem criar uma segunda
+     * assinatura. A transição é atômica e dispara somente os efeitos que
+     * pertencem à liberação pública/operacional do documento.
+     */
+    public function liberarAssinado(int $reportId): array
+    {
+        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
+        if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+
+        $situacao = $report->situacao ?? $report->status ?? 'rascunho';
+        if ($situacao !== 'assinado') {
+            return ['ok' => false, 'error' => 'report_nao_assinado'];
+        }
+
+        $tenantId = (int) Auth::tenantId();
+        if ($tenantId <= 0) return ['ok' => false, 'error' => 'tenant_invalido'];
+        if ((new ReportChatService())->hasPending($reportId, $tenantId)) {
+            return ['ok' => false, 'error' => 'chat_pendente'];
+        }
+
+        $estudoId = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
+        $estudo = $estudoId ? $this->repo->findEstudoById($estudoId) : null;
+        if (!$estudo) return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+
+        $userId = (int) Auth::userId();
+        $liberadoEm = date('Y-m-d H:i:s');
+        $hash = trim((string) ($report->assinatura_hash ?? ''));
+        if ($hash === '') {
+            return ['ok' => false, 'error' => 'assinatura_persistencia_falhou'];
+        }
+
+        $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
+        $pdo = Database::getInstance();
+        try {
+            $pdo->beginTransaction();
+            $this->repo->marcarAssinado($reportId, 'liberado');
+            $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
+
+            $versaoNumero = $this->repo->proximaVersao($reportId);
+            $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero);
+            (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
+                $tenantId,
+                $reportId,
+                $estudoId,
+                $versaoNumero,
+                $report,
+                $estudo,
+                $userId,
+                $liberadoEm,
+                $hash
+            );
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('[ReportService::liberarAssinado] Persistência atômica falhou', [
+                'report_id' => $reportId,
+                'estudo_id' => $estudoId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => 'liberacao_persistencia_falhou'];
+        }
+
+        AuditLogger::log('report.liberar', 'reports', $reportId, [
+            'origem' => 'liberacao_posterior',
+            'hash' => $hash,
+        ]);
+
+        $medico = ['nome' => Auth::user()?->nome ?? Auth::user()?->name ?? '', 'crm' => (string) ($report->assinatura_crm ?? '')];
+        try {
+            ConectorNotificacaoService::notificarLaudoRealizado($estudo, $medico, $report, 'liberado');
+        } catch (\Throwable $e) {
+            Logger::error('[ReportService::liberarAssinado] Conectores de comunicação falharam', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        try {
+            (new CopilotWebhookService())->notificarLaudoLiberado(
+                $tenantId,
+                (array) $estudo,
+                ['id' => $userId, 'nome' => $medico['nome'], 'crm' => $medico['crm']],
+                ['texto' => null, 'assinado_em' => $report->assinado_em ?? null, 'hash' => $hash]
+            );
+        } catch (\Throwable $e) {
+            Logger::error('[ReportService::liberarAssinado] Webhook Copilot liberado falhou: ' . $e->getMessage());
+        }
+        if (filter_var(getenv('PORTAL_IMAGES_PIPELINE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) {
+            try {
+                (new PortalImagePreparationService(Database::getInstance()))->enqueueReleasedReport($reportId);
+            } catch (\Throwable $e) {
+                Logger::error('[ReportService::liberarAssinado] Fila de imagens anonimizadas falhou: ' . $e->getMessage());
+            }
+        }
+
+        return [
+            'ok' => true,
+            'situacao' => 'liberado',
+            'liberado_em' => $liberadoEm,
+            'pdf_url' => $this->urlPublica($report) . '/pdf',
         ];
     }
 

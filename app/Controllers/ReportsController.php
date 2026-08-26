@@ -1101,36 +1101,21 @@ class ReportsController extends Controller
                 $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.', 'pdf_url' => $resultado['pdf_url'] ?? null]);
                 return;
             }
-            // Laudo já assinado: liberar não cria uma segunda assinatura.
-                        $pdo = \App\Core\Database::getInstance();
-            $pdo->prepare(
-                "UPDATE reports SET situacao = 'liberado', liberado_em = NOW(), liberado_por = :uid
-                 WHERE id = :id"
-            )->execute(['uid' => Auth::userId(), 'id' => $reportId]);
-            try {
-                $pdo->prepare(
-                    "UPDATE bi_pacs_estudos
-                     SET situacao = 'liberado', laudo_assinado_em = NOW()
-                     WHERE id = :estudo_id"
-                )->execute(['estudo_id' => (int) $report->estudo_id]);
-            } catch (\PDOException $studyError) {
-                if (stripos($studyError->getMessage(), 'laudo_assinado_em') === false) throw $studyError;
-                Logger::warning('ReportsController::liberar sem laudo_assinado_em — migration pendente', ['error' => $studyError->getMessage()]);
-                $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = 'liberado' WHERE id = :estudo_id")
-                    ->execute(['estudo_id' => (int) $report->estudo_id]);
-            }
-            if (filter_var(getenv('PORTAL_IMAGES_PIPELINE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) {
-                try {
-                    (new \App\Services\PortalImagePreparationService($pdo))->enqueueReleasedReport($reportId);
-                } catch (\Throwable $imageQueueError) {
-                    Logger::error('ReportsController::liberar fila de imagens anonimizadas falhou', [
-                        'report_id' => $reportId,
-                        'error' => $imageQueueError->getMessage(),
-                    ]);
-                }
+            // Laudo já assinado: liberar não cria uma segunda assinatura. A
+            // transição central registra auditoria, versão e apenas os efeitos
+            // externos próprios de um laudo liberado.
+            $resultado = $this->reportService->liberarAssinado($reportId);
+            if (!$resultado['ok']) {
+                $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
+                return;
             }
             Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
-            $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
+            $this->json([
+                'ok' => true,
+                'situacao' => 'liberado',
+                'msg' => 'Laudo liberado com sucesso.',
+                'pdf_url' => $resultado['pdf_url'] ?? null,
+            ]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::liberar error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => 'Erro interno ao liberar laudo.'], 500);
