@@ -1,6 +1,8 @@
 <?php
 namespace App\Core;
 
+use App\Core\Access\ModuleAccess;
+
 class Router {
     private static array $routes = [];
 
@@ -61,6 +63,15 @@ class Router {
         if (strpos($uri, '/platform') === 0 && !Auth::isPlatformAdmin()) {
             self::renderErrorPage(403, 'Acesso Negado',
                 'Esta área é restrita a administradores da plataforma.');
+            exit;
+        }
+
+        // Barreira central: menu oculto não é controle de acesso. Quando uma
+        // rota pertence ao catálogo, a trava global, a empresa e a permissão
+        // individual precisam autorizar a mesma requisição.
+        if (!self::isPublicRoute($uri) && !ModuleAccess::canAccessUri($uri)) {
+            self::renderErrorPage(403, 'Acesso Negado',
+                'Este módulo não está habilitado para o seu usuário ou empresa.');
             exit;
         }
 

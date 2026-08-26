@@ -428,7 +428,7 @@ $periodoLabel = [
      .wl-pagination seja empurrado para a borda inferior (margin-top:auto)
      mesmo quando a tabela tem poucos resultados, em vez de "subir" junto com
      um corpo de tabela curto. Ver patterns/layout-rodape-fixo.md. -->
-<div class="wl-worklist-body">
+<div class="wl-worklist-body" id="wl-worklist-body">
 <!-- ═══════════════════════════════════════════════════════════ TABELA -->
 <div class="wl-table-wrap">
 <table class="wl-table">
@@ -451,7 +451,7 @@ $periodoLabel = [
             <th class="col-acoes">Ações</th>
         </tr>
     </thead>
-    <tbody>
+    <tbody id="wl-table-body">
     <?php if (empty($estudos)): ?>
         <tr>
                 <td colspan="13" class="wl-empty">
@@ -799,7 +799,7 @@ $periodoLabel = [
 </div>
 <!-- ═══════════════════════════════════════════════════════════ PAGINAÇÃO -->
 <?php if ($totalPages > 1 || $total > 0): ?>
-<div class="wl-pagination">
+<div class="wl-pagination" id="wl-pagination">
     <span class="wl-pag-info">
         <?php if ($filtros['por_pagina'] > 0 && $total > 0): ?>
             Mostrando <?= number_format(($currentPage-1)*$filtros['por_pagina']+1) ?>–<?= number_format(min($currentPage*$filtros['por_pagina'],$total)) ?>
@@ -833,6 +833,14 @@ $periodoLabel = [
 </div>
 <?php endif; ?>
 </div><!-- /.wl-worklist-body -->
+
+<?php if (!$modoGestao): ?>
+<div id="wl-refresh-config"
+     data-enabled="<?= !empty($worklistAutoRefresh['enabled']) ? '1' : '0' ?>"
+     data-seconds="<?= (int) ($worklistAutoRefresh['seconds'] ?? 60) ?>"
+     hidden></div>
+<script src="/assets/js/worklist-auto-refresh.js?v=20260826-configuravel-v1" defer></script>
+<?php endif; ?>
 
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
 <!-- ═══════════════════════════════════════════════════════════ MODAL PEDIDO -->
@@ -1704,6 +1712,7 @@ document.addEventListener('click', function(e) {
     if (!confirm('Assumir o estudo de ' + paciente + '?\nO status será alterado para A LAUDAR.')) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Assumindo...';
+    window.__worklistActionInProgress = true;
     fetch('/api/estudos/assumir', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
@@ -1759,6 +1768,9 @@ document.addEventListener('click', function(e) {
         alert('Erro de comunicação. Tente novamente.');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-hand-holding-medical"></i> Assumir';
+    })
+    .finally(() => {
+        window.__worklistActionInProgress = false;
     });
 });
 

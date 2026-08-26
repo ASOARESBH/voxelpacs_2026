@@ -28,6 +28,7 @@ Router::get('/dashboard', 'DashboardController@index');
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
 Router::get('/gestao-exames',           'EstudosController@gestao');
+Router::get('/api/estudos/worklist-fragmento', 'EstudosController@worklistFragmento');
 Router::get('/estudos/instalar',       'EstudosController@instalar');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
 Router::get('/estudos/{id}/abrir-radiant',      'EstudosController@abrirRadiant');

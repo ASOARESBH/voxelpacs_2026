@@ -153,13 +153,34 @@ class EstudosController extends Controller
         $this->renderWorklist(false);
     }
 
+    /**
+     * Atualização parcial da tabela de Estudos. Reutiliza integralmente os
+     * filtros, tenant, grupo/modalidade e permissões da Worklist principal.
+     */
+    public function worklistFragmento(): void
+    {
+        if (!Auth::check()) {
+            $this->json(['error' => 'unauthorized'], 401);
+        }
+        $this->renderWorklist(false, true);
+    }
+
     /** Worklist administrativa: mesmos filtros e estudos, sem abrir/laudar. */
     public function gestao(): void
     {
+        if (!Auth::check()) {
+            $this->redirect('/login');
+            return;
+        }
+        if (!Auth::hasModule('gestao_exames')) {
+            http_response_code(403);
+            require BASE_PATH . '/app/Views/errors/403.php';
+            return;
+        }
         $this->renderWorklist(true);
     }
 
-    private function renderWorklist(bool $modoGestao): void
+    private function renderWorklist(bool $modoGestao, bool $partial = false): void
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
@@ -658,18 +679,39 @@ class EstudosController extends Controller
         $urlWorklist          = $modoGestao ? '/gestao-exames' : '/estudos';
         $podeGerenciarPedido  = (new PedidoMedicoService())->podeGerenciar($tenantId, $bypassGlobal);
         $csrfToken             = $this->csrfToken();
+        $worklistAutoRefresh = ['enabled' => !$modoGestao, 'seconds' => 60];
+        if (!$modoGestao) {
+            try {
+                $refreshConfig = \App\Core\SystemConfig::getMany([
+                    'estudos_auto_refresh_ativo', 'estudos_auto_refresh_segundos',
+                ]);
+                $worklistAutoRefresh['enabled'] = ($refreshConfig['estudos_auto_refresh_ativo'] ?? '1') !== '0';
+                $worklistAutoRefresh['seconds'] = max(15, min(600, (int) ($refreshConfig['estudos_auto_refresh_segundos'] ?? 60)));
+            } catch (\Throwable $ex) {
+                Logger::warning('[EstudosController] Configuração global de refresh indisponível');
+            }
+        }
+
+        $viewData = compact(
+            'estudos','filtros','total','totalPages','currentPage',
+            'unidades','medicos','contadores','resumo',
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
+            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
+            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh'
+        );
+
+        if ($partial) {
+            ob_start();
+            $this->view('estudos/index', $viewData, '');
+            $html = ob_get_clean();
+            $this->json(['html' => $html, 'total' => $total, 'atualizado_em' => gmdate('c')]);
+        }
 
         // Impede que o browser (BFCache) sirva esta página do cache ao navegar
         // de volta — garante que filtros sempre reflitam a URL atual.
         header('Cache-Control: no-store, no-cache, must-revalidate');
         header('Pragma: no-cache');
-        $this->view('estudos/index', compact(
-            'estudos','filtros','total','totalPages','currentPage',
-            'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
-            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
-            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId'
-        ), 'pacs');
+        $this->view('estudos/index', $viewData, 'pacs');
     }
 
     public function abrir(int $id): void

@@ -39,38 +39,22 @@ class PedidoMedicoService
     }
 
     /**
-     * Gestão de pedido é administrativa: médico cadastrado não altera o anexo,
-     * mesmo que sua conta global tenha um papel com permissão de gestão.
+     * Gestão de pedido exige o módulo explícito de Gestão de Exames. A escolha
+     * por perfil é feita pelo administrador do tenant; escopo de empresa,
+     * grupo e modalidade continuam sendo conferidos nos endpoints do estudo.
      */
     public function podeGerenciar(?int $tenantId, bool $bypassGlobal): bool
     {
+        if (!Auth::hasModule('gestao_exames')) return false;
         if ($bypassGlobal) return true;
 
         // O perfil ativo no tenant é a autoridade para operações administrativas
         // da Gestão de Exames. O papel global pode ser "viewer" em contas
         // antigas compartilhadas entre tenants e não deve ocultar ações de um
         // administrador legítimo do tenant atual.
-        if (strtolower((string) Auth::perfilAtual()) === 'admin') return true;
-
-        if (!Auth::can('manage_pedidos')) return false;
-
         $userId = Auth::userId();
         if (!$tenantId || !$userId) return false;
-
-        try {
-            $stmt = Database::getInstance()->prepare(
-                'SELECT 1 FROM bi_medicos WHERE tenant_id = :tenant_id AND usuario_id = :usuario_id AND ativo = 1 LIMIT 1'
-            );
-            $stmt->execute(['tenant_id' => $tenantId, 'usuario_id' => $userId]);
-            return !$stmt->fetchColumn();
-        } catch (\Throwable $e) {
-            Logger::warning('[PedidoMedicoService::podeGerenciar] Falha ao identificar perfil médico', [
-                'tenant_id' => $tenantId,
-                'usuario_id'=> $userId,
-                'error'     => $e->getMessage(),
-            ]);
-            return false;
-        }
+        return true;
     }
 
     /** Retorna metadados prontos para a coluna da Worklist ou para o report. */

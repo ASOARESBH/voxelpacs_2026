@@ -7,6 +7,13 @@ use App\Core\Router;
 Router::get('/platform/dashboard', 'Platform\PlatformDashboardController@index');
 
 // ============================================================
+// Configuração global de módulos (somente superadmin)
+// ============================================================
+Router::get('/platform/configuracao-modulos',                 'Platform\ModuloConfiguracoesController@index');
+Router::post('/platform/configuracao-modulos/salvar',         'Platform\ModuloConfiguracoesController@salvarGlobal');
+Router::post('/platform/configuracao-modulos/estudos/salvar', 'Platform\ModuloConfiguracoesController@salvarEstudos');
+
+// ============================================================
 // Negócios (Multi-Tenant)
 // ============================================================
 Router::get('/platform/negocios',                       'Platform\NegociosController@index');

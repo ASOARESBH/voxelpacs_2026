@@ -113,6 +113,37 @@ class Auth {
         return Permission::can($user->role, $permission);
     }
 
+    /**
+     * Confirma se o módulo tenant-scoped está habilitado para o usuário atual.
+     * Superadmin e administrador do tenant mantêm o acesso administrativo
+     * implícito; os demais perfis exigem registro explícito em
+     * bi_user_permissoes para o tenant ativo.
+     */
+    public static function hasModule(string $module): bool {
+        $module = trim($module);
+        if ($module === '' || !self::check()) return false;
+        if (self::isPlatformAdmin() || self::perfilAtual() === 'admin') return true;
+
+        $tenantId = self::tenantId();
+        $userId   = self::userId();
+        if (!$tenantId || !$userId) return false;
+
+        try {
+            $stmt = Database::getInstance()->prepare(
+                'SELECT 1 FROM bi_user_permissoes WHERE user_id = ? AND tenant_id = ? AND modulo = ? LIMIT 1'
+            );
+            $stmt->execute([$userId, $tenantId, $module]);
+            return (bool) $stmt->fetchColumn();
+        } catch (\Throwable $e) {
+            Logger::warning('[Auth::hasModule] Falha ao verificar módulo', [
+                'user_id' => $userId,
+                'tenant_id' => $tenantId,
+                'module' => $module,
+            ]);
+            return false;
+        }
+    }
+
     public static function userTenants(): array {
         return $_SESSION['user_tenants'] ?? [];
     }

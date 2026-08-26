@@ -43,6 +43,13 @@ class View {
         }
         $content = ob_get_clean();
 
+        // Resposta parcial: controller pode capturar somente a view para APIs
+        // internas sem renderizar header/footer nem modificar o layout clínico.
+        if ($layout === '') {
+            echo $content;
+            return;
+        }
+
         // Renderiza header → conteúdo → footer
         $headerPath = __DIR__ . "/../Views/layout/{$layout}_header.php";
         $footerPath = __DIR__ . "/../Views/layout/{$layout}_footer.php";

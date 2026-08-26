@@ -24,6 +24,7 @@ class UsuariosController extends Controller
 {
     private const MODULOS = [
         'estudos'       => ['label' => 'Estudos / Worklist',  'icon' => 'fa-list-check'],
+        'gestao_exames' => ['label' => 'Gestão de Exames',     'icon' => 'fa-clipboard-list'],
         'agendamentos'  => ['label' => 'Agendamentos',        'icon' => 'fa-calendar-days'],
         'imagens_dicom' => ['label' => 'Imagens DICOM',       'icon' => 'fa-x-ray'],
         'medicos'       => ['label' => 'Médicos',             'icon' => 'fa-user-doctor'],
@@ -35,7 +36,7 @@ class UsuariosController extends Controller
     ];
 
     private const MODULOS_PADRAO = [
-        'admin'      => ['estudos','agendamentos','imagens_dicom','medicos','usuarios','configuracoes','relatorios','sla','financeiro'],
+        'admin'      => ['estudos','gestao_exames','agendamentos','imagens_dicom','medicos','usuarios','configuracoes','relatorios','sla','financeiro'],
         'medico'     => ['estudos','imagens_dicom'],
         'secretaria' => ['estudos','agendamentos','imagens_dicom'],
         'analista'   => ['estudos','agendamentos','imagens_dicom','medicos','relatorios','sla'],

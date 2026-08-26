@@ -80,3 +80,17 @@ O médico solicitante manual também segue o padrão institucional de **caixa al
 A Descrição do Estudo segue o padrão institucional de **caixa alta**. O formulário converte a digitação e valores colados imediatamente no navegador, inclusive caracteres acentuados. A camada `ModalidadeDescricaoService` reaplica a normalização Unicode antes de prévia, gravação individual, sugestão e aplicação em lote. Portanto, chamadas diretas à API ou clientes com JavaScript desativado não conseguem persistir uma descrição em minúsculas.
 
 O valor é submetido a remoção de tags, compactação de espaços, `mb_strtoupper(..., 'UTF-8')` e validação do limite existente de três a 255 caracteres. Os eventos de auditoria de descrição recebem o valor já padronizado, mantendo a rastreabilidade consistente sem modificar descrições históricas preexistentes.
+
+
+## Módulo habilitado Gestão de Exames
+
+O catálogo de **Módulos Habilitados** passou a disponibilizar a chave `gestao_exames`. O administrador do negócio pode conceder ou retirar esse módulo individualmente para os perfis não administrativos; a escolha é persistida em `bi_user_permissoes` no par obrigatório `tenant_id` e `user_id`.
+
+| Perfil e configuração | Acesso à Gestão de Exames |
+|---|---|
+| Superadmin da plataforma | Permitido, inclusive fora de impersonação; os estudos continuam com tenant efetivo e escopo de modalidade. |
+| Administrador do negócio | Permitido por padrão administrativo. |
+| Médico, secretaria, analista ou visualizador | Exige `gestao_exames` habilitado individualmente pelo administrador do negócio. |
+| Usuário sem o módulo | O item de menu fica oculto; a rota `/gestao-exames` responde 403 e os endpoints administrativos respondem 403. |
+
+A verificação central é `Auth::hasModule('gestao_exames')`. Ela é aplicada no menu lateral, na rota da Worklist administrativa, em `PedidoMedicoService::podeGerenciar()` e no proxy de arquivos. Os demais endpoints do submenu já passam pela autorização administrativa compartilhada. A concessão do módulo não remove as defesas existentes: `tenantEfetivoDoEstudo()` mantém o vínculo com a empresa, `GrupoModalidadeService` limita as modalidades do grupo e a operação em lote permanece restrita a administrador do negócio ou superadmin.
