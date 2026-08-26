@@ -82,3 +82,15 @@ Para evitar que dois médicos editem o mesmo laudo simultaneamente:
 2. Se outro médico tentar abrir, a interface entra em modo **Somente Leitura**.
 3. Um alerta amarelo informa quem está editando e desde que horas.
 4. O bloqueio expira automaticamente após 60 minutos de inatividade.
+
+## 8. Idade do paciente no cartão do Report
+
+O cartão de paciente calcula a idade a partir de `patient_birth_date` quando há uma data DICOM completa no formato `YYYYMMDD`. O cálculo usa a diferença entre a data de nascimento e a data atual, considerando dia e mês; por isso, não antecipa a idade antes do aniversário anual.
+
+| Situação da data de nascimento | Exibição de idade |
+|---|---|
+| Data DICOM completa, válida e não futura | Idade calculada em anos e data formatada em `dd/mm/aaaa`. |
+| Data ausente, parcial, inválida ou futura | Mantém o fallback `patient_age` quando o valor DICOM estiver disponível. |
+| Sem data válida e sem `patient_age` utilizável | Exibe `—`, sem inferir informação clínica. |
+
+Essa lógica é somente de apresentação do laudo. Ela não modifica `patient_birth_date`, `patient_age` ou qualquer registro DICOM no banco.
