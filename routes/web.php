@@ -237,6 +237,7 @@ Router::get('/reports/history',            'ReportsController@history');
 Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
 Router::get('/reports/r/{token}/pdf',         'ReportsController@pdfByToken');
 Router::get('/reports/r/{token}/assinatura',  'ReportsController@assinaturaImagemByToken');
+Router::get('/reports/r/{token}/pedido',      'ReportsController@pedidoByToken');
 Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
 Router::get('/reports/autotext',           'ReportsController@autotextSearch');

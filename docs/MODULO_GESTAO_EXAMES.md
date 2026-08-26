@@ -81,7 +81,6 @@ A Descrição do Estudo segue o padrão institucional de **caixa alta**. O formu
 
 O valor é submetido a remoção de tags, compactação de espaços, `mb_strtoupper(..., 'UTF-8')` e validação do limite existente de três a 255 caracteres. Os eventos de auditoria de descrição recebem o valor já padronizado, mantendo a rastreabilidade consistente sem modificar descrições históricas preexistentes.
 
-
 ## Módulo habilitado Gestão de Exames
 
 O catálogo de **Módulos Habilitados** passou a disponibilizar a chave `gestao_exames`. O administrador do negócio pode conceder ou retirar esse módulo individualmente para os perfis não administrativos; a escolha é persistida em `bi_user_permissoes` no par obrigatório `tenant_id` e `user_id`.
@@ -94,3 +93,15 @@ O catálogo de **Módulos Habilitados** passou a disponibilizar a chave `gestao_
 | Usuário sem o módulo | O item de menu fica oculto; a rota `/gestao-exames` responde 403 e os endpoints administrativos respondem 403. |
 
 A verificação central é `Auth::hasModule('gestao_exames')`. Ela é aplicada no menu lateral, na rota da Worklist administrativa, em `PedidoMedicoService::podeGerenciar()` e no proxy de arquivos. Os demais endpoints do submenu já passam pela autorização administrativa compartilhada. A concessão do módulo não remove as defesas existentes: `tenantEfetivoDoEstudo()` mantém o vínculo com a empresa, `GrupoModalidadeService` limita as modalidades do grupo e a operação em lote permanece restrita a administrador do negócio ou superadmin.
+
+## Separação entre Estudos, Gestão de Exames e Report
+
+A Worklist **Estudos** mantém somente o status visual de que existe pedido anexado. Ela não exibe link, botão ou URL de consulta do arquivo, mesmo para perfis que poderiam administrar o pedido. A consulta e a gestão administrativa do documento ficam concentradas em **Gestão de Exames**, protegidas pelo módulo individual `gestao_exames` e pelos controles de tenant, grupo e modalidade já existentes.
+
+No **Report**, o pedido permanece disponível para qualquer médico vinculado que já esteja autorizado a acessar o contexto clínico do laudo. A URL usa o token opaco do próprio Report em `/reports/r/{token}/pedido`; ela não depende de `gestao_exames` e não usa identificadores sequenciais em URL. Antes de servir o arquivo privado, a rota aplica `ReportAccessService` com tenant, vínculo médico, instituição autorizada e escopo clínico. A dispensa de posse exclusiva permite que um médico autorizado da mesma instituição consulte o pedido, mas não remove as barreiras entre empresas nem libera estudo fora da instituição permitida.
+
+| Superfície | Exposição do pedido |
+|---|---|
+| Estudos | Apenas o badge **Pedido anexado** ou **Não anexado**. |
+| Gestão de Exames | Consulta e administração segundo o módulo `gestao_exames` e os controles administrativos. |
+| Report | Consulta autenticada pelo token opaco do laudo para médico ou outro perfil já autorizado ao contexto clínico. |

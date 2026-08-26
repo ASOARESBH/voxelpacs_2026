@@ -57,11 +57,15 @@ class PedidoMedicoService
         return true;
     }
 
-    /** Retorna metadados prontos para a coluna da Worklist ou para o report. */
-    public function buscarPorEstudo(int $estudoId, int $tenantId): ?array
+    /**
+     * Retorna metadados prontos para Worklist, Gestão de Exames ou Report.
+     * A URL de consulta é contextual: a Worklist administrativa usa o proxy
+     * de Gestão de Exames; o Report usa seu token opaco e autorização clínica.
+     */
+    public function buscarPorEstudo(int $estudoId, int $tenantId, ?string $reportToken = null): ?array
     {
         $row = $this->repo->findByEstudoId($estudoId, $tenantId);
-        return $row ? $this->normalizarParaView($row) : null;
+        return $row ? $this->normalizarParaView($row, $reportToken) : null;
     }
 
     /**
@@ -247,12 +251,15 @@ class PedidoMedicoService
     }
 
     /** Converte um registro de banco em dados seguros para a view. */
-    public function normalizarParaView(array $pedido): array
+    public function normalizarParaView(array $pedido, ?string $reportToken = null): array
     {
         $tamanho = (int) ($pedido['tamanho_bytes'] ?? 0);
         $pedido['tamanho_formatado'] = $this->formatarTamanho($tamanho);
         $pedido['is_imagem'] = str_starts_with((string) ($pedido['mime_type'] ?? ''), 'image/');
-        $pedido['visualizar_url'] = '/api/gestao-exames/pedidos/' . (int) $pedido['id'] . '/arquivo';
+        $token = strtolower(trim((string) $reportToken));
+        $pedido['visualizar_url'] = preg_match('/^[a-f0-9]{48}$/', $token) === 1
+            ? '/reports/r/' . rawurlencode($token) . '/pedido'
+            : '/api/gestao-exames/pedidos/' . (int) $pedido['id'] . '/arquivo';
         return $pedido;
     }
 

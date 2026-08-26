@@ -121,8 +121,13 @@ class ReportService {
         $pedido = null;
         try {
             $tenantEstudo = (int) ($estudo->tenant_id ?? 0);
-            if ($tenantEstudo > 0) {
-                $pedido = (new PedidoMedicoService())->buscarPorEstudo((int) $estudo->id, $tenantEstudo);
+            $tokenReport = strtolower(trim((string) ($report->public_token ?? '')));
+            if ($tenantEstudo > 0 && preg_match('/^[a-f0-9]{48}$/', $tokenReport) === 1) {
+                $pedido = (new PedidoMedicoService())->buscarPorEstudo(
+                    (int) $estudo->id,
+                    $tenantEstudo,
+                    $tokenReport
+                );
             }
         } catch (\Throwable $e) {
             Logger::warning('[ReportService::carregarParaEdicao] Pedido não carregado', [

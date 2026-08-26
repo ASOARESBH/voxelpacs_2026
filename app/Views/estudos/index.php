@@ -621,9 +621,11 @@ $periodoLabel = [
                     <span class="pedido-anexado-badge" title="<?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>">
                         <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.status.anexado')) ?>
                     </span>
+                    <?php if ($modoGestao): ?>
                     <a class="pedido-consultar-link" href="/api/gestao-exames/pedidos/<?= (int) $e['pedido_id'] ?>/arquivo" target="_blank" rel="noopener">
                         <i class="fa fa-eye"></i> <?= htmlspecialchars(t('pedido_medico.acao.consultar')) ?>
                     </a>
+                    <?php endif; ?>
                 <?php else: ?>
                     <span class="wl-muted"><?= htmlspecialchars(t('pedido_medico.status.nao_anexado')) ?></span>
                 <?php endif; ?>

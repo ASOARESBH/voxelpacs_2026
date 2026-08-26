@@ -337,6 +337,66 @@ class ReportsController extends Controller
         $this->pdf();
     }
 
+    /**
+     * Proxy autenticado do pedido médico no contexto de um laudo.
+     * Não depende do módulo Gestão de Exames: médicos vinculados podem
+     * consultar o anexo quando passam no escopo clínico de Report.
+     */
+    public function pedidoByToken(string $token): void
+    {
+        if (!Auth::check()) {
+            $this->redirect('/login');
+            return;
+        }
+
+        // Para consulta do pedido, qualquer médico vinculado e autorizado à
+        // instituição pode acessar, sem exigir que tenha assumido o estudo.
+        $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token, false);
+        if (!$report) {
+            http_response_code(404);
+            return;
+        }
+
+        try {
+            $tenantId = (int) ($report->tenant_id ?? 0);
+            $estudoId = (int) ($report->estudo_id ?? 0);
+            if ($tenantId <= 0 || $estudoId <= 0) {
+                http_response_code(404);
+                return;
+            }
+
+            $pedidoService = new \App\Services\PedidoMedicoService();
+            $pedido = $pedidoService->buscarPorEstudo($estudoId, $tenantId);
+            if (!$pedido) {
+                http_response_code(404);
+                return;
+            }
+
+            $resultado = $pedidoService->obterArquivo((int) $pedido['id'], $tenantId, false);
+            if (!$resultado) {
+                http_response_code(404);
+                return;
+            }
+
+            $arquivo = $resultado['caminho'];
+            $pedido = $resultado['pedido'];
+            $nome = str_replace(["\r", "\n", '"'], '_', basename((string) ($pedido['nome_original'] ?? 'pedido_medico')));
+            $mime = (string) ($pedido['mime_type'] ?? 'application/octet-stream');
+
+            header('Content-Type: ' . $mime);
+            header('Content-Length: ' . (string) filesize($arquivo));
+            header('Content-Disposition: inline; filename="pedido_medico"; filename*=UTF-8\'\'' . rawurlencode($nome));
+            header('Cache-Control: private, no-store, max-age=0');
+            header('X-Content-Type-Options: nosniff');
+            readfile($arquivo);
+        } catch (\Throwable $e) {
+            Logger::error('[ReportsController::pedidoByToken] ' . $e->getMessage(), [
+                'usuario_id' => Auth::userId(),
+            ]);
+            http_response_code(500);
+        }
+    }
+
     /** Geração interna de PDF; não é exposta diretamente por rota pública. */
     public function pdf(): void
     {
