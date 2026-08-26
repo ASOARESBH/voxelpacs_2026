@@ -25,6 +25,12 @@ class GestaoExamesService
         $this->repo = $repo ?: new GestaoExamesRepository();
     }
 
+    /** Resolve o tenant efetivo do estudo respeitando o escopo da sessão ou bypass global. */
+    public function resolveTenantForStudy(int $studyId, ?int $sessionTenantId, bool $bypassGlobal): ?int
+    {
+        return $this->repo->findTenantIdForStudy($studyId, $sessionTenantId, $bypassGlobal);
+    }
+
     public function context(int $studyId, int $tenantId, int $currentUserId = 0): ?array
     {
         $study = $this->repo->findStudyContext($studyId, $tenantId);

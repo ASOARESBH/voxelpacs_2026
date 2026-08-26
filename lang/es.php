@@ -725,7 +725,7 @@ return [
     'gestao_gerenciar.msg.prioridade_alterada' => 'Prioridad cambiada y registrada en la auditoría.',
     'gestao_gerenciar.erro.nao_autenticado'  => 'Sesión no autenticada.',
     'gestao_gerenciar.erro.permissao'        => 'No tiene permiso para gestionar este estudio.',
-    'gestao_gerenciar.erro.tenant'           => 'Tenant no identificado.',
+    'gestao_gerenciar.erro.tenant'           => 'Este estudio aún no está vinculado a una empresa. Resuelva su enrutamiento antes de administrarlo.',
     'gestao_gerenciar.erro.csrf'             => 'Sesión expirada. Recargue la página e inténtelo de nuevo.',
     'gestao_gerenciar.erro.estudo'           => 'Estudio no encontrado en el tenant actual.',
     'gestao_gerenciar.erro.contexto'         => 'No se pudieron cargar las opciones de gestión.',

@@ -45,3 +45,16 @@ O diretório efetivo de armazenamento deve ter permissão de escrita para o usu�
 Foram executados lint PHP nos arquivos novos e alterados, teste estático de contrato em `tests/gestao_exames_static.php`, diagnóstico oficial de paridade i18n e `git diff --check`. O teste estático confirma as rotas, o branch administrativo sem ações médicas, a modal de importação/câmera, o contrato do upload, os filtros multi-tenant, a integração no report e a paridade das 364 chaves de idioma.
 
 A validação contra dados reais e a execução da migration no banco de produção dependem das credenciais e do ambiente de implantação, que não estão presentes no clone local.
+
+## Contexto efetivo no menu Gerenciar
+
+O menu **Gerenciar** recebe somente o identificador do estudo no navegador. A aplicação não usa esse identificador como autorização: antes de carregar chat, descrição, prioridade, pedido ou sugestões de modalidade, `GestaoExamesController` resolve a empresa efetiva pelo próprio estudo em `GestaoExamesService::resolveTenantForStudy()`.
+
+| Perfil e contexto | Regra de resolução | Resultado |
+|---|---|---|
+| Administrador ou analista com empresa ativa | O estudo deve pertencer ao `tenant_id` da sessão. | O contexto é carregado somente dentro da empresa selecionada. |
+| Superadmin de plataforma fora de impersonação | O estudo pode ser localizado sem empresa em sessão, mas precisa ter `tenant_id` persistido. | O controlador usa o tenant real do estudo em todas as consultas e gravações subsequentes. |
+| Médico ou perfil sem permissão administrativa | A autorização é negada antes de resolver o contexto. | Nenhum dado de gerenciamento é retornado. |
+| Estudo sem empresa ou fora do escopo | Não existe tenant efetivo utilizável. | A operação é negada; para superadmin a mensagem orienta resolver o roteamento, sem liberar alterações. |
+
+O padrão também é aplicado a anexo/remoção de pedido, prioridade, prévia e aplicação de descrição, alertas de prioridade e sugestões por modalidade. As camadas internas continuam recebendo um `tenant_id` obrigatório, o que evita ampliar consultas, writes ou auditorias entre empresas. O script do modal recebe versão própria para assegurar que a busca de sugestões também envie `estudo_id` e use o contexto resolvido no servidor.

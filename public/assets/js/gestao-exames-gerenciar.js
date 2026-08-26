@@ -302,7 +302,7 @@
             descriptionModal.show();
         }
         try {
-            const response = await fetch(`/api/gestao-exames/descricoes-por-modalidade?modalidade=${encodeURIComponent(modalidade)}`, {
+            const response = await fetch(`/api/gestao-exames/descricoes-por-modalidade?estudo_id=${encodeURIComponent(state.studyId)}&modalidade=${encodeURIComponent(modalidade)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
             });
             const payload = await response.json();

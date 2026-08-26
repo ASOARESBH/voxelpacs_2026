@@ -45,6 +45,8 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => t('pedido_medico.erro.sem_permissao')], 403);
             return;
         }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         if (!$this->validarCsrf($_POST['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
             $this->json(['ok' => false, 'msg' => t('pedido_medico.erro.csrf')], 403);
             return;
@@ -57,7 +59,7 @@ class GestaoExamesController extends Controller
         try {
             $resultado = $this->service->anexar(
                 $estudoId,
-                Auth::tenantId(),
+                $tenantId,
                 Auth::isPlatformAdmin() && !Auth::isImpersonating(),
                 $_FILES['pedido'],
                 (int) (Auth::userId() ?? 0)
@@ -74,7 +76,7 @@ class GestaoExamesController extends Controller
             AuditLogger::log('pedido.anexado', 'bi_pacs_estudos', $estudoId, [
                 'substituido' => (bool) $resultado['substituido'],
                 'possui_anexo' => true,
-            ], (int) Auth::tenantId(), 'gestao_estudos');
+            ], $tenantId, 'gestao_estudos');
             $this->json([
                 'ok'          => true,
                 'msg'         => $resultado['substituido']
@@ -105,6 +107,8 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => t('pedido_medico.erro.sem_permissao')], 403);
             return;
         }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
 
         $input = $this->inputJsonOuPost();
         if (!$this->validarCsrf($input['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
@@ -115,7 +119,7 @@ class GestaoExamesController extends Controller
         try {
             $resultado = $this->service->remover(
                 $estudoId,
-                Auth::tenantId(),
+                $tenantId,
                 Auth::isPlatformAdmin() && !Auth::isImpersonating(),
                 (int) (Auth::userId() ?? 0)
             );
@@ -126,7 +130,7 @@ class GestaoExamesController extends Controller
                 ], $this->statusErro($resultado['error'] ?? null));
                 return;
             }
-            AuditLogger::log('pedido.removido', 'bi_pacs_estudos', $estudoId, [], (int) Auth::tenantId(), 'gestao_estudos');
+            AuditLogger::log('pedido.removido', 'bi_pacs_estudos', $estudoId, [], $tenantId, 'gestao_estudos');
             $this->json(['ok' => true, 'msg' => t('pedido_medico.msg.removido')]);
         } catch (\Throwable $e) {
             Logger::error('[GestaoExamesController::remover] ' . $e->getMessage(), [
@@ -144,11 +148,8 @@ class GestaoExamesController extends Controller
     public function gerenciarContext(int $estudoId): void
     {
         if (!$this->autorizadoGerenciar()) return;
-        $tenantId = (int) (Auth::tenantId() ?? 0);
-        if ($tenantId <= 0) {
-            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.tenant')], 403);
-            return;
-        }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
 
         try {
             $context = $this->gerenciarService->context($estudoId, $tenantId, (int) Auth::userId());
@@ -179,13 +180,10 @@ class GestaoExamesController extends Controller
             return;
         }
 
-        $tenantId = (int) (Auth::tenantId() ?? 0);
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
         $priority = (string) ($input['prioridade'] ?? '');
         $reason = (string) ($input['motivo'] ?? '');
-        if ($tenantId <= 0) {
-            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.tenant')], 403);
-            return;
-        }
+        if ($tenantId === null) return;
 
         try {
             $result = $this->gerenciarService->changePriority(
@@ -225,12 +223,13 @@ class GestaoExamesController extends Controller
     public function destinatariosPrioridade(int $estudoId): void
     {
         if (!$this->autorizadoGerenciar()) return;
-        $tenantId = (int) (Auth::tenantId() ?? 0);
         $priority = strtoupper(trim((string) ($_GET['prioridade'] ?? '')));
-        if ($tenantId <= 0 || !in_array($priority, ['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'], true)) {
+        if (!in_array($priority, ['STAT', 'HIGH', 'ROUTINE', 'MEDIUM', 'LOW'], true)) {
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.contexto')], 422);
             return;
         }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         try {
             $context = $this->gerenciarService->context($estudoId, $tenantId, (int) Auth::userId());
             if (!$context) {
@@ -248,12 +247,10 @@ class GestaoExamesController extends Controller
     public function descricoesPorModalidade(): void
     {
         if (!$this->autorizadoGerenciar()) return;
-        $tenantId = (int) (Auth::tenantId() ?? 0);
+        $estudoId = (int) ($_GET['estudo_id'] ?? 0);
         $modalidade = (string) ($_GET['modalidade'] ?? '');
-        if ($tenantId <= 0) {
-            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.tenant')], 403);
-            return;
-        }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         try {
             $this->json(['ok' => true, 'sugestoes' => $this->descricaoService->suggestions($tenantId, $modalidade)]);
         } catch (\Throwable $e) {
@@ -275,7 +272,8 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.csrf')], 403);
             return;
         }
-        $tenantId = (int) (Auth::tenantId() ?? 0);
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         $result = $this->descricaoService->applySingle(
             $estudoId,
             $tenantId,
@@ -307,9 +305,11 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.csrf')], 403);
             return;
         }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         $result = $this->descricaoService->previewBatch(
             $estudoId,
-            (int) (Auth::tenantId() ?? 0),
+            $tenantId,
             (string) ($input['descricao'] ?? '')
         );
         if (!$result['ok']) {
@@ -333,9 +333,11 @@ class GestaoExamesController extends Controller
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.descricao.erro.confirmacao')], 422);
             return;
         }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
         $result = $this->descricaoService->applyBatch(
             $estudoId,
-            (int) (Auth::tenantId() ?? 0),
+            $tenantId,
             (int) (Auth::userId() ?? 0),
             (string) ($input['descricao'] ?? '')
         );
@@ -346,7 +348,7 @@ class GestaoExamesController extends Controller
         AuditLogger::log('estudo.descricao_lote_alterada', 'bi_pacs_estudos', $estudoId, [
             'modalidade' => $result['modalidade'] ?? null,
             'total_afetado' => (int) ($result['total'] ?? 0),
-        ], (int) Auth::tenantId(), 'gestao_estudos');
+        ], $tenantId, 'gestao_estudos');
         $this->json([
             'ok' => true,
             'msg' => t('gestao_gerenciar.descricao.msg.lote_aplicado'),
@@ -395,6 +397,21 @@ class GestaoExamesController extends Controller
             ]);
             http_response_code(500);
         }
+    }
+
+    private function tenantEfetivoDoEstudo(int $estudoId): ?int
+    {
+        $sessionTenantId = Auth::tenantId();
+        $bypassGlobal = Auth::isPlatformAdmin() && !Auth::isImpersonating();
+        $tenantId = $this->gerenciarService->resolveTenantForStudy($estudoId, $sessionTenantId, $bypassGlobal);
+        if ($tenantId !== null) return $tenantId;
+
+        // Perfis comuns recebem uma resposta neutra; não há enumeração de estudos externos.
+        $message = $bypassGlobal && !$sessionTenantId
+            ? t('gestao_gerenciar.erro.tenant')
+            : t('gestao_gerenciar.erro.estudo');
+        $this->json(['ok' => false, 'msg' => $message], 404);
+        return null;
     }
 
     private function autorizadoGerenciar(): bool

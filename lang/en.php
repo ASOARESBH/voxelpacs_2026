@@ -725,7 +725,7 @@ return [
     'gestao_gerenciar.msg.prioridade_alterada' => 'Priority changed and recorded in the audit trail.',
     'gestao_gerenciar.erro.nao_autenticado'  => 'Unauthenticated session.',
     'gestao_gerenciar.erro.permissao'        => 'You do not have permission to manage this study.',
-    'gestao_gerenciar.erro.tenant'           => 'Tenant not identified.',
+    'gestao_gerenciar.erro.tenant'           => 'This study is not yet linked to a business. Resolve its routing before managing it.',
     'gestao_gerenciar.erro.csrf'             => 'Session expired. Reload the page and try again.',
     'gestao_gerenciar.erro.estudo'           => 'Study not found in the current tenant.',
     'gestao_gerenciar.erro.contexto'         => 'The management options could not be loaded.',

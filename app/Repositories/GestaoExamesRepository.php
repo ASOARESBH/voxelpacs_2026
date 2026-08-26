@@ -27,6 +27,29 @@ class GestaoExamesRepository
         return $this->pdo;
     }
 
+    /**
+     * Resolve a empresa do estudo antes de chamar serviços que exigem tenant.
+     * Fora do bypass global, a sessão continua sendo uma condição obrigatória.
+     */
+    public function findTenantIdForStudy(int $studyId, ?int $tenantId, bool $bypassGlobal): ?int
+    {
+        if ($studyId <= 0) return null;
+
+        $where = 'id = :study_id AND tenant_id IS NOT NULL';
+        $params = ['study_id' => $studyId];
+        if ($tenantId !== null && $tenantId > 0) {
+            $where .= ' AND tenant_id = :tenant_id';
+            $params['tenant_id'] = $tenantId;
+        } elseif (!$bypassGlobal) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare("SELECT tenant_id FROM bi_pacs_estudos WHERE {$where} LIMIT 1");
+        $stmt->execute($params);
+        $resolved = (int) ($stmt->fetchColumn() ?: 0);
+        return $resolved > 0 ? $resolved : null;
+    }
+
     public function findStudyContext(int $studyId, int $tenantId): ?array
     {
         $sql = "

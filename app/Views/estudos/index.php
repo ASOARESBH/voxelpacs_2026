@@ -2219,5 +2219,5 @@ function resetDownloadUI() {
 }());
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260811-2"></script>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-tenant-context"></script>
 <?php endif; ?>
