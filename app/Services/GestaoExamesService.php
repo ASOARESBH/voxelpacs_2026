@@ -10,7 +10,6 @@ use App\Repositories\GestaoExamesRepository;
 
 /**
  * Regras administrativas da tela Gestão de Exames.
- *
  * A prioridade exibida é a efetiva: override operacional quando houver,
  * senão a tag DICOM bruta importada do Orthanc.
  */
@@ -25,7 +24,7 @@ class GestaoExamesService
         $this->repo = $repo ?: new GestaoExamesRepository();
     }
 
-    /** Resolve o tenant efetivo do estudo respeitando o escopo da sessão ou bypass global. */
+    /** Resolve a empresa efetiva do estudo respeitando o escopo da sessão ou bypass global. */
     public function resolveTenantForStudy(int $studyId, ?int $sessionTenantId, bool $bypassGlobal): ?int
     {
         return $this->repo->findTenantIdForStudy($studyId, $sessionTenantId, $bypassGlobal);
@@ -43,12 +42,9 @@ class GestaoExamesService
 
         $chat = null;
         if ((int) ($study['report_id'] ?? 0) > 0) {
-            $chatService = new ReportChatService();
-            $chat = $chatService->context((int) $study['report_id'], $tenantId, $currentUserId);
+            $chat = (new ReportChatService())->context((int) $study['report_id'], $tenantId, $currentUserId);
         }
-        if (is_array($chat) && ($chat['status'] ?? '') === 'pendente') {
-            $chatPending = true;
-        }
+        if (is_array($chat) && ($chat['status'] ?? '') === 'pendente') $chatPending = true;
         $chatCanInteract = !is_array($chat) || ($chat['can_interact'] ?? true) !== false;
         $chatCanComplete = !is_array($chat) || ($chat['can_complete'] ?? true) !== false;
 
@@ -61,6 +57,8 @@ class GestaoExamesService
             'modalidade' => $this->primaryModality((string) ($study['modalities'] ?? '')),
             'study_description' => (string) ($study['study_description'] ?? ''),
             'study_description_manual' => !empty($study['study_description_manual']),
+            'requesting_physician' => (string) ($study['medico_solicitante_exibicao'] ?? ''),
+            'requesting_physician_manual' => (string) ($study['medico_solicitante_manual'] ?? ''),
             'situacao' => (string) ($study['situacao'] ?? 'novo'),
             'report_id' => (int) ($study['report_id'] ?? 0),
             'report_situacao' => $reportSituacao,
@@ -85,24 +83,13 @@ class GestaoExamesService
         ];
     }
 
-    public function changePriority(
-        int $studyId,
-        int $tenantId,
-        int $userId,
-        string $priority,
-        string $reason
-    ): array {
+    public function changePriority(int $studyId, int $tenantId, int $userId, string $priority, string $reason): array
+    {
         $priority = strtoupper(trim($priority));
         $reason = trim($reason);
-        if (!in_array($priority, self::PRIORITIES, true)) {
-            return ['ok' => false, 'error' => 'prioridade_invalida'];
-        }
-        if (mb_strlen($reason, 'UTF-8') < 20) {
-            return ['ok' => false, 'error' => 'motivo_curto'];
-        }
-        if (mb_strlen($reason, 'UTF-8') > 1000) {
-            return ['ok' => false, 'error' => 'motivo_longo'];
-        }
+        if (!in_array($priority, self::PRIORITIES, true)) return ['ok' => false, 'error' => 'prioridade_invalida'];
+        if (mb_strlen($reason, 'UTF-8') < 20) return ['ok' => false, 'error' => 'motivo_curto'];
+        if (mb_strlen($reason, 'UTF-8') > 1000) return ['ok' => false, 'error' => 'motivo_longo'];
 
         $pdo = $this->repo->pdo();
         try {
@@ -116,34 +103,17 @@ class GestaoExamesService
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_pendente'];
             }
-
             $previous = strtoupper(trim((string) ($study['prioridade_efetiva'] ?? 'ROUTINE')));
             if (!in_array($previous, self::PRIORITIES, true)) $previous = 'ROUTINE';
             if ($previous === $priority) {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'prioridade_igual'];
             }
-
             $this->repo->updatePriorityOverride($studyId, $tenantId, $priority);
             $auditId = $this->repo->addPriorityAudit(
-                $studyId,
-                $tenantId,
-                (string) ($study['dicom_priority'] ?? ''),
-                $previous,
-                $priority,
-                $reason,
-                $userId
+                $studyId, $tenantId, (string) ($study['dicom_priority'] ?? ''), $previous, $priority, $reason, $userId
             );
             $pdo->commit();
-
-            Logger::info('[GestaoExamesService::changePriority] prioridade alterada', [
-                'study_id' => $studyId,
-                'tenant_id' => $tenantId,
-                'user_id' => $userId,
-                'previous' => $previous,
-                'next' => $priority,
-                'audit_id' => $auditId,
-            ]);
 
             AuditLogger::logChange(
                 'prioridade.alterada',
@@ -164,24 +134,76 @@ class GestaoExamesService
                     'error' => $notificationError->getMessage(),
                 ]);
             }
-
-            return [
-                'ok' => true,
-                'audit_id' => $auditId,
-                'priority' => $priority,
-                'label' => $this->priorityLabel($priority),
-                'alerts' => $alerts,
-            ];
+            return ['ok' => true, 'audit_id' => $auditId, 'priority' => $priority, 'label' => $this->priorityLabel($priority), 'alerts' => $alerts];
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             Logger::error('[GestaoExamesService::changePriority] falha', [
-                'study_id' => $studyId,
-                'tenant_id' => $tenantId,
-                'user_id' => $userId,
-                'error' => $e->getMessage(),
+                'study_id' => $studyId, 'tenant_id' => $tenantId, 'user_id' => $userId, 'error' => $e->getMessage(),
             ]);
             return ['ok' => false, 'error' => 'persistencia_falhou'];
         }
+    }
+
+    /** Mantém a sobrescrita administrativa separada da tag DICOM original. */
+    public function changeRequestingPhysician(int $studyId, int $tenantId, int $userId, string $value): array
+    {
+        $value = preg_replace('/\s+/u', ' ', trim($value)) ?? '';
+        if ($value !== '' && (mb_strlen($value, 'UTF-8') < 3 || mb_strlen($value, 'UTF-8') > 180)) {
+            return ['ok' => false, 'error' => 'solicitante_invalido'];
+        }
+        if ($value !== '' && preg_match('/[\x00-\x1F\x7F]/u', $value)) return ['ok' => false, 'error' => 'solicitante_invalido'];
+
+        $pdo = $this->repo->pdo();
+        try {
+            $pdo->beginTransaction();
+            $study = $this->repo->lockStudyContext($studyId, $tenantId);
+            if (!$study) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
+            if ((string) ($study['situacao'] ?? '') === 'pendente') {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'chat_pendente'];
+            }
+            $before = trim((string) ($study['medico_solicitante_manual'] ?? ''));
+            if ($before === $value) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'solicitante_igual'];
+            }
+            $this->repo->updateManualRequestingPhysician($studyId, $tenantId, $value !== '' ? $value : null, $userId);
+            $auditId = $this->repo->addManualRequestingPhysicianAudit(
+                $studyId, $tenantId, $before !== '' ? $before : null, $value !== '' ? $value : null, $userId
+            );
+            $pdo->commit();
+            AuditLogger::logChange(
+                'estudo.medico_solicitante_alterado',
+                'bi_pacs_estudos',
+                $studyId,
+                ['sobrescrita_manual' => $before !== ''],
+                ['sobrescrita_manual' => $value !== '', 'audit_id' => $auditId],
+                $tenantId,
+                'gestao_estudos'
+            );
+            return ['ok' => true, 'value' => $value, 'audit_id' => $auditId];
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('[GestaoExamesService::changeRequestingPhysician] falha', [
+                'study_id' => $studyId, 'tenant_id' => $tenantId, 'user_id' => $userId, 'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => 'persistencia_falhou'];
+        }
+    }
+
+    /** Reaplica no endpoint o mesmo escopo de modalidade imposto à Worklist. */
+    public function canAccessStudyModalities(int $studyId, int $tenantId, int $userId, bool $bypassGlobal): bool
+    {
+        if ($bypassGlobal) return true;
+        if ($userId <= 0) return false;
+        $groups = new GrupoModalidadeService();
+        $scope = $groups->scopeForUser($userId, $tenantId);
+        if (empty($scope['restricted'])) return true;
+        $modalities = $this->repo->findStudyModalities($studyId, $tenantId);
+        return $modalities !== null && $groups->allowsStoredModalities($modalities, $scope);
     }
 
     private function priorityAudit(int $studyId, int $tenantId): array
@@ -190,9 +212,7 @@ class GestaoExamesService
             return $this->repo->listPriorityAudit($studyId, $tenantId);
         } catch (\Throwable $e) {
             Logger::warning('[GestaoExamesService::priorityAudit] migration ausente ou consulta indisponível', [
-                'study_id' => $studyId,
-                'tenant_id' => $tenantId,
-                'error' => $e->getMessage(),
+                'study_id' => $studyId, 'tenant_id' => $tenantId, 'error' => $e->getMessage(),
             ]);
             return [];
         }
@@ -200,10 +220,7 @@ class GestaoExamesService
 
     private function priorityOptions(): array
     {
-        return array_map(fn(string $value): array => [
-            'value' => $value,
-            'label' => $this->priorityLabel($value),
-        ], self::PRIORITIES);
+        return array_map(fn(string $value): array => ['value' => $value, 'label' => $this->priorityLabel($value)], self::PRIORITIES);
     }
 
     private function priorityLabel(string $value): string
@@ -221,25 +238,18 @@ class GestaoExamesService
     private function primaryModality(string $modalities): string
     {
         $modalities = strtoupper(trim($modalities));
-        if (preg_match('/[A-Z0-9]{1,16}/', $modalities, $matches)) {
-            return (string) $matches[0];
-        }
-        return '';
+        return preg_match('/[A-Z0-9]{1,16}/', $modalities, $matches) ? (string) $matches[0] : '';
     }
 
     private function reportUrl(string $publicToken): ?string
     {
         $publicToken = strtolower(trim($publicToken));
-        return preg_match('/^[a-f0-9]{48}$/', $publicToken)
-            ? '/reports/r/' . rawurlencode($publicToken) . '?origem=gestao'
-            : null;
+        return preg_match('/^[a-f0-9]{48}$/', $publicToken) ? '/reports/r/' . rawurlencode($publicToken) . '?origem=gestao' : null;
     }
 
     private function pdfUrl(string $publicToken): ?string
     {
         $publicToken = strtolower(trim($publicToken));
-        return preg_match('/^[a-f0-9]{48}$/', $publicToken)
-            ? '/reports/r/' . rawurlencode($publicToken) . '/pdf'
-            : null;
+        return preg_match('/^[a-f0-9]{48}$/', $publicToken) ? '/reports/r/' . rawurlencode($publicToken) . '/pdf' : null;
     }
 }

@@ -26,7 +26,7 @@ class AuditLogger {
                 'action'    => $action,
                 'entity'    => $entity,
                 'entity_id' => $entityId,
-                'details'   => json_encode(self::sanitize($details), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'details'   => json_encode(self::sanitize(array_merge($details, self::actorContext($tenantId))), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'ip'        => $context['ip'],
                 'category'  => $category ?? self::categoryFor($action),
                 'request_id'=> $context['request_id'],
@@ -71,5 +71,26 @@ class AuditLogger {
             }
         }
         return $clean;
+    }
+
+    /** Contexto administrativo mínimo, sem nomes ou conteúdo clínico, para auditorias rastreáveis. */
+    private static function actorContext(?int $tenantId): array
+    {
+        $userId = (int) (Auth::userId() ?? 0);
+        $context = [
+            'perfil_efetivo' => strtolower(trim((string) Auth::perfilAtual())),
+            'admin_plataforma' => Auth::isPlatformAdmin() && !Auth::isImpersonating(),
+        ];
+        if ($userId <= 0 || !$tenantId) return $context;
+        try {
+            $stmt = Database::getInstance()->prepare(
+                'SELECT grupo_id FROM bi_grupo_usuarios WHERE tenant_id = :tenant_id AND usuario_id = :user_id ORDER BY grupo_id ASC LIMIT 25'
+            );
+            $stmt->execute(['tenant_id' => $tenantId, 'user_id' => $userId]);
+            $context['grupo_ids_efetivos'] = array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: []);
+        } catch (\Throwable) {
+            $context['grupo_ids_efetivos'] = [];
+        }
+        return $context;
     }
 }

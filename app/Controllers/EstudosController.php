@@ -298,7 +298,7 @@ class EstudosController extends Controller
             $where,
             $params,
             $filtros['especialidade'],
-            ['e.especialidade', 'e.referring_physician_name']
+            ['e.medico_solicitante_manual', 'e.especialidade', 'e.referring_physician_name']
         );
         if ($filtros['situacao'] !== '') {
             $where[]  = "COALESCE(e.situacao,'novo') = ?";
@@ -417,6 +417,7 @@ class EstudosController extends Controller
                     e.study_description,
                     e.accession_number,
                     e.referring_physician_name,
+                    e.medico_solicitante_manual,
                     e.performing_physician_name,
                     e.num_series,
                     e.num_instances,

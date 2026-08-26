@@ -52,6 +52,7 @@ Router::post('/api/gestao-exames/estudos/{id}/descricao',       'GestaoExamesCon
 Router::post('/api/gestao-exames/estudos/{id}/descricao/previa-lote', 'GestaoExamesController@previaDescricaoLote');
 Router::post('/api/gestao-exames/estudos/{id}/descricao/lote',  'GestaoExamesController@alterarDescricaoLote');
 Router::post('/api/gestao-exames/estudos/{id}/prioridade',      'GestaoExamesController@alterarPrioridade');
+Router::post('/api/gestao-exames/estudos/{id}/medico-solicitante', 'GestaoExamesController@alterarMedicoSolicitante');
 Router::post('/api/gestao-exames/estudos/{id}/pedido',          'GestaoExamesController@anexar');
 Router::post('/api/gestao-exames/estudos/{id}/pedido/remover',  'GestaoExamesController@remover');
 Router::get('/api/gestao-exames/pedidos/{id}/arquivo',         'GestaoExamesController@arquivo');

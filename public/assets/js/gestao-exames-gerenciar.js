@@ -53,6 +53,14 @@
         element.style.display = message ? 'block' : 'none';
     }
 
+    function showRequestingPhysicianStatus(message, type = 'danger') {
+        const element = $('#gerenciarSolicitanteStatus');
+        if (!element) return;
+        element.className = `alert alert-${type} py-2 small`;
+        element.textContent = message || '';
+        element.style.display = message ? 'block' : 'none';
+    }
+
     function csrfToken() {
         return state.csrf
             || document.querySelector('#gerenciarDescricaoForm input[name="csrf"]')?.value
@@ -172,11 +180,13 @@
         const chatButton = $('#gerenciarChat');
         const descriptionButton = $('#gerenciarDescricao');
         const priorityButton = $('#gerenciarPrioridade');
+        const requestingPhysicianButton = $('#gerenciarSolicitante');
         const badge = $('#gerenciarChatBadge');
         const lockNotice = $('#gerenciarLockNotice');
         const pending = Boolean(context?.chat_pending);
         if (badge) badge.style.display = pending ? 'inline-flex' : 'none';
         if (priorityButton) priorityButton.disabled = pending;
+        if (requestingPhysicianButton) requestingPhysicianButton.disabled = pending;
         if (lockNotice) lockNotice.style.display = pending ? 'block' : 'none';
         if (chatButton) chatButton.disabled = !state.reportId;
         if (descriptionButton) descriptionButton.disabled = !context?.modalidade;
@@ -185,6 +195,8 @@
         $('#gerenciarPrioridadeDesc').textContent = context?.priority?.effective
             ? priorityLabel(context.priority)
             : text('prioridade');
+        const requesterDetail = $('#gerenciarSolicitanteDesc');
+        if (requesterDetail) requesterDetail.textContent = context?.requesting_physician || text('solicitanteSemInformacao');
 
         const chat = context?.chat || null;
         renderChatHistory(chat);
@@ -370,6 +382,30 @@
         loadPriorityRecipients();
     }
 
+    function openRequestingPhysicianModal() {
+        if (!state.studyId || state.context?.chat_pending) return;
+        $('#gerenciarSolicitanteInput').value = state.context?.requesting_physician_manual || '';
+        showRequestingPhysicianStatus('', 'info');
+        modal('gerenciarSolicitanteModal')?.show();
+    }
+
+    async function saveRequestingPhysician(event) {
+        event.preventDefault();
+        if (!state.studyId || state.context?.chat_pending) return;
+        const value = String($('#gerenciarSolicitanteInput').value || '').trim();
+        const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/medico-solicitante`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ medico_solicitante: value, csrf: csrfToken() })
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+        modal('gerenciarSolicitanteModal')?.hide();
+        window.location.reload();
+    }
+
     async function loadPriorityRecipients() {
         const box = $('#gerenciarPrioridadeDestinatarios');
         const list = $('#gerenciarPrioridadeDestinatariosLista');
@@ -441,6 +477,7 @@
             modal('gerenciarModal')?.show();
         });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
+        $('#gerenciarSolicitante')?.addEventListener('click', openRequestingPhysicianModal);
         $('#gerenciarPrioridadeSelect')?.addEventListener('change', loadPriorityRecipients);
         $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
@@ -461,6 +498,9 @@
                 $('#gerenciarPrioridadeErro').textContent = error.message || text('erroOperacao');
                 $('#gerenciarPrioridadeErro').style.display = 'block';
             });
+        });
+        $('#gerenciarSolicitanteForm')?.addEventListener('submit', (event) => {
+            saveRequestingPhysician(event).catch((error) => showRequestingPhysicianStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarPrioridadeMotivo')?.addEventListener('input', (event) => {
             $('#gerenciarPrioridadeCount').textContent = `${event.target.value.length}/20`;

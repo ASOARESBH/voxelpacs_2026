@@ -158,6 +158,10 @@ class GestaoExamesController extends Controller
                 return;
             }
             $context['can_apply_description_batch'] = $this->podeAplicarLoteDescricao();
+            AuditLogger::log('estudo.gerenciamento_visualizado', 'bi_pacs_estudos', $estudoId, [
+                'origem' => 'gestao_exames',
+                'recursos' => ['chat', 'descricao', 'prioridade', 'medico_solicitante', 'pedido'],
+            ], $tenantId, 'gestao_estudos');
             $this->json(['ok' => true, 'context' => $context]);
         } catch (\Throwable $e) {
             Logger::error('[GestaoExamesController::gerenciarContext] falha', [
@@ -217,6 +221,35 @@ class GestaoExamesController extends Controller
             ]);
             $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.persistencia')], 500);
         }
+    }
+
+    /** Grava somente a sobrescrita administrativa do médico solicitante, sem alterar a tag DICOM de origem. */
+    public function alterarMedicoSolicitante(int $estudoId): void
+    {
+        if (!$this->autorizadoGerenciar()) return;
+        $input = $this->inputJsonOuPost();
+        if (!$this->validarCsrf($input['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.csrf')], 403);
+            return;
+        }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
+        $result = $this->gerenciarService->changeRequestingPhysician(
+            $estudoId,
+            $tenantId,
+            (int) (Auth::userId() ?? 0),
+            (string) ($input['medico_solicitante'] ?? '')
+        );
+        if (!$result['ok']) {
+            $this->json(['ok' => false, 'msg' => $this->mensagemGerenciar($result['error'] ?? null)], $this->statusGerenciar($result['error'] ?? null));
+            return;
+        }
+        $this->json([
+            'ok' => true,
+            'msg' => t('gestao_gerenciar.solicitante.msg.salvo'),
+            'value' => $result['value'],
+            'audit_id' => $result['audit_id'],
+        ]);
     }
 
     /** Prévia sem disparo dos grupos que receberão um alerta para a prioridade escolhida. */
@@ -404,7 +437,12 @@ class GestaoExamesController extends Controller
         $sessionTenantId = Auth::tenantId();
         $bypassGlobal = Auth::isPlatformAdmin() && !Auth::isImpersonating();
         $tenantId = $this->gerenciarService->resolveTenantForStudy($estudoId, $sessionTenantId, $bypassGlobal);
-        if ($tenantId !== null) return $tenantId;
+        if ($tenantId !== null && $this->gerenciarService->canAccessStudyModalities(
+            $estudoId,
+            $tenantId,
+            (int) (Auth::userId() ?? 0),
+            $bypassGlobal
+        )) return $tenantId;
 
         // Perfis comuns recebem uma resposta neutra; não há enumeração de estudos externos.
         $message = $bypassGlobal && !$sessionTenantId
@@ -481,6 +519,8 @@ class GestaoExamesController extends Controller
             'motivo_curto' => t('gestao_gerenciar.erro.motivo_curto'),
             'motivo_longo' => t('gestao_gerenciar.erro.motivo_longo'),
             'prioridade_igual' => t('gestao_gerenciar.erro.prioridade_igual'),
+            'solicitante_invalido' => t('gestao_gerenciar.solicitante.erro.invalido'),
+            'solicitante_igual' => t('gestao_gerenciar.solicitante.erro.igual'),
             'chat_pendente' => t('gestao_gerenciar.erro.chat_pendente'),
             'estudo_nao_encontrado' => t('gestao_gerenciar.erro.estudo'),
             'persistencia_falhou' => t('gestao_gerenciar.erro.persistencia'),

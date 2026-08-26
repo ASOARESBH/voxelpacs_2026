@@ -46,7 +46,7 @@ class ReportChatRepository
     {
         $params = ['report_id' => $reportId, 'tenant_id' => $tenantId];
         $sql = 'SELECT r.id AS report_id, r.estudo_id, r.public_token,
-                       e.patient_name, e.study_description,
+                       e.patient_name, e.study_description, e.modalities,
                        COALESCE(r.situacao, e.situacao, "novo") AS situacao,
                        r.situacao AS report_situacao
                   FROM reports r

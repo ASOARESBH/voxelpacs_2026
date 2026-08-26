@@ -58,3 +58,17 @@ O menu **Gerenciar** recebe somente o identificador do estudo no navegador. A ap
 | Estudo sem empresa ou fora do escopo | Não existe tenant efetivo utilizável. | A operação é negada; para superadmin a mensagem orienta resolver o roteamento, sem liberar alterações. |
 
 O padrão também é aplicado a anexo/remoção de pedido, prioridade, prévia e aplicação de descrição, alertas de prioridade e sugestões por modalidade. As camadas internas continuam recebendo um `tenant_id` obrigatório, o que evita ampliar consultas, writes ou auditorias entre empresas. O script do modal recebe versão própria para assegurar que a busca de sugestões também envie `estudo_id` e use o contexto resolvido no servidor.
+
+## Médico solicitante e rastreabilidade do gerenciamento
+
+O menu **Gerenciar** inclui o cartão **Médico solicitante**. O valor é uma sobrescrita manual administrativa, com três a 180 caracteres, armazenada separadamente em `bi_pacs_estudos.medico_solicitante_manual`. A tag DICOM de origem em `referring_physician_name` não é alterada. Quando houver sobrescrita, as telas de estudo e laudo exibem o valor manual; sem sobrescrita, permanecem usando o valor DICOM original.
+
+| Controle | Regra de segurança |
+|---|---|
+| Persistência | A migration `2026-08-26_medico_solicitante_gestao_exames_postgresql.sql` cria as colunas de sobrescrita, a tabela tenant-scoped `bi_pacs_estudos_solicitante_auditoria` e índices de consulta. |
+| Permissão de edição | Reutiliza a autorização administrativa central de Gestão de Exames; perfis sem essa permissão, médicos vinculados e usuários fora do tenant não recebem o endpoint. |
+| Grupos e modalidades | Antes de qualquer endpoint do submenu, o controlador reaplica o escopo de modalidade efetivo do grupo. Um URL direto não pode acessar estudo fora das modalidades liberadas à conta. |
+| Auditoria do solicitante | `estudo.medico_solicitante_alterado` registra somente a existência de sobrescrita anterior/atual e o identificador do histórico; o nome não é copiado ao relatório genérico de auditoria. |
+| Histórico clínico | A tabela de histórico preserva antes/depois, autor e data/hora no tenant para investigação autorizada. |
+
+Cada abertura do menu agora registra `estudo.gerenciamento_visualizado`. As ações de prioridade, descrição individual ou lote, pedido, Chat e médico solicitante mantêm eventos próprios em `bi_audit_logs`. O contexto acrescentado pelo logger é sanitizado e inclui somente perfil efetivo, indicador de administração de plataforma e identificadores de grupos efetivos; ele não inclui nome de paciente, texto de chat, conteúdo de laudo, nome do solicitante, credenciais ou anexos.

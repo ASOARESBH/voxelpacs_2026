@@ -607,7 +607,7 @@ $periodoLabel = [
             <!-- Solicitante -->
             <td class="col-solicitante" data-label="<?= htmlspecialchars(t('worklist.mobile.coluna.solicitante'), ENT_QUOTES) ?>">
                 <?php
-                $sol = $e['especialidade'] ?: \App\Helpers\DicomPersonName::format($e['referring_physician_name'] ?? null);
+                $sol = $e['medico_solicitante_manual'] ?: ($e['especialidade'] ?: \App\Helpers\DicomPersonName::format($e['referring_physician_name'] ?? null));
                 if ($sol): ?>
                     <span class="wl-sol-tag"><?= htmlspecialchars($sol) ?></span>
                 <?php else: ?>
@@ -925,11 +925,39 @@ $periodoLabel = [
                         <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade')) ?></strong><small id="gerenciarPrioridadeDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.prioridade_desc')) ?></small></span>
                         <i class="fa fa-chevron-right ms-auto"></i>
                     </button>
+                    <button type="button" id="gerenciarSolicitante" class="gerenciar-menu-item">
+                        <i class="fa fa-user-doctor"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante')) ?></strong><small id="gerenciarSolicitanteDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante_desc')) ?></small></span>
+                        <i class="fa fa-chevron-right ms-auto"></i>
+                    </button>
                 </div>
                 <div id="gerenciarLockNotice" class="gerenciar-lock-notice" style="display:none;">
                     <i class="fa fa-lock"></i> <span><?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></span>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL MÉDICO SOLICITANTE -->
+<div class="modal fade" id="gerenciarSolicitanteModal" tabindex="-1" aria-labelledby="gerenciarSolicitanteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarSolicitanteModalLabel"><i class="fa fa-user-doctor me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.solicitante.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <form id="gerenciarSolicitanteForm">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div id="gerenciarSolicitanteStatus" class="alert py-2 small" style="display:none;"></div>
+                    <label class="w-100"><?= htmlspecialchars(t('gestao_gerenciar.solicitante.campo')) ?>
+                        <input id="gerenciarSolicitanteInput" name="medico_solicitante" class="form-control mt-1" maxlength="180" autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.placeholder')) ?>">
+                    </label>
+                    <small class="text-muted d-block mt-2"><?= htmlspecialchars(t('gestao_gerenciar.solicitante.ajuda')) ?></small>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button><button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> <?= htmlspecialchars(t('gestao_gerenciar.solicitante.salvar')) ?></button></div>
+            </form>
         </div>
     </div>
 </div>
@@ -1096,6 +1124,7 @@ $periodoLabel = [
      data-tema-outro="<?= htmlspecialchars(t('gestao_gerenciar.chat.tema.outro')) ?>"
      data-descricao-modalidade="<?= htmlspecialchars(t('gestao_gerenciar.descricao.modalidade')) ?>"
      data-descricao-sem-sugestoes="<?= htmlspecialchars(t('gestao_gerenciar.descricao.sem_sugestoes')) ?>"
+     data-solicitante-sem-informacao="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.sem_informacao')) ?>"
      data-confirmar-descricao-lote="<?= htmlspecialchars(t('gestao_gerenciar.descricao.confirmar_lote')) ?>"></div>
 <?php endif; ?>
 
@@ -2219,5 +2248,5 @@ function resetDownloadUI() {
 }());
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-tenant-context"></script>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-medico-solicitante"></script>
 <?php endif; ?>

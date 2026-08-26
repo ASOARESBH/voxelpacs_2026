@@ -61,6 +61,8 @@ class GestaoExamesRepository
                 e.modalities,
                 e.study_description,
                 e.study_description_manual,
+                e.medico_solicitante_manual,
+                COALESCE(NULLIF(e.medico_solicitante_manual, ''), e.referring_physician_name, '') AS medico_solicitante_exibicao,
                 e.situacao,
                 COALESCE(e.dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
@@ -88,13 +90,17 @@ class GestaoExamesRepository
             return $row ?: null;
         } catch (\PDOException $e) {
             // Permite que a tela informe migration pendente sem esconder a causa.
-            if (stripos($e->getMessage(), 'dicom_priority_override') === false) {
+            if (stripos($e->getMessage(), 'dicom_priority_override') === false
+                && stripos($e->getMessage(), 'medico_solicitante_manual') === false) {
                 throw $e;
             }
             $fallback = $this->pdo->prepare("
                 SELECT
                     e.id, e.tenant_id, e.study_instance_uid, e.patient_name,
-                    e.modalities, e.study_description, 0 AS study_description_manual, e.situacao,
+                    e.modalities, e.study_description, 0 AS study_description_manual,
+                    NULL AS medico_solicitante_manual,
+                    COALESCE(e.referring_physician_name, '') AS medico_solicitante_exibicao,
+                    e.situacao,
                     COALESCE(e.dicom_priority, '') AS dicom_priority,
                     COALESCE(e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                     NULL AS dicom_priority_override,
@@ -118,6 +124,7 @@ class GestaoExamesRepository
         $stmt = $this->pdo->prepare("
             SELECT
                 id, tenant_id, study_instance_uid, situacao, modalities, study_description,
+                medico_solicitante_manual,
                 COALESCE(dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(dicom_priority_override, ''), dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                 dicom_priority_override
@@ -169,6 +176,51 @@ class GestaoExamesRepository
             'previous' => $previous,
             'next' => $next,
             'reason' => $reason,
+            'user_id' => $userId,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /** Modalidades persistidas usadas para reaplicar o escopo de grupos no endpoint administrativo. */
+    public function findStudyModalities(int $studyId, int $tenantId): ?string
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT modalities FROM bi_pacs_estudos WHERE id = :study_id AND tenant_id = :tenant_id LIMIT 1'
+        );
+        $stmt->execute(['study_id' => $studyId, 'tenant_id' => $tenantId]);
+        $value = $stmt->fetchColumn();
+        return $value === false ? null : (string) $value;
+    }
+
+    public function updateManualRequestingPhysician(int $studyId, int $tenantId, ?string $value, int $userId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE bi_pacs_estudos
+                SET medico_solicitante_manual = :value,
+                    medico_solicitante_manual_em = NOW(),
+                    medico_solicitante_manual_por = :user_id
+              WHERE id = :study_id AND tenant_id = :tenant_id'
+        );
+        $stmt->execute([
+            'value' => $value,
+            'user_id' => $userId,
+            'study_id' => $studyId,
+            'tenant_id' => $tenantId,
+        ]);
+    }
+
+    public function addManualRequestingPhysicianAudit(int $studyId, int $tenantId, ?string $before, ?string $after, int $userId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO bi_pacs_estudos_solicitante_auditoria
+                (tenant_id, estudo_id, solicitante_anterior, solicitante_novo, usuario_id, criado_em)
+             VALUES (:tenant_id, :study_id, :before, :after, :user_id, NOW())'
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'study_id' => $studyId,
+            'before' => $before,
+            'after' => $after,
             'user_id' => $userId,
         ]);
         return (int) $this->pdo->lastInsertId();

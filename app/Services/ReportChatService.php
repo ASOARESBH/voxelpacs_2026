@@ -45,6 +45,7 @@ class ReportChatService
     {
         $report = $this->repo->findReportContext($reportId, $tenantId);
         if (!$report) return null;
+        if (!$this->canAccessStudyModalities($report, $tenantId, $currentUserId)) return null;
 
         $chat = $this->repo->findByReport($reportId, $tenantId);
         $messages = $chat ? $this->repo->listMessages((int) $chat['id'], $tenantId) : [];
@@ -115,6 +116,7 @@ class ReportChatService
     {
         $context = $this->repo->findReportContext($reportId, $tenantId);
         if (!$context) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        if (!$this->canAccessStudyModalities($context, $tenantId, $userId)) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
         $corpo = trim((string) ($input['mensagem'] ?? ''));
         if ($corpo === '' || mb_strlen($corpo, 'UTF-8') < 2) {
@@ -250,6 +252,15 @@ class ReportChatService
             ], $tenantId);
         }
 
+        AuditLogger::log('estudo.chat_enviado', 'bi_pacs_estudos', (int) $context['estudo_id'], [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'destinatario_tipo' => $tipo,
+            'destinatario_grupo_id' => $destinatarioGrupoId,
+            'destinatario_user_id' => $destinatarioUserId,
+            'achado_critico' => $isAchadoCritico,
+        ], $tenantId, 'gestao_estudos');
+
         Logger::info('[ReportChatService::send] interação registrada', [
             'report_id' => $reportId, 'chat_id' => $chatId, 'message_id' => $messageId,
             'tenant_id' => $tenantId, 'user_id' => $userId, 'destinatario_tipo' => $tipo,
@@ -271,6 +282,7 @@ class ReportChatService
     {
         $context = $this->repo->findReportContext($reportId, $tenantId);
         if (!$context) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        if (!$this->canAccessStudyModalities($context, $tenantId, $userId)) return ['ok' => false, 'error' => 'report_nao_encontrado'];
         $chat = $this->repo->findByReport($reportId, $tenantId);
         if (!$chat || $chat['status'] !== 'pendente') {
             return ['ok' => false, 'error' => 'chat_sem_pendencia'];
@@ -309,6 +321,10 @@ class ReportChatService
             'report_id' => $reportId, 'tenant_id' => $tenantId, 'user_id' => $userId,
             'situacao_restaurada' => $restore,
         ]);
+        AuditLogger::log('estudo.chat_concluido', 'bi_pacs_estudos', (int) $context['estudo_id'], [
+            'chat_id' => (int) ($chat['id'] ?? 0),
+            'situacao_restaurada' => $restore,
+        ], $tenantId, 'gestao_estudos');
         return ['ok' => true, 'status' => 'concluido', 'situacao' => $restore];
     }
 
@@ -316,6 +332,15 @@ class ReportChatService
     {
         $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review', 'assinado', 'liberado'];
         return in_array($situacao, $permitidas, true) ? $situacao : 'em_laudo';
+    }
+
+    private function canAccessStudyModalities(array $context, int $tenantId, int $userId): bool
+    {
+        if (Auth::isPlatformAdmin() && !Auth::isImpersonating()) return true;
+        if ($userId <= 0) return false;
+        $scope = (new GrupoModalidadeService())->scopeForUser($userId, $tenantId);
+        return empty($scope['restricted'])
+            || (new GrupoModalidadeService())->allowsStoredModalities((string) ($context['modalities'] ?? ''), $scope);
     }
 
     private function notifyRecipients(
