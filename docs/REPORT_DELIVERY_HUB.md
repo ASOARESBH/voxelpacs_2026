@@ -129,8 +129,10 @@ O painel de cada negócio apresenta até 100 laudos com situação `liberado`, m
 | **Entregue** | Todos os jobs daquele laudo foram concluídos pelo worker com `delivered`. | Nenhuma. |
 | **Na fila** | Há job `queued`, `retrying` ou `processing`. | Reenviar, sujeito à confirmação e à regra de destino. |
 | **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | Reenviar reativa os jobs terminais. |
-| **Sem destino** | Não existe job compatível para o laudo liberado. | Reenviar reavalia Issuer e InstitutionName de fallback contra destinos ativos. |
+| **Destino desativado** | O Issuer prioritário, ou o InstitutionName de fallback quando não há Issuer, está vinculado a um destino, mas ele não está elegível (`enabled=0` ou sem disparo na liberação). | Nenhuma; a configuração precisa ser ativada em processo homologado. |
+| **Pronto para reenviar** | Há destino configurado e elegível, mas ainda não existe job do laudo. | Reenviar reavalia a mesma origem e cria somente jobs idempotentes. |
+| **Sem destino** | Não existe vínculo configurado para a origem aplicável do laudo. | Reenviar reavalia Issuer e InstitutionName de fallback contra destinos ativos. |
 
-O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Para falhas terminais, ele somente muda os jobs daquele laudo de volta para `queued`. Caso não haja job terminal, reutiliza a outbox e a mesma regra de criação idempotente de jobs da liberação clínica. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker autenticado.
+O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Para falhas terminais, ele somente muda os jobs daquele laudo de volta para `queued` quando o destino correspondente continua ativo e habilitado para liberação; um formulário desatualizado ou uma chamada direta não consegue reenfileirar destinos desativados. Caso não haja job terminal, reutiliza a outbox e a mesma regra de criação idempotente de jobs da liberação clínica. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker autenticado.
 
 Se não houver destino ativo e compatível, o reenvio retorna sem criar job. Quando um artefato é transmitido e confirmado pelo worker, o job passa para `delivered` e a lista reflete **Entregue**. Um reenvio clínico real deve ser confirmado separadamente antes da ação administrativa.

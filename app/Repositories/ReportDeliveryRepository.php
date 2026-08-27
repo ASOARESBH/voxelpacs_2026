@@ -21,6 +21,18 @@ class ReportDeliveryRepository
     /** @return array<int, array<string, mixed>> */
     public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
     {
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function findConfiguredDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    {
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, false);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function findDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, bool $onlyEligible): array
+    {
         $issuerNormalized = trim((string) $issuerNormalized);
         $institutionName = trim((string) $institutionName);
         if ($issuerNormalized === '' && $institutionName === '') {
@@ -39,15 +51,18 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
+        $eligibilityWhere = $onlyEligible
+            ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
+            : '';
+        $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.timeout_seconds, d.max_attempts,
-                    d.configuration_json, d.configuration_secret
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
+                    d.configuration_json{$secretColumn}
              FROM pacs_report_delivery_destinations d
              {$sourceJoin}
              WHERE d.tenant_id = :tenant_id
                AND {$sourceWhere}
-               AND d.enabled = 1
-               AND d.disparar_na_liberacao = 1
+               {$eligibilityWhere}
                AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id = :estabelecimento_id)
              ORDER BY d.id ASC"
         );
@@ -499,6 +514,8 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare(
             "SELECT r.id AS report_id, r.liberado_em, r.public_token,
                     e.id AS estudo_id,
+                    e.unidade_id AS estabelecimento_id,
+                    COALESCE(e.institution_name, '') AS institution_name,
                     COALESCE(NULLIF(e.patient_name_display, ''), NULLIF(e.patient_name, ''), '—') AS patient_name,
                     COALESCE(e.modalities, '') AS modalities,
                     COALESCE(e.issuer_of_patient_id, '') AS issuer_of_patient_id,
@@ -552,16 +569,33 @@ class ReportDeliveryRepository
     /** Reenfileira apenas tentativas terminais do laudo no tenant indicado. */
     public function retryTerminalJobsForReport(int $reportId, int $tenantId): int
     {
-        $stmt = $this->pdo->prepare(
-            "UPDATE pacs_report_delivery_jobs
-             SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                 locked_by = NULL, last_error = NULL, updated_at = NOW()
-             WHERE tenant_id = :tenant_id
-               AND status IN ('failed', 'dead_letter')
-               AND outbox_id IN (
-                   SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
-               )"
-        );
+        $sql = SqlHelper::isPostgres()
+            ? "UPDATE pacs_report_delivery_jobs j
+               SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
+                   locked_by = NULL, last_error = NULL, updated_at = NOW()
+               FROM pacs_report_delivery_destinations d
+               WHERE j.destination_id = d.id
+                 AND j.tenant_id = d.tenant_id
+                 AND j.tenant_id = :tenant_id
+                 AND j.status IN ('failed', 'dead_letter')
+                 AND d.enabled = 1
+                 AND d.disparar_na_liberacao = 1
+                 AND j.outbox_id IN (
+                     SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
+                 )"
+            : "UPDATE pacs_report_delivery_jobs j
+               INNER JOIN pacs_report_delivery_destinations d
+                  ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+               SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
+                   j.locked_by = NULL, j.last_error = NULL, j.updated_at = NOW()
+               WHERE j.tenant_id = :tenant_id
+                 AND j.status IN ('failed', 'dead_letter')
+                 AND d.enabled = 1
+                 AND d.disparar_na_liberacao = 1
+                 AND j.outbox_id IN (
+                     SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
+                 )";
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':report_id' => $reportId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount();
@@ -594,14 +628,29 @@ class ReportDeliveryRepository
 
     public function retryJob(int $jobId, int $tenantId): bool
     {
-        $stmt = $this->pdo->prepare(
-            "UPDATE pacs_report_delivery_jobs
-             SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                 locked_by = NULL, last_error = NULL
-             WHERE id = :id
-               AND tenant_id = :tenant_id
-               AND status IN ('failed', 'dead_letter')"
-        );
+        $sql = SqlHelper::isPostgres()
+            ? "UPDATE pacs_report_delivery_jobs j
+               SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
+                   locked_by = NULL, last_error = NULL
+               FROM pacs_report_delivery_destinations d
+               WHERE j.destination_id = d.id
+                 AND j.tenant_id = d.tenant_id
+                 AND j.id = :id
+                 AND j.tenant_id = :tenant_id
+                 AND j.status IN ('failed', 'dead_letter')
+                 AND d.enabled = 1
+                 AND d.disparar_na_liberacao = 1"
+            : "UPDATE pacs_report_delivery_jobs j
+               INNER JOIN pacs_report_delivery_destinations d
+                  ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+               SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
+                   j.locked_by = NULL, j.last_error = NULL
+               WHERE j.id = :id
+                 AND j.tenant_id = :tenant_id
+                 AND j.status IN ('failed', 'dead_letter')
+                 AND d.enabled = 1
+                 AND d.disparar_na_liberacao = 1";
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount() === 1;

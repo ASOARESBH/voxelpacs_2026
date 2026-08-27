@@ -243,18 +243,24 @@ $transportLabels = [
                                     $delivered = (int) ($delivery['jobs_delivered'] ?? 0);
                                     $queued = (int) ($delivery['jobs_queued'] ?? 0);
                                     $failed = (int) ($delivery['jobs_failed'] ?? 0);
+                                    $routingState = (string) ($delivery['routing_state'] ?? 'unmapped');
                                     if ($total > 0 && $delivered === $total) { $statusKey = 'delivery_hub.released.status_entregue'; $statusClass = 'success'; }
                                     elseif ($queued > 0) { $statusKey = 'delivery_hub.released.status_fila'; $statusClass = 'primary'; }
                                     elseif ($failed > 0) { $statusKey = 'delivery_hub.released.status_falha'; $statusClass = 'danger'; }
+                                    elseif ($routingState === 'configured_inactive') { $statusKey = 'delivery_hub.released.status_destino_desativado'; $statusClass = 'warning'; }
+                                    elseif ($routingState === 'eligible') { $statusKey = 'delivery_hub.released.status_pronto_reenviar'; $statusClass = 'info'; }
                                     else { $statusKey = 'delivery_hub.released.status_sem_destino'; $statusClass = 'secondary'; }
-                                    $canResend = $statusKey !== 'delivery_hub.released.status_entregue';
+                                    $canResend = $statusKey !== 'delivery_hub.released.status_entregue' && $routingState !== 'configured_inactive';
+                                    $routingDestinations = trim((string) ($delivery['routing_destinations'] ?? ''));
+                                    $destinationName = (string) ($delivery['destination_name'] ?? '');
+                                    $displayDestination = $destinationName !== '' ? $destinationName : $routingDestinations;
                                 ?>
                                 <tr>
                                     <td>#<?= (int) $delivery['report_id'] ?><div class="small text-muted"><?= $escape((string) ($delivery['liberado_em'] ?? '')) ?></div></td>
                                     <td><?= $escape($delivery['patient_name']) ?></td>
                                     <td><?= $escape($delivery['modalities'] ?: '—') ?></td>
                                     <td class="small"><?= $escape($delivery['issuer_of_patient_id'] ?: '—') ?></td>
-                                    <td><?= $escape($delivery['destination_name'] ?: '—') ?><div class="small text-muted"><?= $escape($transportLabels[$delivery['transport'] ?? ''] ?? ($delivery['transport'] ?? '')) ?></div></td>
+                                    <td><?= $escape($displayDestination !== '' ? $displayDestination : '—') ?><div class="small text-muted"><?= $escape($transportLabels[$delivery['transport'] ?? ''] ?? ($delivery['transport'] ?? '')) ?></div></td>
                                     <td><span class="badge text-bg-<?= $statusClass ?>"><?= $escape(t($statusKey)) ?></span><div class="small text-muted mt-1"><?= $escape(sprintf(t('delivery_hub.released.contagem_entregue'), $delivered, $total)) ?></div></td>
                                     <td class="text-end">
                                         <?php if ($canResend): ?>
@@ -263,7 +269,11 @@ $transportLabels = [
                                                 <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar')) ?></button>
                                             </form>
                                         <?php else: ?>
-                                            <span class="text-muted small">—</span>
+                                            <?php if ($routingState === 'configured_inactive'): ?>
+                                                <span class="text-muted small" title="<?= $escape(t('delivery_hub.released.acao_destino_desativado_ajuda')) ?>"><?= $escape(t('delivery_hub.released.acao_destino_desativado')) ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted small">—</span>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </td>
                                 </tr>

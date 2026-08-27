@@ -51,26 +51,66 @@ class ReportDeliveryController extends Controller
             return;
         }
 
+        $deliveryFilters = [
+            'patient' => trim((string) ($_GET['patient'] ?? '')),
+            'modality' => trim((string) ($_GET['modality'] ?? '')),
+            'issuer' => trim((string) ($_GET['issuer'] ?? '')),
+        ];
+        $deliveries = $this->enrichDeliveryRoutingState(
+            $tenantId,
+            $this->repository->listReleasedDeliveries($tenantId, $deliveryFilters)
+        );
+
         $this->view('platform/negocios/report_delivery', [
             'tenant' => $tenant,
             'destinations' => $this->repository->listDestinations($tenantId),
             'jobs' => $this->repository->listJobs($tenantId),
-            'deliveries' => $this->repository->listReleasedDeliveries($tenantId, [
-                'patient' => trim((string) ($_GET['patient'] ?? '')),
-                'modality' => trim((string) ($_GET['modality'] ?? '')),
-                'issuer' => trim((string) ($_GET['issuer'] ?? '')),
-            ]),
-            'deliveryFilters' => [
-                'patient' => trim((string) ($_GET['patient'] ?? '')),
-                'modality' => trim((string) ($_GET['modality'] ?? '')),
-                'issuer' => trim((string) ($_GET['issuer'] ?? '')),
-            ],
+            'deliveries' => $deliveries,
+            'deliveryFilters' => $deliveryFilters,
             'stats' => $this->repository->stats($tenantId),
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
             'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
             'issuers' => $this->repository->listTenantIssuers($tenantId),
         ], 'platform');
+    }
+
+    /**
+     * Expõe somente para a plataforma o motivo operacional de um laudo
+     * liberado não possuir job. A decisão efetiva de enfileiramento continua
+     * exclusivamente em ReportDeliveryOutboxService.
+     *
+     * @param array<int, array<string, mixed>> $deliveries
+     * @return array<int, array<string, mixed>>
+     */
+    private function enrichDeliveryRoutingState(int $tenantId, array $deliveries): array
+    {
+        foreach ($deliveries as &$delivery) {
+            $estabelecimentoId = (int) ($delivery['estabelecimento_id'] ?? 0) ?: null;
+            $issuerNormalized = trim((string) ($delivery['issuer_of_patient_id_normalized'] ?? ''));
+            $institutionName = $issuerNormalized === ''
+                ? InstitutionResolverService::canonicalForTenant($tenantId, (string) ($delivery['institution_name'] ?? ''))
+                : null;
+            $configured = $this->repository->findConfiguredDestinations(
+                $tenantId,
+                $estabelecimentoId,
+                $issuerNormalized,
+                $institutionName
+            );
+            $eligible = array_filter($configured, static fn(array $destination): bool =>
+                !empty($destination['enabled']) && !empty($destination['disparar_na_liberacao'])
+            );
+            $delivery['routing_destinations'] = implode(', ', array_map(
+                static fn(array $destination): string => (string) $destination['nome'],
+                $configured
+            ));
+            $delivery['routing_state'] = $configured === []
+                ? 'unmapped'
+                : ($eligible === [] ? 'configured_inactive' : 'eligible');
+        }
+        unset($delivery);
+
+        return $deliveries;
     }
 
     public function save(int $tenantId, ?int $destinationId = null): void
