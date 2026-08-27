@@ -32,7 +32,7 @@ final class TenantOperationsAgentClient
     /** @return array<string,mixed> */
     private function call(string $endpoint, string $action, string $operationId, array $payload): array
     {
-        if (!in_array($action, ['provision_cell', 'configure_wireguard_echo', 'register_control_plane', 'check_echo', 'enable_cstore', 'suspend_route'], true)) {
+        if (!in_array($action, ['provision_cell', 'configure_wireguard_echo', 'register_control_plane', 'activate_control_plane', 'check_echo', 'enable_cstore', 'suspend_route'], true)) {
             throw new \RuntimeException('Ação operacional não permitida.');
         }
         if (!preg_match('#^https://10\\.0\\.0\\.(2|3|4):8813$#', $endpoint)) {

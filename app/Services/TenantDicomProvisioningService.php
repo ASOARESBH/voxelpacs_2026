@@ -125,6 +125,31 @@ final class TenantDicomProvisioningService
     }
 
     /** @return array<string,mixed> */
+    public function activateCstore(int $serverId): array
+    {
+        $row = $this->getByServer($serverId);
+        if (($row['status'] ?? '') !== 'echo_validated') {
+            throw new \RuntimeException('A liberação de C-STORE exige C-ECHO validado nesta solicitação.');
+        }
+        $payload = $this->agentPayload($row);
+        $operationId = (string) $row['operation_id'];
+        $this->agent->callGateway('enable_cstore', $operationId, $payload);
+        try {
+            $this->agent->callApi('activate_control_plane', $operationId, $payload + ['operation_id' => $operationId]);
+        } catch (\Throwable $error) {
+            // Evita divergência: se o estado administrativo não puder ser gravado,
+            // o gateway volta imediatamente ao perfil de homologação sem C-STORE.
+            try {
+                $this->agent->callGateway('suspend_route', $operationId, $payload);
+            } catch (\Throwable) {
+                // A falha de rollback é registrada pelo agente; não há detalhes técnicos na resposta web.
+            }
+            throw new \RuntimeException('A ativação não foi concluída; a rota foi retornada ao estado seguro.');
+        }
+        return $this->getByServer($serverId);
+    }
+
+    /** @return array<string,mixed> */
     public function getByServer(int $serverId): array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM bi_pacs_tenant_provisioning WHERE servidor_id = ? ORDER BY id DESC LIMIT 1');

@@ -100,29 +100,8 @@ final class TenantDicomProvisioningController extends Controller
             if ($confirm !== 'LIBERAR C-STORE') {
                 throw new \RuntimeException('Digite LIBERAR C-STORE para confirmar a recepção de dados DICOM.');
             }
-            $service = new TenantDicomProvisioningService();
-            $operation = $service->getByServer($serverId);
-            if ($operation['status'] !== 'echo_validated') {
-                throw new \RuntimeException('Valide o C-ECHO antes de liberar C-STORE.');
-            }
-            $payload = [
-                'tenant' => $operation['deployment_key'], 'route_key' => $operation['route_key'], 'profile' => 'vpn_only',
-                'calling_ae' => $operation['calling_ae'], 'called_ae' => $operation['called_ae'], 'backend_ae' => $operation['backend_ae'],
-                'dicom_port' => (int) $operation['dicom_port'], 'dicomweb_port' => (int) $operation['dicomweb_port'],
-                'vpn_client_ip' => (string) $operation['vpn_client_ip'], 'wireguard_public_key' => $operation['wireguard_public_key'],
-            ];
-            (new \App\Services\TenantOperationsAgentClient())->callGateway('enable_cstore', (string) $operation['operation_id'], $payload);
-            $pdo = Database::getInstance();
-            $pdo->beginTransaction();
-            try {
-                $pdo->prepare("UPDATE bi_pacs_tenant_provisioning SET status='active', current_step='active', activated_at=NOW(), updated_at=NOW() WHERE id=?")->execute([$operation['id']]);
-                $pdo->prepare("UPDATE bi_tenant_orthanc_cells SET status='active', updated_at=NOW() WHERE id=?")->execute([$operation['cell_id']]);
-                $pdo->commit();
-            } catch (\Throwable $error) {
-                $pdo->rollBack();
-                throw $error;
-            }
-            return ['success' => true, 'status' => 'active', 'message' => 'C-STORE liberado para esta rota após confirmação explícita.'];
+            $operation = (new TenantDicomProvisioningService())->activateCstore($serverId);
+            return ['success' => true, 'status' => $operation['status'], 'message' => 'C-STORE liberado para esta rota após confirmação explícita.'];
         });
     }
 
