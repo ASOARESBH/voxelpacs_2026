@@ -17,4 +17,4 @@ CREATE INDEX IF NOT EXISTS idx_pacs_download_availability_tenant_server
 
 -- A aplicação consulta e atualiza apenas o estado técnico deste catálogo.
 -- O grant é intencionalmente limitado: não concede escrita em estudos, servidores ou células.
-GRANT SELECT, INSERT, UPDATE ON bi_pacs_download_availability TO voxel_app;
+GRANT SELECT, INSERT, UPDATE ON bi_pacs_download_availability TO voxelpacs_homolog;
