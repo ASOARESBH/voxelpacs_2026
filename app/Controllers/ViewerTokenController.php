@@ -264,7 +264,10 @@ class ViewerTokenController extends Controller
             if (!$row || ($parts['scheme'] ?? '') !== 'http' || !$isPrivateIp || empty($row['usuario']) || !array_key_exists('senha', $row)) {
                 http_response_code(503); return;
             }
-            header('X-Voxel-Dicomweb-Upstream: ' . $url);
+            // dicomweb_url inclui `/dicom-web`; o Nginx acrescenta o URI da
+            // requisição. Retornamos apenas origem/porta para evitar duplicar o prefixo.
+            $upstream = 'http://' . $host . (!empty($parts['port']) ? ':' . (int) $parts['port'] : '');
+            header('X-Voxel-Dicomweb-Upstream: ' . $upstream);
             header('X-Voxel-Dicomweb-Authorization: Basic ' . base64_encode((string) $row['usuario'] . ':' . (string) $row['senha']));
             http_response_code(204);
         } catch (\Throwable $e) {
