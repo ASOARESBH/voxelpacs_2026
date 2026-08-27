@@ -12,6 +12,12 @@ final class TenantOperationsAgentClient
     private const PKI_DIR = '/etc/voxelpacs-tenant-agent/pki';
 
     /** @return array<string,mixed> */
+    public function callApi(string $action, string $operationId, array $payload): array
+    {
+        return $this->call((string) (getenv('TENANT_AGENT_API_URL') ?: 'https://10.0.0.2:8813'), $action, $operationId, $payload);
+    }
+
+    /** @return array<string,mixed> */
     public function callHybrid(string $action, string $operationId, array $payload): array
     {
         return $this->call((string) (getenv('TENANT_AGENT_HYBRID_URL') ?: 'https://10.0.0.3:8813'), $action, $operationId, $payload);
@@ -26,10 +32,10 @@ final class TenantOperationsAgentClient
     /** @return array<string,mixed> */
     private function call(string $endpoint, string $action, string $operationId, array $payload): array
     {
-        if (!in_array($action, ['provision_cell', 'configure_wireguard_echo', 'check_echo', 'enable_cstore', 'suspend_route'], true)) {
+        if (!in_array($action, ['provision_cell', 'configure_wireguard_echo', 'register_control_plane', 'check_echo', 'enable_cstore', 'suspend_route'], true)) {
             throw new \RuntimeException('Ação operacional não permitida.');
         }
-        if (!preg_match('#^https://10\.0\.0\.(3|4):8813$#', $endpoint)) {
+        if (!preg_match('#^https://10\\.0\\.0\\.(2|3|4):8813$#', $endpoint)) {
             throw new \RuntimeException('Endpoint privado do agente inválido.');
         }
         $secret = @file_get_contents(self::HMAC_FILE);

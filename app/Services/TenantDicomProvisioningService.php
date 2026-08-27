@@ -87,28 +87,19 @@ final class TenantDicomProvisioningService
             $this->updateOperation($operationId, 'provisioning', 'gateway_wireguard_echo', null, null, $userId);
             $gateway = $this->agent->callGateway('configure_wireguard_echo', $operationId, $payload);
             $gatewayPublicKey = $this->wireguardPublicKey($gateway['gateway_public_key'] ?? '');
-            $this->pdo->beginTransaction();
-            try {
-                $privateUrl = 'http://10.0.0.3:' . (int) $row['dicomweb_port'];
-                $insertServer = $this->pdo->prepare('INSERT INTO bi_pacs_servidor (nome, url, usuario, senha, timeout, ativo, dicom_aet, dicom_port, status_ping, observacoes, updated_at) VALUES (?, ?, ?, ?, 30, 1, ?, ?, ?, ?, NOW()) RETURNING id');
-                $insertServer->execute([
-                    $row['display_name'], $privateUrl, (string) $credential['username'], Crypto::encrypt((string) $credential['password']),
-                    $row['backend_ae'], (int) $row['dicom_port'], 'pendente', 'Célula exclusiva VPN-only; sincronização automática desabilitada até homologação.',
-                ]);
-                $serverId = (int) $insertServer->fetchColumn();
-                $insertCell = $this->pdo->prepare("INSERT INTO bi_tenant_orthanc_cells (tenant_id, servidor_id, profile, gateway_route_key, status) VALUES (?, ?, 'vpn_only', ?, 'provisioned') RETURNING id");
-                $insertCell->execute([(int) $row['tenant_id'], $serverId, $row['route_key']]);
-                $cellId = (int) $insertCell->fetchColumn();
-                $pivot = $this->pdo->prepare("INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por) VALUES (?, ?, 1, ?) ON CONFLICT (tenant_id, servidor_id) DO UPDATE SET ativo = EXCLUDED.ativo");
-                $pivot->execute([(int) $row['tenant_id'], $serverId, $userId]);
-                $finish = $this->pdo->prepare("UPDATE bi_pacs_tenant_provisioning SET servidor_id=?, cell_id=?, gateway_public_key=?, status='echo_ready', current_step='awaiting_echo', confirmed_by=?, confirmed_at=NOW(), echo_ready_at=NOW(), updated_at=NOW() WHERE operation_id=?");
-                $finish->execute([$serverId, $cellId, $gatewayPublicKey, $userId, $operationId]);
-                $this->pdo->commit();
-            } catch (\Throwable $error) {
-                $this->pdo->rollBack();
-                throw $error;
-            }
-            unset($credential, $hybrid);
+            $registration = $payload + [
+                'operation_id' => $operationId,
+                'tenant_id' => (int) $row['tenant_id'],
+                'user_id' => (int) $userId,
+                'display_name' => $row['display_name'],
+                'gateway_public_key' => $gatewayPublicKey,
+                'dicomweb_username' => (string) $credential['username'],
+                // A senha trafega somente neste canal mTLS, já cifrada pelo segredo
+                // da aplicação. O agente não a audita, não a retorna e não a grava em log.
+                'dicomweb_password_ciphertext' => Crypto::encrypt((string) $credential['password']),
+            ];
+            $this->agent->callApi('register_control_plane', $operationId, $registration);
+            unset($registration, $credential, $hybrid, $gateway);
             return $this->getByOperation($operationId);
         } catch (\Throwable $error) {
             $this->updateOperation($operationId, 'failed', 'failed', 'agent_failed', 'A etapa operacional não foi concluída.', $userId);
