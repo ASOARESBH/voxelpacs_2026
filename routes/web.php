@@ -284,6 +284,10 @@ Router::get('/reports/r/{token}',            'ReportsController@showByToken');
 // ============================================================
 Router::get('/open/{token}', 'ViewerTokenController@abrir');
 
+// Uso interno: Nginx no host do viewer valida cookie de token, origem e célula
+// antes de encaminhar DICOMweb ao Orthanc do tenant. Não expor publicamente.
+Router::get('/internal/viewer-auth/{cellKey}', 'ViewerTokenController@authorizeDicomweb');
+
 // ============================================================
 // Fluxo de Criação de Senha via Token de Acesso (Etapa 4)
 // ============================================================
