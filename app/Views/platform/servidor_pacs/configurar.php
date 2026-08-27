@@ -3,6 +3,8 @@
 $isNovo = $servidor === null;
 $actionUrl = $isNovo ? '/platform/servidor-pacs/criar' : "/platform/servidor-pacs/{$servidor['id']}/salvar-config";
 $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar";
+$isTenantCell = !$isNovo && !empty($provisioning);
+$csrf = $csrfToken ?? ($_SESSION['csrf_token'] ?? '');
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -34,7 +36,7 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
             <div class="card-body">
                 <div class="alert alert-info">
                     <i class="fa fa-info-circle me-2"></i>
-                    <?= htmlspecialchars(t('servidor_pacs.configurar.info_auth')) ?>
+                    <?= $isTenantCell ? 'Esta célula é gerenciada pelo onboarding DICOM VPN-only. Endpoints, credenciais e portas privadas são somente leitura nesta tela.' : htmlspecialchars(t('servidor_pacs.configurar.info_auth')) ?>
                 </div>
 
                 <form action="<?= $actionUrl ?>" method="POST" id="formConfig">
@@ -44,14 +46,14 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
                         <label class="form-label fw-semibold"><?= htmlspecialchars(t('servidor_pacs.configurar.label_nome')) ?></label>
                         <input type="text" name="nome" class="form-control"
                                value="<?= htmlspecialchars($servidor['nome'] ?? '') ?>"
-                               placeholder="Ex: Orthanc Principal">
+                               placeholder="Ex: Orthanc Principal" <?= $isTenantCell ? 'readonly' : '' ?>>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold"><?= htmlspecialchars(t('servidor_pacs.configurar.label_url')) ?> <span class="text-danger">*</span></label>
                         <input type="url" name="url" id="urlInput" class="form-control" required
                                value="<?= htmlspecialchars($servidor['url'] ?? '') ?>"
-                               placeholder="http://46.225.51.122:8042">
+                               placeholder="http://46.225.51.122:8042" <?= $isTenantCell ? 'readonly' : '' ?>>
                         <small class="text-muted"><?= htmlspecialchars(t('servidor_pacs.configurar.ajuda_url')) ?></small>
                     </div>
 
@@ -60,15 +62,15 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
                             <label class="form-label fw-semibold"><?= htmlspecialchars(t('servidor_pacs.configurar.label_usuario')) ?></label>
                             <input type="text" name="usuario" class="form-control"
                                    value="<?= htmlspecialchars($servidor['usuario'] ?? '') ?>"
-                                   placeholder="Deixe em branco se sem autenticação"
-                                   autocomplete="off">
+                               placeholder="Deixe em branco se sem autenticação"
+                               autocomplete="off" <?= $isTenantCell ? 'readonly' : '' ?>>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold"><?= htmlspecialchars(t('servidor_pacs.configurar.label_senha')) ?></label>
                             <div class="input-group">
                                 <input type="password" name="senha" id="senhaInput" class="form-control"
                                        placeholder="<?= !empty($servidor['tem_senha']) ? htmlspecialchars(t('servidor_pacs.configurar.senha_salva')) : 'Deixe em branco se sem autenticação' ?>"
-                                       autocomplete="new-password">
+                                       autocomplete="new-password" <?= $isTenantCell ? 'disabled' : '' ?>>
                                 <button class="btn btn-outline-secondary" type="button" onclick="toggleSenha()">
                                     <i class="fa fa-eye" id="eyeIcon"></i>
                                 </button>
@@ -79,18 +81,20 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
                     <div class="mb-4">
                         <label class="form-label fw-semibold"><?= htmlspecialchars(t('servidor_pacs.configurar.label_timeout')) ?></label>
                         <input type="number" name="timeout" class="form-control" style="max-width:120px;"
-                               value="<?= (int)($servidor['timeout'] ?? 30) ?>" min="5" max="120">
+                               value="<?= (int)($servidor['timeout'] ?? 30) ?>" min="5" max="120" <?= $isTenantCell ? 'readonly' : '' ?>>
                     </div>
 
                     <div class="d-flex gap-2">
-                        <?php if ($testarUrl): ?>
+                        <?php if ($testarUrl && !$isTenantCell): ?>
                             <button type="button" class="btn btn-outline-primary" onclick="testarConexaoForm()">
                                 <i class="fa fa-plug me-1"></i> <?= htmlspecialchars(t('servidor_pacs.configurar.botao_testar')) ?>
                             </button>
                         <?php endif; ?>
+                        <?php if (!$isTenantCell): ?>
                         <button type="submit" class="btn btn-primary px-4">
                             <i class="fa fa-save me-1"></i> <?= htmlspecialchars(t('servidor_pacs.configurar.botao_salvar')) ?>
                         </button>
+                        <?php endif; ?>
                     </div>
                 </form>
 
@@ -169,6 +173,27 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
                     <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.configurar.ultimo_ping')) ?>:</td><td><?= htmlspecialchars($servidor['ultimo_ping'] ?? '—') ?></td></tr>
                     <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.configurar.ultima_sync_automatica')) ?>:</td><td><?= htmlspecialchars($servidor['sync_ultima_execucao'] ?? '—') ?></td></tr>
                 </table>
+                <?php if ($isTenantCell): ?>
+                <hr><h6 class="fw-bold text-primary">Integração VPN-only</h6>
+                <table class="table table-sm table-borderless mb-2">
+                  <tr><td class="text-muted">Estado:</td><td><span id="tenantOperationBadge" class="badge bg-info"><?= htmlspecialchars($provisioning['status']) ?></span></td></tr>
+                  <tr><td class="text-muted">Rota:</td><td><code><?= htmlspecialchars($provisioning['route_key']) ?></code></td></tr>
+                  <tr><td class="text-muted">Called AE:</td><td><code><?= htmlspecialchars($provisioning['called_ae']) ?></code></td></tr>
+                  <tr><td class="text-muted">Calling AE:</td><td><code><?= htmlspecialchars($provisioning['calling_ae']) ?></code></td></tr>
+                  <tr><td class="text-muted">IP VPN do cliente:</td><td><code><?= htmlspecialchars($provisioning['vpn_client_ip']) ?></code></td></tr>
+                </table>
+                <label class="form-label small fw-semibold">Chave pública WireGuard recebida do cliente</label>
+                <input class="form-control form-control-sm font-monospace" readonly value="<?= htmlspecialchars($provisioning['wireguard_public_key']) ?>">
+                <div class="form-text mb-2">Apenas a chave pública é mantida no cadastro. Para trocar o peer, use o procedimento de rotação aprovado; não cole chave privada nesta página.</div>
+                <?php if (!empty($provisioning['gateway_public_key'])): ?>
+                  <a class="btn btn-sm btn-outline-primary w-100 mb-2" href="/platform/servidor-pacs/<?= (int)$servidor['id'] ?>/operacao/kit-vpn-only.pdf"><i class="fa fa-file-pdf me-1"></i> Baixar kit VPN-only do cliente</a>
+                  <button class="btn btn-sm btn-primary w-100 mb-2" type="button" onclick="verificarEchoTenant()"><i class="fa fa-heartbeat me-1"></i> Verificar C-ECHO</button>
+                  <?php if (($provisioning['status'] ?? '') === 'echo_validated'): ?>
+                    <button class="btn btn-sm btn-outline-danger w-100" type="button" onclick="ativarCstoreTenant()"><i class="fa fa-lock-open me-1"></i> Liberar C-STORE após confirmação</button>
+                  <?php endif; ?>
+                <?php endif; ?>
+                <div id="tenantOperationResult" class="alert d-none mt-2 mb-0"></div>
+                <?php endif; ?>
             </div>
         </div>
         <?php endif; ?>
@@ -177,6 +202,8 @@ $testarUrl = $isNovo ? null : "/platform/servidor-pacs/{$servidor['id']}/testar"
 
 <script>
 const SERVIDOR_ID = <?= $isNovo ? 'null' : (int)$servidor['id'] ?>;
+const CSRF_TOKEN = <?= json_encode($csrf, JSON_UNESCAPED_SLASHES) ?>;
+const IS_TENANT_CELL = <?= $isTenantCell ? 'true' : 'false' ?>;
 
 function toggleSenha() {
     const input = document.getElementById('senhaInput');
@@ -201,6 +228,23 @@ function testarConexaoForm() {
             result.className = 'mt-3 alert alert-danger';
             result.innerHTML = '<i class="fa fa-times-circle me-2"></i>Erro de comunicação.';
         });
+}
+
+function verificarEchoTenant() {
+    const result = document.getElementById('tenantOperationResult');
+    result.className = 'alert alert-info mt-2 mb-0';
+    result.textContent = 'Consultando a auditoria técnica do gateway…';
+    fetch(`/platform/servidor-pacs/${SERVIDOR_ID}/operacao/testar-echo`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': CSRF_TOKEN}, body: `_csrf_token=${encodeURIComponent(CSRF_TOKEN)}`})
+      .then(r => r.json()).then(data => { result.className = data.success ? 'alert alert-success mt-2 mb-0' : 'alert alert-warning mt-2 mb-0'; result.textContent = data.message; if (data.success) setTimeout(() => location.reload(), 800); })
+      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = 'Não foi possível consultar o gateway.'; });
+}
+function ativarCstoreTenant() {
+    const confirmacao = prompt('Esta ação habilita o recebimento DICOM. Digite exatamente LIBERAR C-STORE para confirmar.');
+    if (confirmacao !== 'LIBERAR C-STORE') return;
+    const result = document.getElementById('tenantOperationResult');
+    fetch(`/platform/servidor-pacs/${SERVIDOR_ID}/operacao/ativar-cstore`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': CSRF_TOKEN}, body: `_csrf_token=${encodeURIComponent(CSRF_TOKEN)}&confirm=${encodeURIComponent(confirmacao)}`})
+      .then(r => r.json()).then(data => { result.className = data.success ? 'alert alert-success mt-2 mb-0' : 'alert alert-danger mt-2 mb-0'; result.textContent = data.message; if (data.success) setTimeout(() => location.reload(), 900); })
+      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = 'Não foi possível liberar C-STORE.'; });
 }
 
 function associarNegocio() {

@@ -32,6 +32,11 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="dicom-tab" data-bs-toggle="tab" data-bs-target="#dicom" type="button" role="tab"><i class="fa fa-x-ray me-1"></i><?= htmlspecialchars(t('negocios.dicom.aba_titulo')) ?></button>
             </li>
+            <?php if (isset($negocio) && !empty($negocio['id'])): ?>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="servidores-tab" data-bs-toggle="tab" data-bs-target="#servidores" type="button" role="tab"><i class="fa fa-server me-1"></i> Servidores Vinculados</button>
+            </li>
+            <?php endif; ?>
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="webhook-tab" data-bs-toggle="tab" data-bs-target="#webhook" type="button" role="tab"><i class="fa fa-plug me-1"></i> Webhooks HUB</button>
             </li>
@@ -302,7 +307,7 @@
                                 <thead class="table-light"><tr><th><?= htmlspecialchars(t('negocios.dicom.issuer')) ?></th><th><?= htmlspecialchars(t('negocios.dicom.modalidades')) ?></th><th class="text-end"><?= htmlspecialchars(t('comum.acoes.titulo')) ?></th></tr></thead>
                                 <tbody id="issuer_rules_body">
                                     <?php foreach ($issuerModalidadeRules as $index => $rule): ?>
-                                        <tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" name="issuer_modalidades[<?= (int) $index ?>][issuer_of_patient_id]" value="<?= htmlspecialchars($rule['issuer_of_patient_id'] ?? '') ?>" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities" name="issuer_modalidades[<?= (int) $index ?>][modalidades]" value="<?= htmlspecialchars(implode(', ', $rule['modalidades'] ?? [])) ?>" placeholder="CT, CR, US" required></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr>
+                                        <tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" name="issuer_modalidades[<?= (int) $index ?>][issuer_of_patient_id]" value="<?= htmlspecialchars($rule['issuer_of_patient_id'] ?? '') ?>" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities mb-1" name="issuer_modalidades[<?= (int) $index ?>][modalidades]" value="<?= htmlspecialchars(implode(', ', $rule['modalidades'] ?? [])) ?>" placeholder="CT, CR, US" required><div class="form-check"><input class="form-check-input issuer-all-modalities" type="checkbox" id="issuer_all_<?= (int) $index ?>" <?= in_array('*', $rule['modalidades'] ?? [], true) ? 'checked' : '' ?>><label class="form-check-label small" for="issuer_all_<?= (int) $index ?>">Todas as modalidades</label></div></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
@@ -311,7 +316,7 @@
                     </section>
 
                     <template id="dicom_institution_template"><div class="col-md-6 dicom-institution-row"><div class="input-group"><input class="form-control form-control-sm dicom-institution" maxlength="128"><button type="button" class="btn btn-sm btn-outline-danger dicom-institution-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></div></div></template>
-                    <template id="issuer_rule_template"><tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities" placeholder="CT, CR, US" required></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr></template>
+                    <template id="issuer_rule_template"><tr class="issuer-rule-row"><td><input class="form-control form-control-sm issuer-value" maxlength="64" required></td><td><input class="form-control form-control-sm issuer-modalities mb-1" placeholder="CT, CR, US" required><div class="form-check"><input class="form-check-input issuer-all-modalities" type="checkbox"><label class="form-check-label small">Todas as modalidades</label></div></td><td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger issuer-remove" title="<?= htmlspecialchars(t('comum.acoes.excluir')) ?>"><i class="fa fa-trash"></i></button></td></tr></template>
                     <script>
                     (() => {
                         const institutionBody = document.getElementById('dicom_institutions_body');
@@ -322,7 +327,13 @@
                         const syncInstitutions = () => { institutionLegacy.value = [...institutionBody.querySelectorAll('.dicom-institution')].map(input => input.value.trim()).filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(', '); };
                         const renumberIssuers = () => issuerBody.querySelectorAll('.issuer-rule-row').forEach((row, index) => { row.querySelector('.issuer-value').name = `issuer_modalidades[${index}][issuer_of_patient_id]`; row.querySelector('.issuer-modalities').name = `issuer_modalidades[${index}][modalidades]`; });
                         const bindInstitution = row => row.querySelector('.dicom-institution-remove').addEventListener('click', () => { row.remove(); syncInstitutions(); });
-                        const bindIssuer = row => row.querySelector('.issuer-remove').addEventListener('click', () => { row.remove(); renumberIssuers(); });
+                        const bindIssuer = row => {
+                            row.querySelector('.issuer-remove').addEventListener('click', () => { row.remove(); renumberIssuers(); });
+                            const all = row.querySelector('.issuer-all-modalities');
+                            const modalities = row.querySelector('.issuer-modalities');
+                            const applyAll = () => { if (all.checked) { modalities.value = '*'; modalities.readOnly = true; } else { if (modalities.value === '*') modalities.value = ''; modalities.readOnly = false; } };
+                            all.addEventListener('change', applyAll); applyAll();
+                        };
                         institutionBody.querySelectorAll('.dicom-institution-row').forEach(bindInstitution);
                         issuerBody.querySelectorAll('.issuer-rule-row').forEach(bindIssuer);
                         institutionBody.addEventListener('input', syncInstitutions);
@@ -333,6 +344,25 @@
                     })();
                     </script>
                 </div>
+
+                <?php if (isset($negocio) && !empty($negocio['id'])): ?>
+                <div class="tab-pane fade" id="servidores" role="tabpanel">
+                    <div class="alert alert-info"><i class="fa fa-shield-alt me-2"></i><strong>Herança de regras DICOM.</strong> Ao vincular um servidor, este negócio preserva as regras acima: <code>InstitutionName (0008,0080)</code> e <code>IssuerOfPatientID (0010,0021)</code>, com modalidades autorizadas. Em célula exclusiva, o tenant da célula permanece a fronteira principal.</div>
+                    <div class="table-responsive border rounded"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Vincular</th><th>Servidor PACS</th><th>Tipo / estado</th><th>Tags aplicadas neste negócio</th></tr></thead><tbody>
+                    <?php if (empty($pacsServers ?? [])): ?><tr><td colspan="4" class="text-center text-muted py-4">Nenhum servidor PACS disponível.</td></tr><?php endif; ?>
+                    <?php foreach (($pacsServers ?? []) as $server): ?>
+                      <?php $belongsElsewhere = !empty($server['cell_tenant_id']) && (int)$server['cell_tenant_id'] !== (int)$negocio['id']; $exclusiveHere = !empty($server['cell_tenant_id']) && (int)$server['cell_tenant_id'] === (int)$negocio['id']; $checked = !empty($server['vinculado']) || $exclusiveHere; ?>
+                      <tr class="<?= $belongsElsewhere ? 'table-light text-muted' : '' ?>">
+                        <td><input class="form-check-input" type="checkbox" name="servidor_pacs_ids[]" value="<?= (int)$server['id'] ?>" <?= $checked ? 'checked' : '' ?> <?= ($belongsElsewhere || $exclusiveHere) ? 'disabled' : '' ?>><?php if ($exclusiveHere): ?><input type="hidden" name="servidor_pacs_ids[]" value="<?= (int)$server['id'] ?>"><?php endif; ?></td>
+                        <td><strong><?= htmlspecialchars($server['nome']) ?></strong><br><small class="text-muted">AE: <code><?= htmlspecialchars($server['dicom_aet'] ?: '—') ?></code></small></td>
+                        <td><?php if (!empty($server['cell_profile'])): ?><span class="badge bg-primary">Célula <?= htmlspecialchars($server['cell_profile']) ?></span><br><small><?= htmlspecialchars($server['cell_status']) ?></small><?php else: ?><span class="badge bg-secondary">Orthanc compartilhado</span><?php endif; ?></td>
+                        <td><small><code>(0008,0080)</code> <?= htmlspecialchars($institutionNames ?: 'sem regra') ?><br><code>(0010,0021)</code> <?= htmlspecialchars(empty($issuerModalidadeRules) ? 'sem regra' : 'Issuer + modalidades definidos na aba DICOM') ?></small><?php if ($belongsElsewhere): ?><br><span class="text-danger small">Indisponível: célula exclusiva de outro negócio.</span><?php endif; ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                    </tbody></table></div>
+                    <p class="small text-muted mt-3 mb-0">Selecione um ou mais servidores compartilhados e salve o negócio. Deixar um servidor desmarcado remove apenas o vínculo futuro; não reatribui estudos já roteados. Células exclusivas não podem ser vinculadas a outro tenant.</p>
+                </div>
+                <?php endif; ?>
 
                 <!-- ABA 6: WEBHOOKS HUB -->
                 <div class="tab-pane fade" id="webhook" role="tabpanel">

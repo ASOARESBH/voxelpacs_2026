@@ -89,8 +89,11 @@ Router::get('/platform/reports/exportar',               'Platform\PlatformReport
 // Servidor PACS (N:N — vários servidores Orthanc, cada um associável a N negócios)
 // ============================================================
 Router::get('/platform/servidor-pacs',                              'Platform\ServidorPacsController@index');
-Router::get('/platform/servidor-pacs/novo',                         'Platform\ServidorPacsController@novoServidor');
-Router::post('/platform/servidor-pacs/criar',                       'Platform\ServidorPacsController@criarServidor');
+Router::get('/platform/servidor-pacs/novo',                         'Platform\TenantDicomProvisioningController@create');
+Router::post('/platform/servidor-pacs/criar',                       'Platform\TenantDicomProvisioningController@createAndProvision');
+// Compatibilidade para cadastro manual de Orthanc já existente; não provisiona infraestrutura.
+Router::get('/platform/servidor-pacs/novo-orthanc',                 'Platform\ServidorPacsController@novoServidor');
+Router::post('/platform/servidor-pacs/criar-orthanc',               'Platform\ServidorPacsController@criarServidor');
 Router::post('/platform/servidor-pacs/sync-robo/gerar-token',       'Platform\ServidorPacsController@syncRoboGerarToken');
 Router::post('/platform/servidor-pacs/sync-robo/toggle',            'Platform\ServidorPacsController@syncRoboToggle');
 Router::get('/platform/servidor-pacs/roteamento',                   'Platform\ServidorPacsController@roteamento');
@@ -102,6 +105,10 @@ Router::get('/platform/servidor-pacs/estudos/{id}/tags',            'Platform\Se
 Router::get('/platform/servidor-pacs/{id}/configurar',              'Platform\ServidorPacsController@configurar');
 Router::post('/platform/servidor-pacs/{id}/salvar-config',          'Platform\ServidorPacsController@salvarConfig');
 Router::post('/platform/servidor-pacs/{id}/testar',                 'Platform\ServidorPacsController@testar');
+Router::get('/platform/servidor-pacs/{id}/operacao/status',         'Platform\TenantDicomProvisioningController@status');
+Router::post('/platform/servidor-pacs/{id}/operacao/testar-echo',   'Platform\TenantDicomProvisioningController@verifyEcho');
+Router::post('/platform/servidor-pacs/{id}/operacao/ativar-cstore', 'Platform\TenantDicomProvisioningController@activateCstore');
+Router::get('/platform/servidor-pacs/{id}/operacao/kit-vpn-only.pdf','Platform\TenantDicomProvisioningController@kit');
 Router::post('/platform/servidor-pacs/{id}/sincronizar',            'Platform\ServidorPacsController@sincronizar');
 Router::post('/platform/servidor-pacs/{id}/negocios/associar',      'Platform\ServidorPacsController@associarNegocio');
 Router::post('/platform/servidor-pacs/{id}/negocios/{tenantId}/desassociar', 'Platform\ServidorPacsController@desassociarNegocio');

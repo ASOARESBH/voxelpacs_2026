@@ -29,6 +29,9 @@ final class DicomIssuerModalidadeService
     public static function code(mixed $value): ?string
     {
         $code = strtoupper(trim((string) $value));
+        if ($code === '*') {
+            return '*';
+        }
         return preg_match('/^[A-Z0-9]{2,16}$/', $code) === 1 ? $code : null;
     }
 }

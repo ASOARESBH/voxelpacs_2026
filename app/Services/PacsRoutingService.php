@@ -130,7 +130,7 @@ class PacsRoutingService
     {
         $tenants = implode(',', array_fill(0, count($tenantIds), '?'));
         $mods = implode(',', array_fill(0, count($modalities), '?'));
-        $stmt = $pdo->prepare("SELECT 1 FROM bi_tenant_issuer_modalidades WHERE tenant_id IN ($tenants) AND status='ativo' AND modalidade IN ($mods) LIMIT 1");
+        $stmt = $pdo->prepare("SELECT 1 FROM bi_tenant_issuer_modalidades WHERE tenant_id IN ($tenants) AND status='ativo' AND (modalidade IN ($mods) OR modalidade='*') LIMIT 1");
         $stmt->execute(array_merge($tenantIds, $modalities));
         return (bool) $stmt->fetchColumn();
     }
@@ -141,7 +141,7 @@ class PacsRoutingService
         if ($issuerKey === null) return [];
         $tenants = implode(',', array_fill(0, count($tenantIds), '?'));
         $mods = implode(',', array_fill(0, count($modalities), '?'));
-        $stmt = $pdo->prepare("SELECT DISTINCT tenant_id FROM bi_tenant_issuer_modalidades WHERE tenant_id IN ($tenants) AND status='ativo' AND issuer_of_patient_id_normalized=? AND modalidade IN ($mods)");
+        $stmt = $pdo->prepare("SELECT DISTINCT tenant_id FROM bi_tenant_issuer_modalidades WHERE tenant_id IN ($tenants) AND status='ativo' AND issuer_of_patient_id_normalized=? AND (modalidade IN ($mods) OR modalidade='*')");
         $stmt->execute(array_merge($tenantIds, [$issuerKey], $modalities));
         return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }

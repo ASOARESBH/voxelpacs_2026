@@ -261,6 +261,55 @@ class NegociosController extends Controller {
     }
 
     /** Normaliza o número opcional do registro profissional sem aceitar caracteres de controle. */
+    /**
+     * Sincroniza vínculos N:N informados na aba de servidores. Células exclusivas
+     * nunca podem ser vinculadas a outro tenant; o vínculo da própria célula é
+     * obrigatório e não pode ser removido pela interface.
+     */
+    private function sincronizarServidoresVinculados(\PDO $pdo, int $tenantId, mixed $rawIds): void
+    {
+        if (!is_array($rawIds)) {
+            throw new \RuntimeException('Lista de servidores vinculados inválida.');
+        }
+        $selected = array_values(array_unique(array_filter(array_map('intval', $rawIds), static fn(int $id): bool => $id > 0)));
+        $rows = $pdo->query('SELECT s.id, c.tenant_id AS cell_tenant_id FROM bi_pacs_servidor s LEFT JOIN bi_tenant_orthanc_cells c ON c.servidor_id=s.id WHERE s.ativo=1')->fetchAll(\PDO::FETCH_ASSOC);
+        $available = [];
+        $mandatory = [];
+        foreach ($rows as $row) {
+            $serverId = (int) $row['id'];
+            $cellTenantId = $row['cell_tenant_id'] === null ? null : (int) $row['cell_tenant_id'];
+            if ($cellTenantId !== null && $cellTenantId !== $tenantId) {
+                continue;
+            }
+            $available[$serverId] = true;
+            if ($cellTenantId === $tenantId) {
+                $mandatory[$serverId] = true;
+            }
+        }
+        foreach ($selected as $serverId) {
+            if (!isset($available[$serverId])) {
+                throw new \RuntimeException('Um servidor selecionado não está disponível para este negócio.');
+            }
+        }
+        $desired = array_values(array_unique(array_merge($selected, array_keys($mandatory))));
+        $existing = $pdo->prepare('SELECT servidor_id FROM bi_negocio_servidor_pacs WHERE tenant_id=? AND ativo=1');
+        $existing->execute([$tenantId]);
+        $existingIds = array_map('intval', $existing->fetchAll(\PDO::FETCH_COLUMN));
+        $deactivate = array_values(array_diff($existingIds, $desired));
+        if ($deactivate !== []) {
+            $marks = implode(',', array_fill(0, count($deactivate), '?'));
+            $stmt = $pdo->prepare("UPDATE bi_negocio_servidor_pacs SET ativo=0 WHERE tenant_id=? AND servidor_id IN ($marks)");
+            $stmt->execute(array_merge([$tenantId], $deactivate));
+        }
+        $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por) VALUES (?, ?, 1, ?) ON CONFLICT (tenant_id, servidor_id) DO UPDATE SET ativo=1"
+            : "INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por) VALUES (?, ?, 1, ?) ON DUPLICATE KEY UPDATE ativo=1";
+        $stmt = $pdo->prepare($sql);
+        foreach ($desired as $serverId) {
+            $stmt->execute([$tenantId, $serverId, \App\Core\Auth::userId()]);
+        }
+    }
+
     private function normalizarNumeroRegistro(?string $numero): ?string {
         $numero = trim((string) $numero);
         if ($numero === '') {
@@ -278,6 +327,7 @@ class NegociosController extends Controller {
         $contatos = [];
         $institutionNames = '';
         $issuerModalidadeRules = [];
+        $pacsServers = [];
 
         try {
             $negocio = $pdo->prepare("SELECT * FROM bi_tenants WHERE id = ? LIMIT 1");
@@ -329,6 +379,16 @@ class NegociosController extends Controller {
             }
             $issuerModalidadeRules = array_values($issuerModalidadeRules);
         } catch (\Throwable $e) { $issuerModalidadeRules = []; }
+        try {
+            $servers = $pdo->prepare("SELECT s.id, s.nome, s.dicom_aet, s.dicom_port, s.status_ping,
+                       c.tenant_id AS cell_tenant_id, c.profile AS cell_profile, c.status AS cell_status,
+                       EXISTS(SELECT 1 FROM bi_negocio_servidor_pacs nsp WHERE nsp.tenant_id=? AND nsp.servidor_id=s.id AND nsp.ativo=1) AS vinculado
+                    FROM bi_pacs_servidor s
+                    LEFT JOIN bi_tenant_orthanc_cells c ON c.servidor_id=s.id
+                    WHERE s.ativo=1 ORDER BY s.nome");
+            $servers->execute([$id]);
+            $pacsServers = $servers->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\Throwable $e) { $pacsServers = []; }
         // Busca admin principal do tenant para exibir no Perfil/Acesso
         $admin = null;
         try {
@@ -342,7 +402,7 @@ class NegociosController extends Controller {
             $stmtAdmin->execute([$id]);
             $admin = $stmtAdmin->fetch(\PDO::FETCH_ASSOC) ?: null;
         } catch (\Throwable $e) { $admin = null; }
-        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames', 'issuerModalidadeRules', 'admin'), 'platform');
+        $this->view('platform/negocios/form', compact('negocio', 'planos', 'contatos', 'institutionNames', 'issuerModalidadeRules', 'pacsServers', 'admin'), 'platform');
     }
 
     public function update(int $id): void {
@@ -520,6 +580,9 @@ class NegociosController extends Controller {
 
             $issuerRules = $this->regrasIssuerModalidadeDaRequisicao();
             $this->sincronizarRegrasIssuerModalidade($pdo, $id, $issuerRules);
+            if (array_key_exists('servidor_pacs_ids', $_POST)) {
+                $this->sincronizarServidoresVinculados($pdo, $id, $_POST['servidor_pacs_ids']);
+            }
 
             $pdo->commit();
             $_SESSION['success'] = "Negócio atualizado com sucesso!";

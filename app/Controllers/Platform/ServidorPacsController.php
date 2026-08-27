@@ -143,11 +143,23 @@ class ServidorPacsController extends Controller
             WHERE nsp.servidor_id = ? AND nsp.ativo = 1 ORDER BY t.nome
         ");
         $negociosAssociados->execute([$id]);
+        $provisioning = null;
+        try {
+            $stmtProvisioning = $pdo->prepare('SELECT status, current_step, profile, route_key, calling_ae, called_ae, backend_ae, vpn_client_ip, wireguard_public_key, gateway_public_key, echo_ready_at, echo_validated_at, last_error_code, last_error_message FROM bi_pacs_tenant_provisioning WHERE servidor_id=? ORDER BY id DESC LIMIT 1');
+            $stmtProvisioning->execute([$id]);
+            $provisioning = $stmtProvisioning->fetch(\PDO::FETCH_ASSOC) ?: null;
+        } catch (\Throwable $error) {
+            // A migration é aditiva; servidores legados seguem configuráveis enquanto
+            // o novo control-plane ainda não tiver sido aplicado no ambiente.
+            $provisioning = null;
+        }
 
         $this->view('platform/servidor_pacs/configurar', [
             'servidor' => $servidor,
             'negociosAssociados' => $negociosAssociados->fetchAll(\PDO::FETCH_ASSOC),
             'todosNegocios' => $this->listarNegociosAtivos($pdo),
+            'provisioning' => $provisioning,
+            'csrfToken' => $this->csrfToken(),
         ], 'platform');
     }
 
@@ -190,6 +202,17 @@ class ServidorPacsController extends Controller
     public function salvarConfig(int $id): void
     {
         $pdo = Database::getInstance();
+        try {
+            $managed = $pdo->prepare('SELECT 1 FROM bi_pacs_tenant_provisioning WHERE servidor_id=? LIMIT 1');
+            $managed->execute([$id]);
+            if ($managed->fetchColumn()) {
+                $_SESSION['error'] = 'Esta célula tenant é gerenciada pelo onboarding VPN-only e não pode ter endpoint ou credencial alterados manualmente.';
+                $this->redirect("/platform/servidor-pacs/{$id}/configurar");
+            }
+        } catch (\Throwable $error) {
+            // A migration ainda pode não existir em instalações legadas; o CRUD
+            // existente preserva seu comportamento até a atualização ser aplicada.
+        }
 
         $url     = rtrim(trim($_POST['url'] ?? ''), '/');
         $nome    = trim($_POST['nome'] ?? 'Orthanc Principal');
@@ -243,6 +266,13 @@ class ServidorPacsController extends Controller
         }
 
         try {
+            $exclusiveCell = $pdo->prepare('SELECT tenant_id FROM bi_tenant_orthanc_cells WHERE servidor_id=? AND status IN (\'provisioned\',\'active\') LIMIT 1');
+            $exclusiveCell->execute([$servidorId]);
+            $exclusiveTenant = $exclusiveCell->fetchColumn();
+            if ($exclusiveTenant !== false && (int) $exclusiveTenant !== $tenantId) {
+                echo json_encode(['success' => false, 'message' => 'Este servidor pertence a uma célula exclusiva de outro negócio.']);
+                return;
+            }
             $sql = SqlHelper::isPostgres()
                 ? 'INSERT INTO bi_negocio_servidor_pacs (tenant_id, servidor_id, ativo, criado_por)
                    VALUES (?, ?, 1, ?)
@@ -265,6 +295,12 @@ class ServidorPacsController extends Controller
         $pdo = Database::getInstance();
 
         try {
+            $exclusiveCell = $pdo->prepare('SELECT tenant_id FROM bi_tenant_orthanc_cells WHERE servidor_id=? AND status IN (\'provisioned\',\'active\') LIMIT 1');
+            $exclusiveCell->execute([$servidorId]);
+            if ((int) ($exclusiveCell->fetchColumn() ?: 0) === $tenantId) {
+                echo json_encode(['success' => false, 'message' => 'O vínculo da célula exclusiva com seu próprio negócio é obrigatório.']);
+                return;
+            }
             $pdo->prepare("
                 UPDATE bi_negocio_servidor_pacs SET ativo = 0
                 WHERE servidor_id = ? AND tenant_id = ?
