@@ -55,6 +55,16 @@ class ReportDeliveryController extends Controller
             'tenant' => $tenant,
             'destinations' => $this->repository->listDestinations($tenantId),
             'jobs' => $this->repository->listJobs($tenantId),
+            'deliveries' => $this->repository->listReleasedDeliveries($tenantId, [
+                'patient' => trim((string) ($_GET['patient'] ?? '')),
+                'modality' => trim((string) ($_GET['modality'] ?? '')),
+                'issuer' => trim((string) ($_GET['issuer'] ?? '')),
+            ]),
+            'deliveryFilters' => [
+                'patient' => trim((string) ($_GET['patient'] ?? '')),
+                'modality' => trim((string) ($_GET['modality'] ?? '')),
+                'issuer' => trim((string) ($_GET['issuer'] ?? '')),
+            ],
             'stats' => $this->repository->stats($tenantId),
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
@@ -171,6 +181,45 @@ class ReportDeliveryController extends Controller
                 'error' => $e->getMessage(),
             ]);
             $this->json(['success' => false, 'message' => 'Não foi possível reenfileirar o job.'], 500);
+        }
+    }
+
+    public function resendReleasedReport(int $tenantId, int $reportId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_resend'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao')], 422);
+        }
+
+        try {
+            $result = (new ReportDeliveryManualQueueService(Database::getInstance()))
+                ->queueReleasedReportById($tenantId, $reportId, (int) Auth::userId());
+            AuditLogger::log('report_delivery.released_report_requeued', 'reports', $reportId, [
+                'tenant_id' => $tenantId,
+                'job_count' => $result['job_count'],
+                'retried_jobs' => $result['retried_jobs'],
+            ]);
+            $this->json([
+                'success' => true,
+                'message' => $result['job_count'] > 0
+                    ? t('delivery_hub.released.reenvio_aceito')
+                    : t('delivery_hub.released.sem_destino_ativo'),
+                'job_count' => $result['job_count'],
+            ]);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::resendReleasedReport] Falha no reenvio controlado', [
+                'tenant_id' => $tenantId,
+                'report_id' => $reportId,
+                'error' => $e->getMessage(),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_reenvio')], 500);
         }
     }
 

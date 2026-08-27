@@ -24,7 +24,7 @@ Worker persistente autenticado
 
 | Controle | Implementação |
 |---|---|
-| Gatilho clínico | Apenas `Assinar e Fechar` (`modo=fechar`), que coloca o estudo em `liberado`. |
+| Gatilho clínico | `Assinar e Fechar` ou a ação posterior **Liberar** após assinatura. Assinatura simples não cria evento de devolução. |
 | Consistência | A outbox é criada dentro da mesma transação do laudo, assinatura, versão e situação do estudo. |
 | Idempotência | A chave SHA-256 usa tenant, laudo, versão, tipo do evento e hash clínico; jobs também têm chave por destino. |
 | Isolamento | Registros são associados a tenant e, opcionalmente, a estabelecimento/unidade. |
@@ -38,6 +38,7 @@ Worker persistente autenticado
 | Tabela | Função |
 |---|---|
 | `pacs_report_delivery_destinations` | Perfil de entrega por tenant/unidade e canal. |
+| `pacs_report_delivery_destination_issuers` | Vínculos normalizados de Issuer por destino de entrega. |
 | `pacs_report_delivery_outbox` | Evento imutável de liberação/correção de laudo. |
 | `pacs_report_delivery_jobs` | Uma unidade de trabalho para cada destino selecionado. |
 | `pacs_report_delivery_attempts` | Histórico técnico de cada tentativa. |
@@ -101,20 +102,35 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 
 Nenhum destino clínico é ativado automaticamente nesta entrega.
 
-## Roteamento por PACS de origem (InstitutionName)
+## Roteamento por Issuer e PACS de origem
 
-Um mesmo negócio pode receber estudos de vários PACS. Por isso, cada destino de devolutiva deve ser vinculado a um ou mais **InstitutionNames** ativos daquele tenant. O InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name` quando o estudo é importado.
+Um mesmo negócio pode receber estudos de vários PACS. Cada destino pode vincular um ou mais **Issuers** e, opcionalmente, InstitutionNames de fallback. O Issuer é normalizado antes da comparação e vem de `bi_pacs_estudos.issuer_of_patient_id`; o InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name`.
 
-Ao liberar um laudo, o Hub normaliza o InstitutionName recebido e o compara com os InstitutionNames cadastrados no negócio. Ele cria jobs apenas para destinos que possuam vínculo explícito com a origem canônica do estudo. O snapshot da outbox registra tanto o valor recebido quanto o valor canônico usado no roteamento.
+Ao liberar ou reenviar um laudo, o Hub aplica **Issuer como chave prioritária**. InstitutionName só é consultado quando o estudo não tem Issuer utilizável. O snapshot da outbox registra o valor recebido, o Issuer normalizado, o InstitutionName canônico e a base da decisão de roteamento.
 
 | Situação | Resultado do Hub |
 |---|---|
-| Estudo `ORIX_ORTHO` e destino associado a `ORIX_ORTHO` | Cria job apenas para esse destino. |
-| Estudo `ORIX_RAIO_X` e outro destino associado a `ORIX_RAIO_X` | Cria job apenas para o segundo destino. |
-| Destino associado a vários InstitutionNames | Cria um job quando o estudo vier de qualquer origem associada. |
-| InstitutionName sem cadastro ativo no tenant | Não cria job externo; registra outbox como `no_destination` e log administrativo. |
+| Estudo com Issuer vinculado ao destino | Cria job apenas para os destinos ativos vinculados àquele Issuer. |
+| Estudo com Issuer não vinculado | Não usa InstitutionName; não cria job externo. |
+| Estudo sem Issuer e InstitutionName de fallback vinculado | Cria job apenas para os destinos ativos associados ao InstitutionName canônico. |
+| Estudo sem Issuer e sem fallback ativo | Não cria job externo; registra outbox como `no_destination` e log administrativo. |
 | Destino legado sem origem vinculada | Não recebe novos jobs até que a origem seja selecionada no painel. |
 
-No painel **Devolutiva de Laudos**, use a seção **PACS de origem dos estudos** para marcar uma ou mais origens antes de salvar o destino. Essa associação é obrigatória e fica visível na lista de destinos.
+No painel **Devolutiva de Laudos**, selecione os Issuers dos servidores PACS antes de salvar o destino. InstitutionNames podem ser selecionados somente como fallback para estudos sem Issuer. A lista de destinos mostra ambos os vínculos e a prioridade aplicada.
 
-> A seleção por InstitutionName é independente do canal de entrega. Um mesmo InstitutionName pode ter destinos distintos para DICOM, HTTPS, HL7 ou SFTP, desde que cada integração seja homologada e habilitada de forma explícita.
+> A seleção de origem é independente do canal de entrega. Um mesmo Issuer pode ter destinos distintos para DICOM, HTTPS, HL7 ou SFTP, desde que cada integração seja homologada e habilitada de forma explícita.
+
+## Laudos liberados, estados e reenvio controlado
+
+O painel de cada negócio apresenta até 100 laudos com situação `liberado`, mesmo quando ainda não existe job de integração. A lista é sempre filtrada por tenant e permite filtrar por nome do paciente, modalidade ou Issuer. Não exibe conteúdo do laudo, token público, credenciais nem configuração sensível do destino.
+
+| Estado exibido | Critério | Ação disponível |
+|---|---|---|
+| **Entregue** | Todos os jobs daquele laudo foram concluídos pelo worker com `delivered`. | Nenhuma. |
+| **Na fila** | Há job `queued`, `retrying` ou `processing`. | Reenviar, sujeito à confirmação e à regra de destino. |
+| **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | Reenviar reativa os jobs terminais. |
+| **Sem destino** | Não existe job compatível para o laudo liberado. | Reenviar reavalia Issuer e InstitutionName de fallback contra destinos ativos. |
+
+O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Para falhas terminais, ele somente muda os jobs daquele laudo de volta para `queued`. Caso não haja job terminal, reutiliza a outbox e a mesma regra de criação idempotente de jobs da liberação clínica. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker autenticado.
+
+Se não houver destino ativo e compatível, o reenvio retorna sem criar job. Quando um artefato é transmitido e confirmado pelo worker, o job passa para `delivered` e a lista reflete **Entregue**. Um reenvio clínico real deve ser confirmado separadamente antes da ação administrativa.

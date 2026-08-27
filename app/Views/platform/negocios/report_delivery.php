@@ -2,6 +2,8 @@
 /** @var array<string,mixed> $tenant */
 /** @var array<int,array<string,mixed>> $destinations */
 /** @var array<int,array<string,mixed>> $jobs */
+/** @var array<int,array<string,mixed>> $deliveries */
+/** @var array{patient:string,modality:string,issuer:string} $deliveryFilters */
 /** @var array<string,int> $stats */
 /** @var string $csrfToken */
 /** @var array<int,string> $transports */
@@ -218,29 +220,47 @@ $transportLabels = [
             </div>
 
             <div class="card shadow-sm">
-                <div class="card-header bg-white"><h2 class="h5 mb-0">Últimas entregas</h2></div>
+                <div class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div><h2 class="h5 mb-0"><?= $escape(t('delivery_hub.released.titulo')) ?></h2><div class="small text-muted"><?= $escape(t('delivery_hub.released.ajuda_status')) ?></div></div>
+                    <span class="badge text-bg-secondary"><?= $escape(sprintf(t('delivery_hub.released.exibidos'), count($deliveries))) ?></span>
+                </div>
+                <div class="card-body border-bottom bg-light-subtle">
+                    <form method="get" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery" class="row g-2 align-items-end">
+                        <div class="col-md-4"><label class="form-label small mb-1" for="delivery-filter-patient"><?= $escape(t('delivery_hub.released.filtro_paciente')) ?></label><input class="form-control form-control-sm" id="delivery-filter-patient" name="patient" value="<?= $escape($deliveryFilters['patient'] ?? '') ?>" maxlength="120" placeholder="<?= $escape(t('delivery_hub.released.placeholder_paciente')) ?>"></div>
+                        <div class="col-md-3"><label class="form-label small mb-1" for="delivery-filter-modality"><?= $escape(t('delivery_hub.released.filtro_modalidade')) ?></label><input class="form-control form-control-sm" id="delivery-filter-modality" name="modality" value="<?= $escape($deliveryFilters['modality'] ?? '') ?>" maxlength="64" placeholder="<?= $escape(t('delivery_hub.released.placeholder_modalidade')) ?>"></div>
+                        <div class="col-md-3"><label class="form-label small mb-1" for="delivery-filter-issuer"><?= $escape(t('delivery_hub.released.filtro_issuer')) ?></label><input class="form-control form-control-sm" id="delivery-filter-issuer" name="issuer" value="<?= $escape($deliveryFilters['issuer'] ?? '') ?>" maxlength="120" placeholder="<?= $escape(t('delivery_hub.released.placeholder_issuer')) ?>"></div>
+                        <div class="col-md-2 d-flex gap-2"><button type="submit" class="btn btn-sm btn-primary flex-fill"><i class="fa fa-filter me-1"></i><?= $escape(t('delivery_hub.released.filtrar')) ?></button><a class="btn btn-sm btn-outline-secondary" href="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery" title="<?= $escape(t('delivery_hub.released.limpar')) ?>"><?= $escape(t('delivery_hub.released.limpar')) ?></a></div>
+                    </form>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
-                        <thead><tr><th>Laudo</th><th>Destino</th><th>Status</th><th>Tentativas</th><th>Detalhe</th><th class="text-end">Ação</th></tr></thead>
+                        <thead><tr><th><?= $escape(t('delivery_hub.released.coluna_laudo')) ?></th><th><?= $escape(t('delivery_hub.released.coluna_paciente')) ?></th><th><?= $escape(t('delivery_hub.released.coluna_modalidade')) ?></th><th><?= $escape(t('delivery_hub.released.coluna_issuer')) ?></th><th><?= $escape(t('delivery_hub.released.coluna_destino_canal')) ?></th><th><?= $escape(t('delivery_hub.released.coluna_status')) ?></th><th class="text-end"><?= $escape(t('delivery_hub.released.coluna_acoes')) ?></th></tr></thead>
                         <tbody>
-                            <?php if (!$jobs): ?><tr><td colspan="6" class="text-center text-muted py-4">Ainda não existem jobs de entrega.</td></tr><?php endif; ?>
-                            <?php foreach ($jobs as $job): ?>
+                            <?php if (!$deliveries): ?><tr><td colspan="7" class="text-center text-muted py-4"><?= $escape(t('delivery_hub.released.vazio')) ?></td></tr><?php endif; ?>
+                            <?php foreach ($deliveries as $delivery): ?>
+                                <?php
+                                    $total = (int) ($delivery['jobs_total'] ?? 0);
+                                    $delivered = (int) ($delivery['jobs_delivered'] ?? 0);
+                                    $queued = (int) ($delivery['jobs_queued'] ?? 0);
+                                    $failed = (int) ($delivery['jobs_failed'] ?? 0);
+                                    if ($total > 0 && $delivered === $total) { $statusKey = 'delivery_hub.released.status_entregue'; $statusClass = 'success'; }
+                                    elseif ($queued > 0) { $statusKey = 'delivery_hub.released.status_fila'; $statusClass = 'primary'; }
+                                    elseif ($failed > 0) { $statusKey = 'delivery_hub.released.status_falha'; $statusClass = 'danger'; }
+                                    else { $statusKey = 'delivery_hub.released.status_sem_destino'; $statusClass = 'secondary'; }
+                                    $canResend = $statusKey !== 'delivery_hub.released.status_entregue';
+                                ?>
                                 <tr>
-                                    <td>#<?= (int) $job['report_id'] ?> · v<?= (int) $job['report_version'] ?></td>
-                                    <td><?= $escape($job['destination_name']) ?></td>
-                                    <td><span class="badge text-bg-<?= $job['status'] === 'delivered' ? 'success' : ($job['status'] === 'queued' ? 'primary' : ($job['status'] === 'processing' ? 'warning' : 'danger')) ?>"><?= $escape($job['status']) ?></span></td>
-                                    <td><?= (int) $job['attempt_count'] ?></td>
-                                    <td class="small text-muted"><?= $escape($job['remote_reference'] ?: $job['last_error'] ?: '—') ?></td>
+                                    <td>#<?= (int) $delivery['report_id'] ?><div class="small text-muted"><?= $escape((string) ($delivery['liberado_em'] ?? '')) ?></div></td>
+                                    <td><?= $escape($delivery['patient_name']) ?></td>
+                                    <td><?= $escape($delivery['modalities'] ?: '—') ?></td>
+                                    <td class="small"><?= $escape($delivery['issuer_of_patient_id'] ?: '—') ?></td>
+                                    <td><?= $escape($delivery['destination_name'] ?: '—') ?><div class="small text-muted"><?= $escape($transportLabels[$delivery['transport'] ?? ''] ?? ($delivery['transport'] ?? '')) ?></div></td>
+                                    <td><span class="badge text-bg-<?= $statusClass ?>"><?= $escape(t($statusKey)) ?></span><div class="small text-muted mt-1"><?= $escape(sprintf(t('delivery_hub.released.contagem_entregue'), $delivered, $total)) ?></div></td>
                                     <td class="text-end">
-                                        <?php if ($job['status'] === 'processing'): ?>
-                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= (int) $job['id'] ?>/recover-stale" class="d-inline">
-                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Recupera somente leases em processamento há mais de 10 minutos">Recuperar lease</button>
-                                            </form>
-                                        <?php elseif (in_array($job['status'], ['failed', 'dead_letter'], true)): ?>
-                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= (int) $job['id'] ?>/retry" class="d-inline">
-                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-primary">Reenfileirar</button>
+                                        <?php if ($canResend): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/<?= (int) $delivery['report_id'] ?>/resend" class="d-inline delivery-resend-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_resend" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar')) ?></button>
                                             </form>
                                         <?php else: ?>
                                             <span class="text-muted small">—</span>
@@ -386,6 +406,13 @@ $transportLabels = [
         manualFeedback.textContent = result.message || 'Operação concluída.';
         manualFeedback.classList.remove('d-none');
         if (result.success) window.setTimeout(() => window.location.reload(), 1000);
+    });
+
+    document.querySelectorAll('.delivery-resend-form').forEach((resendForm) => {
+        resendForm.addEventListener('submit', (event) => {
+            const confirmed = window.confirm('<?= addslashes(t('delivery_hub.released.confirmar_reenvio')) ?>');
+            if (!confirmed) event.preventDefault();
+        });
     });
 
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });

@@ -102,6 +102,10 @@ class ReportDeliveryOutboxService
                 $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);
             }
 
+            if ($jobs > 0) {
+                $repository->markOutboxQueued($outboxId);
+            }
+
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
                 Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado à origem de devolução do estudo', [

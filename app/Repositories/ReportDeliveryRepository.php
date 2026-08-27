@@ -450,6 +450,17 @@ class ReportDeliveryRepository
         $stmt->execute([':id' => $outboxId]);
     }
 
+    /** Reativa a outbox quando uma configuração posterior permitir criar jobs. */
+    public function markOutboxQueued(int $outboxId): void
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_outbox
+             SET status = 'queued', processed_at = NULL
+             WHERE id = :id"
+        );
+        $stmt->execute([':id' => $outboxId]);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function listJobs(int $tenantId, int $limit = 50): array
     {
@@ -470,6 +481,90 @@ class ReportDeliveryRepository
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Lista laudos liberados do negócio, inclusive aqueles que ainda não
+     * produziram job por ausência de destino habilitado. A consulta não lê
+     * conteúdo do laudo e mantém todos os joins no tenant informado.
+     *
+     * @param array{patient?:string,modality?:string,issuer?:string} $filters
+     * @return array<int,array<string,mixed>>
+     */
+    public function listReleasedDeliveries(int $tenantId, array $filters = [], int $limit = 100): array
+    {
+        $patient = trim((string) ($filters['patient'] ?? ''));
+        $modality = trim((string) ($filters['modality'] ?? ''));
+        $issuer = trim((string) ($filters['issuer'] ?? ''));
+        $stmt = $this->pdo->prepare(
+            "SELECT r.id AS report_id, r.liberado_em, r.public_token,
+                    e.id AS estudo_id,
+                    COALESCE(NULLIF(e.patient_name_display, ''), NULLIF(e.patient_name, ''), '—') AS patient_name,
+                    COALESCE(e.modalities, '') AS modalities,
+                    COALESCE(e.issuer_of_patient_id, '') AS issuer_of_patient_id,
+                    COALESCE(e.issuer_of_patient_id_normalized, '') AS issuer_of_patient_id_normalized,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id), 0) AS jobs_total,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id AND j.status = 'delivered'), 0) AS jobs_delivered,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                                AND j.status IN ('queued', 'retrying', 'processing')), 0) AS jobs_queued,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                                AND j.status IN ('failed', 'dead_letter')), 0) AS jobs_failed,
+                    (SELECT d.nome FROM pacs_report_delivery_jobs j
+                       INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                       INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                     WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS destination_name,
+                    (SELECT j.transport FROM pacs_report_delivery_jobs j
+                       INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                     WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport
+             FROM reports r
+             INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+             WHERE r.tenant_id = :tenant_id
+               AND r.situacao = 'liberado'
+               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, e.patient_name, '')) LIKE LOWER(:patient_like))
+               AND (:modality = '' OR LOWER(COALESCE(e.modalities, '')) LIKE LOWER(:modality_like))
+               AND (:issuer = '' OR LOWER(COALESCE(e.issuer_of_patient_id, '')) LIKE LOWER(:issuer_like))
+             ORDER BY (r.liberado_em IS NULL) ASC, r.liberado_em DESC, r.id DESC
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
+        $stmt->bindValue(':patient', $patient, PDO::PARAM_STR);
+        $stmt->bindValue(':patient_like', '%' . $patient . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':modality', $modality, PDO::PARAM_STR);
+        $stmt->bindValue(':modality_like', '%' . $modality . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':issuer', $issuer, PDO::PARAM_STR);
+        $stmt->bindValue(':issuer_like', '%' . $issuer . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':limit', max(1, min(200, $limit)), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** Reenfileira apenas tentativas terminais do laudo no tenant indicado. */
+    public function retryTerminalJobsForReport(int $reportId, int $tenantId): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_jobs
+             SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
+                 locked_by = NULL, last_error = NULL, updated_at = NOW()
+             WHERE tenant_id = :tenant_id
+               AND status IN ('failed', 'dead_letter')
+               AND outbox_id IN (
+                   SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
+               )"
+        );
+        $stmt->execute([':report_id' => $reportId, ':tenant_id' => $tenantId]);
+
+        return $stmt->rowCount();
     }
 
     /** @return array<string, int> */
