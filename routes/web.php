@@ -13,7 +13,7 @@ Router::post('/login/2fa/cancelar',   'AuthController@cancelTwoFactor');
 Router::post('/login/idioma', 'AuthController@setLoginLocale');
 Router::get('/logout', 'AuthController@logout');
 Router::get('/selecionar-empresa',  'AuthController@selectTenant');
-Router::post('/selecionar-empresa', 'AuthController@doSelectTenant');
+Router::post('/selecionar-empresa', 'AuthController@setTenant');
 
 // Raiz → worklist
 Router::get('/', fn() => header('Location: /estudos'));
@@ -200,6 +200,11 @@ Router::post('/usuarios/grupos/{id}/usuarios/{usuario_id}/remover', 'GruposContr
 // ── Notificações por Grupo — prioridade, canais e escopo de modalidades ──
 Router::get('/usuarios/notificacoes',                         'GrupoNotificacoesController@index');
 Router::post('/usuarios/notificacoes/{id}/salvar',             'GrupoNotificacoesController@salvar');
+
+// ── Regras de Acesso por Usuário — sessão, origem e horário tenant-scoped ──
+Router::get('/usuarios/regras-acesso',                    'RegrasAcessoController@index');
+Router::get('/usuarios/regras-acesso/{id}/editar',        'RegrasAcessoController@editar');
+Router::post('/usuarios/regras-acesso/{id}/salvar',       'RegrasAcessoController@salvar');
 
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');

@@ -2,6 +2,7 @@
 namespace App\Core;
 
 use App\Core\Access\ModuleAccess;
+use App\Services\RegraAcessoService;
 
 class Router {
     private static array $routes = [];
@@ -57,6 +58,33 @@ class Router {
         if (!self::isPublicRoute($uri) && !Auth::check()) {
             header('Location: /login');
             exit;
+        }
+
+        // Enforcement central de regras por usuário. Não depende de UI e falha
+        // fechada quando uma regra ativa não pode ser confirmada.
+        if (!self::isPublicRoute($uri) && Auth::check() && !Auth::isPlatformAdmin()) {
+            $userId = (int) (Auth::userId() ?? 0);
+            $tenantId = (int) (Auth::tenantId() ?? 0);
+            if ($userId <= 0 || $tenantId <= 0) {
+                Auth::logout();
+                header('Location: /login?error=sem_acesso');
+                exit;
+            }
+            $rules = new RegraAcessoService();
+            $access = $rules->checkCurrentRequest($userId, $tenantId);
+            if (!$access['allowed']) {
+                Auth::logout();
+                self::renderErrorPage(403, 'Acesso bloqueado', 'O acesso a partir desta origem não é permitido.');
+            }
+            $lastActivity = (int) ($_SESSION['access_rule_last_activity'] ?? time());
+            $timeout = (int) ($access['timeout_minutes'] ?? 0);
+            if ($timeout > 0 && (time() - $lastActivity) >= ($timeout * 60)) {
+                $rules->auditSessionExpired($userId, $tenantId);
+                Auth::logout();
+                header('Location: /login?error=sessao_expirada');
+                exit;
+            }
+            $_SESSION['access_rule_last_activity'] = time();
         }
 
         // Guard: rotas /platform só acessíveis por superadmin

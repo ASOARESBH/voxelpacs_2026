@@ -25,6 +25,13 @@ class Auth {
     /** Cria a sessão autenticada somente após credenciais e, se aplicável, 2F válidos. */
     public static function completeLogin(object $user): bool {
         if (empty($user->id) || ($user->status ?? '') !== 'ativo') return false;
+        try {
+            $ruleResult = (new \App\Services\RegraAcessoService())->checkLoginForUser($user);
+            if (!$ruleResult['allowed']) return false;
+        } catch (\Throwable $e) {
+            Logger::warning('[Auth::completeLogin] regra de acesso indisponível', ['user_id' => (int) $user->id]);
+            return false;
+        }
         $pdo = Database::getInstance();
 
         // Atualiza último login
@@ -35,6 +42,7 @@ class Auth {
         unset($user->password);
         $_SESSION['user']    = $user;
         $_SESSION['user_id'] = $user->id;
+        $_SESSION['access_rule_last_activity'] = time();
 
         // Platform admin: não precisa de tenant
         if ($user->role === 'superadmin') {
@@ -180,6 +188,7 @@ class Auth {
 
     public static function setTenant(int $tenantId): void {
         $_SESSION['tenant_id'] = $tenantId;
+        $_SESSION['access_rule_last_activity'] = time();
     }
 
     /**

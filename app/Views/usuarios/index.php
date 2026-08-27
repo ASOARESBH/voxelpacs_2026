@@ -61,6 +61,9 @@ $perfilLabel = [
     <a href="/usuarios/notificacoes" class="usuarios-tab-btn">
         <i class="fa fa-bell"></i> <?= htmlspecialchars(t('usuarios.tabs.notificacoes')) ?>
     </a>
+    <a href="/usuarios/regras-acesso" class="usuarios-tab-btn">
+        <i class="fa fa-shield-halved"></i> <?= htmlspecialchars(t('usuarios.tabs.regras_acesso')) ?>
+    </a>
     <?php endif; ?>
 </div>
 
