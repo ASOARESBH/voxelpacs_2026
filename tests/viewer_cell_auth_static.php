@@ -7,6 +7,7 @@ $root = dirname(__DIR__);
 $controller = file_get_contents($root . '/app/Controllers/ViewerTokenController.php');
 $routes = file_get_contents($root . '/routes/web.php');
 $bootstrap = file_get_contents($root . '/public/index.php');
+$router = file_get_contents($root . '/app/Core/Router.php');
 
 $required = [
     'authorizeDicomweb',
@@ -29,7 +30,11 @@ if (strpos($routes, "ViewerTokenController@authorizeDicomweb") === false) {
     exit(1);
 }
 if (strpos($bootstrap, "'/internal/viewer-auth/'") === false) {
-    fwrite(STDERR, "FALHA: rota interna não foi liberada para subrequisição técnica\n");
+    fwrite(STDERR, "FALHA: bootstrap não liberou a subrequisição técnica\n");
+    exit(1);
+}
+if (strpos($router, "'/internal/viewer-auth/'") === false) {
+    fwrite(STDERR, "FALHA: despachante central ainda redireciona a subrequisição ao login\n");
     exit(1);
 }
 printf("VIEWER_CELL_AUTH_STATIC_OK\n");

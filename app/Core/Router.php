@@ -13,6 +13,9 @@ class Router {
         '/logout',
         '/selecionar-empresa',
         '/open/',
+        // Subrequisição interna Nginx → API; o controller valida IP privado,
+        // cookie HttpOnly, token vigente, tenant, célula e origem do viewer.
+        '/internal/viewer-auth/',
         '/api/viewer/measurements',
         '/desktop-launch/',
         '/acesso/criar-senha/',
