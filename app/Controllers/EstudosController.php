@@ -718,8 +718,14 @@ class EstudosController extends Controller
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
-        $isAdmin  = Auth::isPlatformAdmin();
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+        // O viewer clínico requer tenant explícito, inclusive para superadmin.
+        // Acesso administrativo ocorre por impersonação auditável, nunca por
+        // redirecionamento global para um StudyInstanceUID.
+        if (!$tenantId) {
+            $this->renderErroViewer(403, 'Selecione uma empresa antes de abrir imagens clínicas.');
+            return;
+        }
+        $bypassGlobal = false;
         $estudo   = null;
 
         try {
@@ -776,7 +782,7 @@ class EstudosController extends Controller
                         $pdo->prepare("UPDATE bi_pacs_estudos SET study_instance_uid=? WHERE id=?")
                             ->execute([$uidReal, $id]);
                         $studyUid = $uidReal;
-                        error_log("[EstudosController::abrir] UID corrigido: {$studyUid} → {$uidReal} (estudo id={$id})");
+                        error_log("[EstudosController::abrir] UID corrigido para estudo id={$id}");
                     }
                 }
             } catch (\Throwable $ex) {
@@ -799,16 +805,16 @@ class EstudosController extends Controller
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => Auth::tenantId() ?: null,
+                ':tenant_id'  => $tenantId,
                 ':usuario_id' => Auth::userId()   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
         } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
-            // Fallback: redireciona direto se token falhar
-            $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
-            header('Location: ' . $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer), true, 302);
-            exit;
+            error_log('[EstudosController::abrir] Falha ao emitir token de viewer: ' . $ex->getMessage());
+            // Falhar fechada: nunca expor StudyInstanceUID nem permitir que o
+            // viewer global tente consultar uma célula fora do escopo do tenant.
+            $this->renderErroViewer(503, 'Não foi possível autorizar a abertura segura do exame. Tente novamente.');
+            return;
         }
 
         // Redireciona para o endpoint seguro /open/{token} no PHP (Hostgator)
@@ -852,13 +858,16 @@ class EstudosController extends Controller
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
         $userId   = Auth::userId();
-        $isAdmin  = Auth::isPlatformAdmin();
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+        if (!$tenantId) {
+            $this->renderErroViewer(403, 'Selecione uma empresa antes de abrir imagens clínicas.');
+            return;
+        }
+        $bypassGlobal = false;
 
         // ── 1. Buscar estudo e validar permissão ───────────────────────────────────
         $estudo = null;
         try {
-            $where  = 'id = :id AND servidor_id = 1';
+            $where  = 'id = :id';
             $params = [':id' => $id];
             if ($tenantId) {
                 $where         .= ' AND tenant_id = :tid';
@@ -904,7 +913,7 @@ class EstudosController extends Controller
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => $tenantId ?: null,
+                ':tenant_id'  => $tenantId,
                 ':usuario_id' => $userId   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
@@ -1032,6 +1041,10 @@ class EstudosController extends Controller
     {
         $inicio   = microtime(true);
         $tenantId = Auth::tenantId();
+        if (!$tenantId) {
+            $this->renderErroViewer(403, 'Selecione uma empresa antes de abrir imagens clínicas.');
+            return;
+        }
         $service  = new DesktopViewerService();
 
         $contexto = [
@@ -1055,8 +1068,7 @@ class EstudosController extends Controller
 
         // ── Busca do estudo — mesmo escopo tenant-aware usado em abrir() ────
         $pdo          = Database::getInstance();
-        $isAdmin      = Auth::isPlatformAdmin();
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
+        $bypassGlobal = false;
         $estudo       = null;
 
         try {

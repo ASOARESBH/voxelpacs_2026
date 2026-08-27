@@ -69,3 +69,14 @@ e robô automático) — não seria sustentável duplicar ~120 colunas de upsert
 
 ## Última análise
 2026-07-27
+
+## Células Orthanc exclusivas por tenant — 2026-08-27
+
+A migration `2026-08-27_tenant_orthanc_cells.sql` introduz `bi_tenant_orthanc_cells` como contrato de controle para uma célula Orthanc exclusiva por tenant. Cada linha é única tanto por `tenant_id` quanto por `servidor_id`, guarda apenas perfil de integração, chave de rota do gateway, URL de viewer segregado e status; não guarda credenciais ou dados clínicos.
+
+Quando um servidor possui célula em estado `provisioned` ou `active`, `PacsRoutingService::resolveTenant()` atribui o estudo diretamente ao tenant da célula, sem usar `InstitutionName` ou Issuer como substitutos dessa fronteira. O roteamento por metadados continua exclusivamente para servidores compartilhados/legados que não têm célula exclusiva.
+
+A mesma migration substitui a unicidade global de `bi_pacs_estudos.orthanc_id` por `(servidor_id, orthanc_id)`. `PacsSyncService::upsertEstudo()` acompanha a chave composta; isso evita que identificadores internos iguais, produzidos por Orthancs independentes, atualizem estudos de outra célula. O `ALTER TABLE` requer backup e janela de baixo tráfego antes de execução.
+
+## Última análise
+2026-08-27

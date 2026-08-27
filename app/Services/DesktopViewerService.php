@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Core\Database;
+use App\Core\SqlHelper;
 
 /**
  * DesktopViewerService
@@ -63,10 +64,24 @@ class DesktopViewerService
             }
         }
 
-        // Fallback: servidor PACS de origem do estudo (bi_pacs_servidor), já usado
-        // pelo fluxo de sincronização — não duplicamos essa configuração. Quando o
-        // servidor de origem não é conhecido, cai no primeiro servidor ativo (
-        // preserva o comportamento anterior a existir mais de 1 servidor).
+        // Células exclusivas não podem herdar endpoint/AE do servidor global.
+        // O administrador precisa cadastrar host, porta e AE do viewer daquele
+        // tenant de forma explícita; ausência de configuração falha fechada.
+        if ($this->requiresTenantSpecificConfig($pdo, $tenantId, $servidorId)) {
+            if (!$config || empty($config['host']) || empty($config['porta']) || empty($config['ae_title'])) {
+                return null;
+            }
+            return [
+                'host'       => (string) $config['host'],
+                'porta'      => (int) $config['porta'],
+                'ae_title'   => (string) $config['ae_title'],
+                'calling_ae' => !empty($config['calling_ae']) ? (string) $config['calling_ae'] : null,
+            ];
+        }
+
+        // Compatibilidade temporária: instalações legadas que não são células
+        // exclusivas podem usar o servidor PACS de origem. Novos tenants não usam
+        // este caminho, pois a tabela de células acima o bloqueia.
         try {
             if ($servidorId) {
                 $stmt = $pdo->prepare("SELECT url, dicom_aet, dicom_port FROM bi_pacs_servidor WHERE id = ? LIMIT 1");
@@ -105,6 +120,17 @@ class DesktopViewerService
             'ae_title'   => $aeTitle,
             'calling_ae' => $callingAe,
         ];
+    }
+
+    private function requiresTenantSpecificConfig(\PDO $pdo, ?int $tenantId, ?int $servidorId): bool
+    {
+        if (!$tenantId || !$servidorId || !SqlHelper::hasTable($pdo, 'bi_tenant_orthanc_cells')) {
+            return false;
+        }
+
+        $stmt = $pdo->prepare("\n            SELECT 1\n            FROM bi_tenant_orthanc_cells\n            WHERE tenant_id = :tenant_id\n              AND servidor_id = :servidor_id\n              AND status IN ('provisioned', 'active')\n            LIMIT 1\n        ");
+        $stmt->execute([':tenant_id' => $tenantId, ':servidor_id' => $servidorId]);
+        return $stmt->fetchColumn() !== false;
     }
 
     /**

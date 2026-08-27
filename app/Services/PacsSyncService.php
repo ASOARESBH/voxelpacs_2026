@@ -186,9 +186,9 @@ class PacsSyncService
         $existeStmt = $pdo->prepare("
             SELECT id, roteamento_resolvido_por, study_description_manual
             FROM bi_pacs_estudos
-            WHERE orthanc_id = ?
+            WHERE servidor_id = ? AND orthanc_id = ?
         ");
-        $existeStmt->execute([$study['orthanc_id']]);
+        $existeStmt->execute([$servidorId, $study['orthanc_id']]);
         $existente = $existeStmt->fetch(\PDO::FETCH_ASSOC);
 
         $jaResolvidoManualmente = $existente && $existente['roteamento_resolvido_por'] !== null;
@@ -432,7 +432,7 @@ class PacsSyncService
                         $resultado === 'novo' ? $novos++ : $atualizados++;
                     } catch (\Exception $e) {
                         $erros++;
-                        Logger::error("[PacsSyncService] Erro ao importar estudo $studyId (servidor $servidorId): " . $e->getMessage());
+                        Logger::error("[PacsSyncService] Erro ao importar estudo do servidor {$servidorId}: " . $e->getMessage());
                     }
                 }
 

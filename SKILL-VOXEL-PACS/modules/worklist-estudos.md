@@ -171,3 +171,12 @@ O filtro de tenant desta tela é só em nível de Negócio (`tenant_id`). Não e
 
 ## Última análise
 2026-08-14
+
+## Viewer e células segregadas — 2026-08-27
+
+Aberturas no OHIF, VOXEL Desktop, RadiAnt e Weasis exigem `Auth::tenantId()` não nulo. Superadmin precisa usar impersonação auditável para abrir imagem clínica; não existe mais abertura global de um estudo a partir de uma listagem cross-tenant. `EstudosController::abrir()` falha com erro controlado quando a persistência do token não estiver disponível, em vez de redirecionar diretamente um `StudyInstanceUID` para o viewer.
+
+`ViewerTokenController` aceita somente token com `tenant_id` e, quando o estudo pertence a `bi_tenant_orthanc_cells`, exige `viewer_url` explícita da célula. `DesktopViewerService` aplica a mesma regra para RadiAnt/Weasis: uma célula exclusiva precisa ter `bi_viewer_desktop_config` completa e não herda host, porta ou AE Title do servidor global. Os launchers devem ser homologados pela instalação real do cliente antes de ativação.
+
+## Última análise
+2026-08-27
