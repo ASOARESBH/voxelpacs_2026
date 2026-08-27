@@ -47,7 +47,7 @@ final class TenantDicomProvisioningController extends Controller
 
     public function status(int $serverId): void
     {
-        $this->json(function () use ($serverId): array {
+        $this->respondJson(function () use ($serverId): array {
             $row = (new TenantDicomProvisioningService())->getByServer($serverId);
             return [
                 'success' => true,
@@ -64,7 +64,7 @@ final class TenantDicomProvisioningController extends Controller
     public function verifyEcho(int $serverId): void
     {
         $this->requireCsrfJson();
-        $this->json(function () use ($serverId): array {
+        $this->respondJson(function () use ($serverId): array {
             $result = (new TenantDicomProvisioningService())->verifyEcho($serverId);
             return [
                 'success' => ($result['status'] ?? 'pending') === 'echo_validated',
@@ -95,7 +95,7 @@ final class TenantDicomProvisioningController extends Controller
     public function activateCstore(int $serverId): void
     {
         $this->requireCsrfJson();
-        $this->json(function () use ($serverId): array {
+        $this->respondJson(function () use ($serverId): array {
             $confirm = trim((string) ($_POST['confirm'] ?? ''));
             if ($confirm !== 'LIBERAR C-STORE') {
                 throw new \RuntimeException('Digite LIBERAR C-STORE para confirmar a recepção de dados DICOM.');
@@ -128,7 +128,7 @@ final class TenantDicomProvisioningController extends Controller
     }
 
     /** @param callable():array<string,mixed> $callback */
-    private function json(callable $callback): void
+    private function respondJson(callable $callback): void
     {
         header('Content-Type: application/json; charset=utf-8');
         try {
