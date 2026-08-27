@@ -519,11 +519,12 @@ $periodoLabel = [
 
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);
+            $downloadDisponivel = !array_key_exists('download_available', $e) || !in_array((string) $e['download_available'], ['0', 'f', 'false'], true);
         ?>
         <tr class="<?= $rowClass ?>" data-id="<?= $e['id'] ?>" <?= $modoGestao ? '' : 'title="Duplo clique para abrir"' ?>>
             <!-- Check -->
             <td class="col-check">
-                <input type="checkbox" class="row-check" value="<?= $e['id'] ?>">
+                <input type="checkbox" class="row-check" value="<?= $e['id'] ?>"<?= $downloadDisponivel ? '' : ' disabled aria-disabled="true"' ?>>
             </td>
 
             <!-- Data/Hora -->

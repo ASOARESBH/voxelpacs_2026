@@ -14,9 +14,10 @@ class OrthancService {
         $this->username = $username;
         $this->password = $password;
         $this->timeout  = $timeout;
-    }
+        }
 
-    private function request(string $endpoint, string $method = 'GET', ?array $data = null): array {
+    private function request(string $endpoint, string $method = 'GET', ?array $data = null, bool $logFailure = true): array {
+
         $url = $this->baseUrl . '/' . ltrim($endpoint, '/');
         $t0  = microtime(true);
 
@@ -50,7 +51,9 @@ class OrthancService {
         curl_close($ch);
 
         if ($response === false || $curlErr) {
-            Logger::error("Orthanc cURL error ($method $url): $curlErr");
+            if ($logFailure) {
+                Logger::error("Orthanc cURL error ($method $url): $curlErr");
+            }
             return ['success' => false, 'error' => $curlErr ?: 'Sem resposta do servidor', 'code' => 0, 'ms' => $ms];
         }
 
@@ -65,7 +68,9 @@ class OrthancService {
         }
 
         $errMsg = $decoded['Message'] ?? ('Erro HTTP ' . $httpCode);
-        Logger::error("Orthanc API HTTP $httpCode ($method $url): $errMsg");
+        if ($logFailure) {
+            Logger::error("Orthanc API HTTP $httpCode ($method $url): $errMsg");
+        }
         return ['success' => false, 'error' => $errMsg, 'code' => $httpCode, 'ms' => $ms];
     }
 
@@ -207,6 +212,16 @@ class OrthancService {
     }
 
     public function getStudy(string $studyId): array { return $this->request("/studies/$studyId"); }
+
+    /** Verifica a existência técnica do recurso sem registrar identificadores em logs. */
+    public function studyExists(string $studyId): array {
+        $result = $this->request('/studies/' . rawurlencode($studyId), 'GET', null, false);
+        return [
+            'exists' => !empty($result['success']),
+            'code' => (int) ($result['code'] ?? 0),
+            'reachable' => (int) ($result['code'] ?? 0) !== 0,
+        ];
+    }
 
     public function getSeries(string $seriesId): array { return $this->request('/series/' . rawurlencode($seriesId)); }
 

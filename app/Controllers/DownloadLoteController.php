@@ -85,7 +85,7 @@ class DownloadLoteController extends Controller
             // tenant_id é preenchido somente após o roteamento seguro pelo par
             // Institution Name + Issuer. Exigir novamente apenas o nome da
             // instituição poderia negar uma unidade válida ou reabrir ambiguidade.
-            $sql = "SELECT id, orthanc_id, institution_name, patient_name
+            $sql = "SELECT id, orthanc_id, servidor_id
                     FROM bi_pacs_estudos
                     WHERE id IN ({$placeholders})
                       AND tenant_id = ?";
@@ -118,8 +118,15 @@ class DownloadLoteController extends Controller
                 return;
             }
 
-            // ── 5. Instanciar OrthancService para este tenant ─────────────
-            $orthanc = $this->getOrthancService($tenantId, $pdo);
+            // ── 5. Resolver o servidor de origem, nunca um fallback global ─
+            $serverIds = array_values(array_unique(array_map('intval', array_column($estudos, 'servidor_id'))));
+            if (count($serverIds) !== 1 || $serverIds[0] <= 0) {
+                http_response_code(409);
+                echo json_encode(['ok' => false, 'msg' => 'Selecione estudos do mesmo servidor PACS para um único download.']);
+                return;
+            }
+            $serverId = $serverIds[0];
+            $orthanc = $this->getOrthancService($tenantId, $serverId, $pdo);
             if (!$orthanc) {
                 http_response_code(503);
                 echo json_encode([
@@ -129,9 +136,30 @@ class DownloadLoteController extends Controller
                 return;
             }
 
-            // ── 6. Criar job de archive no Orthanc ────────────────────────
-            // POST /tools/create-archive
-            // Body: {"Resources": ["orthancId1", "orthancId2", ...], "Synchronous": false}
+            // ── 6. Confirmar existência antes de criar o archive ──────────
+            $missing = false;
+            foreach ($estudos as $estudo) {
+                $probe = $orthanc->studyExists((string) $estudo['orthanc_id']);
+                if (!empty($probe['exists'])) {
+                    $this->saveDownloadAvailability($pdo, (int) $estudo['id'], $tenantId, $serverId, 'available', null);
+                    continue;
+                }
+                if (($probe['code'] ?? 0) === 404) {
+                    $missing = true;
+                    $this->saveDownloadAvailability($pdo, (int) $estudo['id'], $tenantId, $serverId, 'unavailable', 'ORTHANC_RESOURCE_NOT_FOUND');
+                    continue;
+                }
+                http_response_code(503);
+                echo json_encode(['ok' => false, 'msg' => 'Não foi possível confirmar o servidor PACS agora. Tente novamente.']);
+                return;
+            }
+            if ($missing) {
+                http_response_code(409);
+                echo json_encode(['ok' => false, 'msg' => 'Um ou mais estudos não estão mais disponíveis no servidor PACS.']);
+                return;
+            }
+
+            // ── 7. Criar job de archive no Orthanc ────────────────────────
             $archiveResult = $orthanc->createArchive($orthancIds);
 
             if (!$archiveResult['success']) {
@@ -373,6 +401,16 @@ class DownloadLoteController extends Controller
         }
     }
 
+    private function saveDownloadAvailability(\PDO $pdo, int $studyId, int $tenantId, int $serverId, string $status, ?string $errorCode): void
+    {
+        try {
+            $stmt = $pdo->prepare("INSERT INTO bi_pacs_download_availability (estudo_id, tenant_id, servidor_id, status, checked_at, error_code, updated_at) VALUES (?, ?, ?, ?, NOW(), ?, NOW()) ON CONFLICT (estudo_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id, servidor_id=EXCLUDED.servidor_id, status=EXCLUDED.status, checked_at=EXCLUDED.checked_at, error_code=EXCLUDED.error_code, updated_at=NOW()");
+            $stmt->execute([$studyId, $tenantId, $serverId, $status, $errorCode]);
+        } catch (\Throwable $ignored) {
+            // Migration ainda não aplicada: a checagem continua protegendo o download.
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Helper: instanciar OrthancService para o tenant atual
     //
@@ -381,68 +419,40 @@ class DownloadLoteController extends Controller
     //  2. bi_pacs_servidor (tabela global única, gerenciada pelo superadmin) — fallback
     //  3. $_ENV['ORTHANC_URL'] — fallback de ambiente
     // ─────────────────────────────────────────────────────────────────────────
-    private function getOrthancService(int $tenantId, \PDO $pdo): ?OrthancService
+    private function getOrthancService(int $tenantId, int $serverId, \PDO $pdo): ?OrthancService
     {
-        // ── 1. Tentar bi_orthanc_servidores (multi-tenant) ────────────────────
-        // Usa try/catch para não explodir caso a tabela ainda não exista em produção
+        // A origem é sempre o servidor gravado no estudo. Células exclusivas
+        // só podem ser usadas pelo tenant dono; não há fallback de ambiente.
         try {
             $stmt = $pdo->prepare("
-                SELECT url, usuario, senha, timeout
-                FROM   bi_orthanc_servidores
-                WHERE  tenant_id = ? AND ativo = 1
-                ORDER  BY id ASC
-                LIMIT  1
+                SELECT s.url, s.usuario, s.senha, s.timeout
+                FROM bi_pacs_servidor s
+                WHERE s.id = ? AND s.ativo = 1
+                  AND NOT EXISTS (
+                    SELECT 1 FROM bi_tenant_orthanc_cells c
+                    WHERE c.servidor_id = s.id AND c.tenant_id <> ?
+                  )
+                LIMIT 1
             ");
-            $stmt->execute([$tenantId]);
+            $stmt->execute([$serverId, $tenantId]);
             $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-            if ($servidor) {
-                return new OrthancService(
-                    $servidor['url'],
-                    $servidor['usuario'] ?: null,
-                    $servidor['senha']   ?: null,
-                    (int)($servidor['timeout'] ?: 60)
-                );
+            if (!$servidor) {
+                return null;
             }
+            return new OrthancService(
+                $servidor['url'],
+                $servidor['usuario'] ?: null,
+                $servidor['senha'] ?: null,
+                (int) ($servidor['timeout'] ?: 60)
+            );
         } catch (\Throwable $e) {
-            // Tabela não existe ainda — continua para o fallback
-            Logger::error('[DownloadLote] bi_orthanc_servidores indisponível, usando fallback', [
-                'error' => $e->getMessage(),
+            Logger::error('[DownloadLote] Servidor de origem indisponível', [
+                'tenant_id' => $tenantId,
+                'servidor_id' => $serverId,
+                'error_type' => get_class($e),
             ]);
+            return null;
         }
-
-        // ── 2. Fallback: bi_pacs_servidor (servidor global único do superadmin) ─
-        try {
-            $stmt = $pdo->query("
-                SELECT url, usuario, senha, timeout
-                FROM   bi_pacs_servidor
-                WHERE  ativo = 1
-                ORDER  BY id ASC
-                LIMIT  1
-            ");
-            $servidor = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-            if ($servidor) {
-                return new OrthancService(
-                    $servidor['url'],
-                    $servidor['usuario'] ?: null,
-                    $servidor['senha']   ?: null,
-                    (int)($servidor['timeout'] ?: 60)
-                );
-            }
-        } catch (\Throwable $e) {
-            Logger::error('[DownloadLote] bi_pacs_servidor indisponível', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // ── 3. Fallback final: variável de ambiente ORTHANC_URL ───────────────
-        $defaultUrl = $_ENV['ORTHANC_URL'] ?? getenv('ORTHANC_URL') ?: null;
-        if ($defaultUrl) {
-            return new OrthancService($defaultUrl, null, null, 30);
-        }
-
-        return null;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

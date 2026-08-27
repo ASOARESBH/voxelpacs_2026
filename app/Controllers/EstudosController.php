@@ -378,6 +378,7 @@ class EstudosController extends Controller
         $hasReportPublicToken = false;
         $hasReportSituacao = false;
         $hasChatStatus = false;
+        $hasDownloadAvailability = false;
         try {
             $hasPedidos = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_pedidos');
             $hasReports = SqlHelper::hasTable($pdo, 'reports');
@@ -385,6 +386,7 @@ class EstudosController extends Controller
             $hasReportPublicToken = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'public_token');
             $hasReportSituacao = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'situacao');
             $hasChatStatus = $hasChats && SqlHelper::hasColumn($pdo, 'pacs_report_chats', 'status');
+            $hasDownloadAvailability = SqlHelper::hasTable($pdo, 'bi_pacs_download_availability');
         } catch (\Throwable $ex) {
             Logger::warning('[EstudosController::index] joins opcionais indisponíveis', [
                 'tenant_id' => $tenantId,
@@ -411,6 +413,12 @@ class EstudosController extends Controller
             ? "r.id AS report_id, {$reportPublicTokenSql} AS report_public_token, {$reportSituacaoSql} AS report_situacao"
             : "NULL AS report_id, '' AS report_public_token, '' AS report_situacao";
         $chatSelectSql = "{$chatStatusSql} AS chat_status";
+        $downloadAvailabilitySelectSql = $hasDownloadAvailability
+            ? "COALESCE((da.status <> 'unavailable'), TRUE) AS download_available"
+            : 'TRUE AS download_available';
+        $downloadAvailabilityJoinSql = $hasDownloadAvailability
+            ? 'LEFT JOIN bi_pacs_download_availability da ON da.estudo_id = e.id AND da.tenant_id = e.tenant_id AND da.servidor_id = e.servidor_id'
+            : '';
         $pedidoJoinSql = $hasPedidos
             ? 'LEFT JOIN bi_pacs_estudos_pedidos p ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id'
             : '';
@@ -467,11 +475,13 @@ class EstudosController extends Controller
                     COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
                     {$pedidoSelectSql},
                     {$reportSelectSql},
-                    {$chatSelectSql}
+                    {$chatSelectSql},
+                    {$downloadAvailabilitySelectSql}
                 FROM bi_pacs_estudos e
                 {$pedidoJoinSql}
                 {$reportJoinSql}
                 {$chatJoinSql}
+                {$downloadAvailabilityJoinSql}
                 WHERE {$whereStr}
                 ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
                 {$limitClause}
