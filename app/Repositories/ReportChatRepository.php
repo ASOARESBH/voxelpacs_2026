@@ -47,7 +47,7 @@ class ReportChatRepository
         $params = ['report_id' => $reportId, 'tenant_id' => $tenantId];
         $sql = 'SELECT r.id AS report_id, r.estudo_id, r.public_token,
                        e.patient_name, e.study_description, e.modalities,
-                       COALESCE(r.situacao, e.situacao, "novo") AS situacao,
+                       COALESCE(NULLIF(CONCAT(r.situacao), \'\'), NULLIF(CONCAT(e.situacao), \'\'), \'novo\') AS situacao,
                        r.situacao AS report_situacao
                   FROM reports r
                   INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
@@ -64,7 +64,7 @@ class ReportChatRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT m.id, m.chat_id, m.autor_id, m.corpo, m.criado_em,
-                    COALESCE(u.name, "Usuário") AS autor_nome
+                    COALESCE(u.name, \'Usuário\') AS autor_nome
                FROM pacs_report_chat_mensagens m
                LEFT JOIN bi_users u ON u.id = m.autor_id
               WHERE m.chat_id = :chat_id AND m.tenant_id = :tenant_id
@@ -149,7 +149,7 @@ class ReportChatRepository
                       WHERE gu.grupo_id = g.id AND gu.tenant_id = g.tenant_id) AS total_membros
                FROM bi_grupos g
               WHERE g.tenant_id = :tenant_id AND g.ativo = 1
-              ORDER BY CASE WHEN LOWER(TRIM(g.nome)) = "administrativo" THEN 0 ELSE 1 END,
+              ORDER BY CASE WHEN LOWER(TRIM(g.nome)) = \'administrativo\' THEN 0 ELSE 1 END,
                        g.nome ASC'
         );
         $stmt->execute(['tenant_id' => $tenantId]);
@@ -175,7 +175,7 @@ class ReportChatRepository
             'SELECT id, tenant_id, nome, descricao, ativo
                FROM bi_grupos
               WHERE tenant_id = :tenant_id AND ativo = 1
-                AND LOWER(TRIM(nome)) = "administrativo"
+                AND LOWER(TRIM(nome)) = \'administrativo\'
               ORDER BY id ASC
               LIMIT 1'
         );

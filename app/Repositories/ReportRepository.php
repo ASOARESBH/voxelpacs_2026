@@ -139,7 +139,7 @@ class ReportRepository {
             $this->pdo->prepare(
                 "UPDATE bi_pacs_estudos
                  SET situacao = :situacao,
-                     laudo_assinado_em = CASE WHEN :situacao_ts IN ('assinado','liberado') THEN NOW() ELSE laudo_assinado_em END
+                     laudo_assinado_em = CASE WHEN :situacao_ts = 'assinado' THEN COALESCE(laudo_assinado_em, NOW()) ELSE laudo_assinado_em END
                  WHERE id = :id"
             )->execute(['situacao' => $situacao, 'situacao_ts' => $situacao, 'id' => $estudoId]);
         } catch (\PDOException $e) {

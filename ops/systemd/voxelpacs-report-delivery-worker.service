@@ -1,0 +1,28 @@
+[Unit]
+Description=VOXEL PACS Report Delivery Worker
+After=network-online.target postgresql.service php8.3-fpm.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voxel
+Group=voxel
+WorkingDirectory=/var/www/voxelpacs/app
+ExecStart=/usr/bin/php /var/www/voxelpacs/app/bin/report_delivery_worker.php
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+Environment=VOXEL_REPORT_DELIVERY_WORKER_ID=local-dicom-worker
+Environment=VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/www/voxelpacs/app/storage
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

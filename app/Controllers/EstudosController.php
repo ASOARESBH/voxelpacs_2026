@@ -7,6 +7,7 @@ use App\Core\SqlHelper;
 use App\Core\Auth;
 use App\Core\Access\MedicoAccess;
 use App\Services\DesktopViewerService;
+use App\Services\DesktopStudyLaunchService;
 use App\Services\InstitutionResolverService;
 use App\Services\GrupoModalidadeService;
 use App\Services\PedidoMedicoService;
@@ -153,13 +154,34 @@ class EstudosController extends Controller
         $this->renderWorklist(false);
     }
 
+    /**
+     * Atualização parcial da tabela de Estudos. Reutiliza integralmente os
+     * filtros, tenant, grupo/modalidade e permissões da Worklist principal.
+     */
+    public function worklistFragmento(): void
+    {
+        if (!Auth::check()) {
+            $this->json(['error' => 'unauthorized'], 401);
+        }
+        $this->renderWorklist(false, true);
+    }
+
     /** Worklist administrativa: mesmos filtros e estudos, sem abrir/laudar. */
     public function gestao(): void
     {
+        if (!Auth::check()) {
+            $this->redirect('/login');
+            return;
+        }
+        if (!Auth::hasModule('gestao_exames')) {
+            http_response_code(403);
+            require BASE_PATH . '/app/Views/errors/403.php';
+            return;
+        }
         $this->renderWorklist(true);
     }
 
-    private function renderWorklist(bool $modoGestao): void
+    private function renderWorklist(bool $modoGestao, bool $partial = false): void
     {
         $pdo      = Database::getInstance();
         $tenantId = Auth::tenantId();
@@ -658,18 +680,39 @@ class EstudosController extends Controller
         $urlWorklist          = $modoGestao ? '/gestao-exames' : '/estudos';
         $podeGerenciarPedido  = (new PedidoMedicoService())->podeGerenciar($tenantId, $bypassGlobal);
         $csrfToken             = $this->csrfToken();
+        $worklistAutoRefresh = ['enabled' => !$modoGestao, 'seconds' => 60];
+        if (!$modoGestao) {
+            try {
+                $refreshConfig = \App\Core\SystemConfig::getMany([
+                    'estudos_auto_refresh_ativo', 'estudos_auto_refresh_segundos',
+                ]);
+                $worklistAutoRefresh['enabled'] = ($refreshConfig['estudos_auto_refresh_ativo'] ?? '1') !== '0';
+                $worklistAutoRefresh['seconds'] = max(15, min(600, (int) ($refreshConfig['estudos_auto_refresh_segundos'] ?? 60)));
+            } catch (\Throwable $ex) {
+                Logger::warning('[EstudosController] Configuração global de refresh indisponível');
+            }
+        }
+
+        $viewData = compact(
+            'estudos','filtros','total','totalPages','currentPage',
+            'unidades','medicos','contadores','resumo',
+            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
+            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
+            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh'
+        );
+
+        if ($partial) {
+            ob_start();
+            $this->view('estudos/index', $viewData, '');
+            $html = ob_get_clean();
+            $this->json(['html' => $html, 'total' => $total, 'atualizado_em' => gmdate('c')]);
+        }
 
         // Impede que o browser (BFCache) sirva esta página do cache ao navegar
         // de volta — garante que filtros sempre reflitam a URL atual.
         header('Cache-Control: no-store, no-cache, must-revalidate');
         header('Pragma: no-cache');
-        $this->view('estudos/index', compact(
-            'estudos','filtros','total','totalPages','currentPage',
-            'unidades','medicos','contadores','resumo',
-            'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
-            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
-            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId'
-        ), 'pacs');
+        $this->view('estudos/index', $viewData, 'pacs');
     }
 
     public function abrir(int $id): void
@@ -679,6 +722,14 @@ class EstudosController extends Controller
         $isAdmin  = Auth::isPlatformAdmin();
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
         $estudo   = null;
+
+        // Toda abertura clínica deve partir de uma sessão tenant-scoped. O
+        // superadmin sem impersonação pode localizar o estudo, mas o token
+        // emitido abaixo continuará vinculado ao tenant persistido no estudo.
+        if (!$tenantId && !$bypassGlobal) {
+            $this->renderErroViewer(403, 'Selecione uma empresa antes de abrir imagens clínicas.');
+            return;
+        }
 
         try {
             $where  = 'id = :id';
@@ -704,8 +755,14 @@ class EstudosController extends Controller
             return;
         }
 
-        $studyUid  = $estudo['study_instance_uid'] ?? '';
-        $orthancId = $estudo['orthanc_id']         ?? '';
+        $studyUid       = $estudo['study_instance_uid'] ?? '';
+        $orthancId       = $estudo['orthanc_id']         ?? '';
+        $estudoTenantId  = (int) ($estudo['tenant_id'] ?? 0);
+
+        if ($estudoTenantId <= 0) {
+            $this->renderErroViewer(409, 'Este estudo não possui empresa associada.');
+            return;
+        }
 
         if (empty($studyUid) && empty($orthancId)) {
             $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
@@ -757,16 +814,16 @@ class EstudosController extends Controller
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => Auth::tenantId() ?: null,
+                ':tenant_id'  => $estudoTenantId,
                 ':usuario_id' => Auth::userId()   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
         } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
-            // Fallback: redireciona direto se token falhar
-            $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
-            header('Location: ' . $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer), true, 302);
-            exit;
+            error_log('[EstudosController::abrir] token indisponível: ' . $ex->getMessage());
+            // Falha fechada: não expor StudyInstanceUID em URL direta quando o
+            // token seguro não puder ser persistido e vinculado ao tenant.
+            $this->renderErroViewer(503, 'Não foi possível preparar o acesso seguro ao exame. Tente novamente.');
+            return;
         }
 
         // Redireciona para o endpoint seguro /open/{token} no PHP (Hostgator)
@@ -795,195 +852,18 @@ class EstudosController extends Controller
     }
 
     // =========================================================================
-    // Abertura via VOXEL Desktop (protocolo voxel://)
+    // Abertura via VOXEL Desktop (protocolo Weasis opaco)
     // GET /estudos/{id}/abrir-voxel
     //
     // Fluxo (item 7/8 da especificação VOXEL Desktop):
     //  1. Valida permissão do usuário sobre o estudo
-    //  2. Gera token temporário (60 min) em pacs_viewer_tokens
-    //  3. Monta URI: voxel://open?study=UID&token=TOKEN&server=URL
-    //  4. Exibe página intermediária que tenta abrir o protocolo voxel://
-    //     e, se não instalado, oferece download do VOXEL Desktop
+    //  2. Gera launch efêmero assinado e limitado a um estudo
+    //  3. O browser recebe somente URI weasis:// com endpoint opaco
+    //  4. UID, credenciais e URL Orthanc permanecem exclusivamente no backend
     // =========================================================================
     public function abrirVoxelDesktop(int $id): void
     {
-        $pdo      = Database::getInstance();
-        $tenantId = Auth::tenantId();
-        $userId   = Auth::userId();
-        $isAdmin  = Auth::isPlatformAdmin();
-        $bypassGlobal = $isAdmin && !Auth::isImpersonating();
-
-        // ── 1. Buscar estudo e validar permissão ───────────────────────────────────
-        $estudo = null;
-        try {
-            $where  = 'id = :id AND servidor_id = 1';
-            $params = [':id' => $id];
-            if ($tenantId) {
-                $where         .= ' AND tenant_id = :tid';
-                $params[':tid'] = $tenantId;
-            } elseif (!$bypassGlobal) {
-                $where .= ' AND 1=0';
-            }
-            $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_name, modalities, tenant_id
-                 FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
-            );
-            $stmt->execute($params);
-            $estudo = $stmt->fetch(\PDO::FETCH_ASSOC);
-        } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrirVoxelDesktop] ' . $ex->getMessage());
-        }
-
-        if (!$estudo || !$this->podeAbrirPorModalidade($estudo, $tenantId, $bypassGlobal)) {
-            $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
-            return;
-        }
-
-        $studyUid  = $estudo['study_instance_uid'] ?? '';
-        $orthancId = $estudo['orthanc_id']         ?? '';
-
-        if (empty($studyUid) && empty($orthancId)) {
-            $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
-            return;
-        }
-
-        $uidParaViewer = $studyUid ?: $orthancId;
-
-        // ── 2. Gerar token temporário (60 min) em pacs_viewer_tokens ──────────────
-        $token = $this->gerarToken();
-        try {
-            $expiresAtSql = SqlHelper::futureTimestamp('HOUR', 1);
-            $pdo->prepare("
-                INSERT INTO pacs_viewer_tokens
-                    (token, estudo_id, study_instance_uid, orthanc_id, tenant_id, usuario_id, ip_origem, expires_at)
-                VALUES (:token,:estudo_id,:study_uid,:orthanc_id,:tenant_id,:usuario_id,:ip,{$expiresAtSql})
-            ")->execute([
-                ':token'      => $token,
-                ':estudo_id'  => $id,
-                ':study_uid'  => $uidParaViewer,
-                ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => $tenantId ?: null,
-                ':usuario_id' => $userId   ?: null,
-                ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
-            ]);
-        } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrirVoxelDesktop] token: ' . $ex->getMessage());
-        }
-
-        // ── 3. Montar URI voxel:// ──────────────────────────────────────────────────────
-        $serverUrl = rtrim(getenv('APP_URL') ?: 'https://server.voxelpacs.com.br', '/');
-        $voxelUri  = 'voxel://open?' . http_build_query([
-            'study'  => $uidParaViewer,
-            'token'  => $token,
-            'server' => $serverUrl,
-        ]);
-
-        // ── 4. Página intermediária ──────────────────────────────────────────────────────────────────
-        $nomePaciente = htmlspecialchars($estudo['patient_name'] ?? 'Paciente');
-        $downloadUrl  = '/desktop/download';
-        ?>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VOXEL PACS — Abrindo no VOXEL Desktop</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: #0d1117; color: #e6edf3;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            display: flex; align-items: center; justify-content: center;
-            min-height: 100vh;
-        }
-        .card {
-            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
-            padding: 2.5rem 3rem; max-width: 520px; width: 90%; text-align: center;
-        }
-        .logo { margin-bottom: 1.25rem; }
-        .logo img { width: 64px; height: 64px; object-fit: contain; }
-        h1 { font-size: 1.3rem; margin-bottom: .5rem; color: #f0f6fc; }
-        .paciente { font-size: .85rem; color: #8b949e; margin-bottom: 1rem; }
-        p  { font-size: .92rem; color: #8b949e; line-height: 1.6; }
-        .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #30363d;
-                   border-top-color: #1a56db; border-radius: 50%; animation: spin .8s linear infinite;
-                   margin-bottom: 1rem; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .btn-primary {
-            display: inline-block; margin-top: 1.25rem; padding: .65rem 1.5rem;
-            background: #1a56db; color: #fff; border-radius: 8px;
-            text-decoration: none; font-weight: 600; font-size: .88rem;
-        }
-        .btn-secondary {
-            display: inline-block; margin-top: .75rem; padding: .55rem 1.2rem;
-            background: transparent; color: #8b949e; border: 1px solid #30363d; border-radius: 8px;
-            text-decoration: none; font-size: .82rem;
-        }
-        #fallback { display: none; }
-        .token-info { font-size: .72rem; color: #484f58; margin-top: 1.5rem; }
-    </style>
-</head>
-<body>
-    <!-- Estado 1: tentando abrir o VOXEL Desktop -->
-    <div class="card" id="tentando">
-        <div class="logo"><img src="/assets/img/logo-voxel-pacs.png" alt="VOXEL Desktop"></div>
-        <div class="spinner"></div>
-        <h1>Abrindo no VOXEL Desktop…</h1>
-        <p class="paciente">Paciente: <?= $nomePaciente ?></p>
-        <p>Aguarde enquanto o VOXEL Desktop é iniciado.<br>O estudo será aberto automaticamente.</p>
-        <p class="token-info">Token válido por 60 minutos</p>
-    </div>
-    <!-- Estado 2: VOXEL Desktop não detectado -->
-    <div class="card" id="fallback">
-        <div class="logo"><img src="/assets/img/logo-voxel-pacs.png" alt="VOXEL Desktop"></div>
-        <h1>VOXEL Desktop não encontrado</h1>
-        <p class="paciente">Paciente: <?= $nomePaciente ?></p>
-        <p>O VOXEL Desktop não está instalado neste computador.<br>Instale para abrir exames DICOM com um clique.</p>
-        <a class="btn-primary" href="<?= htmlspecialchars($downloadUrl) ?>" target="_blank">&#11015; Baixar VOXEL Desktop</a><br>
-        <a class="btn-secondary" href="/estudos/<?= $id ?>/abrir" target="_blank">Abrir no navegador (OHIF)</a>
-    </div>
-    <script>
-    (function () {
-        var uri = <?= json_encode($voxelUri) ?>;
-        var tentou = false;
-        // Tenta abrir o protocolo voxel://
-        function tentarAbrir() {
-            if (tentou) return;
-            tentou = true;
-            var iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-            var detectado = false;
-            var t = setTimeout(function () {
-                if (!detectado) mostrarFallback();
-                try { document.body.removeChild(iframe); } catch(e){}
-            }, 2500);
-            try {
-                iframe.src = uri;
-                // Se o protocolo estiver registrado, o browser não lança erro
-                // Consideramos sucesso após 800ms sem mostrar fallback
-                setTimeout(function () {
-                    detectado = true;
-                    clearTimeout(t);
-                    try { document.body.removeChild(iframe); } catch(e){}
-                    // Redireciona para a worklist após 4s
-                    setTimeout(function () { window.location.href = '/estudos'; }, 4000);
-                }, 800);
-            } catch (e) {
-                clearTimeout(t);
-                mostrarFallback();
-            }
-        }
-        function mostrarFallback() {
-            document.getElementById('tentando').style.display = 'none';
-            document.getElementById('fallback').style.display  = 'block';
-        }
-        tentarAbrir();
-    }());
-    </script>
-</body>
-</html>
-<?php
+        $this->abrirDesktop($id, 'voxel');
     }
 
     private function abrirDesktop(int $id, string $viewer): void
@@ -1049,6 +929,33 @@ class EstudosController extends Controller
         $contexto['patient_id']         = $estudo['patient_id']         ?? null;
         $contexto['study_instance_uid'] = $estudo['study_instance_uid'] ?? null;
         $contexto['accession_number']   = $estudo['accession_number']   ?? null;
+
+        // O VOXEL Desktop usa proxy seguro e não depende da configuração Q/R.
+        if ($viewer === 'voxel') {
+            try {
+                $launch = (new DesktopStudyLaunchService())->create(
+                    $estudo,
+                    (int) $tenantId,
+                    (int) Auth::userId(),
+                    $_SERVER['REMOTE_ADDR'] ?? null
+                );
+                $service->registrarAcesso($contexto + [
+                    'status'            => 'sucesso',
+                    'tempo_execucao_ms' => (int) round((microtime(true) - $inicio) * 1000),
+                ]);
+                header('Cache-Control: no-store, private');
+                header('Referrer-Policy: no-referrer');
+                header('Location: ' . $launch['launch_uri'], true, 302);
+                exit;
+            } catch (\Throwable $ex) {
+                $service->registrarAcesso($contexto + [
+                    'status' => 'erro',
+                    'mensagem_erro' => 'desktop_launch_unavailable',
+                ]);
+                $this->renderErroViewer(503, 'A abertura no VOXEL Desktop está temporariamente indisponível.');
+            }
+            return;
+        }
 
         if (empty($estudo['study_instance_uid'])) {
             $service->registrarAcesso($contexto + [

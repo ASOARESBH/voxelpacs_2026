@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\SqlHelper;
 use App\Services\ViewerMeasurementService;
 
 /**
@@ -54,15 +55,29 @@ class ViewerTokenController extends Controller
         $pdo = Database::getInstance();
 
         try {
-            // Buscar token válido (não expirado)
-            $stmt = $pdo->prepare("
-                SELECT id, estudo_id, tenant_id, usuario_id, study_instance_uid,
-                       orthanc_id, expires_at, usado, usos
-                FROM pacs_viewer_tokens
-                WHERE token = :token
-                  AND expires_at > NOW()
-                LIMIT 1
-            ");
+            // O token é opaco, temporário e pertence sempre a um tenant. Para
+            // células segregadas, a origem do OHIF também é resolvida pelo
+            // vínculo servidor–tenant do estudo, nunca pela URL global.
+            $temCelulas = SqlHelper::hasTable($pdo, 'bi_tenant_orthanc_cells');
+            $sql = "
+                SELECT vt.id, vt.estudo_id, vt.tenant_id, vt.usuario_id, vt.study_instance_uid,
+                       vt.orthanc_id, vt.expires_at, vt.usado, vt.usos";
+            if ($temCelulas) {
+                $sql .= ", cell.viewer_url AS cell_viewer_url, cell.status AS cell_status";
+            }
+            $sql .= "\n                FROM pacs_viewer_tokens vt";
+            if ($temCelulas) {
+                $sql .= "\n                LEFT JOIN bi_pacs_estudos e
+                  ON e.id = vt.estudo_id AND e.tenant_id = vt.tenant_id
+                LEFT JOIN bi_tenant_orthanc_cells cell
+                  ON cell.tenant_id = vt.tenant_id
+                 AND cell.servidor_id = e.servidor_id";
+            }
+            $sql .= "\n                WHERE vt.token = :token
+                  AND vt.tenant_id IS NOT NULL
+                  AND vt.expires_at > NOW()
+                LIMIT 1";
+            $stmt = $pdo->prepare($sql);
             $stmt->execute([':token' => $token]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
@@ -110,18 +125,105 @@ class ViewerTokenController extends Controller
             }
         }
 
-        // Montar URL do OHIF Viewer
+        // Montar URL do OHIF Viewer. Se o estudo pertence a uma célula
+        // exclusiva, uma URL de viewer explicitamente cadastrada é obrigatória.
+        $viewerBase = $this->viewerBase;
+        if ($temCelulas && !empty($row['cell_status'])) {
+            $viewerBase = rtrim((string) ($row['cell_viewer_url'] ?? ''), '/');
+            if ($viewerBase === '') {
+                error_log('[ViewerToken] Célula sem viewer_url para token autorizado.');
+                $this->renderErro(503, 'O visualizador desta empresa ainda não foi configurado.');
+                return;
+            }
+        }
+
         $studyUid  = $row['study_instance_uid'];
-        $viewerUrl = $this->viewerBase
+        $viewerUrl = $viewerBase
             . '/viewer?StudyInstanceUIDs='
             . urlencode($studyUid);
         if ($adapterToken !== null) {
             $viewerUrl .= '#voxel_measurement_token=' . rawurlencode($adapterToken);
         }
 
+        // O token continua HttpOnly e acompanha somente origens da Voxel. O
+        // proxy DICOMweb do viewer exige esse cookie e o confere contra a
+        // célula/tenant antes de encaminhar qualquer requisição ao Orthanc.
+        $cookieDomain = trim((string) (getenv('VIEWER_COOKIE_DOMAIN') ?: '.voxelpacs.com.br'));
+        setcookie('voxelpacs_viewer_token', $token, [
+            'expires' => strtotime((string) $row['expires_at']),
+            'path' => '/',
+            'domain' => $cookieDomain,
+            'secure' => true,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+
         // Redirecionar para o OHIF
         header('Location: ' . $viewerUrl, true, 302);
         exit;
+    }
+
+    // =========================================================================
+    // Autorização interna de DICOMweb para um viewer de célula exclusiva.
+    // Nunca retorna UID, token, paciente ou credenciais; Nginx consome apenas
+    // o status HTTP 204/401/403 por auth_request.
+    // =========================================================================
+    public function authorizeDicomweb(string $cellKey): void
+    {
+        $proxyIp = (string) (getenv('VIEWER_AUTH_PROXY_IP') ?: '10.0.0.3');
+        if (($_SERVER['REMOTE_ADDR'] ?? '') !== $proxyIp) {
+            http_response_code(403);
+            return;
+        }
+
+        $cellKey = preg_replace('/[^a-z0-9-]/', '', strtolower($cellKey));
+        $token = (string) ($_COOKIE['voxelpacs_viewer_token'] ?? '');
+        $viewerOrigin = rtrim((string) ($_SERVER['HTTP_X_VOXEL_VIEWER_ORIGIN'] ?? ''), '/');
+        if ($cellKey === '' || $viewerOrigin === '' || !preg_match('/^[a-zA-Z0-9\-_]{8,128}$/', $token)) {
+            http_response_code(401);
+            return;
+        }
+
+        try {
+            $pdo = Database::getInstance();
+            if (!SqlHelper::hasTable($pdo, 'bi_tenant_orthanc_cells')) {
+                http_response_code(503);
+                return;
+            }
+
+            $sql = "
+                SELECT 1
+                  FROM pacs_viewer_tokens vt
+                  JOIN bi_pacs_estudos e
+                    ON e.id = vt.estudo_id AND e.tenant_id = vt.tenant_id
+                  JOIN bi_tenant_orthanc_cells cell
+                    ON cell.tenant_id = vt.tenant_id
+                   AND cell.servidor_id = e.servidor_id
+                 WHERE vt.token = :token
+                   AND vt.tenant_id IS NOT NULL
+                   AND vt.expires_at > NOW()
+                   AND cell.gateway_route_key = :cell_key
+                   AND cell.status IN ('provisioned', 'active')
+                   AND rtrim(cell.viewer_url, '/') = :viewer_origin
+                 LIMIT 1
+            ";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':token' => $token,
+                ':cell_key' => $cellKey,
+                ':viewer_origin' => $viewerOrigin,
+            ]);
+            if (!$stmt->fetchColumn()) {
+                http_response_code(401);
+                return;
+            }
+        } catch (\Throwable $e) {
+            error_log('[ViewerToken] Falha na autorização interna DICOMweb: ' . get_class($e));
+            http_response_code(503);
+            return;
+        }
+
+        http_response_code(204);
     }
 
     // =========================================================================

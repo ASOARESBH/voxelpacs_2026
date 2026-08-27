@@ -9,7 +9,7 @@ use PDO;
 use Throwable;
 
 /**
- * Reenfileira, por solicitação administrativa explícita, um laudo já liberado.
+     * Reenfileira, por solicitação administrativa explícita, um laudo já liberado.
  *
  * Não executa entrega externa: apenas cria o evento e os jobs idempotentes da
  * outbox, aplicando exatamente a mesma regra de InstitutionName da liberação.
@@ -78,7 +78,8 @@ final class ReportDeliveryManualQueueService
                 $releasedBy,
                 $releasedAt,
                 $reportHash,
-                true
+                true,
+                'manual_homologation'
             );
             $this->pdo->commit();
 
@@ -89,6 +90,26 @@ final class ReportDeliveryManualQueueService
             }
             throw $exception;
         }
+    }
+
+    /**
+     * Fallback operacional por ID do Report mostrado no Hub. A operação apenas
+     * reenfileira jobs terminais; não cria jobs novos para laudos históricos.
+     *
+     * @return array{created:bool,outbox_id:int|null,job_count:int,reason?:string,report_id:int,retried_jobs:int}
+     */
+    public function queueReleasedReportById(int $tenantId, int $reportId, int $requestedBy): array
+    {
+        if ($tenantId <= 0 || $reportId <= 0) {
+            throw new DomainException('Laudo inválido para reenvio.');
+        }
+
+        $repository = new \App\Repositories\ReportDeliveryRepository($this->pdo);
+        $retried = $repository->retryTerminalJobsForReport($reportId, $tenantId);
+        if ($retried === 0) {
+            throw new DomainException('Nenhuma falha terminal elegível foi encontrada para reenvio manual.');
+        }
+        return ['created' => false, 'outbox_id' => null, 'job_count' => $retried, 'report_id' => $reportId, 'retried_jobs' => $retried];
     }
 
     private function latestVersion(int $reportId): int

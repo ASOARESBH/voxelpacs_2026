@@ -32,7 +32,32 @@
 </head>
 <body>
 
-<?php $medicoRestrito = \App\Core\Access\MedicoAccess::isRestricted(); ?>
+<?php
+$medicoRestrito = \App\Core\Access\MedicoAccess::isRestricted();
+$moduleAccess = '\\App\\Core\\Access\\ModuleAccess';
+$canModule = static fn (string $key): bool => $moduleAccess::canAccess($key);
+$canEstudos = $canModule('estudos');
+$canAgendamentos = $canModule('agendamentos');
+$canGestaoExames = $canModule('gestao_exames');
+$canPacsExames = $canModule('pacs_exames');
+$canPacsModalidades = $canModule('pacs_modalidades');
+$canCadMedicos = $canModule('cad_medicos');
+$canCadUnidades = $canModule('cad_unidades');
+$canCadModalidades = $canModule('cad_modalidades');
+$canSlaRegras = $canModule('sla_regras') && \App\Core\Auth::can('manage_sla_regras');
+$canRelExames = $canModule('rel_exames');
+$canRelMedicos = $canModule('rel_medicos');
+$canRelSla = $canModule('rel_sla_medicos');
+$canRelAuditoria = $canModule('rel_auditoria');
+$canUsuarios = $canModule('usuarios');
+$canConfiguracoes = $canModule('configuracoes') && (\App\Core\Auth::isPlatformAdmin() || \App\Core\Auth::can('manage_configuracoes'));
+$refreshSeconds = 60;
+try {
+    $refreshConfig = \App\Core\SystemConfig::getMany(['estudos_auto_refresh_ativo', 'estudos_auto_refresh_segundos']);
+    if (($refreshConfig['estudos_auto_refresh_ativo'] ?? '1') !== '1') $refreshSeconds = 0;
+    else $refreshSeconds = max(15, min(600, (int) ($refreshConfig['estudos_auto_refresh_segundos'] ?? 60)));
+} catch (\Throwable $ignore) {}
+?>
 <?php if (!empty($_SESSION['impersonating_tenant_id'])): ?>
 <div class="alert alert-warning text-center mb-0 rounded-0 py-2" style="position:sticky;top:0;z-index:9999;">
     <strong><i class="fa fa-eye me-1"></i>Visualizando como: <?= htmlspecialchars(\App\Core\TenantContext::name()) ?></strong>
@@ -65,24 +90,24 @@
             <!-- WORKLIST -->
             <div class="sidebar-section-title">Worklist</div>
 
-            <a href="/estudos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/estudos') ? 'active' : '' ?>">
+            <?php if ($canEstudos): ?><a href="/estudos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/estudos') ? 'active' : '' ?>">
                 <i class="fa fa-list-check"></i>
                 <span class="sidebar-label">Estudos</span>
-            </a>
+            </a><?php endif; ?>
 
-            <a href="/agendamentos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/agendamentos') ? 'active' : '' ?>">
+            <?php if ($canAgendamentos): ?><a href="/agendamentos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/agendamentos') ? 'active' : '' ?>">
                 <i class="fa fa-calendar-days"></i>
                 <span class="sidebar-label">Agendamentos</span>
-            </a>
+            </a><?php endif; ?>
 
-            <?php if (empty($isMedicoLogado)): ?>
+            <?php if ($canGestaoExames): ?>
             <a href="/gestao-exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/gestao-exames') ? 'active' : '' ?>">
                 <i class="fa fa-clipboard-list"></i>
                 <span class="sidebar-label"><?= htmlspecialchars(t('gestao_exames.menu.titulo')) ?></span>
             </a>
             <?php endif; ?>
 
-            <!-- PACS -->
+            <?php if ($canPacsExames || $canPacsModalidades): ?><!-- PACS -->
             <div class="sidebar-section-title">PACS</div>
 
             <a href="#" class="nav-link has-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/pacs') || str_contains($_SERVER['REQUEST_URI'], '/dicom')) ? 'open' : '' ?>"
@@ -91,17 +116,18 @@
                 <span class="sidebar-label">Imagens DICOM</span>
             </a>
             <div class="sidebar-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/pacs') || str_contains($_SERVER['REQUEST_URI'], '/dicom')) ? 'show' : '' ?>" id="sub-pacs">
-                <a href="/pacs/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/pacs/exames') ? 'active' : '' ?>">
+                <?php if ($canPacsExames): ?><a href="/pacs/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/pacs/exames') ? 'active' : '' ?>">
                     <i class="fa fa-images"></i>
                     <span class="sidebar-label">Buscar Exames</span>
-                </a>
-                <a href="/pacs/modalidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/pacs/modalidades') ? 'active' : '' ?>">
+                </a><?php endif; ?>
+                <?php if ($canPacsModalidades): ?><a href="/pacs/modalidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/pacs/modalidades') ? 'active' : '' ?>">
                     <i class="fa fa-satellite-dish"></i>
                     <span class="sidebar-label">Modalidades</span>
-                </a>
+                </a><?php endif; ?>
             </div>
+            <?php endif; ?>
 
-            <!-- CADASTROS -->
+            <?php if ($canCadMedicos || $canCadUnidades || $canCadModalidades || $canSlaRegras): ?><!-- CADASTROS -->
             <div class="sidebar-section-title">Cadastros</div>
 
             <a href="#" class="nav-link has-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades') || str_contains($_SERVER['REQUEST_URI'], '/sla-regras')) ? 'open' : '' ?>"
@@ -110,29 +136,30 @@
                 <span class="sidebar-label">Cadastros</span>
             </a>
             <div class="sidebar-submenu <?= (str_contains($_SERVER['REQUEST_URI'], '/medicos') || str_contains($_SERVER['REQUEST_URI'], '/unidades') || str_contains($_SERVER['REQUEST_URI'], '/modalidades') || str_contains($_SERVER['REQUEST_URI'], '/sla-regras')) ? 'show' : '' ?>" id="sub-cad">
-                <a href="/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/medicos') ? 'active' : '' ?>">
+                <?php if ($canCadMedicos): ?><a href="/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/medicos') ? 'active' : '' ?>">
                     <i class="fa fa-user-doctor"></i>
                     <span class="sidebar-label">Médicos</span>
-                </a>
-                <?php if (!$medicoRestrito): ?>
+                </a><?php endif; ?>
+                <?php if (!$medicoRestrito && $canCadUnidades): ?>
                 <a href="/unidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/unidades') ? 'active' : '' ?>">
                     <i class="fa fa-hospital"></i>
                     <span class="sidebar-label">Unidades</span>
                 </a>
                 <?php endif; ?>
-                <a href="/modalidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/modalidades') ? 'active' : '' ?>">
+                <?php if ($canCadModalidades): ?><a href="/modalidades" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/modalidades') ? 'active' : '' ?>">
                     <i class="fa fa-satellite-dish"></i>
                     <span class="sidebar-label">Modalidades</span>
-                </a>
-                <?php if (\App\Core\Auth::can('manage_sla_regras')): ?>
+                </a><?php endif; ?>
+                <?php if ($canSlaRegras): ?>
                 <a href="/sla-regras" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/sla-regras') ? 'active' : '' ?>">
                     <i class="fa fa-gauge-high"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('sla_regras.menu.titulo')) ?></span>
                 </a>
                 <?php endif; ?>
             </div>
+            <?php endif; ?>
 
-            <!-- RELATÓRIOS -->
+            <?php if ($canRelExames || $canRelMedicos || $canRelSla || $canRelAuditoria): ?><!-- RELATÓRIOS -->
             <div class="sidebar-section-title"><?= htmlspecialchars(t('relatorios.menu.secao')) ?></div>
 
             <a href="#" class="nav-link has-submenu <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios') ? 'open' : '' ?>"
@@ -141,33 +168,34 @@
                 <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.titulo')) ?></span>
             </a>
             <div class="sidebar-submenu <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios') ? 'show' : '' ?>" id="sub-rel">
-                                <a href="/relatorios/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/exames') ? 'active' : '' ?>">
+                <?php if ($canRelExames): ?><a href="/relatorios/exames" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/exames') ? 'active' : '' ?>">
                     <i class="fa fa-file-medical"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.exames')) ?></span>
-                </a>
-                <a href="/relatorios/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/medicos') ? 'active' : '' ?>">
+                </a><?php endif; ?>
+                <?php if ($canRelMedicos): ?><a href="/relatorios/medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/medicos') ? 'active' : '' ?>">
                     <i class="fa fa-user-doctor"></i>
                     <span class="sidebar-label">Médicos</span>
-                </a>
-                <a href="/relatorios/sla-medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/sla-medicos') ? 'active' : '' ?>">
+                </a><?php endif; ?>
+                <?php if ($canRelSla): ?><a href="/relatorios/sla-medicos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/sla-medicos') ? 'active' : '' ?>">
                     <i class="fa fa-gauge-high"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.sla_medicos')) ?></span>
-                </a>
-                <a href="/relatorios/auditoria" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/auditoria') ? 'active' : '' ?>">
+                </a><?php endif; ?>
+                <?php if ($canRelAuditoria): ?><a href="/relatorios/auditoria" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/relatorios/auditoria') ? 'active' : '' ?>">
                     <i class="fa fa-shield-halved"></i>
                     <span class="sidebar-label"><?= htmlspecialchars(t('relatorios.menu.auditoria')) ?></span>
-                </a>
+                </a><?php endif; ?>
             </div>
+            <?php endif; ?>
 
             <!-- SISTEMA -->
             <div class="sidebar-section-title">Sistema</div>
 
-            <a href="/usuarios" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/usuarios') ? 'active' : '' ?>">
+            <?php if ($canUsuarios): ?><a href="/usuarios" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/usuarios') ? 'active' : '' ?>">
                 <i class="fa fa-users"></i>
                 <span class="sidebar-label">Usuários</span>
-            </a>
+            </a><?php endif; ?>
 
-            <?php if (\App\Core\Auth::isPlatformAdmin() || \App\Core\Auth::can('manage_configuracoes')): ?>
+            <?php if ($canConfiguracoes): ?>
             <a href="/configuracoes" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'], '/configuracoes') ? 'active' : '' ?>">
                 <i class="fa fa-gear"></i>
                 <span class="sidebar-label">Configurações</span>
@@ -225,7 +253,7 @@
                  (bi_user_tenants.perfil, ver Auth::perfilAtual()). Para os demais
                  perfis (Administrador/Secretaria/Analista/Visualizador) o bloco
                  inteiro fica fora do DOM, não só oculto via CSS. -->
-            <?php if (\App\Core\Auth::perfilAtual() === 'medico'): ?>
+            <?php if (\App\Core\Auth::perfilAtual() === 'medico' && $canEstudos): ?>
             <div class="topbar-badges d-none d-lg-flex" id="topbar-badges-wrap">
                 <span class="topbar-badge" style="background:#fef2f2;color:#dc2626;" title="Laudos com pendência aberta (CHAT)">
                     <span class="badge-count" id="cnt-pendente">0</span> PENDENTE
@@ -269,9 +297,10 @@
                     })
                     .catch(function() {});
                 }
-                // Carregar imediatamente e a cada 60 segundos
+                var refreshIntervalMs = <?= (int) $refreshSeconds ?> * 1000;
+                // Carregar imediatamente e no intervalo global definido pela Plataforma
                 document.addEventListener('DOMContentLoaded', atualizarBadgesTopbar);
-                setInterval(atualizarBadgesTopbar, 60000);
+                if (refreshIntervalMs > 0) setInterval(atualizarBadgesTopbar, refreshIntervalMs);
                 // Expor para atualização manual após ações (assumir, assinar, liberar)
                 window.atualizarBadgesTopbar = atualizarBadgesTopbar;
             })();

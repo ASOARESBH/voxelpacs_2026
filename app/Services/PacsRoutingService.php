@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Core\Database;
+use App\Core\SqlHelper;
 
 /**
  * Roteia estudos por dois controles independentes:
@@ -26,6 +27,15 @@ class PacsRoutingService
         $issuerOfPatientId = DicomIssuerService::sanitizeIssuer($issuerOfPatientId);
         $modalityCodes = DicomIssuerModalidadeService::fromStudy($modalities);
         $pdo = Database::getInstance();
+
+        // Uma célula Orthanc exclusiva é uma fronteira de tenant mais forte que
+        // metadados enviados pela modalidade. Enquanto estiver provisionada ou
+        // ativa, nenhum estudo dessa célula pode ser roteado para outro tenant.
+        $tenantDaCelula = self::exclusiveCellTenant($pdo, $servidorId);
+        if ($tenantDaCelula !== null) {
+            return self::result(self::STATUS_ROTEADO, $tenantDaCelula, [], 'celula_orthanc_exclusiva');
+        }
+
         $tenantIds = self::activeTenantIds($pdo, $servidorId);
 
         if ($tenantIds === []) {
@@ -75,6 +85,23 @@ class PacsRoutingService
         // Transição retrocompatível: modalidades ainda sem regras de Issuer usam
         // InstitutionName como hoje, sem gravar qualquer vínculo entre os dois.
         return self::resolveInstitutionCandidates($pdo, $institutionCandidates, 'institution_sem_politica_issuer_modalidade');
+    }
+
+    /**
+     * Retorna o tenant de uma célula Orthanc isolada. A verificação de existência
+     * preserva compatibilidade temporária com bancos que ainda não receberam a
+     * migration; nesses bancos, mantém-se o roteamento legível existente.
+     */
+    private static function exclusiveCellTenant(\PDO $pdo, int $servidorId): ?int
+    {
+        if (!SqlHelper::hasTable($pdo, 'bi_tenant_orthanc_cells')) {
+            return null;
+        }
+
+        $stmt = $pdo->prepare("\n            SELECT tenant_id\n            FROM bi_tenant_orthanc_cells\n            WHERE servidor_id = :servidor_id\n              AND status IN ('provisioned', 'active')\n            LIMIT 1\n        ");
+        $stmt->execute([':servidor_id' => $servidorId]);
+        $tenantId = $stmt->fetchColumn();
+        return $tenantId === false ? null : (int) $tenantId;
     }
 
     /** @return list<int> */

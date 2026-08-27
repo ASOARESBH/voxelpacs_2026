@@ -25,6 +25,13 @@ class Auth {
     /** Cria a sessão autenticada somente após credenciais e, se aplicável, 2F válidos. */
     public static function completeLogin(object $user): bool {
         if (empty($user->id) || ($user->status ?? '') !== 'ativo') return false;
+        try {
+            $ruleResult = (new \App\Services\RegraAcessoService())->checkLoginForUser($user);
+            if (!$ruleResult['allowed']) return false;
+        } catch (\Throwable $e) {
+            Logger::warning('[Auth::completeLogin] regra de acesso indisponível', ['user_id' => (int) $user->id]);
+            return false;
+        }
         $pdo = Database::getInstance();
 
         // Atualiza último login
@@ -35,6 +42,7 @@ class Auth {
         unset($user->password);
         $_SESSION['user']    = $user;
         $_SESSION['user_id'] = $user->id;
+        $_SESSION['access_rule_last_activity'] = time();
 
         // Platform admin: não precisa de tenant
         if ($user->role === 'superadmin') {
@@ -113,6 +121,37 @@ class Auth {
         return Permission::can($user->role, $permission);
     }
 
+    /**
+     * Confirma se o módulo tenant-scoped está habilitado para o usuário atual.
+     * Superadmin e administrador do tenant mantêm o acesso administrativo
+     * implícito; os demais perfis exigem registro explícito em
+     * bi_user_permissoes para o tenant ativo.
+     */
+    public static function hasModule(string $module): bool {
+        $module = trim($module);
+        if ($module === '' || !self::check()) return false;
+        if (self::isPlatformAdmin() || self::perfilAtual() === 'admin') return true;
+
+        $tenantId = self::tenantId();
+        $userId   = self::userId();
+        if (!$tenantId || !$userId) return false;
+
+        try {
+            $stmt = Database::getInstance()->prepare(
+                'SELECT 1 FROM bi_user_permissoes WHERE user_id = ? AND tenant_id = ? AND modulo = ? LIMIT 1'
+            );
+            $stmt->execute([$userId, $tenantId, $module]);
+            return (bool) $stmt->fetchColumn();
+        } catch (\Throwable $e) {
+            Logger::warning('[Auth::hasModule] Falha ao verificar módulo', [
+                'user_id' => $userId,
+                'tenant_id' => $tenantId,
+                'module' => $module,
+            ]);
+            return false;
+        }
+    }
+
     public static function userTenants(): array {
         return $_SESSION['user_tenants'] ?? [];
     }
@@ -149,6 +188,7 @@ class Auth {
 
     public static function setTenant(int $tenantId): void {
         $_SESSION['tenant_id'] = $tenantId;
+        $_SESSION['access_rule_last_activity'] = time();
     }
 
     /**

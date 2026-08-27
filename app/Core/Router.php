@@ -1,6 +1,9 @@
 <?php
 namespace App\Core;
 
+use App\Core\Access\ModuleAccess;
+use App\Services\RegraAcessoService;
+
 class Router {
     private static array $routes = [];
 
@@ -10,7 +13,11 @@ class Router {
         '/logout',
         '/selecionar-empresa',
         '/open/',
+        // Subrequisição interna Nginx → API; o controller valida IP privado,
+        // cookie HttpOnly, token vigente, tenant, célula e origem do viewer.
+        '/internal/viewer-auth/',
         '/api/viewer/measurements',
+        '/desktop-launch/',
         '/acesso/criar-senha/',
         '/esqueci-senha',
         '/api/sla-regras/executar',
@@ -57,10 +64,46 @@ class Router {
             exit;
         }
 
+        // Enforcement central de regras por usuário. Não depende de UI e falha
+        // fechada quando uma regra ativa não pode ser confirmada.
+        if (!self::isPublicRoute($uri) && Auth::check() && !Auth::isPlatformAdmin()) {
+            $userId = (int) (Auth::userId() ?? 0);
+            $tenantId = (int) (Auth::tenantId() ?? 0);
+            if ($userId <= 0 || $tenantId <= 0) {
+                Auth::logout();
+                header('Location: /login?error=sem_acesso');
+                exit;
+            }
+            $rules = new RegraAcessoService();
+            $access = $rules->checkCurrentRequest($userId, $tenantId);
+            if (!$access['allowed']) {
+                Auth::logout();
+                self::renderErrorPage(403, 'Acesso bloqueado', 'O acesso a partir desta origem não é permitido.');
+            }
+            $lastActivity = (int) ($_SESSION['access_rule_last_activity'] ?? time());
+            $timeout = (int) ($access['timeout_minutes'] ?? 0);
+            if ($timeout > 0 && (time() - $lastActivity) >= ($timeout * 60)) {
+                $rules->auditSessionExpired($userId, $tenantId);
+                Auth::logout();
+                header('Location: /login?error=sessao_expirada');
+                exit;
+            }
+            $_SESSION['access_rule_last_activity'] = time();
+        }
+
         // Guard: rotas /platform só acessíveis por superadmin
         if (strpos($uri, '/platform') === 0 && !Auth::isPlatformAdmin()) {
             self::renderErrorPage(403, 'Acesso Negado',
                 'Esta área é restrita a administradores da plataforma.');
+            exit;
+        }
+
+        // Barreira central: menu oculto não é controle de acesso. Quando uma
+        // rota pertence ao catálogo, a trava global, a empresa e a permissão
+        // individual precisam autorizar a mesma requisição.
+        if (!self::isPublicRoute($uri) && !ModuleAccess::canAccessUri($uri)) {
+            self::renderErrorPage(403, 'Acesso Negado',
+                'Este módulo não está habilitado para o seu usuário ou empresa.');
             exit;
         }
 

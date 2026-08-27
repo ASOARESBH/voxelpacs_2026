@@ -163,7 +163,9 @@ $acaoPdfIndisponivel = !$laudoPossuiConteudo;
             Este exame está em edição por <strong><?= htmlspecialchars($lockInfo['nome'] ?? 'outro médico') ?></strong>
             desde <?= htmlspecialchars($lockInfo['desde'] ?? '—') ?>. Modo somente leitura.
         <?php else: ?>
-            Este laudo já foi assinado e está em modo somente leitura.
+            <?= htmlspecialchars($situacao === 'assinado'
+                ? t('reports.status.assinado_pendente_liberacao')
+                : t('reports.status.liberado_somente_leitura')) ?>
         <?php endif; ?>
     </div>
     <?php endif; ?>

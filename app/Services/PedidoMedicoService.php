@@ -39,45 +39,33 @@ class PedidoMedicoService
     }
 
     /**
-     * Gestão de pedido é administrativa: médico cadastrado não altera o anexo,
-     * mesmo que sua conta global tenha um papel com permissão de gestão.
+     * Gestão de pedido exige o módulo explícito de Gestão de Exames. A escolha
+     * por perfil é feita pelo administrador do tenant; escopo de empresa,
+     * grupo e modalidade continuam sendo conferidos nos endpoints do estudo.
      */
     public function podeGerenciar(?int $tenantId, bool $bypassGlobal): bool
     {
+        if (!Auth::hasModule('gestao_exames')) return false;
         if ($bypassGlobal) return true;
 
         // O perfil ativo no tenant é a autoridade para operações administrativas
         // da Gestão de Exames. O papel global pode ser "viewer" em contas
         // antigas compartilhadas entre tenants e não deve ocultar ações de um
         // administrador legítimo do tenant atual.
-        if (strtolower((string) Auth::perfilAtual()) === 'admin') return true;
-
-        if (!Auth::can('manage_pedidos')) return false;
-
         $userId = Auth::userId();
         if (!$tenantId || !$userId) return false;
-
-        try {
-            $stmt = Database::getInstance()->prepare(
-                'SELECT 1 FROM bi_medicos WHERE tenant_id = :tenant_id AND usuario_id = :usuario_id AND ativo = 1 LIMIT 1'
-            );
-            $stmt->execute(['tenant_id' => $tenantId, 'usuario_id' => $userId]);
-            return !$stmt->fetchColumn();
-        } catch (\Throwable $e) {
-            Logger::warning('[PedidoMedicoService::podeGerenciar] Falha ao identificar perfil médico', [
-                'tenant_id' => $tenantId,
-                'usuario_id'=> $userId,
-                'error'     => $e->getMessage(),
-            ]);
-            return false;
-        }
+        return true;
     }
 
-    /** Retorna metadados prontos para a coluna da Worklist ou para o report. */
-    public function buscarPorEstudo(int $estudoId, int $tenantId): ?array
+    /**
+     * Retorna metadados prontos para Worklist, Gestão de Exames ou Report.
+     * A URL de consulta é contextual: a Worklist administrativa usa o proxy
+     * de Gestão de Exames; o Report usa seu token opaco e autorização clínica.
+     */
+    public function buscarPorEstudo(int $estudoId, int $tenantId, ?string $reportToken = null): ?array
     {
         $row = $this->repo->findByEstudoId($estudoId, $tenantId);
-        return $row ? $this->normalizarParaView($row) : null;
+        return $row ? $this->normalizarParaView($row, $reportToken) : null;
     }
 
     /**
@@ -263,12 +251,15 @@ class PedidoMedicoService
     }
 
     /** Converte um registro de banco em dados seguros para a view. */
-    public function normalizarParaView(array $pedido): array
+    public function normalizarParaView(array $pedido, ?string $reportToken = null): array
     {
         $tamanho = (int) ($pedido['tamanho_bytes'] ?? 0);
         $pedido['tamanho_formatado'] = $this->formatarTamanho($tamanho);
         $pedido['is_imagem'] = str_starts_with((string) ($pedido['mime_type'] ?? ''), 'image/');
-        $pedido['visualizar_url'] = '/api/gestao-exames/pedidos/' . (int) $pedido['id'] . '/arquivo';
+        $token = strtolower(trim((string) $reportToken));
+        $pedido['visualizar_url'] = preg_match('/^[a-f0-9]{48}$/', $token) === 1
+            ? '/reports/r/' . rawurlencode($token) . '/pedido'
+            : '/api/gestao-exames/pedidos/' . (int) $pedido['id'] . '/arquivo';
         return $pedido;
     }
 

@@ -7,6 +7,13 @@ use App\Core\Router;
 Router::get('/platform/dashboard', 'Platform\PlatformDashboardController@index');
 
 // ============================================================
+// Configuração global de módulos (somente superadmin)
+// ============================================================
+Router::get('/platform/configuracao-modulos',                 'Platform\ModuloConfiguracoesController@index');
+Router::post('/platform/configuracao-modulos/salvar',         'Platform\ModuloConfiguracoesController@salvarGlobal');
+Router::post('/platform/configuracao-modulos/estudos/salvar', 'Platform\ModuloConfiguracoesController@salvarEstudos');
+
+// ============================================================
 // Negócios (Multi-Tenant)
 // ============================================================
 Router::get('/platform/negocios',                       'Platform\NegociosController@index');
@@ -43,6 +50,7 @@ Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationI
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
+Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
 
 // Imagiflow — integração de apuração por negócio (somente superadmin)
 Router::get('/platform/negocios/{id}/imagiflow',          'Platform\ImagiflowIntegrationController@show');

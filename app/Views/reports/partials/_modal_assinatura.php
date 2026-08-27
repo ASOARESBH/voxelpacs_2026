@@ -10,8 +10,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-pacs-muted" style="font-size:.82rem;">
-                    Confirme para assinar digitalmente este laudo com a sua assinatura cadastrada. Após assinado, o
-                    laudo se torna permanentemente somente-leitura.
+                    <?= htmlspecialchars(t('reports.assinatura.fluxo_modal')) ?>
                 </p>
                 <div id="assinatura-erro" class="reports-alert-erro" style="display:none;"></div>
             </div>

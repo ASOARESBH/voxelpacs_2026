@@ -16,7 +16,7 @@
 <body>
 <main role="main">
     <h1>Acesso não autorizado</h1>
-    <p>Seu perfil não possui permissão para consultar este relatório. Solicite a habilitação ao administrador do negócio.</p>
+    <p>Seu perfil não possui permissão para acessar esta área. Solicite a habilitação ao administrador do negócio.</p>
     <a href="/">Voltar ao início</a>
 </main>
 </body>

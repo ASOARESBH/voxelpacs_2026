@@ -13,7 +13,7 @@ Router::post('/login/2fa/cancelar',   'AuthController@cancelTwoFactor');
 Router::post('/login/idioma', 'AuthController@setLoginLocale');
 Router::get('/logout', 'AuthController@logout');
 Router::get('/selecionar-empresa',  'AuthController@selectTenant');
-Router::post('/selecionar-empresa', 'AuthController@doSelectTenant');
+Router::post('/selecionar-empresa', 'AuthController@setTenant');
 
 // Raiz → worklist
 Router::get('/', fn() => header('Location: /estudos'));
@@ -28,6 +28,7 @@ Router::get('/dashboard', 'DashboardController@index');
 // ============================================================
 Router::get('/estudos',                'EstudosController@index');
 Router::get('/gestao-exames',           'EstudosController@gestao');
+Router::get('/api/estudos/worklist-fragmento', 'EstudosController@worklistFragmento');
 Router::get('/estudos/instalar',       'EstudosController@instalar');
 Router::get('/estudos/{id}/abrir',     'EstudosController@abrir');
 Router::get('/estudos/{id}/abrir-radiant',      'EstudosController@abrirRadiant');
@@ -71,11 +72,15 @@ Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@bai
 // ============================================================
 Router::get('/api/desktop/version', 'DesktopController@version');
 Router::get('/desktop/download',    'DesktopController@download');
+Router::get('/desktop-launch/{token}/manifest', 'DesktopStudyLaunchController@manifest');
+Router::get('/desktop-launch/{token}/instance/{instanceId}', 'DesktopStudyLaunchController@instance');
 
 // ============================================================
 // AGENDAMENTOS
 // ============================================================
 Router::get('/agendamentos', 'AgendamentosController@index');
+Router::post('/agendamentos', 'AgendamentosController@store');
+Router::post('/agendamentos/{id}/cancelar', 'AgendamentosController@cancelar');
 
 // ============================================================
 // PACS — Exames DICOM
@@ -200,6 +205,11 @@ Router::post('/usuarios/grupos/{id}/usuarios/{usuario_id}/remover', 'GruposContr
 Router::get('/usuarios/notificacoes',                         'GrupoNotificacoesController@index');
 Router::post('/usuarios/notificacoes/{id}/salvar',             'GrupoNotificacoesController@salvar');
 
+// ── Regras de Acesso por Usuário — sessão, origem e horário tenant-scoped ──
+Router::get('/usuarios/regras-acesso',                    'RegrasAcessoController@index');
+Router::get('/usuarios/regras-acesso/{id}/editar',        'RegrasAcessoController@editar');
+Router::post('/usuarios/regras-acesso/{id}/salvar',       'RegrasAcessoController@salvar');
+
 Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::post('/configuracoes/viewer-desktop/salvar', 'ConfiguracoesController@salvarViewerDesktop');
@@ -236,6 +246,7 @@ Router::get('/reports/history',            'ReportsController@history');
 Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
 Router::get('/reports/r/{token}/pdf',         'ReportsController@pdfByToken');
 Router::get('/reports/r/{token}/assinatura',  'ReportsController@assinaturaImagemByToken');
+Router::get('/reports/r/{token}/pedido',      'ReportsController@pedidoByToken');
 Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
 Router::get('/reports/autotext',           'ReportsController@autotextSearch');
@@ -272,6 +283,10 @@ Router::get('/reports/r/{token}',            'ReportsController@showByToken');
 //        → ViewerTokenController resolve token → OHIF Viewer
 // ============================================================
 Router::get('/open/{token}', 'ViewerTokenController@abrir');
+
+// Uso interno: Nginx no host do viewer valida cookie de token, origem e célula
+// antes de encaminhar DICOMweb ao Orthanc do tenant. Não expor publicamente.
+Router::get('/internal/viewer-auth/{cellKey}', 'ViewerTokenController@authorizeDicomweb');
 
 // ============================================================
 // Fluxo de Criação de Senha via Token de Acesso (Etapa 4)

@@ -398,6 +398,10 @@ class GestaoExamesController extends Controller
             http_response_code(401);
             return;
         }
+        if (!Auth::hasModule('gestao_exames')) {
+            http_response_code(403);
+            return;
+        }
 
         try {
             $resultado = $this->service->obterArquivo(
@@ -411,6 +415,17 @@ class GestaoExamesController extends Controller
             }
 
             $pedido = $resultado['pedido'];
+            $tenantPedido = (int) ($pedido['tenant_id'] ?? 0);
+            $bypassGlobal = Auth::isPlatformAdmin() && !Auth::isImpersonating();
+            if ($tenantPedido <= 0 || !$this->gerenciarService->canAccessStudyModalities(
+                (int) ($pedido['estudo_id'] ?? 0),
+                $tenantPedido,
+                (int) (Auth::userId() ?? 0),
+                $bypassGlobal
+            )) {
+                http_response_code(404);
+                return;
+            }
             $caminho = $resultado['caminho'];
             $nome = basename((string) ($pedido['nome_original'] ?? 'pedido_medico'));
             $nome = str_replace(["\r", "\n", '"'], '_', $nome);

@@ -337,6 +337,66 @@ class ReportsController extends Controller
         $this->pdf();
     }
 
+    /**
+     * Proxy autenticado do pedido médico no contexto de um laudo.
+     * Não depende do módulo Gestão de Exames: médicos vinculados podem
+     * consultar o anexo quando passam no escopo clínico de Report.
+     */
+    public function pedidoByToken(string $token): void
+    {
+        if (!Auth::check()) {
+            $this->redirect('/login');
+            return;
+        }
+
+        // Para consulta do pedido, qualquer médico vinculado e autorizado à
+        // instituição pode acessar, sem exigir que tenha assumido o estudo.
+        $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token, false);
+        if (!$report) {
+            http_response_code(404);
+            return;
+        }
+
+        try {
+            $tenantId = (int) ($report->tenant_id ?? 0);
+            $estudoId = (int) ($report->estudo_id ?? 0);
+            if ($tenantId <= 0 || $estudoId <= 0) {
+                http_response_code(404);
+                return;
+            }
+
+            $pedidoService = new \App\Services\PedidoMedicoService();
+            $pedido = $pedidoService->buscarPorEstudo($estudoId, $tenantId);
+            if (!$pedido) {
+                http_response_code(404);
+                return;
+            }
+
+            $resultado = $pedidoService->obterArquivo((int) $pedido['id'], $tenantId, false);
+            if (!$resultado) {
+                http_response_code(404);
+                return;
+            }
+
+            $arquivo = $resultado['caminho'];
+            $pedido = $resultado['pedido'];
+            $nome = str_replace(["\r", "\n", '"'], '_', basename((string) ($pedido['nome_original'] ?? 'pedido_medico')));
+            $mime = (string) ($pedido['mime_type'] ?? 'application/octet-stream');
+
+            header('Content-Type: ' . $mime);
+            header('Content-Length: ' . (string) filesize($arquivo));
+            header('Content-Disposition: inline; filename="pedido_medico"; filename*=UTF-8\'\'' . rawurlencode($nome));
+            header('Cache-Control: private, no-store, max-age=0');
+            header('X-Content-Type-Options: nosniff');
+            readfile($arquivo);
+        } catch (\Throwable $e) {
+            Logger::error('[ReportsController::pedidoByToken] ' . $e->getMessage(), [
+                'usuario_id' => Auth::userId(),
+            ]);
+            http_response_code(500);
+        }
+    }
+
     /** Geração interna de PDF; não é exposta diretamente por rota pública. */
     public function pdf(): void
     {
@@ -1041,36 +1101,21 @@ class ReportsController extends Controller
                 $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.', 'pdf_url' => $resultado['pdf_url'] ?? null]);
                 return;
             }
-            // Laudo já assinado: liberar não cria uma segunda assinatura.
-                        $pdo = \App\Core\Database::getInstance();
-            $pdo->prepare(
-                "UPDATE reports SET situacao = 'liberado', liberado_em = NOW(), liberado_por = :uid
-                 WHERE id = :id"
-            )->execute(['uid' => Auth::userId(), 'id' => $reportId]);
-            try {
-                $pdo->prepare(
-                    "UPDATE bi_pacs_estudos
-                     SET situacao = 'liberado', laudo_assinado_em = NOW()
-                     WHERE id = :estudo_id"
-                )->execute(['estudo_id' => (int) $report->estudo_id]);
-            } catch (\PDOException $studyError) {
-                if (stripos($studyError->getMessage(), 'laudo_assinado_em') === false) throw $studyError;
-                Logger::warning('ReportsController::liberar sem laudo_assinado_em — migration pendente', ['error' => $studyError->getMessage()]);
-                $pdo->prepare("UPDATE bi_pacs_estudos SET situacao = 'liberado' WHERE id = :estudo_id")
-                    ->execute(['estudo_id' => (int) $report->estudo_id]);
-            }
-            if (filter_var(getenv('PORTAL_IMAGES_PIPELINE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) {
-                try {
-                    (new \App\Services\PortalImagePreparationService($pdo))->enqueueReleasedReport($reportId);
-                } catch (\Throwable $imageQueueError) {
-                    Logger::error('ReportsController::liberar fila de imagens anonimizadas falhou', [
-                        'report_id' => $reportId,
-                        'error' => $imageQueueError->getMessage(),
-                    ]);
-                }
+            // Laudo já assinado: liberar não cria uma segunda assinatura. A
+            // transição central registra auditoria, versão e apenas os efeitos
+            // externos próprios de um laudo liberado.
+            $resultado = $this->reportService->liberarAssinado($reportId);
+            if (!$resultado['ok']) {
+                $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
+                return;
             }
             Logger::info('ReportsController::liberar', ['report_id' => $reportId, 'usuario' => Auth::userId()]);
-            $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.']);
+            $this->json([
+                'ok' => true,
+                'situacao' => 'liberado',
+                'msg' => 'Laudo liberado com sucesso.',
+                'pdf_url' => $resultado['pdf_url'] ?? null,
+            ]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::liberar error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => 'Erro interno ao liberar laudo.'], 500);

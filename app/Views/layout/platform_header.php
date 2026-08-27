@@ -23,6 +23,7 @@
             <a href="/platform/negocios" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/negocios')?'active':'' ?>"><i class="fa fa-building"></i><span>Negócios</span></a>
             <a href="/platform/plans" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/plans')?'active':'' ?>"><i class="fa fa-tags"></i><span>Planos</span></a>
             <a href="/platform/reports" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/reports')?'active':'' ?>"><i class="fa fa-chart-line"></i><span>Relatórios</span></a>
+            <a href="/platform/configuracao-modulos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/configuracao-modulos')?'active':'' ?>"><i class="fa fa-sliders"></i><span><?= htmlspecialchars(t('config_modulos.nav_plataforma')) ?></span></a>
             <div class="sidebar-section-title">Infraestrutura</div>
             <a href="/platform/servidor-pacs" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/servidor-pacs')?'active':'' ?>"><i class="fa fa-server"></i><span>Servidor PACS</span></a>
             <a href="/platform/conectores" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/conectores')?'active':'' ?>"><i class="fa fa-plug"></i><span>Conectores</span></a>

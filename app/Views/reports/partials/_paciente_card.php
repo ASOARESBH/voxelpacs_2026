@@ -6,14 +6,32 @@ $corSexo = match(strtoupper($estudo->patient_sex ?? '')) {
     'M' => '#4fc3f7', 'F' => '#f472b6', default => 'var(--pacs-text-muted)'
 };
 
-$idade = $estudo->patient_age ?: '—';
-if ($idade !== '—' && preg_match('/^0*(\d+)([YMD])$/i', trim($idade), $m)) {
-    $idade = $m[1] . ['Y' => ' anos', 'M' => ' meses', 'D' => ' dias'][strtoupper($m[2])];
+$nascimento = '—';
+$idade = '—';
+$nascimentoDICOM = trim((string) ($estudo->patient_birth_date ?? ''));
+$nascimentoNumerico = preg_replace('/\D+/', '', $nascimentoDICOM) ?? '';
+
+// A data DICOM completa (YYYYMMDD) é a fonte preferencial porque permite
+// calcular a idade com dia e mês, sem depender de um PatientAge importado.
+if (strlen($nascimentoNumerico) === 8) {
+    $dataNascimento = \DateTimeImmutable::createFromFormat('!Ymd', $nascimentoNumerico);
+    $errosData = \DateTimeImmutable::getLastErrors();
+    $dataValida = $dataNascimento instanceof \DateTimeImmutable
+        && ($errosData === false || ((int) ($errosData['warning_count'] ?? 0) === 0 && (int) ($errosData['error_count'] ?? 0) === 0));
+
+    $hoje = new \DateTimeImmutable('today');
+    if ($dataValida && $dataNascimento <= $hoje) {
+        $nascimento = $dataNascimento->format('d/m/Y');
+        $idade = $dataNascimento->diff($hoje)->y . ' anos';
+    }
 }
 
-$nascimento = '—';
-if (!empty($estudo->patient_birth_date)) {
-    try { $nascimento = (new DateTime($estudo->patient_birth_date))->format('d/m/Y'); } catch (\Throwable $e) {}
+// Mantém a compatibilidade com estudos antigos que não possuem data completa.
+if ($idade === '—') {
+    $idadeDICOM = trim((string) ($estudo->patient_age ?? ''));
+    if (preg_match('/^0*(\d+)([YMD])$/i', $idadeDICOM, $m)) {
+        $idade = $m[1] . ['Y' => ' anos', 'M' => ' meses', 'D' => ' dias'][strtoupper($m[2])];
+    }
 }
 
 $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_display ?? $estudo->patient_name ?? null) ?: '—';

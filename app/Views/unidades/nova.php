@@ -18,6 +18,7 @@ if ($isEdit && !empty($unidade['cnpj'])) {
 }
 $logoUrl = ($isEdit && !empty($unidade['logo_path'])) ? '/' . $unidade['logo_path'] : null;
 $templatesLaudo = $templatesLaudo ?? [];
+$servidoresPacs = $servidoresPacs ?? [];
 $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
 ?>
 
@@ -91,6 +92,24 @@ $templateAtualId = (int) ($unidade['report_layout_template_id'] ?? 0);
                        placeholder="Nome comercial da unidade">
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Vínculo operacional: somente servidores já autorizados para este tenant. -->
+<div class="card shadow-sm mb-3">
+    <div class="card-header py-2 d-flex align-items-center gap-2">
+        <i class="fa fa-server text-primary"></i>
+        <span class="fw-semibold small"><?= htmlspecialchars(t('unidades.pacs.titulo')) ?></span>
+    </div>
+    <div class="card-body p-3">
+        <label for="pacs_id" class="form-label small fw-semibold mb-1"><?= htmlspecialchars(t('unidades.pacs.campo')) ?></label>
+        <select id="pacs_id" name="pacs_id" class="form-select form-select-sm">
+            <option value=""><?= htmlspecialchars(t('unidades.pacs.selecione')) ?></option>
+            <?php foreach ($servidoresPacs as $servidor): ?>
+                <option value="<?= (int) $servidor['id'] ?>" <?= (int) ($unidade['pacs_id'] ?? 0) === (int) $servidor['id'] ? 'selected' : '' ?>><?= htmlspecialchars($servidor['nome']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <div class="form-text"><?= htmlspecialchars(t('unidades.pacs.ajuda')) ?></div>
     </div>
 </div>
 
