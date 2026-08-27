@@ -36,7 +36,7 @@ $csrf = $csrfToken ?? ($_SESSION['csrf_token'] ?? '');
             <div class="card-body">
                 <div class="alert alert-info">
                     <i class="fa fa-info-circle me-2"></i>
-                    <?= $isTenantCell ? 'Esta célula é gerenciada pelo onboarding DICOM VPN-only. Endpoints, credenciais e portas privadas são somente leitura nesta tela.' : htmlspecialchars(t('servidor_pacs.configurar.info_auth')) ?>
+                    <?= $isTenantCell ? htmlspecialchars(t('servidor_pacs.tenant_config.info_gerenciada')) : htmlspecialchars(t('servidor_pacs.configurar.info_auth')) ?>
                 </div>
 
                 <form action="<?= $actionUrl ?>" method="POST" id="formConfig">
@@ -174,22 +174,22 @@ $csrf = $csrfToken ?? ($_SESSION['csrf_token'] ?? '');
                     <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.configurar.ultima_sync_automatica')) ?>:</td><td><?= htmlspecialchars($servidor['sync_ultima_execucao'] ?? '—') ?></td></tr>
                 </table>
                 <?php if ($isTenantCell): ?>
-                <hr><h6 class="fw-bold text-primary">Integração VPN-only</h6>
+                <hr><h6 class="fw-bold text-primary"><?= htmlspecialchars(t('servidor_pacs.tenant_config.titulo')) ?></h6>
                 <table class="table table-sm table-borderless mb-2">
-                  <tr><td class="text-muted">Estado:</td><td><span id="tenantOperationBadge" class="badge bg-info"><?= htmlspecialchars($provisioning['status']) ?></span></td></tr>
-                  <tr><td class="text-muted">Rota:</td><td><code><?= htmlspecialchars($provisioning['route_key']) ?></code></td></tr>
+                  <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.tenant_config.estado')) ?>:</td><td><span id="tenantOperationBadge" class="badge bg-info"><?= htmlspecialchars($provisioning['status']) ?></span></td></tr>
+                  <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.tenant_config.rota')) ?>:</td><td><code><?= htmlspecialchars($provisioning['route_key']) ?></code></td></tr>
                   <tr><td class="text-muted">Called AE:</td><td><code><?= htmlspecialchars($provisioning['called_ae']) ?></code></td></tr>
                   <tr><td class="text-muted">Calling AE:</td><td><code><?= htmlspecialchars($provisioning['calling_ae']) ?></code></td></tr>
-                  <tr><td class="text-muted">IP VPN do cliente:</td><td><code><?= htmlspecialchars($provisioning['vpn_client_ip']) ?></code></td></tr>
+                  <tr><td class="text-muted"><?= htmlspecialchars(t('servidor_pacs.tenant_config.ip_vpn')) ?>:</td><td><code><?= htmlspecialchars($provisioning['vpn_client_ip']) ?></code></td></tr>
                 </table>
-                <label class="form-label small fw-semibold">Chave pública WireGuard recebida do cliente</label>
+                <label class="form-label small fw-semibold"><?= htmlspecialchars(t('servidor_pacs.tenant_config.chave_cliente')) ?></label>
                 <input class="form-control form-control-sm font-monospace" readonly value="<?= htmlspecialchars($provisioning['wireguard_public_key']) ?>">
-                <div class="form-text mb-2">Apenas a chave pública é mantida no cadastro. Para trocar o peer, use o procedimento de rotação aprovado; não cole chave privada nesta página.</div>
+                <div class="form-text mb-2"><?= htmlspecialchars(t('servidor_pacs.tenant_config.chave_ajuda')) ?></div>
                 <?php if (!empty($provisioning['gateway_public_key'])): ?>
-                  <a class="btn btn-sm btn-outline-primary w-100 mb-2" href="/platform/servidor-pacs/<?= (int)$servidor['id'] ?>/operacao/kit-vpn-only.pdf"><i class="fa fa-file-pdf me-1"></i> Baixar kit VPN-only do cliente</a>
-                  <button class="btn btn-sm btn-primary w-100 mb-2" type="button" onclick="verificarEchoTenant()"><i class="fa fa-heartbeat me-1"></i> Verificar C-ECHO</button>
+                  <a class="btn btn-sm btn-outline-primary w-100 mb-2" href="/platform/servidor-pacs/<?= (int)$servidor['id'] ?>/operacao/kit-vpn-only.pdf"><i class="fa fa-file-pdf me-1"></i> <?= htmlspecialchars(t('servidor_pacs.tenant_config.baixar_kit')) ?></a>
+                  <button class="btn btn-sm btn-primary w-100 mb-2" type="button" onclick="verificarEchoTenant()"><i class="fa fa-heartbeat me-1"></i> <?= htmlspecialchars(t('servidor_pacs.tenant_config.verificar_echo')) ?></button>
                   <?php if (($provisioning['status'] ?? '') === 'echo_validated'): ?>
-                    <button class="btn btn-sm btn-outline-danger w-100" type="button" onclick="ativarCstoreTenant()"><i class="fa fa-lock-open me-1"></i> Liberar C-STORE após confirmação</button>
+                    <button class="btn btn-sm btn-outline-danger w-100" type="button" onclick="ativarCstoreTenant()"><i class="fa fa-lock-open me-1"></i> <?= htmlspecialchars(t('servidor_pacs.tenant_config.liberar_cstore')) ?></button>
                   <?php endif; ?>
                 <?php endif; ?>
                 <div id="tenantOperationResult" class="alert d-none mt-2 mb-0"></div>
@@ -233,18 +233,18 @@ function testarConexaoForm() {
 function verificarEchoTenant() {
     const result = document.getElementById('tenantOperationResult');
     result.className = 'alert alert-info mt-2 mb-0';
-    result.textContent = 'Consultando a auditoria técnica do gateway…';
+    result.textContent = <?= json_encode(t('servidor_pacs.tenant_config.echo_consultando'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     fetch(`/platform/servidor-pacs/${SERVIDOR_ID}/operacao/testar-echo`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': CSRF_TOKEN}, body: `_csrf_token=${encodeURIComponent(CSRF_TOKEN)}`})
       .then(r => r.json()).then(data => { result.className = data.success ? 'alert alert-success mt-2 mb-0' : 'alert alert-warning mt-2 mb-0'; result.textContent = data.message; if (data.success) setTimeout(() => location.reload(), 800); })
-      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = 'Não foi possível consultar o gateway.'; });
+      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = <?= json_encode(t('servidor_pacs.tenant_config.erro_gateway'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>; });
 }
 function ativarCstoreTenant() {
-    const confirmacao = prompt('Esta ação habilita o recebimento DICOM. Digite exatamente LIBERAR C-STORE para confirmar.');
+    const confirmacao = prompt(<?= json_encode(t('servidor_pacs.tenant_config.confirmar_cstore'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
     if (confirmacao !== 'LIBERAR C-STORE') return;
     const result = document.getElementById('tenantOperationResult');
     fetch(`/platform/servidor-pacs/${SERVIDOR_ID}/operacao/ativar-cstore`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': CSRF_TOKEN}, body: `_csrf_token=${encodeURIComponent(CSRF_TOKEN)}&confirm=${encodeURIComponent(confirmacao)}`})
       .then(r => r.json()).then(data => { result.className = data.success ? 'alert alert-success mt-2 mb-0' : 'alert alert-danger mt-2 mb-0'; result.textContent = data.message; if (data.success) setTimeout(() => location.reload(), 900); })
-      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = 'Não foi possível liberar C-STORE.'; });
+      .catch(() => { result.className = 'alert alert-danger mt-2 mb-0'; result.textContent = <?= json_encode(t('servidor_pacs.tenant_config.erro_cstore'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>; });
 }
 
 function associarNegocio() {
