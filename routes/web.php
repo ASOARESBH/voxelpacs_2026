@@ -284,6 +284,10 @@ Router::get('/reports/r/{token}',            'ReportsController@showByToken');
 // ============================================================
 Router::get('/open/{token}', 'ViewerTokenController@abrir');
 
+// Uso interno do viewer OHIF compartilhado: resolve o servidor do estudo pelo
+// token tenant-scoped e devolve upstream privado apenas ao Nginx autenticado.
+// A rota específica precisa preceder a rota variável abaixo.
+Router::get('/internal/viewer-auth/shared', 'ViewerTokenController@authorizeSharedDicomweb');
 // Uso interno: Nginx no host do viewer valida cookie de token, origem e célula
 // antes de encaminhar DICOMweb ao Orthanc do tenant. Não expor publicamente.
 Router::get('/internal/viewer-auth/{cellKey}', 'ViewerTokenController@authorizeDicomweb');

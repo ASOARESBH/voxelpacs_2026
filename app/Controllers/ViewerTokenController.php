@@ -129,7 +129,9 @@ class ViewerTokenController extends Controller
         // exclusiva, uma URL de viewer explicitamente cadastrada é obrigatória.
         $viewerBase = $this->viewerBase;
         if ($temCelulas && !empty($row['cell_status'])) {
-            $viewerBase = rtrim((string) ($row['cell_viewer_url'] ?? ''), '/');
+            // Células usam um único OHIF compartilhado; o token e o proxy
+            // interno continuam resolvendo tenant e servidor de origem.
+            $viewerBase = rtrim((string) (getenv('VIEWER_SHARED_URL') ?: ($row['cell_viewer_url'] ?? '')), '/');
             if ($viewerBase === '') {
                 error_log('[ViewerToken] Célula sem viewer_url para token autorizado.');
                 $this->renderErro(503, 'O visualizador desta empresa ainda não foi configurado.');
@@ -227,6 +229,48 @@ class ViewerTokenController extends Controller
         }
 
         http_response_code(204);
+    }
+
+    // =========================================================================
+    // Auth-request do OHIF compartilhado. A API retorna cabeçalhos apenas para
+    // o Nginx privado, após validar token, tenant, estudo, servidor e origem.
+    // Nenhuma informação clínica ou segredo é enviado ao navegador.
+    // =========================================================================
+    public function authorizeSharedDicomweb(): void
+    {
+        if (($_SERVER['REMOTE_ADDR'] ?? '') !== (string) (getenv('VIEWER_AUTH_PROXY_IP') ?: '10.0.0.3')) {
+            http_response_code(403); return;
+        }
+        $token = (string) ($_COOKIE['voxelpacs_viewer_token'] ?? '');
+        $origin = rtrim((string) ($_SERVER['HTTP_X_VOXEL_VIEWER_ORIGIN'] ?? ''), '/');
+        $expected = rtrim((string) (getenv('VIEWER_SHARED_URL') ?: 'https://view.voxelpacs.com.br'), '/');
+        if (!preg_match('/^[a-zA-Z0-9\-_]{8,128}$/', $token) || !hash_equals($expected, $origin)) {
+            http_response_code(401); return;
+        }
+        try {
+            $pdo = Database::getInstance();
+            $sql = "SELECT s.dicomweb_url, s.usuario, s.senha
+                      FROM pacs_viewer_tokens vt
+                      JOIN bi_pacs_estudos e ON e.id = vt.estudo_id AND e.tenant_id = vt.tenant_id
+                      JOIN bi_pacs_servidor s ON s.id = e.servidor_id AND s.ativo = 1
+                      JOIN bi_tenant_orthanc_cells cell ON cell.tenant_id = vt.tenant_id AND cell.servidor_id = e.servidor_id
+                     WHERE vt.token = :token AND vt.tenant_id IS NOT NULL AND vt.expires_at > NOW()
+                       AND cell.status IN ('provisioned','active') LIMIT 1";
+            $stmt = $pdo->prepare($sql); $stmt->execute([':token' => $token]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $url = is_array($row) ? rtrim((string) ($row['dicomweb_url'] ?? ''), '/') : '';
+            $parts = parse_url($url); $host = $parts['host'] ?? '';
+            $isPrivateIp = filter_var($host, FILTER_VALIDATE_IP) && !filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+            if (!$row || ($parts['scheme'] ?? '') !== 'http' || !$isPrivateIp || empty($row['usuario']) || !array_key_exists('senha', $row)) {
+                http_response_code(503); return;
+            }
+            header('X-Voxel-Dicomweb-Upstream: ' . $url);
+            header('X-Voxel-Dicomweb-Authorization: Basic ' . base64_encode((string) $row['usuario'] . ':' . (string) $row['senha']));
+            http_response_code(204);
+        } catch (\Throwable $e) {
+            error_log('[ViewerToken] shared viewer authorization failed: ' . get_class($e));
+            http_response_code(503);
+        }
     }
 
     // =========================================================================
