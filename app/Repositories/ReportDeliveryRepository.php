@@ -399,19 +399,26 @@ class ReportDeliveryRepository
     }
 
     /** @param array<int, array<string, mixed>> $destinations */
-    public function createJobs(int $outboxId, int $tenantId, ?int $estabelecimentoId, string $eventKey, array $destinations): int
+    public function createJobs(
+        int $outboxId,
+        int $tenantId,
+        ?int $estabelecimentoId,
+        string $eventKey,
+        array $destinations,
+        ?string $automaticDispatchDate = null
+    ): int
     {
         $created = 0;
         $sql = SqlHelper::isPostgres()
             ? "INSERT INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key)
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)
                ON CONFLICT DO NOTHING"
             : "INSERT IGNORE INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key)";
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)";
         $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
@@ -423,6 +430,7 @@ class ReportDeliveryRepository
                 ':estabelecimento_id' => $estabelecimentoId,
                 ':transport' => (string) $destination['transport'],
                 ':idempotency_key' => $jobKey,
+                ':automatic_dispatch_date' => $automaticDispatchDate,
             ]);
             $created += $stmt->rowCount();
         }
@@ -443,6 +451,7 @@ class ReportDeliveryRepository
                  remote_reference = NULL,
                  last_error = 'Reenfileirado após validação em DRY_RUN',
                  next_attempt_at = NOW(),
+                 worker_eligible_at = NOW(),
                  locked_at = NULL,
                  locked_by = NULL
              WHERE outbox_id = :outbox_id
@@ -566,33 +575,33 @@ class ReportDeliveryRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** Reenfileira apenas tentativas terminais do laudo no tenant indicado. */
+    /** Reenfileira manualmente somente tentativas terminais no tenant indicado. */
     public function retryTerminalJobsForReport(int $reportId, int $tenantId): int
     {
         $sql = SqlHelper::isPostgres()
             ? "UPDATE pacs_report_delivery_jobs j
                SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                   locked_by = NULL, last_error = NULL, updated_at = NOW()
+                   locked_by = NULL, last_error = NULL, worker_eligible_at = NOW(), automatic_dispatch_date = NULL, updated_at = NOW()
                FROM pacs_report_delivery_destinations d
                WHERE j.destination_id = d.id
-                 AND j.tenant_id = d.tenant_id
-                 AND j.tenant_id = :tenant_id
-                 AND j.status IN ('failed', 'dead_letter')
-                 AND d.enabled = 1
-                 AND d.disparar_na_liberacao = 1
-                 AND j.outbox_id IN (
+               AND j.tenant_id = d.tenant_id
+               AND j.tenant_id = :tenant_id
+               AND j.status IN ('failed', 'dead_letter')
+               AND d.enabled = 1
+               AND d.disparar_na_liberacao = 1
+               AND j.outbox_id IN (
                      SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
                  )"
             : "UPDATE pacs_report_delivery_jobs j
                INNER JOIN pacs_report_delivery_destinations d
                   ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
-                   j.locked_by = NULL, j.last_error = NULL, j.updated_at = NOW()
+                   j.locked_by = NULL, j.last_error = NULL, j.worker_eligible_at = NOW(), j.automatic_dispatch_date = NULL, j.updated_at = NOW()
                WHERE j.tenant_id = :tenant_id
-                 AND j.status IN ('failed', 'dead_letter')
-                 AND d.enabled = 1
-                 AND d.disparar_na_liberacao = 1
-                 AND j.outbox_id IN (
+               AND j.status IN ('failed', 'dead_letter')
+               AND d.enabled = 1
+               AND d.disparar_na_liberacao = 1
+               AND j.outbox_id IN (
                      SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
                  )";
         $stmt = $this->pdo->prepare($sql);
@@ -631,25 +640,25 @@ class ReportDeliveryRepository
         $sql = SqlHelper::isPostgres()
             ? "UPDATE pacs_report_delivery_jobs j
                SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                   locked_by = NULL, last_error = NULL
+                   locked_by = NULL, last_error = NULL, worker_eligible_at = NOW(), automatic_dispatch_date = NULL
                FROM pacs_report_delivery_destinations d
                WHERE j.destination_id = d.id
-                 AND j.tenant_id = d.tenant_id
-                 AND j.id = :id
-                 AND j.tenant_id = :tenant_id
-                 AND j.status IN ('failed', 'dead_letter')
-                 AND d.enabled = 1
-                 AND d.disparar_na_liberacao = 1"
+               AND j.tenant_id = d.tenant_id
+               AND j.id = :id
+               AND j.tenant_id = :tenant_id
+               AND j.status IN ('failed', 'dead_letter')
+               AND d.enabled = 1
+               AND d.disparar_na_liberacao = 1"
             : "UPDATE pacs_report_delivery_jobs j
                INNER JOIN pacs_report_delivery_destinations d
                   ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
-                   j.locked_by = NULL, j.last_error = NULL
+                   j.locked_by = NULL, j.last_error = NULL, j.worker_eligible_at = NOW(), j.automatic_dispatch_date = NULL
                WHERE j.id = :id
-                 AND j.tenant_id = :tenant_id
-                 AND j.status IN ('failed', 'dead_letter')
-                 AND d.enabled = 1
-                 AND d.disparar_na_liberacao = 1";
+               AND j.tenant_id = :tenant_id
+               AND j.status IN ('failed', 'dead_letter')
+               AND d.enabled = 1
+               AND d.disparar_na_liberacao = 1";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 

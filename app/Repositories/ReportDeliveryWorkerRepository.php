@@ -8,8 +8,8 @@ use Throwable;
 /**
  * Acesso exclusivo do worker à fila de Delivery Hub.
  *
- * O worker consulta somente destinos em homologação. A habilitação de
- * produção permanece bloqueada até uma etapa de ativação explícita.
+ * O worker consulta jobs explicitamente elegíveis gerados pelo fluxo correto:
+ * homologação manual ou produção automática após liberação clínica.
  */
 class ReportDeliveryWorkerRepository
 {
@@ -18,8 +18,24 @@ class ReportDeliveryWorkerRepository
     }
 
     /** @return array<string,mixed>|null */
-    public function claimNextJob(string $workerId): ?array
+    public function claimNextJob(string $workerId, array $transports = [], ?string $currentDate = null): ?array
     {
+        $transports = array_values(array_unique(array_filter(
+            array_map(static fn($transport): string => trim((string) $transport), $transports),
+            static fn(string $transport): bool => $transport !== ''
+        )));
+        $transportWhere = '';
+        $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
+        $parameters = [':automatic_today' => $currentDate];
+        if ($transports !== []) {
+            $placeholders = [];
+            foreach ($transports as $index => $transport) {
+                $placeholder = ':transport_' . $index;
+                $placeholders[] = $placeholder;
+                $parameters[$placeholder] = $transport;
+            }
+            $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
+        }
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
@@ -32,13 +48,16 @@ class ReportDeliveryWorkerRepository
                  INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
                  WHERE j.status IN ('queued', 'retrying')
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
+                   AND j.worker_eligible_at IS NOT NULL
+                   AND j.worker_eligible_at <= NOW()
+                   AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
                    AND d.enabled = 1
-                   AND d.ambiente = 'homologacao'
+                   AND d.ambiente IN ('homologacao', 'producao'){$transportWhere}
                  ORDER BY j.created_at ASC
                  LIMIT 1
                  FOR UPDATE"
             );
-            $stmt->execute();
+            $stmt->execute($parameters);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$job) {
                 $this->pdo->commit();
@@ -66,6 +85,37 @@ class ReportDeliveryWorkerRepository
             }
             throw $e;
         }
+    }
+
+    /** Cancela pendências automáticas cuja janela clínica expirou, sem tocar em jobs manuais. */
+    public function expireAutomaticJobsBefore(string $currentDate): int
+    {
+        if (!$this->validDate($currentDate)) {
+            throw new \InvalidArgumentException('Data clínica inválida para expiração da fila.');
+        }
+        $sql = \App\Core\SqlHelper::isPostgres()
+            ? "UPDATE pacs_report_delivery_jobs j
+               SET status = 'failed', next_attempt_at = NULL, worker_eligible_at = NULL,
+                   locked_at = NULL, locked_by = NULL,
+                   last_error = 'Janela automática de entrega expirada.'
+               FROM pacs_report_delivery_outbox o
+               WHERE o.id = j.outbox_id
+                 AND j.status IN ('queued', 'retrying')
+                 AND j.automatic_dispatch_date IS NOT NULL
+                 AND j.automatic_dispatch_date < :current_date
+                 AND o.event_type = 'report.released'"
+            : "UPDATE pacs_report_delivery_jobs j
+               INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+               SET j.status = 'failed', j.next_attempt_at = NULL, j.worker_eligible_at = NULL,
+                   j.locked_at = NULL, j.locked_by = NULL,
+                   j.last_error = 'Janela automática de entrega expirada.'
+               WHERE j.status IN ('queued', 'retrying')
+                 AND j.automatic_dispatch_date IS NOT NULL
+                 AND j.automatic_dispatch_date < :current_date
+                 AND o.event_type = 'report.released'";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':current_date' => $currentDate]);
+        return $stmt->rowCount();
     }
 
     /** @param array<string,mixed> $metadata */
@@ -283,5 +333,14 @@ class ReportDeliveryWorkerRepository
             ':terminal' => in_array($status, ['completed', 'dead_letter', 'failed', 'no_destination'], true) ? 1 : 0,
             ':id' => $outboxId,
         ]);
+    }
+
+    private function validDate(?string $value): bool
+    {
+        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return false;
+        }
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value;
     }
 }

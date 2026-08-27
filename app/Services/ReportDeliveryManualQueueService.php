@@ -9,7 +9,7 @@ use PDO;
 use Throwable;
 
 /**
- * Reenfileira, por solicitação administrativa explícita, um laudo já liberado.
+     * Reenfileira, por solicitação administrativa explícita, um laudo já liberado.
  *
  * Não executa entrega externa: apenas cria o evento e os jobs idempotentes da
  * outbox, aplicando exatamente a mesma regra de InstitutionName da liberação.
@@ -78,7 +78,8 @@ final class ReportDeliveryManualQueueService
                 $releasedBy,
                 $releasedAt,
                 $reportHash,
-                true
+                true,
+                'manual_homologation'
             );
             $this->pdo->commit();
 
@@ -92,9 +93,8 @@ final class ReportDeliveryManualQueueService
     }
 
     /**
-     * Reenvio operacional por ID do Report mostrado no Hub. A operação apenas
-     * reenfileira jobs terminais ou cria jobs idempotentes; o worker é o único
-     * componente autorizado a abrir a conexão do canal de entrega.
+     * Fallback operacional por ID do Report mostrado no Hub. A operação apenas
+     * reenfileira jobs terminais; não cria jobs novos para laudos históricos.
      *
      * @return array{created:bool,outbox_id:int|null,job_count:int,reason?:string,report_id:int,retried_jobs:int}
      */
@@ -106,53 +106,10 @@ final class ReportDeliveryManualQueueService
 
         $repository = new \App\Repositories\ReportDeliveryRepository($this->pdo);
         $retried = $repository->retryTerminalJobsForReport($reportId, $tenantId);
-        if ($retried > 0) {
-            return ['created' => false, 'outbox_id' => null, 'job_count' => $retried, 'report_id' => $reportId, 'retried_jobs' => $retried];
+        if ($retried === 0) {
+            throw new DomainException('Nenhuma falha terminal elegível foi encontrada para reenvio manual.');
         }
-
-        $stmt = $this->pdo->prepare(
-            "SELECT r.*, e.*, r.id AS report_id, e.id AS source_estudo_id, r.tenant_id AS report_tenant_id
-             FROM reports r
-             INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
-             WHERE r.id = :report_id AND r.tenant_id = :tenant_id
-             LIMIT 1"
-        );
-        $stmt->execute([':report_id' => $reportId, ':tenant_id' => $tenantId]);
-        $row = $stmt->fetch(PDO::FETCH_OBJ);
-        if (!$row || (string) ($row->situacao ?? '') !== 'liberado') {
-            throw new DomainException('Somente laudos liberados deste negócio podem ser reenviados.');
-        }
-
-        $sections = [
-            'exame' => (string) ($row->secao_exame ?? ''),
-            'tecnica' => (string) ($row->secao_tecnica ?? ''),
-            'achados' => (string) ($row->secao_achados ?? ''),
-            'conclusao' => (string) ($row->secao_conclusao ?? ''),
-            'recomendacao' => (string) ($row->secao_recomendacao ?? ''),
-        ];
-        $this->pdo->beginTransaction();
-        try {
-            $result = (new ReportDeliveryOutboxService($this->pdo))->queueReleasedReport(
-                $tenantId,
-                $reportId,
-                (int) $row->source_estudo_id,
-                $this->latestVersion($reportId),
-                $row,
-                $row,
-                (int) ($row->liberado_por ?? 0) ?: $requestedBy,
-                trim((string) ($row->liberado_em ?? '')) ?: gmdate('Y-m-d H:i:s'),
-                hash('sha256', json_encode($sections, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-                true
-            );
-            $this->pdo->commit();
-
-            return $result + ['report_id' => $reportId, 'retried_jobs' => 0];
-        } catch (Throwable $exception) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
-            throw $exception;
-        }
+        return ['created' => false, 'outbox_id' => null, 'job_count' => $retried, 'report_id' => $reportId, 'retried_jobs' => $retried];
     }
 
     private function latestVersion(int $reportId): int

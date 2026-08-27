@@ -11,7 +11,7 @@ Laudo liberado
 Outbox + jobs por destino
     │
     ▼
-Worker persistente autenticado
+Worker local supervisionado
     │
     ├─ DICOM Encapsulated PDF
     ├─ DICOM Structured Report
@@ -29,8 +29,9 @@ Worker persistente autenticado
 | Idempotência | A chave SHA-256 usa tenant, laudo, versão, tipo do evento e hash clínico; jobs também têm chave por destino. |
 | Isolamento | Registros são associados a tenant e, opcionalmente, a estabelecimento/unidade. |
 | Segurança de segredos | JSON sensível do destino é cifrado com AES-256-GCM derivado de `APP_SECRET`; não é devolvido na tela administrativa. |
-| Proteção do worker | Endpoints sem sessão usam bearer token privado, comparado com `hash_equals`, e identificador de worker auditável. |
-| Segurança operacional | Destinos novos começam desativados e em `homologacao`; a interface bloqueia habilitação direta de produção. |
+| Proteção do worker | Serviço local sem rota pública de despacho, executado com usuário de serviço, diretório temporário privado e identificador auditável. A API de worker preexistente permanece protegida, mas não é necessária para o serviço local. |
+| Elegibilidade | Job novo só é consumido quando `worker_eligible_at` é gravado pelo fluxo autorizado. Jobs legados ficam inelegíveis até ação explícita. |
+| Segurança operacional | Destinos novos começam desativados e em `homologacao`; produção exige confirmação explícita no painel antes de ser habilitada. |
 | Falhas | Tentativas, backoff exponencial, erro técnico e DLQ são persistidos por job. |
 
 ## Tabelas
@@ -40,7 +41,7 @@ Worker persistente autenticado
 | `pacs_report_delivery_destinations` | Perfil de entrega por tenant/unidade e canal. |
 | `pacs_report_delivery_destination_issuers` | Vínculos normalizados de Issuer por destino de entrega. |
 | `pacs_report_delivery_outbox` | Evento imutável de liberação/correção de laudo. |
-| `pacs_report_delivery_jobs` | Uma unidade de trabalho para cada destino selecionado. |
+| `pacs_report_delivery_jobs` | Uma unidade de trabalho para cada destino selecionado, com marca explícita de elegibilidade do worker. |
 | `pacs_report_delivery_attempts` | Histórico técnico de cada tentativa. |
 | `pacs_report_delivery_artifacts` | Hash e metadados de PDF, SR, HL7 ou manifesto gerados. |
 
@@ -63,16 +64,25 @@ A tela usa **campos guiados**, sem exigir JSON do usuário. Ao selecionar o cana
 
 A validação ocorre tanto no navegador quanto no servidor. Destinos já existentes continuam compatíveis: ao clicar em **Editar**, as configurações internas conhecidas são convertidas novamente para os campos visuais.
 
+## Serviço local do worker
+
+O processo local é instalado como `voxelpacs-report-delivery-worker.service`, supervisionado pelo `systemd`. Ele é a alternativa recomendada ao cron externo porque mantém o loop, o lease exclusivo, a recuperação automática e as credenciais no próprio servidor, sem publicar token de execução para terceiros.
+
+O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da versão imutável, encapsula o documento em objeto DICOM mantendo o Study UID do evento e executa C-STORE. O processo grava apenas estados técnicos sanitizados em tentativas, usa armazenamento privado para artefatos e falha de modo fechado se parâmetros obrigatórios, identificação do estudo ou perfil TLS solicitado não estiverem completos.
+
+> Uma configuração que solicita TLS não é rebaixada silenciosamente para TCP. Enquanto não houver perfil de certificados configurado, o job falhará com estado técnico sanitizado e seguirá a política de retentativa/DLQ.
+
 ## Variáveis de ambiente
 
 No HostGator, manter inicialmente:
 
 ```env
 VOXEL_REPORT_DELIVERY_HUB_ENABLED=false
-VOXEL_REPORT_DELIVERY_WORKER_TOKEN=<64_caracteres_hex_gerados_com_openssl_rand_hex_32>
+VOXEL_REPORT_DELIVERY_WORKER_ID=local-dicom-worker
+VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS=3
 ```
 
-No VPS, o mesmo token é configurado no `.env` privado do worker. Nenhum dos dois arquivos deve ser versionado.
+As variáveis efetivas permanecem no ambiente privado do servidor e nenhum arquivo de ambiente deve ser versionado.
 
 ## Migração
 
@@ -83,7 +93,7 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 ## Homologação segura
 
 1. Aplicar a migration e publicar o backend com a feature flag desligada.
-2. Instalar o worker no VPS com `DELIVERY_HUB_DRY_RUN=true`.
+2. Instalar o serviço local do worker e validar `--check`, sem criar job ou abrir associação externa.
 3. Cadastrar um destino em homologação e mantê-lo inicialmente desativado.
 4. Validar bearer token, leasing, idempotência, tentativa e reprocessamento com dados não clínicos quando possível.
 5. Habilitar o Hub somente em ambiente de homologação e criar um laudo de teste.
@@ -94,13 +104,13 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 
 | Canal | Estado nesta entrega |
 |---|---|
-| HTTPS Webhook/API | Worker implementado, protegido por `DRY_RUN` e restrito a HTTPS. |
-| DICOM Encapsulated PDF | Contrato, outbox e configuração prontos; requer gerador de artefato e homologação C-STORE/Storage Commitment. |
+| HTTPS Webhook/API | Contrato e configuração prontos; consumidor específico ainda não foi instalado pelo worker local. |
+| DICOM Encapsulated PDF | Worker local implementado com encapsulamento e C-STORE; requer configuração e homologação técnica por destino. |
 | DICOM SR | Contrato e rastreabilidade prontos; requer mapeamento DICOM SR/TID 2000 e homologação. |
 | HL7 ORU^R01 | Contrato e rastreabilidade prontos; requer profile e interface do RIS/HIS receptor. |
 | SFTP/FTPS | Contrato e rastreabilidade prontos; requer geração de PDF, manifesto e credencial/chave por cliente. |
 
-Nenhum destino clínico é ativado automaticamente nesta entrega.
+Nenhum destino clínico é habilitado pela implantação: a habilitação e a confirmação de produção ocorrem exclusivamente pelo painel de superadmin.
 
 ## Roteamento por Issuer e PACS de origem
 
@@ -127,12 +137,26 @@ O painel de cada negócio apresenta até 100 laudos com situação `liberado`, m
 | Estado exibido | Critério | Ação disponível |
 |---|---|---|
 | **Entregue** | Todos os jobs daquele laudo foram concluídos pelo worker com `delivered`. | Nenhuma. |
-| **Na fila** | Há job `queued`, `retrying` ou `processing`. | Reenviar, sujeito à confirmação e à regra de destino. |
-| **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | Reenviar reativa os jobs terminais. |
+| **Na fila** | Há job `queued`, `retrying` ou `processing`. | Aguardar o worker; reenvio manual só é oferecido para homologação. |
+| **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | Reenviar reativa somente jobs terminais de homologação. |
 | **Destino desativado** | O Issuer prioritário, ou o InstitutionName de fallback quando não há Issuer, está vinculado a um destino, mas ele não está elegível (`enabled=0` ou sem disparo na liberação). | Nenhuma; a configuração precisa ser ativada em processo homologado. |
-| **Pronto para reenviar** | Há destino configurado e elegível, mas ainda não existe job do laudo. | Reenviar reavalia a mesma origem e cria somente jobs idempotentes. |
+| **Pronto para reenviar** | Há destino de homologação configurado e elegível, mas ainda não existe job do laudo. | Reenviar reavalia a mesma origem e cria somente jobs idempotentes de homologação. |
+| **Automático na liberação** | Há somente destino de produção elegível e ainda não existe job de laudo histórico. | Nenhuma; novos laudos liberados criam job de produção automaticamente. |
 | **Sem destino** | Não existe vínculo configurado para a origem aplicável do laudo. | Reenviar reavalia Issuer e InstitutionName de fallback contra destinos ativos. |
 
-O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Para falhas terminais, ele somente muda os jobs daquele laudo de volta para `queued` quando o destino correspondente continua ativo e habilitado para liberação; um formulário desatualizado ou uma chamada direta não consegue reenfileirar destinos desativados. Caso não haja job terminal, reutiliza a outbox e a mesma regra de criação idempotente de jobs da liberação clínica. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker autenticado.
+O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Ele só cria ou reativa jobs para destinos de **homologação** ativos e compatíveis; não se torna um atalho para produzir transmissão. Produção recebe novos jobs exclusivamente pela transação clínica de liberação. O alerta da interface informa aceite na fila, sucesso de entrega ou falha técnica sanitizada conforme o estado persistido; nunca renderiza JSON bruto da API. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker.
 
 Se não houver destino ativo e compatível, o reenvio retorna sem criar job. Quando um artefato é transmitido e confirmado pelo worker, o job passa para `delivered` e a lista reflete **Entregue**. Um reenvio clínico real deve ser confirmado separadamente antes da ação administrativa.
+
+## Janela automática e fallback após falha
+
+Um job criado automaticamente por uma liberação em produção recebe a **data clínica da liberação**. O worker processa esse job somente enquanto essa data corresponder ao dia clínico corrente. Ao iniciar um novo dia, pendências automáticas anteriores são finalizadas como falha sanitizada e deixam de ser consumidas automaticamente. Essa regra impede que indisponibilidades antigas resultem em transmissão retardada sem revisão operacional.
+
+Após `failed` ou `dead_letter`, o superadmin pode acionar **Reenviar após falha**. A ação exige CSRF e confirmação no navegador, preserva tenant e unidade, gera evento de auditoria com o modo `manual_after_terminal_failure` e torna o job novamente elegível. O fallback não cria job novo para laudo histórico, não reenvia itens entregues e não contorna a prioridade Issuer–InstitutionName.
+
+| Situação | Automação | Ação humana |
+|---|---|---|
+| Laudo liberado hoje em produção | Job elegível e processado pelo worker. | Não há botão prévio de reenvio. |
+| Job automático pendente após a data clínica | Finalizado como falha sanitizada; não transmite no dia seguinte. | **Reenviar após falha**, mediante confirmação. |
+| Falha terminal de homologação | Não há nova criação automática fora da liberação. | **Reenviar após falha**, mediante confirmação. |
+| Entrega concluída | Não é reenfileirada. | Nenhuma. |

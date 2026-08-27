@@ -180,7 +180,11 @@ $transportLabels = [
                             <div class="col-md-6"><label class="form-label" for="destination-attempts">Tentativas máximas</label><input class="form-control" id="destination-attempts" type="number" name="max_attempts" min="1" max="10" value="5"></div>
                         </div>
                         <div class="form-check mt-3"><input class="form-check-input" id="destination-release" type="checkbox" name="disparar_na_liberacao" value="1" checked><label class="form-check-label" for="destination-release">Criar job quando o laudo for liberado</label></div>
-                        <div class="form-check mt-2"><input class="form-check-input" id="destination-enabled" type="checkbox" name="enabled" value="1"><label class="form-check-label" for="destination-enabled">Habilitar destino de homologação</label></div>
+                        <div class="form-check mt-2"><input class="form-check-input" id="destination-enabled" type="checkbox" name="enabled" value="1"><label class="form-check-label" for="destination-enabled"><?= $escape(t('delivery_hub.destination.habilitar')) ?></label></div>
+                        <div class="alert alert-warning small mt-2 mb-0 d-none" id="production-activation-confirmation">
+                            <div class="form-check"><input class="form-check-input" id="destination-confirm-production-activation" type="checkbox" name="confirm_production_activation" value="1"><label class="form-check-label fw-semibold" for="destination-confirm-production-activation"><?= $escape(t('delivery_hub.destination.confirmar_producao')) ?></label></div>
+                            <div class="mt-1"><?= $escape(t('delivery_hub.destination.confirmar_producao_ajuda')) ?></div>
+                        </div>
                         <div class="d-flex gap-2 mt-4"><button type="submit" class="btn btn-primary">Salvar destino</button><button type="button" class="btn btn-outline-secondary d-none" id="destination-cancel">Cancelar edição</button></div>
                     </form>
                 </div>
@@ -248,9 +252,10 @@ $transportLabels = [
                                     elseif ($queued > 0) { $statusKey = 'delivery_hub.released.status_fila'; $statusClass = 'primary'; }
                                     elseif ($failed > 0) { $statusKey = 'delivery_hub.released.status_falha'; $statusClass = 'danger'; }
                                     elseif ($routingState === 'configured_inactive') { $statusKey = 'delivery_hub.released.status_destino_desativado'; $statusClass = 'warning'; }
-                                    elseif ($routingState === 'eligible') { $statusKey = 'delivery_hub.released.status_pronto_reenviar'; $statusClass = 'info'; }
+                                    elseif ($routingState === 'manual_eligible') { $statusKey = 'delivery_hub.released.status_pronto_reenviar'; $statusClass = 'info'; }
+                                    elseif ($routingState === 'automatic_only') { $statusKey = 'delivery_hub.released.status_automatico_liberacao'; $statusClass = 'info'; }
                                     else { $statusKey = 'delivery_hub.released.status_sem_destino'; $statusClass = 'secondary'; }
-                                    $canResend = $statusKey !== 'delivery_hub.released.status_entregue' && $routingState !== 'configured_inactive';
+                                    $canResend = $failed > 0 && in_array($routingState, ['manual_eligible', 'automatic_only'], true);
                                     $routingDestinations = trim((string) ($delivery['routing_destinations'] ?? ''));
                                     $destinationName = (string) ($delivery['destination_name'] ?? '');
                                     $displayDestination = $destinationName !== '' ? $destinationName : $routingDestinations;
@@ -266,11 +271,13 @@ $transportLabels = [
                                         <?php if ($canResend): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/<?= (int) $delivery['report_id'] ?>/resend" class="d-inline delivery-resend-form">
                                                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_resend" value="1">
-                                                <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar')) ?></button>
+                                                <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar_falha')) ?></button>
                                             </form>
                                         <?php else: ?>
                                             <?php if ($routingState === 'configured_inactive'): ?>
                                                 <span class="text-muted small" title="<?= $escape(t('delivery_hub.released.acao_destino_desativado_ajuda')) ?>"><?= $escape(t('delivery_hub.released.acao_destino_desativado')) ?></span>
+                                            <?php elseif ($routingState === 'automatic_only'): ?>
+                                                <span class="text-muted small" title="<?= $escape(t('delivery_hub.released.acao_automatica_ajuda')) ?>"><?= $escape(t('delivery_hub.released.acao_automatica')) ?></span>
                                             <?php else: ?>
                                                 <span class="text-muted small">—</span>
                                             <?php endif; ?>
@@ -286,17 +293,22 @@ $transportLabels = [
     </div>
 </div>
 
+<div id="delivery-resend-feedback" class="d-none alert mt-4 mb-0" role="alert" aria-live="polite"></div>
+
 <script>
 (() => {
     const form = document.getElementById('destination-form');
     const manualForm = document.getElementById('manual-delivery-form');
     const manualFeedback = document.getElementById('manual-delivery-feedback');
+    const resendFeedback = document.getElementById('delivery-resend-feedback');
     const title = document.getElementById('destination-form-title');
     const cancel = document.getElementById('destination-cancel');
     const feedback = document.getElementById('delivery-feedback');
     const transport = document.getElementById('destination-transport');
     const environment = document.getElementById('destination-environment');
     const enabled = document.getElementById('destination-enabled');
+    const productionConfirmation = document.getElementById('destination-confirm-production-activation');
+    const productionConfirmationBox = document.getElementById('production-activation-confirmation');
     const guide = document.getElementById('destination-guide');
     const configInput = document.getElementById('destination-config');
     const secretInput = document.getElementById('destination-secret');
@@ -360,9 +372,10 @@ $transportLabels = [
 
     function syncEnvironment() {
         const production = environment.value === 'producao';
-        if (production) enabled.checked = false;
-        enabled.disabled = production;
-        enabled.parentElement.classList.toggle('text-muted', production);
+        const confirmationRequired = production && enabled.checked;
+        productionConfirmationBox.classList.toggle('d-none', !confirmationRequired);
+        productionConfirmation.required = confirmationRequired;
+        if (!production) productionConfirmation.checked = false;
     }
 
     function serializeConfiguration() {
@@ -419,14 +432,31 @@ $transportLabels = [
     });
 
     document.querySelectorAll('.delivery-resend-form').forEach((resendForm) => {
-        resendForm.addEventListener('submit', (event) => {
-            const confirmed = window.confirm('<?= addslashes(t('delivery_hub.released.confirmar_reenvio')) ?>');
-            if (!confirmed) event.preventDefault();
+        resendForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm('<?= addslashes(t('delivery_hub.released.confirmar_reenvio_falha')) ?>')) return;
+            const submitButton = resendForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(resendForm.action, { method: 'POST', body: new FormData(resendForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: '<?= addslashes(t('delivery_hub.released.resposta_invalida')) ?>' }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
         });
     });
 
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
     environment.addEventListener('change', syncEnvironment);
+    enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
         button.addEventListener('click', () => {
             const input = document.getElementById(button.dataset.target);
@@ -465,6 +495,12 @@ $transportLabels = [
         if (!institutionSelectors.some((input) => input.checked) && !issuerSelectors.some((input) => input.checked)) {
             feedback.className = 'alert alert-danger';
             feedback.textContent = 'Selecione ao menos um Issuer ou InstitutionName de fallback para este destino.';
+            feedback.classList.remove('d-none');
+            return;
+        }
+        if (environment.value === 'producao' && enabled.checked && !productionConfirmation.checked) {
+            feedback.className = 'alert alert-danger';
+            feedback.textContent = '<?= addslashes(t('delivery_hub.destination.confirmacao_producao_obrigatoria')) ?>';
             feedback.classList.remove('d-none');
             return;
         }

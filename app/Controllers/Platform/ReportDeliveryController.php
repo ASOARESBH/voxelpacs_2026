@@ -97,8 +97,17 @@ class ReportDeliveryController extends Controller
                 $issuerNormalized,
                 $institutionName
             );
-            $eligible = array_filter($configured, static fn(array $destination): bool =>
-                !empty($destination['enabled']) && !empty($destination['disparar_na_liberacao'])
+            $eligible = $this->repository->findActiveDestinations(
+                $tenantId,
+                $estabelecimentoId,
+                $issuerNormalized,
+                $institutionName
+            );
+            $manualEligible = array_filter($eligible, static fn(array $destination): bool =>
+                (string) ($destination['ambiente'] ?? '') === 'homologacao'
+            );
+            $automaticEligible = array_filter($eligible, static fn(array $destination): bool =>
+                (string) ($destination['ambiente'] ?? '') === 'producao'
             );
             $delivery['routing_destinations'] = implode(', ', array_map(
                 static fn(array $destination): string => (string) $destination['nome'],
@@ -106,7 +115,9 @@ class ReportDeliveryController extends Controller
             ));
             $delivery['routing_state'] = $configured === []
                 ? 'unmapped'
-                : ($eligible === [] ? 'configured_inactive' : 'eligible');
+                : ($eligible === [] ? 'configured_inactive' : ($manualEligible !== [] ? 'manual_eligible' : 'automatic_only'));
+            $delivery['manual_eligible'] = $manualEligible !== [];
+            $delivery['automatic_eligible'] = $automaticEligible !== [];
         }
         unset($delivery);
 
@@ -133,12 +144,17 @@ class ReportDeliveryController extends Controller
                 'transport' => $data['transport'],
                 'ambiente' => $data['ambiente'],
                 'enabled' => $data['enabled'],
+                'producao_confirmada' => $data['producao_confirmada'],
                 'institution_names' => $data['institution_names'],
                 'issuers' => array_map(static fn(array $issuer): string => $issuer['normalized'], $data['issuers']),
             ]);
             $this->json([
                 'success' => true,
-                'message' => 'Destino salvo. Ele permanece em homologação até ser validado pelo worker.',
+                'message' => !empty($data['enabled'])
+                    ? ($data['ambiente'] === 'producao'
+                        ? t('delivery_hub.destination.producao_ativado')
+                        : t('delivery_hub.destination.homologacao_ativado'))
+                    : t('delivery_hub.destination.desativado_salvo'),
                 'destination_id' => $savedId,
             ]);
         } catch (DomainException $e) {
@@ -182,8 +198,8 @@ class ReportDeliveryController extends Controller
             $this->json([
                 'success' => true,
                 'message' => $result['job_count'] > 0
-                    ? 'Laudo liberado reenfileirado para a homologação.'
-                    : 'Evento registrado, mas nenhum destino habilitado corresponde ao Issuer ou ao InstitutionName de fallback do estudo.',
+                    ? t('delivery_hub.released.reenvio_aceito_homologacao')
+                    : t('delivery_hub.released.sem_destino_homologacao'),
                 'outbox_id' => $result['outbox_id'],
                 'job_count' => $result['job_count'],
             ]);
@@ -206,14 +222,20 @@ class ReportDeliveryController extends Controller
         if (!$this->validCsrf()) {
             $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
         }
+        if ((string) ($_POST['confirm_resend'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao')], 422);
+        }
 
         try {
             $queued = $this->repository->retryJob($jobId, $tenantId);
             if (!$queued) {
-                $this->json(['success' => false, 'message' => 'Somente jobs com falha podem ser reprocessados.'], 422);
+                $this->json(['success' => false, 'message' => t('delivery_hub.released.reprocessamento_indisponivel')], 422);
             }
-            AuditLogger::log('report_delivery.job_requeued', 'pacs_report_delivery_jobs', $jobId, ['tenant_id' => $tenantId]);
-            $this->json(['success' => true, 'message' => 'Job reenfileirado para o worker.']);
+            AuditLogger::log('report_delivery.failed_job_requeued', 'pacs_report_delivery_jobs', $jobId, [
+                'tenant_id' => $tenantId,
+                'event_mode' => 'manual_after_terminal_failure',
+            ]);
+            $this->json(['success' => true, 'message' => t('delivery_hub.released.reprocessamento_aceito')]);
         } catch (Throwable $e) {
             Logger::error('[ReportDeliveryController::retry] Falha ao reprocessar job', [
                 'tenant_id' => $tenantId,
@@ -239,16 +261,17 @@ class ReportDeliveryController extends Controller
         try {
             $result = (new ReportDeliveryManualQueueService(Database::getInstance()))
                 ->queueReleasedReportById($tenantId, $reportId, (int) Auth::userId());
-            AuditLogger::log('report_delivery.released_report_requeued', 'reports', $reportId, [
+            AuditLogger::log('report_delivery.failed_report_requeued', 'reports', $reportId, [
                 'tenant_id' => $tenantId,
                 'job_count' => $result['job_count'],
                 'retried_jobs' => $result['retried_jobs'],
+                'event_mode' => 'manual_after_terminal_failure',
             ]);
             $this->json([
                 'success' => true,
                 'message' => $result['job_count'] > 0
-                    ? t('delivery_hub.released.reenvio_aceito')
-                    : t('delivery_hub.released.sem_destino_ativo'),
+                    ? t('delivery_hub.released.reenvio_falha_aceito')
+                    : t('delivery_hub.released.reprocessamento_indisponivel'),
                 'job_count' => $result['job_count'],
             ]);
         } catch (DomainException $e) {
@@ -279,20 +302,20 @@ class ReportDeliveryController extends Controller
         try {
             $queued = $this->repository->recoverStaleProcessingJob($jobId, $tenantId);
             if (!$queued) {
-                $this->json(['success' => false, 'message' => 'O job ainda está em processamento recente ou não pode ser recuperado.'], 422);
+                $this->json(['success' => false, 'message' => t('delivery_hub.released.recuperacao_indisponivel')], 422);
             }
             AuditLogger::log('report_delivery.stale_job_recovered', 'pacs_report_delivery_jobs', $jobId, [
                 'tenant_id' => $tenantId,
                 'minimum_stale_minutes' => 10,
             ]);
-            $this->json(['success' => true, 'message' => 'Lease obsoleto recuperado; o job voltou à fila de homologação.']);
+            $this->json(['success' => true, 'message' => t('delivery_hub.released.recuperacao_aceita')]);
         } catch (Throwable $e) {
             Logger::error('[ReportDeliveryController::recoverStaleProcessing] Falha ao recuperar lease obsoleto', [
                 'tenant_id' => $tenantId,
                 'job_id' => $jobId,
                 'error' => $e->getMessage(),
             ]);
-            $this->json(['success' => false, 'message' => 'Não foi possível recuperar o job em processamento.'], 500);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_recuperacao')], 500);
         }
     }
 
@@ -305,6 +328,7 @@ class ReportDeliveryController extends Controller
         $configuration = trim((string) ($_POST['configuration_json'] ?? ''));
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
         $enabled = !empty($_POST['enabled']) ? 1 : 0;
+        $producaoConfirmada = (string) ($_POST['confirm_production_activation'] ?? '') === '1';
         $requestedInstitutions = $_POST['institution_names'] ?? [];
         $requestedInstitutions = is_array($requestedInstitutions) ? $requestedInstitutions : [];
         $institutionNames = [];
@@ -350,8 +374,8 @@ class ReportDeliveryController extends Controller
         if (!in_array($environment, ['homologacao', 'producao'], true)) {
             throw new DomainException('Ambiente inválido.');
         }
-        if ($enabled && $environment !== 'homologacao') {
-            throw new DomainException('Por segurança, destinos de produção só podem ser habilitados após homologação controlada.');
+        if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
+            throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
         }
         if ($configuration === '') {
             $configuration = '{}';
@@ -374,6 +398,7 @@ class ReportDeliveryController extends Controller
             'transport' => $transport,
             'ambiente' => $environment,
             'enabled' => $enabled,
+            'producao_confirmada' => $producaoConfirmada,
             'disparar_na_liberacao' => !empty($_POST['disparar_na_liberacao']) ? 1 : 0,
             'configuration_json' => json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'configuration_secret' => $secret,
