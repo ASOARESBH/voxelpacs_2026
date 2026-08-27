@@ -183,12 +183,15 @@ class PacsSyncService
             unset($cols['scheduled_procedure_step_desc']);
         }
 
+        // Em células Orthanc independentes o mesmo identificador interno pode
+        // existir em servidores distintos. A identidade de sincronização é
+        // sempre composta por servidor PACS e orthanc_id.
         $existeStmt = $pdo->prepare("
             SELECT id, tenant_id, roteamento_resolvido_por, study_description_manual
             FROM bi_pacs_estudos
-            WHERE orthanc_id = ?
+            WHERE servidor_id = ? AND orthanc_id = ?
         ");
-        $existeStmt->execute([$study['orthanc_id']]);
+        $existeStmt->execute([$servidorId, $study['orthanc_id']]);
         $existente = $existeStmt->fetch(\PDO::FETCH_ASSOC);
 
         $jaResolvidoManualmente = $existente && $existente['roteamento_resolvido_por'] !== null;
@@ -231,8 +234,8 @@ class PacsSyncService
         $placeholders = '?, ' . implode(', ', array_fill(0, count($cols), '?')) . ', ?';
         $vals         = array_merge([$servidorId], array_values($cols), [$study['orthanc_id']]);
         $pdo->prepare("INSERT INTO bi_pacs_estudos ($colNames) VALUES ($placeholders)")->execute($vals);
-        $created = $pdo->prepare('SELECT id FROM bi_pacs_estudos WHERE orthanc_id = ? LIMIT 1');
-        $created->execute([$study['orthanc_id']]);
+        $created = $pdo->prepare('SELECT id FROM bi_pacs_estudos WHERE servidor_id = ? AND orthanc_id = ? LIMIT 1');
+        $created->execute([$servidorId, $study['orthanc_id']]);
         $studyId = (int) $created->fetchColumn();
         AgendamentoService::marcarRealizadoPorEstudo(
             $pdo,

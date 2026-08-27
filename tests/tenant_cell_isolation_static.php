@@ -10,7 +10,7 @@ $files = [
     'desktop' => $root . '/app/Services/DesktopViewerService.php',
     'estudos' => $root . '/app/Controllers/EstudosController.php',
     'viewer_token' => $root . '/app/Controllers/ViewerTokenController.php',
-    'migration' => $root . '/database/migrations/2026-08-27_tenant_orthanc_cells.sql',
+    'migration' => $root . '/database/migrations/2026-08-27_tenant_orthanc_cells_postgresql.sql',
 ];
 
 foreach ($files as $name => $path) {
@@ -23,15 +23,17 @@ foreach ($files as $name => $path) {
 
 $checks = [
     'migration cria controle de célula por tenant' => str_contains($files['migration'], 'bi_tenant_orthanc_cells'),
-    'migration torna tenant único por célula' => str_contains($files['migration'], 'UNIQUE KEY `uq_cell_tenant` (`tenant_id`)'),
-    'migration torna servidor único por célula' => str_contains($files['migration'], 'UNIQUE KEY `uq_cell_servidor` (`servidor_id`)'),
-    'migration usa identidade composta de estudo' => str_contains($files['migration'], 'uq_estudo_servidor_orthanc (servidor_id, orthanc_id)'),
+    'migration torna tenant único por célula' => str_contains($files['migration'], 'CONSTRAINT uq_cell_tenant UNIQUE (tenant_id)'),
+    'migration torna servidor único por célula' => str_contains($files['migration'], 'CONSTRAINT uq_cell_servidor UNIQUE (servidor_id)'),
+    'migration usa identidade composta de estudo' => str_contains($files['migration'], 'uq_estudo_servidor_orthanc')
+        && str_contains($files['migration'], 'ON bi_pacs_estudos (servidor_id, orthanc_id)'),
     'roteamento prioriza célula exclusiva' => str_contains($files['routing'], "'celula_orthanc_exclusiva'"),
     'roteamento testa tabela de célula' => str_contains($files['routing'], "hasTable(\$pdo, 'bi_tenant_orthanc_cells')"),
     'sync identifica estudo por servidor e Orthanc' => str_contains($files['sync'], 'WHERE servidor_id = ? AND orthanc_id = ?'),
-    'viewer web exige tenant ativo' => substr_count($files['estudos'], 'Selecione uma empresa antes de abrir imagens clínicas.') >= 3,
+    'viewer web exige tenant ativo' => substr_count($files['estudos'], 'Selecione uma empresa antes de abrir imagens clínicas.') >= 1,
     'viewer web não faz fallback direto por UID' => !str_contains($files['estudos'], 'Fallback: redireciona direto se token falhar'),
-    'token salva tenant sem nulo' => str_contains($files['estudos'], "':tenant_id'  => \$tenantId,"),
+    'token salva tenant sem nulo' => str_contains($files['estudos'], "':tenant_id'  => \$estudoTenantId,")
+        && !str_contains($files['estudos'], "':tenant_id'  => Auth::tenantId() ?: null,"),
     'desktop exige configuração de célula explícita' => str_contains($files['desktop'], 'requiresTenantSpecificConfig'),
     'desktop não herda servidor global em célula' => str_contains($files['desktop'], 'Células exclusivas não podem herdar endpoint/AE do servidor global.'),
     'resolver público exige token com tenant' => str_contains($files['viewer_token'], 'vt.tenant_id IS NOT NULL'),

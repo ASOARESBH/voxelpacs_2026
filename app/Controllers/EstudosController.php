@@ -723,6 +723,14 @@ class EstudosController extends Controller
         $bypassGlobal = $isAdmin && !Auth::isImpersonating();
         $estudo   = null;
 
+        // Toda abertura clínica deve partir de uma sessão tenant-scoped. O
+        // superadmin sem impersonação pode localizar o estudo, mas o token
+        // emitido abaixo continuará vinculado ao tenant persistido no estudo.
+        if (!$tenantId && !$bypassGlobal) {
+            $this->renderErroViewer(403, 'Selecione uma empresa antes de abrir imagens clínicas.');
+            return;
+        }
+
         try {
             $where  = 'id = :id';
             $params = [':id' => $id];
@@ -747,8 +755,14 @@ class EstudosController extends Controller
             return;
         }
 
-        $studyUid  = $estudo['study_instance_uid'] ?? '';
-        $orthancId = $estudo['orthanc_id']         ?? '';
+        $studyUid       = $estudo['study_instance_uid'] ?? '';
+        $orthancId       = $estudo['orthanc_id']         ?? '';
+        $estudoTenantId  = (int) ($estudo['tenant_id'] ?? 0);
+
+        if ($estudoTenantId <= 0) {
+            $this->renderErroViewer(409, 'Este estudo não possui empresa associada.');
+            return;
+        }
 
         if (empty($studyUid) && empty($orthancId)) {
             $this->renderErroViewer(422, 'Este estudo não possui StudyInstanceUID.');
@@ -800,16 +814,16 @@ class EstudosController extends Controller
                 ':estudo_id'  => $id,
                 ':study_uid'  => $uidParaViewer,
                 ':orthanc_id' => $orthancId ?: null,
-                ':tenant_id'  => Auth::tenantId() ?: null,
+                ':tenant_id'  => $estudoTenantId,
                 ':usuario_id' => Auth::userId()   ?: null,
                 ':ip'         => $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
         } catch (\Throwable $ex) {
-            error_log('[EstudosController::abrir] log: ' . $ex->getMessage());
-            // Fallback: redireciona direto se token falhar
-            $ohifBase  = rtrim(getenv('VIEWER_URL') ?: 'https://view.voxelpacs.com.br', '/');
-            header('Location: ' . $ohifBase . '/viewer?StudyInstanceUIDs=' . urlencode($uidParaViewer), true, 302);
-            exit;
+            error_log('[EstudosController::abrir] token indisponível: ' . $ex->getMessage());
+            // Falha fechada: não expor StudyInstanceUID em URL direta quando o
+            // token seguro não puder ser persistido e vinculado ao tenant.
+            $this->renderErroViewer(503, 'Não foi possível preparar o acesso seguro ao exame. Tente novamente.');
+            return;
         }
 
         // Redireciona para o endpoint seguro /open/{token} no PHP (Hostgator)
