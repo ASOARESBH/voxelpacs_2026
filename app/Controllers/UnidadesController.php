@@ -444,10 +444,11 @@ class UnidadesController extends Controller
 
         // Listar institution_names disponíveis para vínculo
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId);
+        $servidoresPacs  = $this->listarServidoresPacsAutorizados($tenantId);
         $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
         $unidade = null;
         $includeCustomChannels = true;
-        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'templatesLaudo', 'includeCustomChannels'));
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'servidoresPacs', 'templatesLaudo', 'includeCustomChannels'));
     }
 
     // POST /unidades/nova
@@ -478,6 +479,7 @@ class UnidadesController extends Controller
 
         try {
             $camposCanais = $this->camposCanaisPersonalizados($_POST);
+            $pacsId = $this->pacsIdAutorizado($tenantId, (int) ($_POST['pacs_id'] ?? 0));
         } catch (\InvalidArgumentException $e) {
             $_SESSION['error'] = $e->getMessage();
             header('Location: /unidades/nova');
@@ -500,6 +502,7 @@ class UnidadesController extends Controller
             'email'        => trim($_POST['email']         ?? '') ?: null,
             'site'         => trim($_POST['site']          ?? '') ?: null,
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
+            'pacs_id'      => $pacsId,
             'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => 1,
         ] + $camposCanais;
@@ -558,9 +561,10 @@ class UnidadesController extends Controller
         } catch (\Throwable $e) {}
 
         $institutionNames = $this->listarInstitutionNamesDisponiveis($tenantId, $id);
+        $servidoresPacs  = $this->listarServidoresPacsAutorizados($tenantId);
         $templatesLaudo   = $this->reportLayoutService->listarCatalogo();
         $includeCustomChannels = true;
-        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados', 'templatesLaudo', 'includeCustomChannels'));
+        $this->view('unidades/nova', compact('unidade', 'institutionNames', 'vinculados', 'servidoresPacs', 'templatesLaudo', 'includeCustomChannels'));
     }
 
     // POST /unidades/{id}/editar
@@ -589,6 +593,7 @@ class UnidadesController extends Controller
 
         try {
             $camposCanais = $this->camposCanaisPersonalizados($_POST);
+            $pacsId = $this->pacsIdAutorizado($tenantId, (int) ($_POST['pacs_id'] ?? 0));
         } catch (\InvalidArgumentException $e) {
             $_SESSION['error'] = $e->getMessage();
             header("Location: /unidades/{$id}/editar");
@@ -610,6 +615,7 @@ class UnidadesController extends Controller
             'email'        => trim($_POST['email']         ?? '') ?: null,
             'site'         => trim($_POST['site']          ?? '') ?: null,
             'observacoes'  => trim($_POST['observacoes']   ?? '') ?: null,
+            'pacs_id'      => $pacsId,
             'report_layout_template_id' => (int) ($_POST['report_layout_template_id'] ?? 0) ?: null,
             'ativo'        => isset($_POST['ativo']) ? 1 : 0,
         ] + $camposCanais;
@@ -830,6 +836,43 @@ class UnidadesController extends Controller
             Logger::error('[UnidadesController::listarInstitutionNamesDisponiveis] ' . $e->getMessage());
             return [];
         }
+    }
+
+    /** Servidores ativos autorizados para o tenant, sem dados de conexão. */
+    private function listarServidoresPacsAutorizados(int $tenantId): array
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT s.id, s.nome
+                 FROM bi_pacs_servidor s
+                 JOIN bi_negocio_servidor_pacs n ON n.servidor_id = s.id
+                 WHERE n.tenant_id = ? AND n.ativo = 1 AND s.ativo = 1
+                 ORDER BY s.nome ASC"
+            );
+            $stmt->execute([$tenantId]);
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            Logger::error('[UnidadesController::listarServidoresPacsAutorizados] ' . $e->getMessage(), ['tenant_id' => $tenantId]);
+            return [];
+        }
+    }
+
+    /** Recusa associação cruzada entre tenant e servidor PACS. */
+    private function pacsIdAutorizado(int $tenantId, int $pacsId): ?int
+    {
+        if ($pacsId <= 0) return null;
+        $stmt = $this->pdo->prepare(
+            "SELECT 1
+             FROM bi_pacs_servidor s
+             JOIN bi_negocio_servidor_pacs n ON n.servidor_id = s.id
+             WHERE s.id = ? AND s.ativo = 1 AND n.tenant_id = ? AND n.ativo = 1
+             LIMIT 1"
+        );
+        $stmt->execute([$pacsId, $tenantId]);
+        if (!$stmt->fetchColumn()) {
+            throw new \InvalidArgumentException(t('unidades.pacs.erro_nao_autorizado'));
+        }
+        return $pacsId;
     }
 
     private function vincularInstitutionNames(int $unidadeId, array $instIds, int $tenantId): void

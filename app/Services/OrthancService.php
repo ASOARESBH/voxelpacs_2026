@@ -208,6 +208,33 @@ class OrthancService {
 
     public function getStudy(string $studyId): array { return $this->request("/studies/$studyId"); }
 
+    public function getSeries(string $seriesId): array { return $this->request('/series/' . rawurlencode($seriesId)); }
+
+    public function getInstance(string $instanceId): array { return $this->request('/instances/' . rawurlencode($instanceId)); }
+
+    /** Retorna bytes DICOM ao proxy interno; nunca revela credenciais ao cliente Desktop. */
+    public function downloadInstance(string $instanceId): array {
+        $ch = curl_init($this->baseUrl . '/instances/' . rawurlencode($instanceId) . '/file');
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => min(10, $this->timeout),
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HTTPHEADER => ['Accept: application/dicom'],
+        ];
+        if ($this->username !== null && $this->username !== '') {
+            $options[CURLOPT_USERPWD] = $this->username . ':' . ($this->password ?? '');
+            $options[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
+        }
+        curl_setopt_array($ch, $options);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        return ['success' => $body !== false && $error === '' && $code >= 200 && $code < 300, 'body' => $body ?: ''];
+    }
+
     public function getPatients(): array { return $this->request('/patients?expand'); }
 
     public function countPatients(): int {

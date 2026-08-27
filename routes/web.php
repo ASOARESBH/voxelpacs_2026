@@ -72,11 +72,15 @@ Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@bai
 // ============================================================
 Router::get('/api/desktop/version', 'DesktopController@version');
 Router::get('/desktop/download',    'DesktopController@download');
+Router::get('/desktop-launch/{token}/manifest', 'DesktopStudyLaunchController@manifest');
+Router::get('/desktop-launch/{token}/instance/{instanceId}', 'DesktopStudyLaunchController@instance');
 
 // ============================================================
 // AGENDAMENTOS
 // ============================================================
 Router::get('/agendamentos', 'AgendamentosController@index');
+Router::post('/agendamentos', 'AgendamentosController@store');
+Router::post('/agendamentos/{id}/cancelar', 'AgendamentosController@cancelar');
 
 // ============================================================
 // PACS — Exames DICOM

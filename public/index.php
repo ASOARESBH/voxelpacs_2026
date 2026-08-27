@@ -13,7 +13,7 @@ use App\Core\PortalHost;
 use App\Middlewares\TenantMiddleware;
 
 // Rotas que NÃO precisam de autenticação nem de tenant
-$rotasPublicas = ['/login', '/logout', '/selecionar-empresa', '/test.php', '/api/orthanc/ping', '/open/', '/api/viewer/measurements', '/api/sla-regras/executar', '/api/servidor-pacs/sync-robo', '/api/report-delivery/'];
+$rotasPublicas = ['/login', '/logout', '/selecionar-empresa', '/test.php', '/api/orthanc/ping', '/open/', '/api/viewer/measurements', '/api/sla-regras/executar', '/api/servidor-pacs/sync-robo', '/api/report-delivery/', '/desktop-launch/'];
 $uriAtual = strtok($_SERVER['REQUEST_URI'], '?');
 $portalHost = PortalHost::isPortal();
 

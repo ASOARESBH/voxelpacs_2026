@@ -184,11 +184,11 @@ class PacsSyncService
         }
 
         $existeStmt = $pdo->prepare("
-            SELECT id, roteamento_resolvido_por, study_description_manual
+            SELECT id, tenant_id, roteamento_resolvido_por, study_description_manual
             FROM bi_pacs_estudos
-            WHERE servidor_id = ? AND orthanc_id = ?
+            WHERE orthanc_id = ?
         ");
-        $existeStmt->execute([$servidorId, $study['orthanc_id']]);
+        $existeStmt->execute([$study['orthanc_id']]);
         $existente = $existeStmt->fetch(\PDO::FETCH_ASSOC);
 
         $jaResolvidoManualmente = $existente && $existente['roteamento_resolvido_por'] !== null;
@@ -213,6 +213,13 @@ class PacsSyncService
             $vals   = array_values($cols);
             $vals[] = $existente['id'];
             $pdo->prepare("UPDATE bi_pacs_estudos SET $sets, atualizado_em=NOW() WHERE id=?")->execute($vals);
+            AgendamentoService::marcarRealizadoPorEstudo(
+                $pdo,
+                isset($existente['tenant_id']) ? (int) $existente['tenant_id'] : null,
+                $servidorId,
+                $cols['accession_number'] ?? null,
+                (int) $existente['id']
+            );
             return 'atualizado';
         }
 
@@ -224,6 +231,16 @@ class PacsSyncService
         $placeholders = '?, ' . implode(', ', array_fill(0, count($cols), '?')) . ', ?';
         $vals         = array_merge([$servidorId], array_values($cols), [$study['orthanc_id']]);
         $pdo->prepare("INSERT INTO bi_pacs_estudos ($colNames) VALUES ($placeholders)")->execute($vals);
+        $created = $pdo->prepare('SELECT id FROM bi_pacs_estudos WHERE orthanc_id = ? LIMIT 1');
+        $created->execute([$study['orthanc_id']]);
+        $studyId = (int) $created->fetchColumn();
+        AgendamentoService::marcarRealizadoPorEstudo(
+            $pdo,
+            isset($cols['tenant_id']) ? (int) $cols['tenant_id'] : (isset($routing['tenant_id']) ? (int) $routing['tenant_id'] : null),
+            $servidorId,
+            $cols['accession_number'] ?? null,
+            $studyId
+        );
         return 'novo';
     }
 
@@ -432,7 +449,7 @@ class PacsSyncService
                         $resultado === 'novo' ? $novos++ : $atualizados++;
                     } catch (\Exception $e) {
                         $erros++;
-                        Logger::error("[PacsSyncService] Erro ao importar estudo do servidor {$servidorId}: " . $e->getMessage());
+                        Logger::error("[PacsSyncService] Erro ao importar estudo $studyId (servidor $servidorId): " . $e->getMessage());
                     }
                 }
 

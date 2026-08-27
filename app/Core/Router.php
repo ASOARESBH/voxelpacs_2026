@@ -14,6 +14,7 @@ class Router {
         '/selecionar-empresa',
         '/open/',
         '/api/viewer/measurements',
+        '/desktop-launch/',
         '/acesso/criar-senha/',
         '/esqueci-senha',
         '/api/sla-regras/executar',
