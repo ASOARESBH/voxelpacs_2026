@@ -24,3 +24,5 @@ Antes de alterar um Service/Repository/Model/evento, procure-o na coluna "Módul
 ## Regra de manutenção
 
 Toda vez que uma tarefa exigir entender "quem usa isso", e a resposta não estiver aqui, adicione a linha depois de descobrir — isso transforma uma investigação cara (grep + leitura) em uma consulta de uma linha para a próxima pessoa (ou para você mesmo, na próxima tarefa).
+| `bi_tenant_orthanc_cells` + `PacsRoutingService` | `bi_pacs_servidor`, `bi_tenants`, `bi_pacs_estudos` | `PacsSyncService`, `ViewerTokenController`, `DesktopViewerService` | **Alto** — a tabela declara a fronteira de uma célula Orthanc exclusiva. Uma remoção ou alteração de status pode mudar o destino lógico dos estudos e a origem do viewer; requer backup, migration e validação sintética. |
+| `ViewerTokenController` / `DesktopViewerService` para células exclusivas | `pacs_viewer_tokens`, `bi_pacs_estudos`, `bi_tenant_orthanc_cells`, `bi_viewer_desktop_config` | OHIF, VOXEL Desktop, RadiAnt e Weasis | **Alto** — ausência de tenant, URL do viewer ou configuração desktop deve falhar fechada; não reintroduzir fallback para URL, host, porta ou AE Title globais. |
