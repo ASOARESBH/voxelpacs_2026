@@ -26,7 +26,11 @@ from typing import NoReturn
 MAX_BYTES = 20 * 1024 * 1024
 MAX_CLOCK_SKEW_SECONDS = 60
 ROOT = Path("/var/lib/voxelpacs/report-delivery-gateway")
-STATE_FILE = ROOT / "attempted.json"
+
+
+def state_file() -> Path:
+    """Mantém a trava de tentativa única separada por job autorizado."""
+    return ROOT / f"attempted-job-{POLICY.job_id}.json"
 
 
 def env(name: str) -> str:
@@ -68,7 +72,7 @@ LOG = logging.getLogger("report_delivery_gateway")
 
 def state() -> dict[str, object]:
     try:
-        value = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        value = json.loads(state_file().read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
     except FileNotFoundError:
         return {}
@@ -77,10 +81,11 @@ def state() -> dict[str, object]:
 
 
 def write_state(value: dict[str, object]) -> None:
-    temp = STATE_FILE.with_suffix(".tmp")
+    target = state_file()
+    temp = target.with_suffix(".tmp")
     temp.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     os.chmod(temp, 0o600)
-    os.replace(temp, STATE_FILE)
+    os.replace(temp, target)
 
 
 def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
