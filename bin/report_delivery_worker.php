@@ -158,7 +158,16 @@ final class LocalDicomDeliveryWorker
             chmod($metadataDumpPath, 0600);
 
             $this->runCommand(['/usr/bin/dump2dcm', '--quiet', $metadataDumpPath, $metadataDicomPath], 'metadata_conversion_failed');
-            $this->runCommand(['/usr/bin/pdf2dcm', '--quiet', '--study-from', $metadataDicomPath, '--instance-one', $pdfPath, $dicomPath], 'pdf_encapsulation_failed');
+            $pdf2dcmCommand = ['/usr/bin/pdf2dcm', '--quiet', '--study-from', $metadataDicomPath];
+            $issuerOfPatientId = $this->issuerOfPatientId($payload, $configuration);
+            if ($issuerOfPatientId !== '') {
+                $pdf2dcmCommand[] = '--key';
+                $pdf2dcmCommand[] = '0010,0021=' . $issuerOfPatientId;
+            }
+            $pdf2dcmCommand[] = '--instance-one';
+            $pdf2dcmCommand[] = $pdfPath;
+            $pdf2dcmCommand[] = $dicomPath;
+            $this->runCommand($pdf2dcmCommand, 'pdf_encapsulation_failed');
             if (!is_file($dicomPath) || filesize($dicomPath) < 256) {
                 throw new DeliveryWorkerFailure('invalid_dicom_artifact');
             }
