@@ -4,6 +4,7 @@ declare(strict_types=1);
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
+use App\Services\ReportDeliveryGatewayBridgeClient;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
@@ -41,6 +42,17 @@ final class LocalDicomDeliveryWorker
             }
         }
         fwrite(STDOUT, "worker_ready\n");
+        return 0;
+    }
+
+    public function runOne(int $jobId): int
+    {
+        $job = $this->repository->claimJobById($jobId, $this->workerId, self::SUPPORTED_TRANSPORTS, date('Y-m-d'));
+        if ($job === null) {
+            fwrite(STDERR, "controlled_job_not_eligible\n");
+            return 3;
+        }
+        $this->deliver($job);
         return 0;
     }
 
@@ -148,16 +160,21 @@ final class LocalDicomDeliveryWorker
             }
 
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-            $this->runCommand([
-                '/usr/bin/storescu', '--quiet', '--disable-tls',
-                '--aetitle', (string) $configuration['calling_ae'],
-                '--call', (string) $configuration['called_ae'],
-                '--timeout', (string) $timeout,
-                '--socket-timeout', (string) $timeout,
-                (string) $configuration['host'],
-                (string) $configuration['port'],
-                $dicomPath,
-            ], 'cstore_failed');
+            if (!empty($configuration['gateway_bridge'])) {
+                $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($jobId, $configuration, $dicomPath, $timeout);
+            } else {
+                $this->runCommand([
+                    '/usr/bin/storescu', '--quiet', '--disable-tls',
+                    '--aetitle', (string) $configuration['calling_ae'],
+                    '--call', (string) $configuration['called_ae'],
+                    '--timeout', (string) $timeout,
+                    '--socket-timeout', (string) $timeout,
+                    (string) $configuration['host'],
+                    (string) $configuration['port'],
+                    $dicomPath,
+                ], 'cstore_failed');
+                $deliveryResult = ['reference' => '', 'sha256' => '', 'size' => 0];
+            }
 
             $finalPath = sprintf('%s/laudo-%d-v%d.dcm', $privateDirectory, (int) $job['report_id'], (int) $job['report_version']);
             if (!copy($dicomPath, $finalPath)) {
@@ -177,7 +194,7 @@ final class LocalDicomDeliveryWorker
             );
 
             return [
-                'reference' => 'dicom-cstore:' . substr($sha256, 0, 16),
+                'reference' => $deliveryResult['reference'] !== '' ? $deliveryResult['reference'] : 'dicom-cstore:' . substr($sha256, 0, 16),
                 'sha256' => $sha256,
                 'size' => $size,
             ];
@@ -343,5 +360,10 @@ final class LocalDicomDeliveryWorker
 $worker = new LocalDicomDeliveryWorker();
 if (in_array('--check', $argv, true)) {
     exit($worker->check());
+}
+foreach ($argv as $argument) {
+    if (preg_match('/^--job-id=([1-9][0-9]*)$/', $argument, $matches) === 1) {
+        exit($worker->runOne((int) $matches[1]));
+    }
 }
 $worker->run();

@@ -87,6 +87,83 @@ class ReportDeliveryWorkerRepository
         }
     }
 
+    /**
+     * Reivindica um único job previamente identificado. Não faz fallback para
+     * qualquer outro job e é usado somente por operações controladas.
+     *
+     * @param list<string> $transports
+     * @return array<string,mixed>|null
+     */
+    public function claimJobById(int $jobId, string $workerId, array $transports = [], ?string $currentDate = null): ?array
+    {
+        if ($jobId <= 0) {
+            return null;
+        }
+        $transports = array_values(array_unique(array_filter(
+            array_map(static fn($transport): string => trim((string) $transport), $transports),
+            static fn(string $transport): bool => $transport !== ''
+        )));
+        if ($transports === []) {
+            return null;
+        }
+        $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
+        $placeholders = [];
+        $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
+        foreach ($transports as $index => $transport) {
+            $placeholder = ':transport_' . $index;
+            $placeholders[] = $placeholder;
+            $parameters[$placeholder] = $transport;
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT j.*, o.payload_json, o.report_id, o.report_version, o.estudo_id,
+                        o.event_type, d.nome AS destination_name, d.ambiente,
+                        d.configuration_json, d.configuration_secret, d.timeout_seconds,
+                        d.max_attempts
+                 FROM pacs_report_delivery_jobs j
+                 INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
+                 WHERE j.id = :job_id
+                   AND j.status IN ('queued', 'retrying')
+                   AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
+                   AND j.worker_eligible_at IS NOT NULL
+                   AND j.worker_eligible_at <= NOW()
+                   AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
+                   AND d.enabled = 1
+                   AND d.ambiente IN ('homologacao', 'producao')
+                   AND j.transport IN (" . implode(', ', $placeholders) . ")
+                 LIMIT 1 FOR UPDATE"
+            );
+            $stmt->execute($parameters);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$job) {
+                $this->pdo->commit();
+                return null;
+            }
+            $update = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'processing', locked_at = NOW(), locked_by = :worker_id,
+                     attempt_count = attempt_count + 1
+                 WHERE id = :id AND status IN ('queued', 'retrying')"
+            );
+            $update->execute([':worker_id' => $workerId, ':id' => $jobId]);
+            if ($update->rowCount() !== 1) {
+                $this->pdo->rollBack();
+                return null;
+            }
+            $this->pdo->commit();
+            $job['attempt_number'] = (int) $job['attempt_count'] + 1;
+            return $job;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     /** Cancela pendências automáticas cuja janela clínica expirou, sem tocar em jobs manuais. */
     public function expireAutomaticJobsBefore(string $currentDate): int
     {
