@@ -896,6 +896,7 @@ return [
     'delivery_hub.released.reenvio_aceito_homologacao' => 'Homologation job accepted and awaiting worker processing.', 'delivery_hub.released.sem_destino_homologacao' => 'No active and compatible homologation destination was found for this report.', 'delivery_hub.released.reprocessamento_indisponivel' => 'Only terminal-failure jobs with an active and compatible destination can be resent manually.', 'delivery_hub.released.reprocessamento_aceito' => 'Terminal-failure job requeued and awaiting worker processing.',
     'delivery_hub.released.recuperacao_indisponivel' => 'The job is still processing recently or cannot be recovered.', 'delivery_hub.released.recuperacao_aceita' => 'Stale lease recovered; the job returned to the worker queue.', 'delivery_hub.released.erro_recuperacao' => 'Could not recover the processing job.', 'delivery_hub.released.resposta_invalida' => 'Invalid server response while requesting requeueing.',
     'delivery_hub.destination.habilitar' => 'Enable destination',
+    'delivery_hub.destination.servidor_pacs' => 'PACS server',
     'delivery_hub.destination.confirmar_producao' => 'I confirm the activation of this production destination.',
     'delivery_hub.destination.confirmar_producao_ajuda' => 'Active production destinations may receive jobs for compatible released reports. Transmission remains exclusively performed by the worker.',
     'delivery_hub.destination.confirmacao_producao_obrigatoria' => 'Explicitly confirm production activation before saving the destination.',

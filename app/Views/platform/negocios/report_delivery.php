@@ -218,7 +218,7 @@ $transportLabels = [
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
-                                        <?php if (($destination['servidor_pacs_nome'] ?? '') !== ''): ?><div><strong>Servidor PACS:</strong> <?= $escape((string) $destination['servidor_pacs_nome']) ?></div><?php endif; ?>
+                                        <?php if (($destination['servidor_pacs_nome'] ?? '') !== ''): ?><div><strong><?= $escape(t('delivery_hub.destination.servidor_pacs')) ?>:</strong> <?= $escape((string) $destination['servidor_pacs_nome']) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers !== ''): ?><div><strong>Issuer:</strong> <?= $escape($destinationIssuers) ?></div><?php endif; ?>
                                         <?php if ($destinationInstitutions !== ''): ?><div><strong>Fallback:</strong> <?= $escape($destinationInstitutions) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers === '' && $destinationInstitutions === ''): ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?>
