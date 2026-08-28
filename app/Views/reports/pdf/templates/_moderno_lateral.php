@@ -180,6 +180,12 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-footer-name { color: #404040; font-weight: 700; }
         .pdf-footer-details { margin-top: 2px; }
 
+        /* O viewer mantém a página A4 visual. O Dompdf recebe a variante de
+           snapshot sem altura mínima para não produzir uma página vazia extra. */
+        body.snapshot-pdf { width: auto; min-height: 0; background: #fff; }
+        body.snapshot-pdf .pdf-page { display: block; width: auto; min-height: 0; height: auto; margin: 0; padding: 14mm 18mm; }
+        body.snapshot-pdf .pdf-signature { margin-top: 16px; padding-top: 16px; }
+
         @media (max-width: 680px) {
             .pdf-page { min-height: 0; margin: 0; padding: 22px; box-shadow: none; }
             .pdf-header, .pdf-patient { display: block; }
@@ -201,6 +207,8 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             .pdf-footer { margin-top: 12px; }
             .pdf-report-content, .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
+            /* Dompdf: o snapshot não deve combinar min-height A4 no body e na página,
+               pois isso materializa uma folha em branco após o conteúdo. */
         }
     </style>
 </head>

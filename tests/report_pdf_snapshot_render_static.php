@@ -49,6 +49,7 @@ namespace {
             'unidade_razao_social' => 'Unidade Sintética',
             'unidade_cnpj' => '',
             'unidade_logo_path' => '',
+            'pdf_snapshot_logo_src' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JxZ4AAAAASUVORK5CYII=',
             'unidade_telefone' => '',
             'unidade_email' => '',
             'unidade_logradouro' => '',
@@ -75,6 +76,7 @@ namespace {
             str_starts_with($pdf, '%PDF'),
             str_contains(Dompdf::$html, 'Conteúdo clínico sintético para validação.'),
             str_contains(Dompdf::$html, 'Unidade Sintética'),
+            str_contains(Dompdf::$html, 'data:image/png;base64'),
             !str_contains(Dompdf::$html, '<div class="pdf-actions">'),
             !str_contains(Dompdf::$html, 'window.print()'),
         ];
