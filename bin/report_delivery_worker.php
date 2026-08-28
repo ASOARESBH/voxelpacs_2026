@@ -232,6 +232,7 @@ final class LocalDicomDeliveryWorker
     private function metadataDump(array $payload, array $configuration): string
     {
         $patientId = $this->normalizedPatientId($payload, $configuration);
+        $issuerOfPatientId = $this->issuerOfPatientId($payload, $configuration);
         $studyDate = $this->dicomDate((string) ($payload['study_date'] ?? ''));
         $studyTime = $this->dicomTime((string) ($payload['study_time'] ?? ''));
         $birthDate = $this->dicomDate((string) ($payload['patient_birth_date'] ?? ''));
@@ -246,6 +247,7 @@ final class LocalDicomDeliveryWorker
             ['0008,0060', 'CS', 'DOC'],
             ['0010,0010', 'PN', (string) ($payload['patient_name'] ?? '')],
             ['0010,0020', 'LO', $patientId],
+            ['0010,0021', 'LO', $issuerOfPatientId],
             ['0010,0030', 'DA', $birthDate],
             ['0010,0040', 'CS', $sex],
             ['0020,000D', 'UI', (string) $payload['study_instance_uid']],
@@ -264,6 +266,15 @@ final class LocalDicomDeliveryWorker
             $patientId = trim(explode('$$$', $patientId, 2)[0]);
         }
         return mb_substr($patientId, 0, 64);
+    }
+
+    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration */
+    private function issuerOfPatientId(array $payload, array $configuration): string
+    {
+        $configured = trim((string) ($configuration['issuer_of_patient_id'] ?? ''));
+        $payloadIssuer = trim((string) ($payload['issuer_of_patient_id'] ?? ''));
+        $issuer = $configured !== '' ? $configured : $payloadIssuer;
+        return mb_substr(str_replace(["\r", "\n", '[', ']'], [' ', ' ', '(', ')'], $issuer), 0, 64);
     }
 
     private function dicomText(string $value): string
