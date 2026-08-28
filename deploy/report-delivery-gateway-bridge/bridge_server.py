@@ -108,7 +108,13 @@ def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
             check=False,
         )
         if run.returncode != 0:
-            return False, "dicom_association_or_store_failed"
+            output = run.stdout.decode("utf-8", errors="replace").strip().splitlines()
+            code = output[-1].strip() if output else ""
+            allowed_codes = {
+                "invalid_arguments", "invalid_port", "policy_rejected", "invalid_artifact", "invalid_dicom",
+                "unsupported_sop_class", "missing_encapsulated_pdf", "association_rejected", "cecho_failed", "cstore_failed",
+            }
+            return False, code if code in allowed_codes else "dicom_scu_execution_failed"
         return True, "stored"
     except (OSError, subprocess.TimeoutExpired):
         return False, "dicom_gateway_execution_failed"
