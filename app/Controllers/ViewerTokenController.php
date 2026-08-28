@@ -140,11 +140,9 @@ class ViewerTokenController extends Controller
         }
 
         $studyUid = $row['study_instance_uid'];
-        // OHIF v3.12 requer rota explícita de datasource quando o viewer é
-        // tenant-scoped. O fluxo legado conserva a rota histórica.
-        $viewerPath = ($temCelulas && !empty($row['cell_status']))
-            ? '/viewer/dicomweb?StudyInstanceUIDs='
-            : '/viewer?StudyInstanceUIDs=';
+        // Em OHIF v3 a rota do modo é `/viewer`; o datasource tenant-scoped
+        // é selecionado pelo app-config e pelo proxy interno autorizado.
+        $viewerPath = '/viewer?StudyInstanceUIDs=';
         $viewerUrl = $viewerBase . $viewerPath . urlencode($studyUid);
         if ($adapterToken !== null) {
             $viewerUrl .= '#voxel_measurement_token=' . rawurlencode($adapterToken);
