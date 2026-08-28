@@ -118,7 +118,7 @@ for php_file in \
   lang/pt_BR.php lang/en.php lang/es.php; do
   sudo -u voxel /usr/bin/php -l "$APP_ROOT/$php_file" >/dev/null
 done
-sudo -u voxel /usr/bin/php "$APP_ROOT/tests/report_delivery_production_routing_contract.php" >/dev/null
+sudo -u voxel env VOXEL_REPORT_DELIVERY_CONTRACT_SCOPE=api /usr/bin/php "$APP_ROOT/tests/report_delivery_production_routing_contract.php" >/dev/null
 
 # Código PHP pode estar em OPcache; reload gracioso não reinicia Nginx nem habilita o worker.
 if systemctl is-active --quiet php8.3-fpm.service; then
