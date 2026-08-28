@@ -316,6 +316,36 @@ body.reports-body {
     background: var(--pacs-card-bg, #0d1b2a);
 }
 
+.reports-editor-spacing-controls,
+.reports-editor-page-guide-control {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+.reports-editor-spacing-label,
+.reports-editor-page-guide-control label {
+    display: inline-flex;
+    align-items: center;
+    gap: .28rem;
+    margin: 0;
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .68rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+.reports-editor-spacing-select {
+    min-height: 28px;
+    max-width: 100px;
+    border: 1px solid var(--pacs-border, #1e3a5f);
+    border-radius: 4px;
+    padding: .15rem .25rem;
+    color: var(--pacs-text, #e2e8f0);
+    background: var(--pacs-input-bg, rgba(255,255,255,.04));
+    font-size: .68rem;
+}
+.reports-editor-page-guide-control input { accent-color: var(--pacs-primary, #4fc3f7); }
+
+
 .reports-editor-document-title {
     margin: 16px 1rem 12px;
     color: var(--pacs-text, #e2e8f0);
@@ -342,6 +372,38 @@ body.reports-body {
     height: auto;
     overflow: visible;
     overflow-wrap: anywhere;
+}
+
+/* Enter cria um novo parágrafo clínico com afastamento discreto. A distância
+   adicional é aplicada somente pelas classes allowlisted do editor. */
+.reports-editor-container .ql-editor p { margin: 0 0 6px; }
+.reports-editor-container .ql-editor p.ql-spacing-compact { margin-bottom: 2px; }
+.reports-editor-container .ql-editor p.ql-spacing-normal { margin-bottom: 6px; }
+.reports-editor-container .ql-editor p.ql-spacing-medium { margin-bottom: 12px; }
+.reports-editor-container .ql-editor p.ql-spacing-wide { margin-bottom: 20px; }
+
+.reports-editor-card { position: relative; }
+.reports-editor-page-guide {
+    position: absolute;
+    z-index: 5;
+    right: 18mm;
+    left: 18mm;
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    height: 0;
+    border-top: 1px dashed rgba(79, 195, 247, .68);
+    color: var(--pacs-primary, #4fc3f7);
+    pointer-events: none;
+}
+.reports-editor-page-guide::after {
+    content: attr(data-label);
+    padding: 0 .35rem;
+    background: var(--pacs-card-bg, #0d1b2a);
+    font-size: .63rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
 }
 
 .reports-editor-container h4[data-secao] {
@@ -997,7 +1059,12 @@ body.reports-body {
 .reports-editor-card--moderno .reports-editor-container h3:not(:first-child) {
     margin-top: 21px;
 }
-.reports-editor-card--moderno .reports-editor-container p { margin: 0 0 11px; }
+.reports-editor-card--moderno .reports-editor-container p { margin: 0 0 6px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-compact { margin-bottom: 2px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-normal { margin-bottom: 6px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-medium { margin-bottom: 12px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-wide { margin-bottom: 20px; }
+.reports-editor-card--moderno .reports-editor-page-guide::after { background: #edf1f5; }
 .reports-editor-card--moderno .ql-snow .ql-stroke { stroke: #475569; }
 .reports-editor-card--moderno .ql-snow .ql-fill { fill: #475569; }
 .reports-editor-card--moderno .ql-snow .ql-picker { color: #475569; }

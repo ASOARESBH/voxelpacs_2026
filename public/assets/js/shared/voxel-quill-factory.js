@@ -12,10 +12,34 @@ window.VoxelQuill.factory = (function () {
         return target instanceof Element ? target : null;
     }
 
+    const SPACING_VALUES = ['compact', 'normal', 'medium', 'wide'];
+    let spacingRegistered = false;
+
+    function registerClinicalSpacingFormat() {
+        if (spacingRegistered) return;
+        const Parchment = Quill.import('parchment');
+        const ClinicalSpacing = new Parchment.Attributor.Class('spacing', 'ql-spacing', {
+            scope: Parchment.Scope.BLOCK,
+            whitelist: SPACING_VALUES,
+        });
+        Quill.register(ClinicalSpacing, true);
+        spacingRegistered = true;
+    }
+
     function insertBasicTable(quill) {
         const range = quill.getSelection(true);
         const html = '<table><tbody><tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br></p>';
         quill.clipboard.dangerouslyPasteHTML(range ? range.index : quill.getLength(), html, 'user');
+    }
+
+    function insertSpacingBlock(quill) {
+        const range = quill.getSelection(true);
+        const index = range ? range.index + range.length : Math.max(0, quill.getLength() - 1);
+        // Duas quebras criam uma linha vazia entre o parágrafo atual e o próximo.
+        // A classe é aplicada somente à linha em branco; o texto seguinte permanece normal.
+        quill.insertText(index, '\n\n', 'user');
+        quill.formatLine(index + 1, 1, 'spacing', 'wide', 'user');
+        quill.setSelection(index + 2, 0, 'silent');
     }
 
     function normalizeHttpsUrl(rawUrl) {
@@ -55,6 +79,7 @@ window.VoxelQuill.factory = (function () {
         const container = resolveElement(target);
         if (!container) throw new Error('Container do editor não encontrado.');
 
+        registerClinicalSpacingFormat();
         const readonly = !!options.readOnly;
         const toolbar = options.toolbar || options.toolbarSelector || false;
         let quill = null;
@@ -68,6 +93,7 @@ window.VoxelQuill.factory = (function () {
                     container: toolbar,
                     handlers: {
                         table: () => insertBasicTable(quill),
+                        spacer: () => insertSpacingBlock(quill),
                         link: (enabled) => insertSecureLink(quill, enabled),
                         undo: () => quill.history.undo(),
                         redo: () => quill.history.redo(),
@@ -81,7 +107,7 @@ window.VoxelQuill.factory = (function () {
         return quill;
     }
 
-    return { create, insertBasicTable, normalizeHttpsUrl };
+    return { create, insertBasicTable, insertSpacingBlock, normalizeHttpsUrl };
 })();
 
 window.createVoxelQuillEditor = function (target, options) {

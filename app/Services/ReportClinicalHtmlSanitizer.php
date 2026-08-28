@@ -47,6 +47,14 @@ final class ReportClinicalHtmlSanitizer
         'ql-align-justify' => true,
     ];
 
+    /** @var array<string, true> */
+    private const ALLOWED_SPACING_CLASSES = [
+        'ql-spacing-compact' => true,
+        'ql-spacing-normal' => true,
+        'ql-spacing-medium' => true,
+        'ql-spacing-wide' => true,
+    ];
+
     public static function sanitize(string $html): string
     {
         $html = trim($html);
@@ -132,9 +140,9 @@ final class ReportClinicalHtmlSanitizer
             $element->removeAttribute($attributeName);
         }
 
-        $alignment = self::alignmentClass($classList);
-        if ($alignment !== '') {
-            $element->setAttribute('class', $alignment);
+        $classes = self::allowedClasses($classList);
+        if ($classes !== '') {
+            $element->setAttribute('class', $classes);
         }
 
         if ($tag !== 'a') {
@@ -152,15 +160,16 @@ final class ReportClinicalHtmlSanitizer
         $element->setAttribute('target', '_blank');
     }
 
-    private static function alignmentClass(string $classList): string
+    private static function allowedClasses(string $classList): string
     {
+        $classes = [];
         foreach (preg_split('/\s+/', trim($classList)) ?: [] as $class) {
-            if (isset(self::ALLOWED_ALIGN_CLASSES[$class])) {
-                return $class;
+            if (isset(self::ALLOWED_ALIGN_CLASSES[$class]) || isset(self::ALLOWED_SPACING_CLASSES[$class])) {
+                $classes[$class] = true;
             }
         }
 
-        return '';
+        return implode(' ', array_keys($classes));
     }
 
     private static function safeHttpsUrl(string $href): string
@@ -197,6 +206,16 @@ final class ReportClinicalHtmlSanitizer
         $html = strip_tags($html, $allowed);
         $html = preg_replace('/\s(?:on\w+|style|src)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/iu', '', $html) ?? '';
         $html = preg_replace('/<(?!\/?(?:p|br|strong|b|em|i|u|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|a)\b)[^>]*>/iu', '', $html) ?? '';
+        $html = preg_replace_callback('/<(p|br|strong|b|em|i|u|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td)\b([^>]*)>/iu', static function (array $match): string {
+            $tag = strtolower((string) $match[1]);
+            $attributes = (string) ($match[2] ?? '');
+            $classList = '';
+            if (preg_match('/\bclass\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/iu', $attributes, $classMatch)) {
+                $classList = (string) ($classMatch[1] ?? $classMatch[2] ?? $classMatch[3] ?? '');
+            }
+            $classes = self::allowedClasses($classList);
+            return '<' . $tag . ($classes !== '' ? ' class="' . htmlspecialchars($classes, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '"' : '') . '>';
+        }, $html) ?? '';
         $html = preg_replace_callback('/<a\b[^>]*href\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))[^>]*>/iu', static function (array $match): string {
             $href = self::safeHttpsUrl((string) ($match[1] ?? $match[2] ?? $match[3] ?? ''));
             return $href === '' ? '' : '<a href="' . htmlspecialchars($href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" rel="noopener noreferrer" target="_blank">';

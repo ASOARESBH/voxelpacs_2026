@@ -120,3 +120,10 @@ A criação do snapshot faz parte da transação de **Liberar**. A falha em gera
 
 ## Última análise
 2026-08-14
+
+
+## Espaçamento clínico e guia de página (2026-08-28)
+
+O Laudário trata **Enter** como novo parágrafo clínico com espaçamento normal discreto de 6px. A toolbar permite aplicar por parágrafo `compact`, `normal`, `medium` ou `wide`; o botão de espaço cria uma linha vazia explícita e apenas essa linha recebe o espaçamento amplo. O conteúdo mantém as classes `ql-spacing-*` por meio de allowlist de `ReportClinicalHtmlSanitizer`, portanto máscaras médicas que usarem esses parágrafos mantêm o mesmo comportamento após autosave, reabertura e aplicação no editor.
+
+O controle `Mostrar divisão de página` cria somente guias visuais A4 no DOM do editor. Essas linhas não são inseridas no HTML clínico, não são salvas, não aparecem no snapshot PDF e não alteram o worker, assinatura, histórico ou entrega DICOM. Ao modificar `public/assets/css/reports.css` ou scripts do editor, incremente `ASSET_VERSION` em `app/Core/View.php` para evitar que médicos recebam CSS/JavaScript em cache.

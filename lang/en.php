@@ -875,6 +875,8 @@ return [
     'reports.assinatura.fluxo_modal' => 'Sign Only records the clinical signature and keeps the report signed but not yet released. Sign and Close records the signature and releases the report to authorized workflows. Once signed, the document remains read-only.',
     'reports.status.assinado_pendente_liberacao' => 'This report has been signed and remains read-only. It has not yet been released; use Release when the review is complete.',
     'reports.status.liberado_somente_leitura' => 'This report has been released and is read-only.',
+    'reports.editor.espacamento' => 'Spacing', 'reports.editor.espacamento_compacto' => 'Compact', 'reports.editor.espacamento_normal' => 'Normal', 'reports.editor.espacamento_medio' => 'Medium', 'reports.editor.espacamento_amplo' => 'Wide',
+    'reports.editor.inserir_espaco' => 'Insert space between paragraphs', 'reports.editor.guia_pagina' => 'Show page break', 'reports.editor.guia_pagina_label' => 'Next page',
     'delivery_hub.released.titulo' => 'Released reports and deliveries',
     'delivery_hub.released.ajuda_status' => 'Delivered when every destination completes; queued while processing remains pending.',
     'delivery_hub.released.exibidos' => '%d displayed',

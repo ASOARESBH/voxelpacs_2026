@@ -60,6 +60,22 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
         <span class="ql-formats">
             <button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button>
         </span>
+        <span class="ql-formats reports-editor-spacing-controls">
+            <label class="reports-editor-spacing-label" for="editor-spacing-select"><?= htmlspecialchars(t('reports.editor.espacamento')) ?></label>
+            <select id="editor-spacing-select" class="reports-editor-spacing-select" title="<?= htmlspecialchars(t('reports.editor.espacamento')) ?>">
+                <option value="compact"><?= htmlspecialchars(t('reports.editor.espacamento_compacto')) ?></option>
+                <option value="normal" selected><?= htmlspecialchars(t('reports.editor.espacamento_normal')) ?></option>
+                <option value="medium"><?= htmlspecialchars(t('reports.editor.espacamento_medio')) ?></option>
+                <option value="wide"><?= htmlspecialchars(t('reports.editor.espacamento_amplo')) ?></option>
+            </select>
+            <button type="button" class="ql-spacer" title="<?= htmlspecialchars(t('reports.editor.inserir_espaco')) ?>"><i class="fa fa-arrows-v"></i></button>
+        </span>
+        <span class="ql-formats reports-editor-page-guide-control">
+            <label for="editor-page-guide" title="<?= htmlspecialchars(t('reports.editor.guia_pagina')) ?>">
+                <input id="editor-page-guide" type="checkbox" autocomplete="off">
+                <span><?= htmlspecialchars(t('reports.editor.guia_pagina')) ?></span>
+            </label>
+        </span>
         <span class="ql-formats">
             <button class="ql-undo" title="Desfazer"><i class="fa fa-rotate-left"></i></button>
             <button class="ql-redo" title="Refazer"><i class="fa fa-rotate-right"></i></button>
@@ -70,7 +86,7 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
     </div>
 
 
-    <div id="editor-container" class="reports-editor-container" data-placeholder="Redija, cole ou aplique uma máscara de laudo...">
+    <div id="editor-container" class="reports-editor-container" data-placeholder="Redija, cole ou aplique uma máscara de laudo..." data-page-guide-label="<?= htmlspecialchars(t('reports.editor.guia_pagina_label')) ?>">
         <?= $corpoLaudo !== '' ? $corpoLaudo : '<p><br></p>' ?>
     </div>
 
