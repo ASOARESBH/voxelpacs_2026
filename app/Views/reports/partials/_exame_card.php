@@ -112,6 +112,26 @@ $studyUid = $estudo->study_instance_uid ?: '—';
             <?php endif; ?>
         </div>
 
+        <div class="rp-field rp-pedido-field rp-complementar-field">
+            <label><i class="fa fa-notes-medical"></i> <?= htmlspecialchars(t('exames_complementares.coluna')) ?></label>
+            <?php if (!empty($examesComplementares) && !empty($examesComplementares['visualizar_url'])): ?>
+                <span class="rp-value">
+                    <span class="pedido-report-badge exame-complementar-report-badge"><i class="fa fa-circle-check"></i> <?= htmlspecialchars(t('exames_complementares.status.anexado')) ?></span>
+                    <span class="pedido-report-name" title="<?= htmlspecialchars($examesComplementares['nome_original'] ?? '') ?>">
+                        <?= htmlspecialchars($examesComplementares['nome_original'] ?? '') ?>
+                        <?php if (!empty($examesComplementares['tamanho_formatado'])): ?>
+                            <small>(<?= htmlspecialchars($examesComplementares['tamanho_formatado']) ?>)</small>
+                        <?php endif; ?>
+                    </span>
+                    <a href="<?= htmlspecialchars($examesComplementares['visualizar_url']) ?>" target="_blank" rel="noopener" class="pedido-report-link">
+                        <i class="fa fa-eye"></i> <?= htmlspecialchars(t('exames_complementares.acao.consultar')) ?>
+                    </a>
+                </span>
+            <?php else: ?>
+                <span class="rp-value rp-muted"><?= htmlspecialchars(t('exames_complementares.status.nao_anexado')) ?></span>
+            <?php endif; ?>
+        </div>
+
         <?php if (!empty($estudo->institution_name)): ?>
         <div class="rp-field">
             <label><i class="fa fa-hospital"></i> Instituição</label>

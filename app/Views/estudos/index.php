@@ -627,6 +627,11 @@ $periodoLabel = [
                 <?php else: ?>
                     <span class="wl-muted"><?= htmlspecialchars(t('pedido_medico.status.nao_anexado')) ?></span>
                 <?php endif; ?>
+                <?php if (!empty($e['exame_complementar_id'])): ?>
+                    <span class="pedido-anexado-badge exame-complementar-badge" title="<?= htmlspecialchars(t('exames_complementares.status.anexado')) ?>">
+                        <i class="fa fa-notes-medical"></i> <?= htmlspecialchars(t('exames_complementares.status.anexado')) ?>
+                    </span>
+                <?php endif; ?>
             </td>
 
             <!-- Situação -->
@@ -672,6 +677,10 @@ $periodoLabel = [
                                 data-pedido-nome="<?= htmlspecialchars($e['pedido_nome_original'] ?? '', ENT_QUOTES) ?>"
                                 data-pedido-mime="<?= htmlspecialchars($e['pedido_mime_type'] ?? '', ENT_QUOTES) ?>"
                                 data-pedido-tamanho="<?= (int) ($e['pedido_tamanho_bytes'] ?? 0) ?>"
+                                data-exame-complementar-id="<?= (int) ($e['exame_complementar_id'] ?? 0) ?>"
+                                data-exame-complementar-nome="<?= htmlspecialchars($e['exame_complementar_nome_original'] ?? '', ENT_QUOTES) ?>"
+                                data-exame-complementar-mime="<?= htmlspecialchars($e['exame_complementar_mime_type'] ?? '', ENT_QUOTES) ?>"
+                                data-exame-complementar-tamanho="<?= (int) ($e['exame_complementar_tamanho_bytes'] ?? 0) ?>"
                                 title="<?= htmlspecialchars(t('pedido_medico.acao.gerenciar')) ?>">
                             <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?>
                         </button>
@@ -846,6 +855,17 @@ $periodoLabel = [
 <?php endif; ?>
 
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
+<!-- Escolha explícita do tipo de anexo antes de abrir o formulário. -->
+<div class="modal fade" id="anexoTipoModal" tabindex="-1" aria-labelledby="anexoTipoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content pedido-modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="anexoTipoModalLabel"><i class="fa fa-paperclip me-2"></i><?= htmlspecialchars(t('exames_complementares.selecao.titulo')) ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.fechar')) ?>"></button></div>
+        <div class="modal-body"><p class="pedido-modal-help"><?= htmlspecialchars(t('exames_complementares.selecao.instrucoes')) ?></p><div class="pedido-file-options">
+            <button type="button" class="pedido-file-option" id="btnTipoPedidoMedico"><i class="fa fa-file-prescription"></i><span><?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?></span><small><?= htmlspecialchars(t('exames_complementares.selecao.pedido_desc')) ?></small></button>
+            <button type="button" class="pedido-file-option" id="btnTipoExameComplementar"><i class="fa fa-notes-medical"></i><span><?= htmlspecialchars(t('exames_complementares.titulo')) ?></span><small><?= htmlspecialchars(t('exames_complementares.selecao.complementar_desc')) ?></small></button>
+        </div></div>
+    </div></div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════ MODAL PEDIDO -->
 <div class="modal fade" id="pedidoModal" tabindex="-1" aria-labelledby="pedidoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -896,6 +916,31 @@ $periodoLabel = [
             </form>
         </div>
     </div>
+</div>
+
+<!-- ════════════════════════════════ MODAL EXAMES COMPLEMENTARES -->
+<div class="modal fade" id="examesComplementaresModal" tabindex="-1" aria-labelledby="examesComplementaresModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content pedido-modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="examesComplementaresModalLabel"><i class="fa fa-notes-medical me-2"></i><?= htmlspecialchars(t('exames_complementares.modal.titulo')) ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.fechar')) ?>"></button></div>
+        <form id="examesComplementaresForm" enctype="multipart/form-data" method="post"><div class="modal-body">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+            <div class="pedido-estudo-context"><span class="pedido-estudo-label"><?= htmlspecialchars(t('exames_complementares.modal.estudo')) ?></span><strong id="examesComplementaresPacienteNome">—</strong></div>
+            <div id="examesComplementaresAtual" class="pedido-atual" style="display:none;"></div>
+            <p class="pedido-modal-help"><?= htmlspecialchars(t('exames_complementares.modal.instrucoes')) ?></p>
+            <div class="pedido-file-options">
+                <button type="button" class="pedido-file-option" id="btnExamesComplementaresImportar"><i class="fa fa-folder-open"></i><span><?= htmlspecialchars(t('exames_complementares.acao.importar')) ?></span><small><?= htmlspecialchars(t('exames_complementares.modal.importar_desc')) ?></small></button>
+                <button type="button" class="pedido-file-option" id="btnExamesComplementaresCamera"><i class="fa fa-camera"></i><span><?= htmlspecialchars(t('exames_complementares.acao.camera')) ?></span><small><?= htmlspecialchars(t('exames_complementares.modal.camera_desc')) ?></small></button>
+            </div>
+            <input type="file" id="examesComplementaresFile" name="exame_complementar" class="visually-hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,application/pdf,image/*">
+            <input type="file" id="examesComplementaresCameraFile" class="visually-hidden" accept="image/*" capture="environment" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.camera')) ?>">
+            <div id="examesComplementaresSelecionado" class="pedido-arquivo-selecionado" style="display:none;"></div>
+            <div id="examesComplementaresErro" class="alert alert-danger py-2 small" style="display:none;"></div>
+        </div><div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('exames_complementares.acao.cancelar')) ?></button>
+            <button type="button" class="btn btn-outline-danger" id="btnExamesComplementaresRemover" style="display:none;"><i class="fa fa-trash"></i> <?= htmlspecialchars(t('exames_complementares.acao.remover')) ?></button>
+            <button type="submit" class="btn btn-primary" id="btnExamesComplementaresSalvar" disabled><i class="fa fa-cloud-arrow-up"></i> <?= htmlspecialchars(t('exames_complementares.acao.salvar')) ?></button>
+        </div></form>
+    </div></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ MODAL GERENCIAR -->
@@ -1851,6 +1896,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!modalEl || typeof bootstrap === 'undefined') return;
 
     const modal       = new bootstrap.Modal(modalEl);
+    const tipoModalEl = document.getElementById('anexoTipoModal');
+    const tipoModal = tipoModalEl ? new bootstrap.Modal(tipoModalEl) : null;
     const form        = document.getElementById('pedidoForm');
     const fileInput   = document.getElementById('pedidoFile');
     const cameraInput = document.getElementById('pedidoCameraFile');
@@ -1865,6 +1912,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const csrf         = form.querySelector('input[name="csrf"]');
     let estudoAtualId  = 0;
     let cameraFile     = null;
+    let triggerAnexoAtual = null;
 
     const I18N_PEDIDO = {
         tamanho: <?= json_encode(t('pedido_medico.js.tamanho')) ?>,
@@ -1916,6 +1964,12 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.pedido-trigger').forEach(function (button) {
         button.addEventListener('click', function (event) {
             event.preventDefault();
+            if (!button.dataset.anexoDireto && tipoModal) {
+                triggerAnexoAtual = button;
+                tipoModal.show();
+                return;
+            }
+            delete button.dataset.anexoDireto;
             estudoAtualId = Number(button.dataset.id || 0);
             form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(estudoAtualId) + '/pedido';
             pacienteEl.textContent = button.dataset.paciente || '—';
@@ -2032,6 +2086,62 @@ document.addEventListener('DOMContentLoaded', function () {
             removerBtn.innerHTML = textoOriginal;
         }
     });
+
+    document.getElementById('btnTipoPedidoMedico')?.addEventListener('click', function () {
+        if (!triggerAnexoAtual) return;
+        tipoModal?.hide();
+        triggerAnexoAtual.dataset.anexoDireto = '1';
+        triggerAnexoAtual.click();
+    });
+
+    document.getElementById('btnTipoExameComplementar')?.addEventListener('click', function () {
+        if (!triggerAnexoAtual) return;
+        tipoModal?.hide();
+        window.dispatchEvent(new CustomEvent('gestao:abrir-exame-complementar', { detail: triggerAnexoAtual }));
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('examesComplementaresModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+    const modal = new bootstrap.Modal(modalEl);
+    const form = document.getElementById('examesComplementaresForm');
+    const file = document.getElementById('examesComplementaresFile');
+    const camera = document.getElementById('examesComplementaresCameraFile');
+    const save = document.getElementById('btnExamesComplementaresSalvar');
+    const remove = document.getElementById('btnExamesComplementaresRemover');
+    const current = document.getElementById('examesComplementaresAtual');
+    const selected = document.getElementById('examesComplementaresSelecionado');
+    const errorBox = document.getElementById('examesComplementaresErro');
+    let studyId = 0, cameraFile = null;
+    const labels = {
+        selected: <?= json_encode(t('exames_complementares.js.selecionado')) ?>,
+        missing: <?= json_encode(t('exames_complementares.erro.arquivo_ausente')) ?>,
+        communication: <?= json_encode(t('exames_complementares.erro.comunicacao')) ?>,
+        saving: <?= json_encode(t('exames_complementares.js.salvando')) ?>,
+        removing: <?= json_encode(t('exames_complementares.js.removendo')) ?>,
+        confirmRemove: <?= json_encode(t('exames_complementares.confirmar.remover')) ?>,
+        consult: <?= json_encode(t('exames_complementares.acao.consultar')) ?>,
+    };
+    const tamanho = (v) => v >= 1048576 ? (v / 1048576).toFixed(2).replace('.', ',') + ' MB' : (v >= 1024 ? (v / 1024).toFixed(1).replace('.', ',') + ' KB' : v + ' B');
+    const erro = (v) => { errorBox.textContent = v || labels.communication; errorBox.style.display = 'block'; };
+    const limparErro = () => { errorBox.textContent = ''; errorBox.style.display = 'none'; };
+    window.addEventListener('gestao:abrir-exame-complementar', (event) => {
+        const button = event.detail; studyId = Number(button?.dataset?.id || 0); if (!studyId) return;
+        form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(studyId) + '/exames-complementares';
+        document.getElementById('examesComplementaresPacienteNome').textContent = button.dataset.paciente || '—';
+        file.value = ''; camera.value = ''; cameraFile = null; selected.style.display = 'none'; save.disabled = true; limparErro();
+        const id = Number(button.dataset.exameComplementarId || 0); current.innerHTML = ''; remove.style.display = id > 0 ? 'inline-flex' : 'none';
+        if (id > 0) { const icon = document.createElement('i'); icon.className = 'fa fa-circle-check'; const name = document.createElement('span'); name.textContent = (button.dataset.exameComplementarNome || '') + ' (' + tamanho(Number(button.dataset.exameComplementarTamanho || 0)) + ')'; const link = document.createElement('a'); link.href = '/api/gestao-exames/exames-complementares/' + encodeURIComponent(id) + '/arquivo'; link.target = '_blank'; link.rel = 'noopener'; link.textContent = labels.consult; current.append(icon, name, link); current.style.display = 'flex'; } else current.style.display = 'none';
+        modal.show();
+    });
+    document.getElementById('btnExamesComplementaresImportar')?.addEventListener('click', () => { cameraFile = null; camera.value = ''; file.removeAttribute('capture'); file.click(); });
+    document.getElementById('btnExamesComplementaresCamera')?.addEventListener('click', () => { cameraFile = null; file.value = ''; camera.value = ''; camera.click(); });
+    const escolher = (item, veioCamera) => { if (!item) { save.disabled = true; selected.style.display = 'none'; return; } cameraFile = veioCamera ? item : null; if (veioCamera) file.value = ''; selected.textContent = labels.selected + ': ' + item.name + ' (' + tamanho(item.size) + ')'; selected.style.display = 'flex'; save.disabled = false; limparErro(); };
+    file.addEventListener('change', () => escolher(file.files?.[0], false));
+    camera.addEventListener('change', () => escolher(camera.files?.[0], true));
+    form.addEventListener('submit', async (event) => { event.preventDefault(); limparErro(); if (!file.files?.length && !cameraFile) { erro(labels.missing); return; } save.disabled = true; const original = save.innerHTML; save.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + labels.saving; try { const body = new FormData(form); if (cameraFile) body.set('exame_complementar', cameraFile, cameraFile.name || 'exame-complementar-camera.jpg'); const response = await fetch(form.action, { method: 'POST', headers: {'X-Requested-With':'XMLHttpRequest'}, body }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.msg || labels.communication); modal.hide(); window.location.reload(); } catch (e) { erro(e.message || labels.communication); save.disabled = false; save.innerHTML = original; } });
+    remove.addEventListener('click', async () => { if (!studyId || !window.confirm(labels.confirmRemove)) return; remove.disabled = true; const original = remove.innerHTML; remove.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + labels.removing; try { const csrf = form.querySelector('input[name="csrf"]')?.value || ''; const response = await fetch('/api/gestao-exames/estudos/' + encodeURIComponent(studyId) + '/exames-complementares/remover', { method: 'POST', headers: {'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body: JSON.stringify({csrf}) }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.msg || labels.communication); modal.hide(); window.location.reload(); } catch (e) { erro(e.message || labels.communication); remove.disabled = false; remove.innerHTML = original; } });
 });
 <?php endif; ?>
 

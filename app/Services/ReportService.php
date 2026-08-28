@@ -119,11 +119,17 @@ class ReportService {
         // O pedido pertence ao estudo, não ao texto do laudo. Carregamos seus
         // metadados aqui para o médico consultar no report sem duplicar o arquivo.
         $pedido = null;
+        $examesComplementares = null;
         try {
             $tenantEstudo = (int) ($estudo->tenant_id ?? 0);
             $tokenReport = strtolower(trim((string) ($report->public_token ?? '')));
             if ($tenantEstudo > 0 && preg_match('/^[a-f0-9]{48}$/', $tokenReport) === 1) {
                 $pedido = (new PedidoMedicoService())->buscarPorEstudo(
+                    (int) $estudo->id,
+                    $tenantEstudo,
+                    $tokenReport
+                );
+                $examesComplementares = (new ExamesComplementaresService())->buscarPorEstudo(
                     (int) $estudo->id,
                     $tenantEstudo,
                     $tokenReport
@@ -180,6 +186,7 @@ class ReportService {
             'estudo' => $estudo,
             'report' => $report,
             'pedido' => $pedido,
+            'examesComplementares' => $examesComplementares,
             'chat' => $chat,
             'peerReview' => $peerReview,
             'readonly' => $readonly,

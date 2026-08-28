@@ -68,6 +68,7 @@ class ReportsController extends Controller
         $estudo   = $data['estudo'];
         $report   = $data['report'];
         $pedido   = $data['pedido'] ?? null;
+        $examesComplementares = $data['examesComplementares'] ?? null;
         $chat     = $data['chat'] ?? null;
         $peerReview = $data['peerReview'] ?? null;
         $readonly = $data['readonly'];
@@ -121,6 +122,7 @@ class ReportsController extends Controller
             'estudo'            => $estudo,
             'report'            => $report,
             'pedido'            => $pedido,
+            'examesComplementares' => $examesComplementares,
             'chat'              => $chat,
             'peerReview'        => $peerReview,
             'readonly'          => $readonly,
@@ -394,6 +396,34 @@ class ReportsController extends Controller
             Logger::error('[ReportsController::pedidoByToken] ' . $e->getMessage(), [
                 'usuario_id' => Auth::userId(),
             ]);
+            http_response_code(500);
+        }
+    }
+
+    /** Proxy clínico do anexo complementar no mesmo escopo autorizado do Report. */
+    public function examesComplementaresByToken(string $token): void
+    {
+        if (!Auth::check()) { $this->redirect('/login'); return; }
+        $report = (new ReportAccessService())->findAuthorizedReportByPublicToken($token, false);
+        if (!$report) { http_response_code(404); return; }
+        try {
+            $tenantId = (int) ($report->tenant_id ?? 0);
+            $estudoId = (int) ($report->estudo_id ?? 0);
+            if ($tenantId <= 0 || $estudoId <= 0) { http_response_code(404); return; }
+            $service = new \App\Services\ExamesComplementaresService();
+            $anexo = $service->buscarPorEstudo($estudoId, $tenantId);
+            if (!$anexo || !($resultado = $service->obterArquivo((int) $anexo['id'], $tenantId, false))) { http_response_code(404); return; }
+            $arquivo = $resultado['caminho'];
+            $dados = $resultado['anexo'];
+            $nome = str_replace(["\r", "\n", '"'], '_', basename((string) ($dados['nome_original'] ?? 'exame_complementar')));
+            header('Content-Type: ' . (string) ($dados['mime_type'] ?? 'application/octet-stream'));
+            header('Content-Length: ' . (string) filesize($arquivo));
+            header('Content-Disposition: inline; filename="exame_complementar"; filename*=UTF-8\'\'' . rawurlencode($nome));
+            header('Cache-Control: private, no-store, max-age=0');
+            header('X-Content-Type-Options: nosniff');
+            readfile($arquivo);
+        } catch (\Throwable $e) {
+            Logger::error('[ReportsController::examesComplementaresByToken] falha', ['usuario_id' => Auth::userId()]);
             http_response_code(500);
         }
     }

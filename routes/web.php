@@ -58,6 +58,9 @@ Router::post('/api/gestao-exames/estudos/{id}/informacoes',    'GestaoExamesCont
 Router::post('/api/gestao-exames/estudos/{id}/pedido',          'GestaoExamesController@anexar');
 Router::post('/api/gestao-exames/estudos/{id}/pedido/remover',  'GestaoExamesController@remover');
 Router::get('/api/gestao-exames/pedidos/{id}/arquivo',         'GestaoExamesController@arquivo');
+Router::post('/api/gestao-exames/estudos/{id}/exames-complementares', 'ExamesComplementaresController@anexar');
+Router::post('/api/gestao-exames/estudos/{id}/exames-complementares/remover', 'ExamesComplementaresController@remover');
+Router::get('/api/gestao-exames/exames-complementares/{id}/arquivo', 'ExamesComplementaresController@arquivo');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
@@ -249,6 +252,7 @@ Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
 Router::get('/reports/r/{token}/pdf',         'ReportsController@pdfByToken');
 Router::get('/reports/r/{token}/assinatura',  'ReportsController@assinaturaImagemByToken');
 Router::get('/reports/r/{token}/pedido',      'ReportsController@pedidoByToken');
+Router::get('/reports/r/{token}/exames-complementares', 'ReportsController@examesComplementaresByToken');
 Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
 Router::get('/reports/autotext',           'ReportsController@autotextSearch');

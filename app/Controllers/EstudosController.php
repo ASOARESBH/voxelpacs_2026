@@ -383,6 +383,7 @@ class EstudosController extends Controller
         // delas não pode tornar a Worklist inteira vazia, especialmente durante
         // restaurações e homologações de uma cópia histórica do banco.
         $hasPedidos = false;
+        $hasExamesComplementares = false;
         $hasReports = false;
         $hasChats = false;
         $hasReportPublicToken = false;
@@ -391,6 +392,7 @@ class EstudosController extends Controller
         $hasDownloadAvailability = false;
         try {
             $hasPedidos = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_pedidos');
+            $hasExamesComplementares = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_exames_complementares');
             $hasReports = SqlHelper::hasTable($pdo, 'reports');
             $hasChats = $hasReports && SqlHelper::hasTable($pdo, 'pacs_report_chats');
             $hasReportPublicToken = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'public_token');
@@ -409,6 +411,11 @@ class EstudosController extends Controller
                p.tamanho_bytes AS pedido_tamanho_bytes, p.caminho_arquivo AS pedido_caminho_arquivo"
             : "NULL AS pedido_id, NULL AS pedido_nome_original, NULL AS pedido_mime_type,
                NULL AS pedido_tamanho_bytes, NULL AS pedido_caminho_arquivo";
+        $exameComplementarSelectSql = $hasExamesComplementares
+            ? "ec.id AS exame_complementar_id, ec.nome_original AS exame_complementar_nome_original,
+               ec.mime_type AS exame_complementar_mime_type, ec.tamanho_bytes AS exame_complementar_tamanho_bytes"
+            : "NULL AS exame_complementar_id, NULL AS exame_complementar_nome_original,
+               NULL AS exame_complementar_mime_type, NULL AS exame_complementar_tamanho_bytes";
         $reportPublicTokenSql = $hasReportPublicToken ? "COALESCE(r.public_token, '')" : "''";
         // pgloader preserva ENUMs como tipos PostgreSQL. Um COALESCE direto com
         // string vazia tenta converter '' para o ENUM e aborta a consulta; texto
@@ -431,6 +438,9 @@ class EstudosController extends Controller
             : '';
         $pedidoJoinSql = $hasPedidos
             ? 'LEFT JOIN bi_pacs_estudos_pedidos p ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id'
+            : '';
+        $exameComplementarJoinSql = $hasExamesComplementares
+            ? 'LEFT JOIN bi_pacs_estudos_exames_complementares ec ON ec.estudo_id = e.id AND ec.tenant_id = e.tenant_id'
             : '';
         $reportJoinSql = $hasReports
             ? 'LEFT JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id'
@@ -484,11 +494,13 @@ class EstudosController extends Controller
                     {$scheduledProcedureStepDescriptionSql}      AS scheduled_procedure_step_desc,
                     COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
                     {$pedidoSelectSql},
+                    {$exameComplementarSelectSql},
                     {$reportSelectSql},
                     {$chatSelectSql},
                     {$downloadAvailabilitySelectSql}
                 FROM bi_pacs_estudos e
                 {$pedidoJoinSql}
+                {$exameComplementarJoinSql}
                 {$reportJoinSql}
                 {$chatJoinSql}
                 {$downloadAvailabilityJoinSql}
