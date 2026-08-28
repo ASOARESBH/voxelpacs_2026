@@ -28,9 +28,9 @@ MAX_CLOCK_SKEW_SECONDS = 60
 ROOT = Path("/var/lib/voxelpacs/report-delivery-gateway")
 
 
-def state_file() -> Path:
-    """Mantém a trava de tentativa única separada por job autorizado."""
-    return ROOT / f"attempted-job-{POLICY.job_id}.json"
+def state_file(job_id: int) -> Path:
+    """Mantém a trava de tentativa única separada por job aceito pela policy."""
+    return ROOT / f"attempted-job-{job_id}.json"
 
 
 def env(name: str) -> str:
@@ -44,7 +44,10 @@ class Policy:
     def __init__(self) -> None:
         self.bind_ip = env("BRIDGE_BIND_IP")
         self.bind_port = int(env("BRIDGE_BIND_PORT"))
-        self.job_id = int(env("BRIDGE_ALLOW_JOB_ID"))
+        self.mode = os.environ.get("BRIDGE_MODE", "controlled_job").strip()
+        self.job_id = int(os.environ.get("BRIDGE_ALLOW_JOB_ID", "0"))
+        self.tenant_id = int(os.environ.get("BRIDGE_ALLOW_TENANT_ID", "0"))
+        self.destination_id = int(os.environ.get("BRIDGE_ALLOW_DESTINATION_ID", "0"))
         self.target_host = env("BRIDGE_TARGET_HOST")
         self.target_port = int(env("BRIDGE_TARGET_PORT"))
         self.calling_ae = env("BRIDGE_CALLING_AE")
@@ -53,10 +56,27 @@ class Policy:
         self.ca_file = env("BRIDGE_CLIENT_CA_FILE")
         self.server_cert = env("BRIDGE_SERVER_CERT_FILE")
         self.server_key = env("BRIDGE_SERVER_KEY_FILE")
-        if not self.secret or self.job_id <= 0 or not (1 <= self.target_port <= 65535):
+        if not self.secret or not (1 <= self.target_port <= 65535):
             raise RuntimeError("invalid_bridge_policy")
+        if self.mode == "controlled_job" and self.job_id <= 0:
+            raise RuntimeError("invalid_controlled_job_policy")
+        if self.mode == "tenant_destination" and (self.tenant_id <= 0 or self.destination_id <= 0):
+            raise RuntimeError("invalid_tenant_destination_policy")
+        if self.mode not in {"controlled_job", "tenant_destination"}:
+            raise RuntimeError("invalid_bridge_mode")
         if len(self.calling_ae) > 16 or len(self.called_ae) > 16:
             raise RuntimeError("invalid_bridge_ae")
+
+    @property
+    def expected_path(self) -> str:
+        if self.mode == "controlled_job":
+            return f"/v1/report-delivery/{self.job_id}"
+        return f"/v1/report-delivery/tenant/{self.tenant_id}/destination/{self.destination_id}"
+
+    def accepts_job(self, job_id: int, tenant_id: int, destination_id: int) -> bool:
+        if self.mode == "controlled_job":
+            return job_id == self.job_id
+        return job_id > 0 and tenant_id == self.tenant_id and destination_id == self.destination_id
 
 
 POLICY = Policy()
@@ -70,9 +90,9 @@ logging.basicConfig(
 LOG = logging.getLogger("report_delivery_gateway")
 
 
-def state() -> dict[str, object]:
+def state(job_id: int) -> dict[str, object]:
     try:
-        value = json.loads(state_file().read_text(encoding="utf-8"))
+        value = json.loads(state_file(job_id).read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
     except FileNotFoundError:
         return {}
@@ -80,8 +100,8 @@ def state() -> dict[str, object]:
         return {"state": "unreadable"}
 
 
-def write_state(value: dict[str, object]) -> None:
-    target = state_file()
+def write_state(job_id: int, value: dict[str, object]) -> None:
+    target = state_file(job_id)
     temp = target.with_suffix(".tmp")
     temp.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     os.chmod(temp, 0o600)
@@ -151,15 +171,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self) -> None:  # noqa: N802
-        expected_path = f"/v1/report-delivery/{POLICY.job_id}"
+        expected_path = POLICY.expected_path
         if self.path != expected_path:
             self.respond(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
-        if state().get("state") in {"attempted", "delivered"}:
-            self.respond(HTTPStatus.CONFLICT, {"error": "single_attempt_consumed"})
-            return
 
         job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        destination_id = self.headers.get("X-VOXEL-Destination-ID", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
         supplied_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
         signature = self.headers.get("X-VOXEL-Signature", "")
@@ -167,16 +186,22 @@ class Handler(BaseHTTPRequestHandler):
         try:
             content_length_int = int(content_length)
             timestamp_int = int(timestamp)
+            job_id_int = int(job_id)
+            tenant_id_int = int(tenant_id)
+            destination_id_int = int(destination_id)
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
             return
-        if job_id != str(POLICY.job_id) or not (256 <= content_length_int <= MAX_BYTES):
+        if not POLICY.accepts_job(job_id_int, tenant_id_int, destination_id_int) or not (256 <= content_length_int <= MAX_BYTES):
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if state(job_id_int).get("state") in {"attempted", "delivered"}:
+            self.respond(HTTPStatus.CONFLICT, {"error": "single_attempt_consumed"})
             return
         if abs(int(time.time()) - timestamp_int) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
             return
-        base = "\n".join(["POST", expected_path, job_id, supplied_hash, str(content_length_int), timestamp])
+        base = "\n".join(["POST", expected_path, job_id, tenant_id, destination_id, supplied_hash, str(content_length_int), timestamp])
         expected_signature = hmac.new(POLICY.secret, base.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected_signature):
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
@@ -202,13 +227,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(HTTPStatus.BAD_REQUEST, {"error": "integrity_check_failed"})
                 return
 
-            write_state({"state": "attempted", "job_id": POLICY.job_id, "at": int(time.time()), "sha256": actual_hash})
+            write_state(job_id_int, {"state": "attempted", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
             success, outcome = invoke_dicom_scu(artifact)
             if not success:
                 LOG.warning("event=delivery_failed job_id=%s sha256_16=%s stage=%s", POLICY.job_id, actual_hash[:16], outcome)
                 self.respond(HTTPStatus.BAD_GATEWAY, {"error": outcome})
                 return
-            write_state({"state": "delivered", "job_id": POLICY.job_id, "at": int(time.time()), "sha256": actual_hash})
+            write_state(job_id_int, {"state": "delivered", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
             reference = f"gateway-cstore:{actual_hash[:16]}"
             LOG.info("event=delivery_completed job_id=%s sha256_16=%s", POLICY.job_id, actual_hash[:16])
             self.respond(HTTPStatus.CREATED, {"reference": reference})
@@ -228,7 +253,7 @@ def main() -> NoReturn:
     server = HTTPServer((POLICY.bind_ip, POLICY.bind_port), Handler)
     server.request_queue_size = 2
     server.socket = context.wrap_socket(server.socket, server_side=True)
-    LOG.info("event=bridge_started job_id=%s bind=%s:%s", POLICY.job_id, POLICY.bind_ip, POLICY.bind_port)
+    LOG.info("event=bridge_started mode=%s bind=%s:%s", POLICY.mode, POLICY.bind_ip, POLICY.bind_port)
     server.serve_forever(poll_interval=0.5)
 
 

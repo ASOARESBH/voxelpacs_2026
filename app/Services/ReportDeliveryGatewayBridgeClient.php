@@ -14,16 +14,19 @@ use RuntimeException;
  */
 final class ReportDeliveryGatewayBridgeClient
 {
-    /** @param array<string,mixed> $configuration @return array{reference:string,sha256:string,size:int} */
-    public function send(int $jobId, array $configuration, string $dicomPath, int $timeout): array
+    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array{reference:string,sha256:string,size:int} */
+    public function send(array $job, array $configuration, string $dicomPath, int $timeout): array
     {
-        if ($jobId <= 0 || !is_file($dicomPath)) {
+        $jobId = (int) ($job['id'] ?? 0);
+        $tenantId = (int) ($job['tenant_id'] ?? 0);
+        $destinationId = (int) ($job['destination_id'] ?? 0);
+        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !is_file($dicomPath)) {
             throw new RuntimeException('gateway_bridge_invalid_artifact');
         }
 
-        $bridgeJobId = (int) ($configuration['bridge_job_id'] ?? 0);
+        $bridgeMode = trim((string) ($configuration['gateway_bridge_mode'] ?? 'controlled_job'));
         $bridgeUrl = trim((string) ($configuration['bridge_url'] ?? ''));
-        if ($bridgeJobId !== $jobId || !$this->allowedBridgeUrl($bridgeUrl, $jobId)) {
+        if (!$this->allowedBridgeUrl($bridgeUrl, $bridgeMode, $jobId, $tenantId, $destinationId, $configuration)) {
             throw new RuntimeException('gateway_bridge_policy_rejected');
         }
 
@@ -44,7 +47,7 @@ final class ReportDeliveryGatewayBridgeClient
         $parts = parse_url($bridgeUrl);
         $path = (string) ($parts['path'] ?? '');
         $timestamp = (string) time();
-        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, $sha256, (string) $size, $timestamp]);
+        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId, $sha256, (string) $size, $timestamp]);
         $signature = hash_hmac('sha256', $signatureBase, $secret);
         $input = fopen($dicomPath, 'rb');
         if (!is_resource($input)) {
@@ -79,6 +82,8 @@ final class ReportDeliveryGatewayBridgeClient
                     'Content-Type: application/dicom',
                     'Content-Length: ' . $size,
                     'X-VOXEL-Job-ID: ' . $jobId,
+                    'X-VOXEL-Tenant-ID: ' . $tenantId,
+                    'X-VOXEL-Destination-ID: ' . $destinationId,
                     'X-VOXEL-Timestamp: ' . $timestamp,
                     'X-VOXEL-SHA256: ' . $sha256,
                     'X-VOXEL-Signature: ' . $signature,
@@ -104,16 +109,26 @@ final class ReportDeliveryGatewayBridgeClient
         return ['reference' => $reference, 'sha256' => $sha256, 'size' => $size];
     }
 
-    private function allowedBridgeUrl(string $url, int $jobId): bool
+    /** @param array<string,mixed> $configuration */
+    private function allowedBridgeUrl(string $url, string $mode, int $jobId, int $tenantId, int $destinationId, array $configuration): bool
     {
         $parts = parse_url($url);
-        if (!is_array($parts)) {
+        if (!is_array($parts)
+            || ($parts['scheme'] ?? '') !== 'https'
+            || ($parts['host'] ?? '') !== '10.0.0.4'
+            || (int) ($parts['port'] ?? 443) !== 9443
+            || isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass'])) {
             return false;
         }
-        return ($parts['scheme'] ?? '') === 'https'
-            && ($parts['host'] ?? '') === '10.0.0.4'
-            && (int) ($parts['port'] ?? 443) === 9443
-            && ($parts['path'] ?? '') === '/v1/report-delivery/' . $jobId
-            && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
+        if ($mode === 'controlled_job') {
+            return (int) ($configuration['bridge_job_id'] ?? 0) === $jobId
+                && ($parts['path'] ?? '') === '/v1/report-delivery/' . $jobId;
+        }
+        if ($mode === 'tenant_destination') {
+            return (int) ($configuration['bridge_tenant_id'] ?? 0) === $tenantId
+                && (int) ($configuration['bridge_destination_id'] ?? 0) === $destinationId
+                && ($parts['path'] ?? '') === '/v1/report-delivery/tenant/' . $tenantId . '/destination/' . $destinationId;
+        }
+        return false;
     }
 }

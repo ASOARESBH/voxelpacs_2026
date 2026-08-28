@@ -88,6 +88,16 @@ $transportLabels = [
                                 </select>
                             </div>
                         </div>
+                        <div class="mt-3">
+                            <label class="form-label" for="destination-pacs-server">Servidor PACS de origem</label>
+                            <select class="form-select" id="destination-pacs-server" name="servidor_pacs_id">
+                                <option value="">Selecione o servidor vinculado ao negócio</option>
+                                <?php foreach ($pacsServers as $pacsServer): ?>
+                                    <option value="<?= (int) $pacsServer['id'] ?>"><?= $escape($pacsServer['nome']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">Obrigatório para produção automática. O destino somente atende estudos recebidos por este servidor PACS deste negócio.</div>
+                        </div>
                         <div class="border rounded-3 bg-light-subtle p-3 mt-3" id="institution-routing">
                             <h3 class="h6 mb-1"><i class="fa fa-fingerprint me-1"></i> Issuers dos servidores PACS</h3>
                             <p class="small text-muted mb-3">Selecione os <strong>Issuers</strong> observados ou configurados nos servidores PACS deste negócio. Com Issuer presente no estudo, somente este vínculo é usado para devolução.</p>
@@ -208,6 +218,7 @@ $transportLabels = [
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
+                                        <?php if (($destination['servidor_pacs_nome'] ?? '') !== ''): ?><div><strong>Servidor PACS:</strong> <?= $escape((string) $destination['servidor_pacs_nome']) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers !== ''): ?><div><strong>Issuer:</strong> <?= $escape($destinationIssuers) ?></div><?php endif; ?>
                                         <?php if ($destinationInstitutions !== ''): ?><div><strong>Fallback:</strong> <?= $escape($destinationInstitutions) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers === '' && $destinationInstitutions === ''): ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?>
@@ -306,6 +317,7 @@ $transportLabels = [
     const feedback = document.getElementById('delivery-feedback');
     const transport = document.getElementById('destination-transport');
     const environment = document.getElementById('destination-environment');
+    const pacsServer = document.getElementById('destination-pacs-server');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -372,6 +384,8 @@ $transportLabels = [
 
     function syncEnvironment() {
         const production = environment.value === 'producao';
+        const automatic = document.getElementById('destination-release').checked;
+        pacsServer.required = production && automatic;
         const confirmationRequired = production && enabled.checked;
         productionConfirmationBox.classList.toggle('d-none', !confirmationRequired);
         productionConfirmation.required = confirmationRequired;
@@ -457,6 +471,7 @@ $transportLabels = [
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
     environment.addEventListener('change', syncEnvironment);
     enabled.addEventListener('change', syncEnvironment);
+    document.getElementById('destination-release').addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
         button.addEventListener('click', () => {
             const input = document.getElementById(button.dataset.target);
@@ -472,6 +487,7 @@ $transportLabels = [
             form.action = baseAction + '/' + encodeURIComponent(item.id);
             title.textContent = 'Editar destino: ' + item.nome;
             document.getElementById('destination-name').value = item.nome;
+            pacsServer.value = item.servidor_pacs_id ? String(item.servidor_pacs_id) : '';
             transport.value = item.transport;
             environment.value = item.ambiente;
             secretInput.value = '';
@@ -495,6 +511,12 @@ $transportLabels = [
         if (!institutionSelectors.some((input) => input.checked) && !issuerSelectors.some((input) => input.checked)) {
             feedback.className = 'alert alert-danger';
             feedback.textContent = 'Selecione ao menos um Issuer ou InstitutionName de fallback para este destino.';
+            feedback.classList.remove('d-none');
+            return;
+        }
+        if (environment.value === 'producao' && document.getElementById('destination-release').checked && !pacsServer.value) {
+            feedback.className = 'alert alert-danger';
+            feedback.textContent = 'Selecione o servidor PACS de origem para produção automática.';
             feedback.classList.remove('d-none');
             return;
         }

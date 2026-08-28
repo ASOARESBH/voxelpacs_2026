@@ -1,0 +1,43 @@
+<?php
+declare(strict_types=1);
+
+$root = dirname(__DIR__);
+$files = [
+    'app/Repositories/ReportDeliveryRepository.php' => [
+        'servidor_pacs_id = :servidor_pacs_id',
+        'INNER JOIN bi_negocio_servidor_pacs n',
+        'Produção automática exige um servidor PACS de origem vinculado ao negócio.',
+    ],
+    'app/Services/ReportDeliveryOutboxService.php' => [
+        "'servidor_pacs_id' => \$servidorPacsId",
+        'findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $servidorPacsId)',
+    ],
+    'app/Services/ReportDeliveryGatewayBridgeClient.php' => [
+        "'X-VOXEL-Tenant-ID: ' . \$tenantId",
+        "'X-VOXEL-Destination-ID: ' . \$destinationId",
+        "'tenant_destination'",
+    ],
+    'deploy/report-delivery-gateway-bridge/bridge_server.py' => [
+        'BRIDGE_ALLOW_TENANT_ID',
+        'BRIDGE_ALLOW_DESTINATION_ID',
+        'def accepts_job(',
+        'tenant_id, destination_id',
+    ],
+    'bin/report_delivery_worker.php' => [
+        "'0008,103E=' . \$this->seriesDescription(\$configuration)",
+    ],
+];
+
+foreach ($files as $relative => $needles) {
+    $content = file_get_contents($root . '/' . $relative);
+    if (!is_string($content)) {
+        throw new RuntimeException('missing_contract_file:' . $relative);
+    }
+    foreach ($needles as $needle) {
+        if (!str_contains($content, $needle)) {
+            throw new RuntimeException('missing_contract_marker:' . $relative);
+        }
+    }
+}
+
+fwrite(STDOUT, "production_delivery_routing_contract_ok\n");

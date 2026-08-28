@@ -52,6 +52,7 @@ class ReportDeliveryOutboxService
             : null;
 
         $estabelecimentoId = (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null;
+        $servidorPacsId = (int) ($estudo->servidor_id ?? 0) ?: null;
         $rawInstitutionName = trim((string) ($estudo->institution_name ?? ''));
         $institutionName = InstitutionResolverService::canonicalForTenant($tenantId, $rawInstitutionName);
         $issuer = DicomIssuerService::sanitizeIssuer($estudo->issuer_of_patient_id ?? null);
@@ -71,6 +72,7 @@ class ReportDeliveryOutboxService
             'event_type' => $eventType,
             'tenant_id' => $tenantId,
             'estabelecimento_id' => $estabelecimentoId,
+            'servidor_pacs_id' => $servidorPacsId,
             'report_id' => $reportId,
             'report_version' => $reportVersion,
             'estudo_id' => $estudoId,
@@ -125,7 +127,7 @@ class ReportDeliveryOutboxService
             );
 
             $destinations = array_values(array_filter(
-                $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName),
+                $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $servidorPacsId),
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
             ));
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);

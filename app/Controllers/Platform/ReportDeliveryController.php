@@ -72,6 +72,7 @@ class ReportDeliveryController extends Controller
             'transports' => $this->transports,
             'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
             'issuers' => $this->repository->listTenantIssuers($tenantId),
+            'pacsServers' => $this->repository->listTenantPacsServers($tenantId),
         ], 'platform');
     }
 
@@ -88,6 +89,7 @@ class ReportDeliveryController extends Controller
         foreach ($deliveries as &$delivery) {
             $estabelecimentoId = (int) ($delivery['estabelecimento_id'] ?? 0) ?: null;
             $issuerNormalized = trim((string) ($delivery['issuer_of_patient_id_normalized'] ?? ''));
+            $servidorPacsId = (int) ($delivery['servidor_pacs_id'] ?? 0) ?: null;
             $institutionName = $issuerNormalized === ''
                 ? InstitutionResolverService::canonicalForTenant($tenantId, (string) ($delivery['institution_name'] ?? ''))
                 : null;
@@ -95,13 +97,15 @@ class ReportDeliveryController extends Controller
                 $tenantId,
                 $estabelecimentoId,
                 $issuerNormalized,
-                $institutionName
+                $institutionName,
+                $servidorPacsId
             );
             $eligible = $this->repository->findActiveDestinations(
                 $tenantId,
                 $estabelecimentoId,
                 $issuerNormalized,
-                $institutionName
+                $institutionName,
+                $servidorPacsId
             );
             $manualEligible = array_filter($eligible, static fn(array $destination): bool =>
                 (string) ($destination['ambiente'] ?? '') === 'homologacao'
@@ -147,6 +151,7 @@ class ReportDeliveryController extends Controller
                 'producao_confirmada' => $data['producao_confirmada'],
                 'institution_names' => $data['institution_names'],
                 'issuers' => array_map(static fn(array $issuer): string => $issuer['normalized'], $data['issuers']),
+                'servidor_pacs_id' => $data['servidor_pacs_id'],
             ]);
             $this->json([
                 'success' => true,
@@ -329,6 +334,7 @@ class ReportDeliveryController extends Controller
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
         $enabled = !empty($_POST['enabled']) ? 1 : 0;
         $producaoConfirmada = (string) ($_POST['confirm_production_activation'] ?? '') === '1';
+        $servidorPacsId = (int) ($_POST['servidor_pacs_id'] ?? 0) ?: null;
         $requestedInstitutions = $_POST['institution_names'] ?? [];
         $requestedInstitutions = is_array($requestedInstitutions) ? $requestedInstitutions : [];
         $institutionNames = [];
@@ -374,6 +380,9 @@ class ReportDeliveryController extends Controller
         if (!in_array($environment, ['homologacao', 'producao'], true)) {
             throw new DomainException('Ambiente inválido.');
         }
+        if ($environment === 'producao' && !empty($_POST['disparar_na_liberacao']) && $servidorPacsId === null) {
+            throw new DomainException('Produção automática exige um servidor PACS de origem vinculado ao negócio.');
+        }
         if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
             throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
         }
@@ -399,6 +408,7 @@ class ReportDeliveryController extends Controller
             'ambiente' => $environment,
             'enabled' => $enabled,
             'producao_confirmada' => $producaoConfirmada,
+            'servidor_pacs_id' => $servidorPacsId,
             'disparar_na_liberacao' => !empty($_POST['disparar_na_liberacao']) ? 1 : 0,
             'configuration_json' => json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'configuration_secret' => $secret,

@@ -164,6 +164,11 @@ final class LocalDicomDeliveryWorker
                 $pdf2dcmCommand[] = '--key';
                 $pdf2dcmCommand[] = '0010,0021=' . $issuerOfPatientId;
             }
+            // O pdf2dcm importa somente o módulo de estudo com --study-from.
+            // A descrição de série é aplicada explicitamente para evitar que o
+            // receptor apresente o Encapsulated PDF como série sem descrição (ND).
+            $pdf2dcmCommand[] = '--key';
+            $pdf2dcmCommand[] = '0008,103E=' . $this->seriesDescription($configuration);
             $pdf2dcmCommand[] = '--instance-one';
             $pdf2dcmCommand[] = $pdfPath;
             $pdf2dcmCommand[] = $dicomPath;
@@ -174,7 +179,7 @@ final class LocalDicomDeliveryWorker
 
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
             if (!empty($configuration['gateway_bridge'])) {
-                $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($jobId, $configuration, $dicomPath, $timeout);
+                $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($job, $configuration, $dicomPath, $timeout);
             } else {
                 $this->runCommand([
                     '/usr/bin/storescu', '--quiet', '--disable-tls',
@@ -284,6 +289,14 @@ final class LocalDicomDeliveryWorker
         $payloadIssuer = trim((string) ($payload['issuer_of_patient_id'] ?? ''));
         $issuer = $configured !== '' ? $configured : $payloadIssuer;
         return mb_substr(str_replace(["\r", "\n", '[', ']'], [' ', ' ', '(', ')'], $issuer), 0, 64);
+    }
+
+    /** @param array<string,mixed> $configuration */
+    private function seriesDescription(array $configuration): string
+    {
+        $configured = trim((string) ($configuration['dicom_series_description'] ?? ''));
+        $description = $configured !== '' ? $configured : 'Laudo Medico PDF';
+        return mb_substr(str_replace(["\r", "\n", '[', ']'], [' ', ' ', '(', ')'], $description), 0, 64);
     }
 
     private function dicomText(string $value): string

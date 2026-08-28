@@ -19,19 +19,19 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $servidorPacsId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $servidorPacsId, true);
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findConfiguredDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findConfiguredDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $servidorPacsId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, false);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $servidorPacsId, false);
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function findDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, bool $onlyEligible): array
+    private function findDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $servidorPacsId, bool $onlyEligible): array
     {
         $issuerNormalized = trim((string) $issuerNormalized);
         $institutionName = trim((string) $institutionName);
@@ -51,12 +51,15 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
+        // Produção automática exige binding explícito ao servidor PACS que originou
+        // o estudo. Destinos legados sem servidor podem ser consultados, mas não se
+        // tornam elegíveis para novos jobs automáticos.
         $eligibilityWhere = $onlyEligible
-            ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
-            : '';
+            ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1\n               AND (d.ambiente <> \'producao\' OR d.servidor_pacs_id = :servidor_pacs_id)'
+            : 'AND (d.servidor_pacs_id IS NULL OR d.servidor_pacs_id = :servidor_pacs_id)';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
                     d.configuration_json{$secretColumn}
              FROM pacs_report_delivery_destinations d
              {$sourceJoin}
@@ -73,6 +76,11 @@ class ReportDeliveryRepository
         } else {
             $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, PDO::PARAM_INT);
         }
+        if ($servidorPacsId === null) {
+            $stmt->bindValue(':servidor_pacs_id', null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':servidor_pacs_id', $servidorPacsId, PDO::PARAM_INT);
+        }
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -84,7 +92,7 @@ class ReportDeliveryRepository
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            "SELECT d.id, d.tenant_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
                     COALESCE((SELECT {$institutionNamesSql}
@@ -92,7 +100,12 @@ class ReportDeliveryRepository
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
                     COALESCE((SELECT {$issuersSql}
                               FROM pacs_report_delivery_destination_issuers ds
-                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers
+                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers,
+                    COALESCE((SELECT s.nome
+                              FROM bi_pacs_servidor s
+                              INNER JOIN bi_negocio_servidor_pacs n ON n.servidor_id = s.id AND n.tenant_id = d.tenant_id AND n.ativo = 1
+                              WHERE s.id = d.servidor_pacs_id AND s.ativo = 1
+                              LIMIT 1), '') AS servidor_pacs_nome
              FROM pacs_report_delivery_destinations d
              WHERE d.tenant_id = :tenant_id
              ORDER BY d.id DESC"
@@ -106,7 +119,7 @@ class ReportDeliveryRepository
     public function findDestination(int $destinationId, int $tenantId, bool $includeSecret = false): ?array
     {
         $columns = $includeSecret ? 'd.*' :
-            'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            'd.id, d.tenant_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
@@ -118,7 +131,12 @@ class ReportDeliveryRepository
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
                     COALESCE((SELECT {$issuersSql}
                               FROM pacs_report_delivery_destination_issuers ds
-                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers
+                              WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers,
+                    COALESCE((SELECT s.nome
+                              FROM bi_pacs_servidor s
+                              INNER JOIN bi_negocio_servidor_pacs n ON n.servidor_id = s.id AND n.tenant_id = d.tenant_id AND n.ativo = 1
+                              WHERE s.id = d.servidor_pacs_id AND s.ativo = 1
+                              LIMIT 1), '') AS servidor_pacs_nome
              FROM pacs_report_delivery_destinations d
              WHERE d.id = :id AND d.tenant_id = :tenant_id
              LIMIT 1"
@@ -149,6 +167,16 @@ class ReportDeliveryRepository
     private function saveDestinationWithinTransaction(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
         $name = trim((string) $data['nome']);
+        $serverId = isset($data['servidor_pacs_id']) && (int) $data['servidor_pacs_id'] > 0
+            ? (int) $data['servidor_pacs_id']
+            : null;
+        $this->assertTenantPacsServer($tenantId, $serverId);
+        if ((string) $data['ambiente'] === 'producao'
+            && !empty($data['disparar_na_liberacao'])
+            && $serverId === null) {
+            throw new DomainException('Produção automática exige um servidor PACS de origem vinculado ao negócio.');
+        }
+        $data['servidor_pacs_id'] = $serverId;
         if ($destinationId) {
             $existing = $this->findDestination($destinationId, $tenantId, true);
             if (!$existing) {
@@ -167,6 +195,7 @@ class ReportDeliveryRepository
             $secret = (string) ($data['configuration_secret'] ?? '');
             $stmt = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_destinations SET
+                    servidor_pacs_id = :servidor_pacs_id,
                     nome = :nome,
                     transport = :transport,
                     ambiente = :ambiente,
@@ -183,6 +212,7 @@ class ReportDeliveryRepository
                  WHERE id = :id AND tenant_id = :tenant_id"
             );
             $stmt->execute([
+                ':servidor_pacs_id' => $data['servidor_pacs_id'],
                 ':nome' => $name,
                 ':transport' => $data['transport'],
                 ':ambiente' => $data['ambiente'],
@@ -213,14 +243,15 @@ class ReportDeliveryRepository
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_destinations
-                (tenant_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
+                (tenant_id, servidor_pacs_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
                  configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by)
              VALUES
-                (:tenant_id, :nome, :transport, :ambiente, :enabled, :disparar_na_liberacao,
+                (:tenant_id, :servidor_pacs_id, :nome, :transport, :ambiente, :enabled, :disparar_na_liberacao,
                  :configuration_json, :configuration_secret, :timeout_seconds, :max_attempts, :created_by)"
         );
         $stmt->execute([
             ':tenant_id' => $tenantId,
+            ':servidor_pacs_id' => $data['servidor_pacs_id'],
             ':nome' => $name,
             ':transport' => $data['transport'],
             ':ambiente' => $data['ambiente'],
@@ -344,6 +375,44 @@ class ReportDeliveryRepository
         $stmt->execute([':tenant_studies' => $tenantId, ':tenant_configured' => $tenantId]);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @return array<int,array{id:int,nome:string}> */
+    public function listTenantPacsServers(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+             FROM bi_pacs_servidor s
+             INNER JOIN bi_negocio_servidor_pacs n
+                     ON n.servidor_id = s.id
+                    AND n.tenant_id = :tenant_id
+                    AND n.ativo = 1
+             WHERE s.ativo = 1
+             ORDER BY s.nome ASC"
+        );
+        $stmt->execute([':tenant_id' => $tenantId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function assertTenantPacsServer(int $tenantId, ?int $serverId): void
+    {
+        if ($serverId === null) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            "SELECT 1
+             FROM bi_pacs_servidor s
+             INNER JOIN bi_negocio_servidor_pacs n
+                     ON n.servidor_id = s.id
+                    AND n.tenant_id = :tenant_id
+                    AND n.ativo = 1
+             WHERE s.id = :server_id AND s.ativo = 1
+             LIMIT 1"
+        );
+        $stmt->execute([':tenant_id' => $tenantId, ':server_id' => $serverId]);
+        if (!$stmt->fetchColumn()) {
+            throw new DomainException('Servidor PACS não está ativo ou não pertence a este negócio.');
+        }
     }
 
     public function createOutboxIfAbsent(
@@ -524,33 +593,43 @@ class ReportDeliveryRepository
             "SELECT r.id AS report_id, r.liberado_em, r.public_token,
                     e.id AS estudo_id,
                     e.unidade_id AS estabelecimento_id,
+                    e.servidor_id AS servidor_pacs_id,
                     COALESCE(e.institution_name, '') AS institution_name,
                     COALESCE(NULLIF(e.patient_name_display, ''), NULLIF(e.patient_name, ''), '—') AS patient_name,
                     COALESCE(e.modalities, '') AS modalities,
                     COALESCE(e.issuer_of_patient_id, '') AS issuer_of_patient_id,
                     COALESCE(e.issuer_of_patient_id_normalized, '') AS issuer_of_patient_id_normalized,
-                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
-                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
-                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id), 0) AS jobs_total,
-                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
-                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
-                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id AND j.status = 'delivered'), 0) AS jobs_delivered,
+                    COALESCE((SELECT MAX(o_latest.report_version)
+                              FROM pacs_report_delivery_outbox o_latest
+                              WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id), 0) AS latest_report_version,
                     COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
                               INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                               WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
-                                AND j.status IN ('queued', 'retrying', 'processing')), 0) AS jobs_queued,
+                                AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)), 0) AS jobs_total,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id AND j.status = 'delivered'
+                                AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)), 0) AS jobs_delivered,
                     COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
                               INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                               WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
-                                AND j.status IN ('failed', 'dead_letter')), 0) AS jobs_failed,
+                                AND j.status IN ('queued', 'retrying', 'processing')
+                                AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)), 0) AS jobs_queued,
+                    COALESCE((SELECT COUNT(*) FROM pacs_report_delivery_jobs j
+                              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+                              WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                                AND j.status IN ('failed', 'dead_letter')
+                                AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)), 0) AS jobs_failed,
                     (SELECT d.nome FROM pacs_report_delivery_jobs j
                        INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                        INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                      WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                       AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)
                      ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS destination_name,
                     (SELECT j.transport FROM pacs_report_delivery_jobs j
                        INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                      WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
+                       AND o.report_version = (SELECT MAX(o_latest.report_version) FROM pacs_report_delivery_outbox o_latest WHERE o_latest.report_id = r.id AND o_latest.tenant_id = r.tenant_id)
                      ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
