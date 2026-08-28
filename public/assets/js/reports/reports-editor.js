@@ -23,21 +23,35 @@ window.VoxelReports.editor = (function () {
     const A4_CSS_PX = 1122.52;
 
     function bindSpacingControls(config) {
-        const select = document.getElementById('editor-spacing-select');
-        if (!select || config.readonly) return;
+        const buttons = Array.from(document.querySelectorAll('[data-editor-spacing]'));
+        if (!buttons.length || config.readonly) return;
 
-        select.addEventListener('change', () => {
-            const value = SPACING_VALUES.has(select.value) ? select.value : 'normal';
-            const range = quill.getSelection(true);
-            if (!range) return;
-            quill.formatLine(range.index, Math.max(1, range.length), 'spacing', value, 'user');
+        const setActive = (value) => {
+            const normalized = SPACING_VALUES.has(value) ? value : 'normal';
+            buttons.forEach((button) => {
+                const active = button.dataset.editorSpacing === normalized;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        };
+
+        buttons.forEach((button) => {
+            button.addEventListener('mousedown', (event) => event.preventDefault());
+            button.addEventListener('click', () => {
+                const value = button.dataset.editorSpacing || 'normal';
+                const range = quill.getSelection(true);
+                if (!range || !SPACING_VALUES.has(value)) return;
+                quill.formatLine(range.index, Math.max(1, range.length), 'spacing', value, 'user');
+                setActive(value);
+            });
         });
 
         quill.on('selection-change', (range) => {
             if (!range) return;
             const format = quill.getFormat(range.index, 1);
-            select.value = SPACING_VALUES.has(format.spacing) ? format.spacing : 'normal';
+            setActive(format.spacing);
         });
+        setActive('normal');
     }
 
     function bindPageGuide(config) {

@@ -80,14 +80,12 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
                 <button class="ql-link" title="Inserir link HTTPS"></button>
                 <button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button>
             </span>
-            <span class="ql-formats reports-toolbar-group reports-toolbar-group--spacing">
+            <span class="ql-formats reports-toolbar-group reports-toolbar-group--spacing" role="group" aria-label="<?= htmlspecialchars(t('reports.editor.espacamento')) ?>">
                 <span class="reports-toolbar-caption"><?= htmlspecialchars(t('reports.editor.espacamento')) ?></span>
-                <select id="editor-spacing-select" class="reports-editor-spacing-select" title="<?= htmlspecialchars(t('reports.editor.espacamento')) ?>">
-                    <option value="compact"><?= htmlspecialchars(t('reports.editor.espacamento_compacto')) ?></option>
-                    <option value="normal" selected><?= htmlspecialchars(t('reports.editor.espacamento_normal')) ?></option>
-                    <option value="medium"><?= htmlspecialchars(t('reports.editor.espacamento_medio')) ?></option>
-                    <option value="wide"><?= htmlspecialchars(t('reports.editor.espacamento_amplo')) ?></option>
-                </select>
+                <button type="button" class="reports-editor-spacing-button" data-editor-spacing="compact" title="<?= htmlspecialchars(t('reports.editor.espacamento_compacto')) ?>"><?= htmlspecialchars(t('reports.editor.espacamento_compacto')) ?></button>
+                <button type="button" class="reports-editor-spacing-button is-active" data-editor-spacing="normal" title="<?= htmlspecialchars(t('reports.editor.espacamento_normal')) ?>"><?= htmlspecialchars(t('reports.editor.espacamento_normal')) ?></button>
+                <button type="button" class="reports-editor-spacing-button" data-editor-spacing="medium" title="<?= htmlspecialchars(t('reports.editor.espacamento_medio')) ?>"><?= htmlspecialchars(t('reports.editor.espacamento_medio')) ?></button>
+                <button type="button" class="reports-editor-spacing-button" data-editor-spacing="wide" title="<?= htmlspecialchars(t('reports.editor.espacamento_amplo')) ?>"><?= htmlspecialchars(t('reports.editor.espacamento_amplo')) ?></button>
                 <button type="button" class="ql-spacer" title="<?= htmlspecialchars(t('reports.editor.inserir_espaco')) ?>"><i class="fa fa-arrows-v"></i></button>
             </span>
             <span class="ql-formats reports-toolbar-group reports-toolbar-group--page">

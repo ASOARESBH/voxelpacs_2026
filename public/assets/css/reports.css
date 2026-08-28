@@ -1206,3 +1206,45 @@ body.reports-body {
     .reports-editor-toolbar--two-row .reports-toolbar-group + .reports-toolbar-group { border-left: 0; }
     .reports-toolbar-caption--size { margin-left: .25rem; }
 }
+
+/* Espaçamento clínico: ações explícitas, sem seletor nativo dependente do tema. */
+.reports-editor-toolbar--two-row .reports-editor-spacing-button {
+    width: auto !important;
+    min-width: 0;
+    height: 27px;
+    margin: 0 1px;
+    padding: 0 .38rem;
+    border: 1px solid var(--pacs-border, #1e3a5f);
+    border-radius: 4px;
+    color: var(--pacs-text-muted, #8fa3bf);
+    background: transparent;
+    font-size: .66rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.reports-editor-toolbar--two-row .reports-editor-spacing-button:hover,
+.reports-editor-toolbar--two-row .reports-editor-spacing-button:focus-visible {
+    border-color: rgba(79,195,247,.62);
+    color: var(--pacs-text, #e2e8f0);
+}
+.reports-editor-toolbar--two-row .reports-editor-spacing-button.is-active {
+    border-color: rgba(79,195,247,.72);
+    color: var(--pacs-primary, #4fc3f7);
+    background: rgba(79,195,247,.14);
+}
+.reports-editor-card--moderno .reports-editor-spacing-button {
+    border-color: #cbd5e1;
+    color: #64748b;
+    background: #fff;
+}
+.reports-editor-card--moderno .reports-editor-spacing-button:hover,
+.reports-editor-card--moderno .reports-editor-spacing-button:focus-visible {
+    border-color: #7fb7de;
+    color: #1e4d6b;
+    background: #f2f8fc;
+}
+.reports-editor-card--moderno .reports-editor-spacing-button.is-active {
+    border-color: #5b9ecb;
+    color: #0f5f91;
+    background: #e8f2fa;
+}
