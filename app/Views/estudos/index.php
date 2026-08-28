@@ -222,9 +222,6 @@ $periodoLabel = [
     <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
         <i class="fa fa-download"></i> Instalar App
     </a>
-    <button type="button" id="btn-voxel-desktop" class="wl-desktop-btn" title="Baixar o VOXEL Desktop — visualizador oficial VOXEL PACS">
-        <i class="fa fa-desktop"></i> <span id="vd-label">VOXEL Desktop</span>
-    </button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
@@ -2204,74 +2201,6 @@ function resetDownloadUI() {
     if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
 }
 
-// ── Botão VOXEL Desktop ─────────────────────────────────────────────────────
-(function () {
-    const btn   = document.getElementById('btn-voxel-desktop');
-    const label = document.getElementById('vd-label');
-    if (!btn) return;
-
-    // Detecta se o VOXEL Desktop está instalado tentando abrir o protocolo voxel://
-    // e verificando se a aba permanece visível (heurística padrão de mercado)
-    function detectarInstalado(cb) {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        let respondeu = false;
-        const t = setTimeout(function () {
-            if (!respondeu) cb(false);
-            document.body.removeChild(iframe);
-        }, 800);
-        try {
-            iframe.src = 'voxel://ping';
-            // Se o protocolo estiver registrado, o navegador não vai lançar erro
-            // Consideramos instalado após 300ms sem erro
-            setTimeout(function () {
-                respondeu = true;
-                clearTimeout(t);
-                cb(true);
-                document.body.removeChild(iframe);
-            }, 300);
-        } catch (e) {
-            respondeu = true;
-            clearTimeout(t);
-            cb(false);
-            document.body.removeChild(iframe);
-        }
-    }
-
-    // Verifica se já foi detectado nesta sessão (sessionStorage)
-    const cached = sessionStorage.getItem('voxel_desktop_instalado');
-    if (cached === '1') {
-        btn.classList.add('vd-instalado');
-        label.textContent = 'VOXEL Desktop Instalado';
-        btn.title = 'Abrir VOXEL Desktop';
-    } else if (cached !== '0') {
-        // Primeira visita: tenta detectar silenciosamente
-        detectarInstalado(function (instalado) {
-            sessionStorage.setItem('voxel_desktop_instalado', instalado ? '1' : '0');
-            if (instalado) {
-                btn.classList.add('vd-instalado');
-                label.textContent = 'VOXEL Desktop Instalado';
-                btn.title = 'Abrir VOXEL Desktop';
-            }
-        });
-    }
-
-    btn.addEventListener('click', function () {
-        const instalado = sessionStorage.getItem('voxel_desktop_instalado') === '1';
-        if (instalado) {
-            // Abre o VOXEL Desktop sem estudo específico
-            window.location.href = 'voxel://open';
-        } else {
-            // Detecta OS e faz download do instalador
-            const ua = navigator.userAgent || '';
-            let platform = 'windows';
-            if (/Mac/i.test(ua))   platform = 'mac';
-            if (/Linux/i.test(ua) && !/Android/i.test(ua)) platform = 'linux';
-            window.location.href = '/desktop/download?platform=' + platform;
-        }
-    });
-}());
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
 <script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-solicitante-caixa-alta-v1"></script>
