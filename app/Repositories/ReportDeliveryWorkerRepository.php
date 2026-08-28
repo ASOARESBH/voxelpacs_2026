@@ -44,8 +44,8 @@ class ReportDeliveryWorkerRepository
                         d.configuration_json, d.configuration_secret, d.timeout_seconds,
                         d.max_attempts
                  FROM pacs_report_delivery_jobs j
-                 INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
-                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
+                 INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                  WHERE j.status IN ('queued', 'retrying')
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
                    AND j.worker_eligible_at IS NOT NULL
@@ -123,8 +123,8 @@ class ReportDeliveryWorkerRepository
                         d.configuration_json, d.configuration_secret, d.timeout_seconds,
                         d.max_attempts
                  FROM pacs_report_delivery_jobs j
-                 INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
-                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
+                 INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                  WHERE j.id = :job_id
                    AND j.status IN ('queued', 'retrying')
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
@@ -334,8 +334,8 @@ class ReportDeliveryWorkerRepository
         $stmt = $this->pdo->prepare(
             "SELECT j.*, d.max_attempts
              FROM pacs_report_delivery_jobs j
-             INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
-             WHERE j.id = :id AND j.status = 'processing' AND j.locked_by = :worker_id
+             INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 WHERE j.id = :id AND j.status = 'processing' AND j.locked_by = :worker_id
              LIMIT 1 FOR UPDATE"
         );
         $stmt->execute([':id' => $jobId, ':worker_id' => $workerId]);
