@@ -50,7 +50,9 @@ require_root
 # A segurança operacional prevalece mesmo em caso de reboot durante a implantação.
 systemctl disable --now "$WORKER_UNIT"
 
-install -d -m 0750 "$BACKUP_ROOT/files" "$STAGE"
+install -d -m 0750 "$BACKUP_ROOT/files"
+# O release contém apenas código versionado; o PostgreSQL precisa atravessar o diretório para ler a migration.
+install -d -m 0755 "$STAGE"
 install -d -o postgres -g postgres -m 0700 "$BACKUP_ROOT/database"
 
 # A soma é verificada antes de extrair e nenhum git é executado no runtime.
