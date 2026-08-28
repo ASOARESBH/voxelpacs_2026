@@ -61,6 +61,9 @@ install -d -o postgres -g postgres -m 0700 "$BACKUP_ROOT/database"
   sha256sum -c "$RELEASE_SHA"
 )
 tar -xzf "$RELEASE_TAR" -C "$STAGE"
+# O release é sanitizado; torne explícito o acesso do usuário PostgreSQL somente ao caminho da migration.
+chmod 0755 "$STAGE" "$STAGE/database" "$STAGE/database/migrations"
+chmod 0644 "$STAGE/database/migrations/2026-08-28_report_delivery_destination_server_binding_postgresql.sql"
 
 for relative_path in "${required_files[@]}"; do
   [ -f "$STAGE/$relative_path" ] || { echo "Release incompleto: $relative_path" >&2; exit 1; }
