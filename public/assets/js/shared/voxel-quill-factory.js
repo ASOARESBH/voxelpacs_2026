@@ -13,17 +13,26 @@ window.VoxelQuill.factory = (function () {
     }
 
     const SPACING_VALUES = ['compact', 'normal', 'medium', 'wide'];
-    let spacingRegistered = false;
+    const CLINICAL_FONTS = ['arial', 'verdana', 'times-new-roman'];
+    const CLINICAL_SIZES = ['small', 'large', 'huge'];
+    let formatsRegistered = false;
 
-    function registerClinicalSpacingFormat() {
-        if (spacingRegistered) return;
+    function registerClinicalFormats() {
+        if (formatsRegistered) return;
         const Parchment = Quill.import('parchment');
         const ClinicalSpacing = new Parchment.Attributor.Class('spacing', 'ql-spacing', {
             scope: Parchment.Scope.BLOCK,
             whitelist: SPACING_VALUES,
         });
+        const Font = Quill.import('formats/font');
+        Font.whitelist = CLINICAL_FONTS;
+        const Size = Quill.import('attributors/class/size');
+        Size.whitelist = CLINICAL_SIZES;
+
         Quill.register(ClinicalSpacing, true);
-        spacingRegistered = true;
+        Quill.register(Font, true);
+        Quill.register(Size, true);
+        formatsRegistered = true;
     }
 
     function insertBasicTable(quill) {
@@ -79,7 +88,7 @@ window.VoxelQuill.factory = (function () {
         const container = resolveElement(target);
         if (!container) throw new Error('Container do editor não encontrado.');
 
-        registerClinicalSpacingFormat();
+        registerClinicalFormats();
         const readonly = !!options.readOnly;
         const toolbar = options.toolbar || options.toolbarSelector || false;
         let quill = null;

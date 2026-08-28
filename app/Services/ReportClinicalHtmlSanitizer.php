@@ -55,6 +55,20 @@ final class ReportClinicalHtmlSanitizer
         'ql-spacing-wide' => true,
     ];
 
+    /** @var array<string, true> */
+    private const ALLOWED_FONT_CLASSES = [
+        'ql-font-arial' => true,
+        'ql-font-verdana' => true,
+        'ql-font-times-new-roman' => true,
+    ];
+
+    /** @var array<string, true> */
+    private const ALLOWED_SIZE_CLASSES = [
+        'ql-size-small' => true,
+        'ql-size-large' => true,
+        'ql-size-huge' => true,
+    ];
+
     public static function sanitize(string $html): string
     {
         $html = trim($html);
@@ -164,7 +178,7 @@ final class ReportClinicalHtmlSanitizer
     {
         $classes = [];
         foreach (preg_split('/\s+/', trim($classList)) ?: [] as $class) {
-            if (isset(self::ALLOWED_ALIGN_CLASSES[$class]) || isset(self::ALLOWED_SPACING_CLASSES[$class])) {
+            if (isset(self::ALLOWED_ALIGN_CLASSES[$class]) || isset(self::ALLOWED_SPACING_CLASSES[$class]) || isset(self::ALLOWED_FONT_CLASSES[$class]) || isset(self::ALLOWED_SIZE_CLASSES[$class])) {
                 $classes[$class] = true;
             }
         }

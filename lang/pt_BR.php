@@ -899,7 +899,7 @@ return [
     'reports.assinatura.fluxo_modal' => 'Somente Assinar registra a assinatura clínica e mantém o laudo assinado, porém ainda não liberado. Assinar e Fechar registra a assinatura e libera o laudo para os fluxos autorizados. Após assinado, o documento permanece somente para leitura.',
     'reports.status.assinado_pendente_liberacao' => 'Este laudo foi assinado e permanece somente para leitura. Ele ainda não foi liberado; use Liberar quando a revisão estiver concluída.',
     'reports.status.liberado_somente_leitura' => 'Este laudo foi liberado e está em modo somente leitura.',
-    'reports.editor.espacamento' => 'Espaçamento', 'reports.editor.espacamento_compacto' => 'Compacto', 'reports.editor.espacamento_normal' => 'Normal', 'reports.editor.espacamento_medio' => 'Médio', 'reports.editor.espacamento_amplo' => 'Amplo',
+    'reports.editor.fonte' => 'Fonte', 'reports.editor.tamanho_fonte' => 'Tamanho', 'reports.editor.espacamento' => 'Espaçamento', 'reports.editor.espacamento_compacto' => 'Compacto', 'reports.editor.espacamento_normal' => 'Normal', 'reports.editor.espacamento_medio' => 'Médio', 'reports.editor.espacamento_amplo' => 'Amplo',
     'reports.editor.inserir_espaco' => 'Inserir espaço entre parágrafos', 'reports.editor.guia_pagina' => 'Mostrar divisão de página', 'reports.editor.guia_pagina_label' => 'Próxima página',
     'delivery_hub.released.titulo' => 'Laudos liberados e entregas',
     'delivery_hub.released.ajuda_status' => 'Entregue quando todos os destinos concluírem; na fila enquanto houver processamento pendente.',

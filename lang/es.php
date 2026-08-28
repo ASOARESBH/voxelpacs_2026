@@ -875,7 +875,7 @@ return [
     'reports.assinatura.fluxo_modal' => 'Solo Firmar registra la firma clínica y mantiene el informe firmado, pero aún no liberado. Firmar y Cerrar registra la firma y libera el informe para los flujos autorizados. Una vez firmado, el documento permanece en modo de solo lectura.',
     'reports.status.assinado_pendente_liberacao' => 'Este informe fue firmado y permanece en modo de solo lectura. Aún no ha sido liberado; use Liberar cuando la revisión esté completa.',
     'reports.status.liberado_somente_leitura' => 'Este informe fue liberado y está en modo de solo lectura.',
-    'reports.editor.espacamento' => 'Espaciado', 'reports.editor.espacamento_compacto' => 'Compacto', 'reports.editor.espacamento_normal' => 'Normal', 'reports.editor.espacamento_medio' => 'Medio', 'reports.editor.espacamento_amplo' => 'Amplio',
+    'reports.editor.fonte' => 'Fuente', 'reports.editor.tamanho_fonte' => 'Tamaño', 'reports.editor.espacamento' => 'Espaciado', 'reports.editor.espacamento_compacto' => 'Compacto', 'reports.editor.espacamento_normal' => 'Normal', 'reports.editor.espacamento_medio' => 'Medio', 'reports.editor.espacamento_amplo' => 'Amplio',
     'reports.editor.inserir_espaco' => 'Insertar espacio entre párrafos', 'reports.editor.guia_pagina' => 'Mostrar salto de página', 'reports.editor.guia_pagina_label' => 'Página siguiente',
     'delivery_hub.released.titulo' => 'Informes liberados y entregas',
     'delivery_hub.released.ajuda_status' => 'Entregado cuando todos los destinos concluyen; en cola mientras quede procesamiento pendiente.',
