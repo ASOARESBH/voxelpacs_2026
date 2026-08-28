@@ -485,7 +485,7 @@ class ReportService {
             if ($modo === 'fechar') {
                 // Congela o mesmo PDF clínico do viewer antes de qualquer outbox/job.
                 // A falha aborta a liberação para nunca haver entrega sem artefato imutável.
-                (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
+                $snapshot = (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
                     (int) $tenantId,
                     $reportId,
                     $versaoNumero,
@@ -501,6 +501,16 @@ class ReportService {
                     (int) $userId,
                     $assinadoEm,
                     $hash
+                );
+                // Trilha interna adicional. Não muda o contrato da outbox ou do worker.
+                (new ReportPdfRevisionLedgerService($pdo))->recordReleasedVersion(
+                    (int) $tenantId,
+                    $estudoId,
+                    $reportId,
+                    $versaoNumero,
+                    $snapshot,
+                    $peerReviewAberto,
+                    $assinadoEm
                 );
             }
 
@@ -537,6 +547,13 @@ class ReportService {
             AuditLogger::log('report.liberar', 'reports', $reportId, [
                 'origem' => 'assinar_e_fechar',
                 'hash' => $hash,
+            ]);
+            AuditLogger::log('report.pdf_historico_registrado', 'reports', $reportId, [
+                'tenant_id' => (int) $tenantId,
+                'estudo_id' => $estudoId,
+                'report_version' => $versaoNumero,
+                'revision_kind' => $peerReviewAberto ? 'revision' : 'original',
+                'revision_number' => $peerReviewAberto ? (int) ($peerReviewAberto->ciclo ?? 0) : 0,
             ]);
         }
 
@@ -640,7 +657,7 @@ class ReportService {
             $versaoNumero = $this->repo->proximaVersao($reportId);
             $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero);
             // Preserva o PDF clínico no instante da liberação; o worker apenas o consome.
-            (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
+            $snapshot = (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
                 $tenantId,
                 $reportId,
                 $versaoNumero,
@@ -657,6 +674,16 @@ class ReportService {
                 $liberadoEm,
                 $hash
             );
+            // Uma liberação sem Peer Review mantém o rótulo interno ORIGINAL.
+            (new ReportPdfRevisionLedgerService($pdo))->recordReleasedVersion(
+                $tenantId,
+                $estudoId,
+                $reportId,
+                $versaoNumero,
+                $snapshot,
+                null,
+                $liberadoEm
+            );
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -672,6 +699,13 @@ class ReportService {
         AuditLogger::log('report.liberar', 'reports', $reportId, [
             'origem' => 'liberacao_posterior',
             'hash' => $hash,
+        ]);
+        AuditLogger::log('report.pdf_historico_registrado', 'reports', $reportId, [
+            'tenant_id' => $tenantId,
+            'estudo_id' => $estudoId,
+            'report_version' => $versaoNumero,
+            'revision_kind' => 'original',
+            'revision_number' => 0,
         ]);
 
         $medico = ['nome' => Auth::user()?->nome ?? Auth::user()?->name ?? '', 'crm' => (string) ($report->assinatura_crm ?? '')];

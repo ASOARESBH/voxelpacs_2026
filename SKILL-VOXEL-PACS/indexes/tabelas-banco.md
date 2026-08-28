@@ -38,3 +38,6 @@ Ao mapear tabelas que armazenam dados DICOM (Study/Series/Instance) ou dados de 
 - Quais colunas correspondem a tags DICOM (ex: `StudyInstanceUID`, `AccessionNumber`) — mudanças aqui têm alto risco de quebrar interoperabilidade.
 - Se há sincronização com o Orthanc (a tabela é espelho de metadados do Orthanc, ou é fonte de verdade própria?).
 - Regras de retenção/privacidade aplicáveis, se conhecidas.
+
+| `report_pdf_snapshots` | Snapshot binário imutável de cada laudo liberado; o arquivo permanece em storage privado e o banco guarda vínculo, SHA-256 e tamanho | `App\Services\ReportPdfSnapshotService` | Chave lógica `(tenant_id, report_id, report_version)` consumida pela outbox/worker; não armazena BLOB | 2026-08-28 |
+| `report_pdf_revision_ledger` | Trilha interna longitudinal de PDFs liberados e revisões por estudo, sem binário, conteúdo clínico, UID ou caminho público | `App\Services\ReportPdfRevisionLedgerService` | Referência obrigatória a `report_pdf_snapshots`; `revision_number=0` é ORIGINAL, valores positivos correspondem ao ciclo de Peer Review | 2026-08-28 |

@@ -18,13 +18,17 @@ window.VoxelReports.history = (function () {
             return;
         }
 
-        el.innerHTML = versions.map((v) => `
-            <div class="history-item" data-version-id="${v.id}">
-                <div><strong>v${v.versao_numero}</strong> — ${ACAO_LABEL[v.acao] || v.acao}</div>
-                <div class="text-pacs-muted" style="font-size:.7rem;">${v.user_nome || '—'} em ${v.criado_em}</div>
-                ${!config.readonly ? '<button type="button" class="btn-pacs-outline btn-restaurar" style="margin-top:.4rem;font-size:.7rem;"><i class="fa fa-clock-rotate-left"></i> Restaurar esta versão</button>' : ''}
-            </div>
-        `).join('');
+        el.innerHTML = versions.map((v) => {
+            const revisionLabel = v.pdf_revision_label ? ` — ${v.pdf_revision_label}` : '';
+            const revisionDate = v.pdf_revision_em || v.criado_em;
+            return `
+                <div class="history-item" data-version-id="${v.id}">
+                    <div><strong>v${v.versao_numero}</strong> — ${ACAO_LABEL[v.acao] || v.acao}${revisionLabel}</div>
+                    <div class="text-pacs-muted" style="font-size:.7rem;">${v.user_nome || '—'} em ${revisionDate}</div>
+                    ${!config.readonly ? '<button type="button" class="btn-pacs-outline btn-restaurar" style="margin-top:.4rem;font-size:.7rem;"><i class="fa fa-clock-rotate-left"></i> Restaurar esta versão</button>' : ''}
+                </div>
+            `;
+        }).join('');
 
         if (config.readonly) return;
 

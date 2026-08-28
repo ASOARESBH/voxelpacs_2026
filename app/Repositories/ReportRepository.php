@@ -415,25 +415,45 @@ class ReportRepository {
     public function listVersions(int $reportId): array {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome
+                SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome,
+                       CASE
+                           WHEN ledger.revision_kind = 'revision' THEN 'REV ' || ledger.revision_number::text
+                           WHEN ledger.revision_kind = 'original' THEN 'ORIGINAL'
+                           ELSE NULL
+                       END AS pdf_revision_label,
+                       ledger.released_at AS pdf_revision_em
                 FROM report_versions rv
                 LEFT JOIN bi_users u ON u.id = rv.usuario_id
+                LEFT JOIN report_pdf_revision_ledger ledger
+                  ON ledger.report_id = rv.report_id AND ledger.report_version = rv.versao
                 WHERE rv.report_id = :report_id
                 ORDER BY rv.versao DESC
             ");
             $stmt->execute(['report_id' => $reportId]);
             return $stmt->fetchAll();
         } catch (\PDOException $e) {
-            $stmt = $this->pdo->prepare("
-                SELECT rv.id, rv.versao_numero, rv.acao, rv.criado_em,
-                       COALESCE(u.name, '') AS user_nome
-                FROM report_versions rv
-                LEFT JOIN bi_users u ON u.id = rv.user_id
-                WHERE rv.report_id = :report_id
-                ORDER BY rv.versao_numero DESC
-            ");
-            $stmt->execute(['report_id' => $reportId]);
-            return $stmt->fetchAll();
+            try {
+                $stmt = $this->pdo->prepare("
+                    SELECT rv.id, rv.versao AS versao_numero, rv.acao, rv.created_at AS criado_em, u.name AS user_nome
+                    FROM report_versions rv
+                    LEFT JOIN bi_users u ON u.id = rv.usuario_id
+                    WHERE rv.report_id = :report_id
+                    ORDER BY rv.versao DESC
+                ");
+                $stmt->execute(['report_id' => $reportId]);
+                return $stmt->fetchAll();
+            } catch (\PDOException) {
+                $stmt = $this->pdo->prepare("
+                    SELECT rv.id, rv.versao_numero, rv.acao, rv.criado_em,
+                           COALESCE(u.name, '') AS user_nome
+                    FROM report_versions rv
+                    LEFT JOIN bi_users u ON u.id = rv.user_id
+                    WHERE rv.report_id = :report_id
+                    ORDER BY rv.versao_numero DESC
+                ");
+                $stmt->execute(['report_id' => $reportId]);
+                return $stmt->fetchAll();
+            }
         }
     }
 

@@ -53,6 +53,8 @@ A devolutiva DICOM não pode reconstruir um PDF simplificado a partir de `report
 
 O contexto binário incorpora logo e assinatura visual congelada como dados locais e não depende de URL autenticada ou de conexão HTTP. A migration obrigatória é `database/migrations/2026-08-28_report_pdf_snapshots_postgresql.sql`; aplique-a antes do código que chama `ReportPdfSnapshotService`.
 
+A trilha complementar `report_pdf_revision_ledger` registra a cadeia interna por `(tenant_id, estudo_id, report_id, report_version)`. Uma primeira liberação recebe o rótulo **ORIGINAL**; uma liberação após Peer Review recebe **REV n**, em que `n` é o ciclo já existente de peer review. O rótulo e a data são exibidos somente no Histórico do Laudário; não são inseridos no PDF clínico nem mudam a outbox/worker. A migration obrigatória é `database/migrations/2026-08-28_report_pdf_revision_ledger_postgresql.sql`.
+
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 
 A coluna esquerda de `app/Views/reports/show.php` é uma sequência clínica única, em largura integral: **Paciente → Exame → Medidas disponíveis do viewer → Chat do laudo → Peer Review (condicional) → Histórico do Paciente → ações DICOM/Timeline/Comparativos**. O card de Equipamento não existe no checkout atual e não deve ser recriado sem requisito clínico específico.

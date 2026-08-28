@@ -6,7 +6,7 @@
 
 | Evento | Disparado por | Listeners conhecidos | Efeito colateral | Última verificação |
 |---|---|---|---|---|
-| `report.released` | `ReportService::assinar()` em `fechar` ou `ReportService::liberarAssinado()` | `ReportPdfSnapshotService`, `ReportDeliveryOutboxService`, notificações pós-commit e webhook Copilot | Cria snapshot PDF imutável e outbox por tenant; falha antes do commit impede liberação parcial. | 2026-08-28 |
+| `report.released` | `ReportService::assinar()` em `fechar` ou `ReportService::liberarAssinado()` | `ReportPdfSnapshotService`, `ReportDeliveryOutboxService`, `ReportPdfRevisionLedgerService`, notificações pós-commit e webhook Copilot | Cria snapshot PDF imutável, outbox por tenant e ledger interno ORIGINAL/REV; falha antes do commit impede liberação parcial. O ledger não possui consumer externo. | 2026-08-28 |
 
 ## Filas
 
