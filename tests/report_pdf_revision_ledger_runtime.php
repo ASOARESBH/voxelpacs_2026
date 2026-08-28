@@ -64,6 +64,11 @@ try {
     );
     $rows->execute([':tenant_id' => $tenantId, ':report_id' => $reportId]);
     $actual = $rows->fetchAll(PDO::FETCH_ASSOC);
+    $actual = array_map(static fn (array $row): array => [
+        'revision_kind' => (string) $row['revision_kind'],
+        'revision_number' => (int) $row['revision_number'],
+        'peer_review_cycle' => $row['peer_review_cycle'] === null ? null : (int) $row['peer_review_cycle'],
+    ], $actual);
     $expected = [
         ['revision_kind' => 'original', 'revision_number' => 0, 'peer_review_cycle' => null],
         ['revision_kind' => 'revision', 'revision_number' => 1, 'peer_review_cycle' => 1],
