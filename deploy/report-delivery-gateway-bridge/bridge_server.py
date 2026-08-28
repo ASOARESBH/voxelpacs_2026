@@ -75,7 +75,11 @@ class Policy:
 
     def accepts_job(self, job_id: int, tenant_id: int, destination_id: int) -> bool:
         if self.mode == "controlled_job":
-            return job_id == self.job_id
+            return (
+                job_id == self.job_id
+                and (self.tenant_id <= 0 or tenant_id == self.tenant_id)
+                and (self.destination_id <= 0 or destination_id == self.destination_id)
+            )
         return job_id > 0 and tenant_id == self.tenant_id and destination_id == self.destination_id
 
 
