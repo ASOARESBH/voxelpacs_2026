@@ -230,12 +230,12 @@ class Handler(BaseHTTPRequestHandler):
             write_state(job_id_int, {"state": "attempted", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
             success, outcome = invoke_dicom_scu(artifact)
             if not success:
-                LOG.warning("event=delivery_failed job_id=%s sha256_16=%s stage=%s", POLICY.job_id, actual_hash[:16], outcome)
+                LOG.warning("event=delivery_failed job_id=%s sha256_16=%s stage=%s", job_id_int, actual_hash[:16], outcome)
                 self.respond(HTTPStatus.BAD_GATEWAY, {"error": outcome})
                 return
             write_state(job_id_int, {"state": "delivered", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
             reference = f"gateway-cstore:{actual_hash[:16]}"
-            LOG.info("event=delivery_completed job_id=%s sha256_16=%s", POLICY.job_id, actual_hash[:16])
+            LOG.info("event=delivery_completed job_id=%s sha256_16=%s", job_id_int, actual_hash[:16])
             self.respond(HTTPStatus.CREATED, {"reference": reference})
         finally:
             try:
