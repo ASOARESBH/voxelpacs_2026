@@ -30,13 +30,11 @@ $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
 $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
 ?>
 <div class="pacs-card reports-editor-card<?= $modernoLateral ? ' reports-editor-card--moderno' : '' ?>">
-    <div id="editor-toolbar" class="reports-editor-toolbar">
-        <span class="ql-formats">
+    <div id="editor-toolbar" class="reports-editor-toolbar" role="toolbar">
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--text">
             <button class="ql-bold" title="Negrito"></button>
             <button class="ql-italic" title="Itálico"></button>
             <button class="ql-underline" title="Sublinhado"></button>
-        </span>
-        <span class="ql-formats">
             <select class="ql-header" title="Cabeçalho">
                 <option value="1"></option>
                 <option value="2"></option>
@@ -44,24 +42,22 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
                 <option selected></option>
             </select>
         </span>
-        <span class="ql-formats">
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--paragraph">
             <button class="ql-list" value="ordered" title="Numeração"></button>
             <button class="ql-list" value="bullet" title="Marcadores"></button>
-        </span>
-        <span class="ql-formats">
             <select class="ql-align" title="Alinhamento">
                 <option selected></option>
                 <option value="center"></option>
                 <option value="right"></option>
                 <option value="justify"></option>
             </select>
-            <button class="ql-link" title="Inserir link HTTPS"></button>
         </span>
-        <span class="ql-formats">
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--insert">
+            <button class="ql-link" title="Inserir link HTTPS"></button>
             <button class="ql-table" title="Inserir tabela"><i class="fa fa-table"></i></button>
         </span>
-        <span class="ql-formats reports-editor-spacing-controls">
-            <label class="reports-editor-spacing-label" for="editor-spacing-select"><?= htmlspecialchars(t('reports.editor.espacamento')) ?></label>
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--spacing">
+            <label class="visually-hidden" for="editor-spacing-select"><?= htmlspecialchars(t('reports.editor.espacamento')) ?></label>
             <select id="editor-spacing-select" class="reports-editor-spacing-select" title="<?= htmlspecialchars(t('reports.editor.espacamento')) ?>">
                 <option value="compact"><?= htmlspecialchars(t('reports.editor.espacamento_compacto')) ?></option>
                 <option value="normal" selected><?= htmlspecialchars(t('reports.editor.espacamento_normal')) ?></option>
@@ -70,17 +66,16 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
             </select>
             <button type="button" class="ql-spacer" title="<?= htmlspecialchars(t('reports.editor.inserir_espaco')) ?>"><i class="fa fa-arrows-v"></i></button>
         </span>
-        <span class="ql-formats reports-editor-page-guide-control">
-            <label for="editor-page-guide" title="<?= htmlspecialchars(t('reports.editor.guia_pagina')) ?>">
-                <input id="editor-page-guide" type="checkbox" autocomplete="off">
-                <span><?= htmlspecialchars(t('reports.editor.guia_pagina')) ?></span>
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--page">
+            <label class="reports-editor-page-guide-control" for="editor-page-guide" title="<?= htmlspecialchars(t('reports.editor.guia_pagina')) ?>">
+                <input id="editor-page-guide" type="checkbox" autocomplete="off" aria-label="<?= htmlspecialchars(t('reports.editor.guia_pagina')) ?>">
+                <i class="fa fa-file-text-o" aria-hidden="true"></i>
+                <span class="visually-hidden"><?= htmlspecialchars(t('reports.editor.guia_pagina')) ?></span>
             </label>
         </span>
-        <span class="ql-formats">
+        <span class="ql-formats reports-toolbar-group reports-toolbar-group--history">
             <button class="ql-undo" title="Desfazer"><i class="fa fa-rotate-left"></i></button>
             <button class="ql-redo" title="Refazer"><i class="fa fa-rotate-right"></i></button>
-        </span>
-        <span class="ql-formats">
             <button class="ql-clean" title="Limpar formatação"></button>
         </span>
     </div>
