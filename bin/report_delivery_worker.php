@@ -122,6 +122,10 @@ final class LocalDicomDeliveryWorker
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact @return array{reference:string,sha256:string,size:int} */
     private function sendDicomPdf(array $job, array $configuration, array $payload, array $artifact): array
     {
+        $jobId = (int) ($job['id'] ?? 0);
+        if ($jobId <= 0) {
+            throw new DeliveryWorkerFailure('invalid_job');
+        }
         if (!empty($configuration['use_tls'])) {
             throw new DeliveryWorkerFailure('tls_profile_required');
         }
