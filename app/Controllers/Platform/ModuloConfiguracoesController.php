@@ -11,6 +11,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\SqlHelper;
 use App\Core\SystemConfig;
+use App\Services\WorklistPreferenceService;
 
 /** Controle global da aplicação, disponível exclusivamente ao superadmin. */
 final class ModuloConfiguracoesController extends Controller
@@ -26,12 +27,14 @@ final class ModuloConfiguracoesController extends Controller
         }
 
         $refresh = $this->refreshConfig();
+        $worklistDefaults = (new WorklistPreferenceService())->globalDefaults(true);
         $this->view('platform/configuracao_modulos/index', [
             'modules' => ModuleCatalog::all(),
             'states' => ModuleAccess::states(),
             'refresh' => $refresh,
             'refreshMin' => self::REFRESH_MIN_SECONDS,
             'refreshMax' => self::REFRESH_MAX_SECONDS,
+            'worklistDefaults' => $worklistDefaults,
             'csrfToken' => $this->csrfToken(),
         ], 'platform');
     }
@@ -71,6 +74,8 @@ final class ModuloConfiguracoesController extends Controller
         }
 
         $before = $this->refreshConfig();
+        $preferenceService = new WorklistPreferenceService();
+        $worklistBefore = $preferenceService->globalDefaults(true);
         $after = [
             'ativo' => isset($_POST['estudos_auto_refresh_ativo']),
             'segundos' => $this->normalizeSeconds($_POST['estudos_auto_refresh_segundos'] ?? self::REFRESH_DEFAULT_SECONDS),
@@ -78,9 +83,11 @@ final class ModuloConfiguracoesController extends Controller
         SystemConfig::setMany([
             'estudos_auto_refresh_ativo' => $after['ativo'] ? '1' : '0',
             'estudos_auto_refresh_segundos' => (string) $after['segundos'],
-        ], Auth::userId());
+        ] + $preferenceService->globalValues((array) ($_POST['worklist'] ?? [])), Auth::userId());
         AuditLogger::logChange('plataforma.estudos_refresh_alterado', 'configuracao_global', null,
             $before, $after, null, 'sistema');
+        AuditLogger::logChange('plataforma.estudos_ordenacao_alterada', 'configuracao_global', null,
+            $worklistBefore, $preferenceService->globalDefaults(true), null, 'sistema');
 
         $_SESSION['success'] = t('config_modulos.salvo');
         $this->redirect('/platform/configuracao-modulos');

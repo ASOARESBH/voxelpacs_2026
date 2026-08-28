@@ -11,6 +11,7 @@ use App\Services\DesktopStudyLaunchService;
 use App\Services\InstitutionResolverService;
 use App\Services\GrupoModalidadeService;
 use App\Services\PedidoMedicoService;
+use App\Services\WorklistPreferenceService;
 
 /**
  * VOXEL PACS — EstudosController
@@ -335,6 +336,15 @@ class EstudosController extends Controller
         $whereStr = implode(' AND ', $where);
         $orderCol = 'e.' . $filtros['ordenar'];
         $orderDir = $filtros['direcao'];
+        $worklistPreference = (new WorklistPreferenceService())->resolveForUser(
+            $usuarioLogadoId,
+            $tenantId,
+            Auth::perfilAtual() === 'medico'
+        );
+        $hasExplicitOrder = isset($_GET['ordenar']) || isset($_GET['direcao']);
+        $orderSql = $hasExplicitOrder || $modoGestao
+            ? "{$orderCol} {$orderDir}, e.study_time {$orderDir}"
+            : (new WorklistPreferenceService())->orderBySql($worklistPreference, Auth::perfilAtual() === 'medico');
 
         // ── COUNT ─────────────────────────────────────────────────────────────────────────
         $total       = 0;
@@ -483,7 +493,7 @@ class EstudosController extends Controller
                 {$chatJoinSql}
                 {$downloadAvailabilityJoinSql}
                 WHERE {$whereStr}
-                ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
+                ORDER BY {$orderSql}
                 {$limitClause}
             ";
             $stmt = $pdo->prepare($sql);
@@ -708,7 +718,7 @@ class EstudosController extends Controller
             'unidades','medicos','contadores','resumo',
             'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
             'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
-            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh'
+            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh','worklistPreference'
         );
 
         if ($partial) {

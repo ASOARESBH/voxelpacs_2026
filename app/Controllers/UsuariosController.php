@@ -9,6 +9,7 @@ use App\Core\Mailer;
 use App\Core\SqlHelper;
 use App\Core\TenantContext;
 use App\Core\Audit\AuditLogger;
+use App\Services\WorklistPreferenceService;
 
 /**
  * UsuariosController — Módulo de Usuários do Negócio (tenant)
@@ -135,6 +136,7 @@ class UsuariosController extends Controller
             'usuario'      => null,
             'modulosAtivos'=> [],
             'relatorioModulos' => [],
+            'worklistPreference' => array_merge((new WorklistPreferenceService())->globalDefaults(false), ['enabled' => false, 'source' => 'global']),
             'medicos'      => $medicos,
             'modulos'      => self::MODULOS,
             'modPadrao'    => self::MODULOS_PADRAO,
@@ -272,11 +274,20 @@ class UsuariosController extends Controller
             );
             $stmtMed->execute([$tenantId, $id]);
             $medicos = $stmtMed->fetchAll(\PDO::FETCH_ASSOC);
+            $worklistPreference = (new WorklistPreferenceService())->resolveForUser(
+                $id,
+                (int) $tenantId,
+                ($usuario['perfil'] ?? '') === 'medico'
+            );
+            if (($worklistPreference['source'] ?? '') !== 'usuario') {
+                $worklistPreference['enabled'] = false;
+            }
 
             $this->view('usuarios/form', [
                 'usuario'      => $usuario,
                 'modulosAtivos'=> $modulosAtivos,
                 'relatorioModulos' => $relatorioModulos,
+                'worklistPreference' => $worklistPreference,
                 'medicos'      => $medicos,
                 'modulos'      => self::MODULOS,
                 'modPadrao'    => self::MODULOS_PADRAO,
@@ -326,6 +337,20 @@ class UsuariosController extends Controller
 
             $this->salvarPermissoes($pdo, $id, $tenantId, $modulos);
             $this->salvarPermissoesRelatorios($pdo, $id, $tenantId, $relatorioModulos, in_array('relatorios', $modulos, true));
+            $worklistPreference = (new WorklistPreferenceService())->saveForUser(
+                $id,
+                (int) $tenantId,
+                (array) ($_POST['worklist_preferences'] ?? []),
+                $perfil === 'medico',
+                Auth::userId()
+            );
+            AuditLogger::log(
+                'usuario.worklist_preferencia_atualizada',
+                'bi_user_worklist_preferences',
+                $id,
+                ['tenant_id' => (int) $tenantId, 'source' => $worklistPreference['source']],
+                (int) $tenantId
+            );
 
             // Remove vínculo anterior com outro médico
             $pdo->prepare(
