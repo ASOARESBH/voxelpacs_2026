@@ -401,6 +401,58 @@ class DownloadLoteController extends Controller
         }
     }
 
+    /**
+     * Download rápido: transmite o ZIP criado pelo Orthanc diretamente ao
+     * navegador. O job continua vinculado ao tenant, usuário e servidor de
+     * origem; nenhum URL ou credencial Orthanc é revelado ao cliente.
+     */
+    public function baixarRapido(): void
+    {
+        $jobId = trim($_GET['job_id'] ?? '');
+        try {
+            $userId = Auth::userId();
+            $tenantId = TenantContext::id();
+            if (!$userId || !$tenantId) {
+                http_response_code(401);
+                echo 'Não autenticado.';
+                return;
+            }
+            if ($jobId === '' || !preg_match('/^[a-f0-9\-]{8,64}$/i', $jobId)) {
+                http_response_code(400);
+                echo 'Job ID inválido.';
+                return;
+            }
+            $pdo = Database::getInstance();
+            $orthanc = $this->getOrthancServiceForJob($tenantId, $userId, $jobId, $pdo);
+            if (!$orthanc) {
+                http_response_code(403);
+                echo 'Acesso negado.';
+                return;
+            }
+            $job = $orthanc->getJob($jobId);
+            if (!$job['success'] || (($job['data']['State'] ?? '') !== 'Success')) {
+                http_response_code(409);
+                echo 'O arquivo ainda não está pronto. Aguarde o processamento.';
+                return;
+            }
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="voxelpacs_dicom_' . date('Ymd_Hi') . '.zip"');
+            header('Cache-Control: no-store');
+            header('X-Accel-Buffering: no');
+            $orthanc->streamJobArchive($jobId, function (string $chunk): void {
+                echo $chunk;
+                if (ob_get_level()) { ob_flush(); }
+                flush();
+            });
+        } catch (\Throwable $e) {
+            Logger::error('[DownloadLote::baixarRapido] Falha de streaming', ['error_type' => get_class($e)]);
+            if (!headers_sent()) {
+                http_response_code(500);
+                echo 'Não foi possível iniciar o download rápido.';
+            }
+        }
+    }
+
     private function saveDownloadAvailability(\PDO $pdo, int $studyId, int $tenantId, int $serverId, string $status, ?string $errorCode): void
     {
         try {

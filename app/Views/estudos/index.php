@@ -784,11 +784,14 @@ $periodoLabel = [
 <div id="wl-sel-bar" class="wl-sel-bar" style="display:none;">
     <div class="wl-sel-bar-inner">
         <span id="wl-sel-count" class="wl-sel-count">0 selecionados</span>
-        <button type="button" id="btn-download-lote" class="wl-btn-download" onclick="iniciarDownloadLote()">
-            <i class="fa fa-download"></i> Download DICOM
+        <button type="button" id="btn-download-lote" class="wl-btn-download" onclick="iniciarDownloadLote('rapido')" title="Inicia o ZIP assim que o Orthanc concluir o archive">
+            <i class="fa fa-bolt"></i> Download rápido DICOM
+        </button>
+        <button type="button" id="btn-download-inteligente" class="wl-btn-download" onclick="iniciarDownloadLote('inteligente')" title="Inclui launcher e instruções no ZIP">
+            <i class="fa fa-box-archive"></i> Download inteligente
         </button>
         <label class="wl-chk-agrupar" title="<?= htmlspecialchars(t('download_lote.agrupar_tooltip')) ?>">
-            <input type="checkbox" id="chk-agrupar-zip">
+            <input type="checkbox" id="chk-agrupar-zip" checked>
             <?= htmlspecialchars(t('download_lote.agrupar_label')) ?>
         </label>
         <button type="button" class="wl-btn-limpar-sel" onclick="limparSelecao()">
@@ -2019,7 +2022,7 @@ function coletarNomesPorId(ids) {
     });
     return nomes;
 }
-function iniciarDownloadLote() {
+function iniciarDownloadLote(modo = 'rapido') {
     const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
     if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
     if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
@@ -2028,21 +2031,23 @@ function iniciarDownloadLote() {
     // 1 único estudo: agrupado ou não dá exatamente no mesmo zip (sem pasta
     // extra), então sempre usa o caminho "grupo" (que aqui processa 1 item só).
     if (agrupar || ids.length === 1) {
-        baixarComoGrupo(ids, nomes);
+        baixarComoGrupo(ids, nomes, modo);
     } else {
         baixarIndividualmente(ids, nomes);
     }
 }
 // ── Modo Agrupado (comportamento histórico, inalterado) ─────────────────
-function baixarComoGrupo(ids, nomes) {
+function baixarComoGrupo(ids, nomes, modo = 'rapido') {
     window._dlPaciente = nomes[ids[0]] || 'PACIENTE';
     if (ids.length === 0) { alert('Selecione ao menos 1 estudo.'); return; }
     if (ids.length > MAX_SEL) { alert('Máximo de ' + MAX_SEL + ' estudos por download.'); return; }
     const btn  = document.getElementById('btn-download-lote');
+    const smartBtn = document.getElementById('btn-download-inteligente');
     const prog = document.getElementById('wl-dl-progress');
     const bar  = document.getElementById('wl-dl-prog-bar');
     const lbl  = document.getElementById('wl-dl-prog-label');
     btn.disabled = true;
+    if (smartBtn) smartBtn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Iniciando...';
     prog.style.display = 'block';
     bar.style.width = '5%';
@@ -2055,14 +2060,14 @@ function baixarComoGrupo(ids, nomes) {
     .then(r => r.json())
     .then(data => {
         if (!data.ok) throw new Error(data.msg || 'Erro ao iniciar job');
-        pollJob(data.job_id, data.log_id);
+        pollJob(data.job_id, data.log_id, 0, modo);
     })
     .catch(err => {
         resetDownloadUI();
         alert('Erro ao iniciar download: ' + err.message);
     });
 }
-function pollJob(jobId, logId, tentativa = 0) {
+function pollJob(jobId, logId, tentativa = 0, modo = 'rapido') {
     const MAX_TENTATIVAS = 120; // ~2 min
     const bar = document.getElementById('wl-dl-prog-bar');
     const lbl = document.getElementById('wl-dl-prog-label');
@@ -2084,15 +2089,17 @@ function pollJob(jobId, logId, tentativa = 0) {
             lbl.innerHTML = '<i class="fa fa-check"></i> Pronto! Iniciando download...';
             bar.style.background = '#22c55e';
             setTimeout(() => {
-                const patient = encodeURIComponent(window._dlPaciente || 'PACIENTE');
-                window.location.href = '/api/download-lote/baixar-inteligente?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId) + '&patient=' + patient;
+                const base = modo === 'rapido'
+                    ? '/api/download-lote/baixar-rapido?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId)
+                    : '/api/download-lote/baixar-inteligente?job_id=' + encodeURIComponent(jobId) + '&log_id=' + encodeURIComponent(logId) + '&patient=' + encodeURIComponent(window._dlPaciente || 'PACIENTE');
+                window.location.href = base;
                 setTimeout(resetDownloadUI, 3000);
             }, 600);
         } else if (data.state === 'Failure') {
             throw new Error('O ' + <?= json_encode(\App\Config\BrandConfig::PACS_SERVER_NAME) ?> + ' falhou ao gerar o archive.');
         } else {
             lbl.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Processando... ' + (data.progress || 0) + '%';
-            setTimeout(() => pollJob(jobId, logId, tentativa + 1), 1000);
+            setTimeout(() => pollJob(jobId, logId, tentativa + 1, modo), 1000);
         }
     })
     .catch(err => {
@@ -2141,10 +2148,12 @@ function dispararDownloadIndividual(jobId, logId, nomePaciente, estudoId) {
 }
 async function baixarIndividualmente(ids, nomes) {
     const btn  = document.getElementById('btn-download-lote');
+    const smartBtn = document.getElementById('btn-download-inteligente');
     const prog = document.getElementById('wl-dl-progress');
     const bar  = document.getElementById('wl-dl-prog-bar');
     const lbl  = document.getElementById('wl-dl-prog-label');
     btn.disabled = true;
+    if (smartBtn) smartBtn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Iniciando...';
     prog.style.display = 'block';
     bar.style.background = '';
@@ -2186,9 +2195,11 @@ async function baixarIndividualmente(ids, nomes) {
 }
 function resetDownloadUI() {
     const btn  = document.getElementById('btn-download-lote');
+    const smartBtn = document.getElementById('btn-download-inteligente');
     const prog = document.getElementById('wl-dl-progress');
     const bar  = document.getElementById('wl-dl-prog-bar');
-    if (btn)  { btn.disabled = false; btn.innerHTML = '<i class="fa fa-download"></i> Download DICOM'; }
+    if (btn)  { btn.disabled = false; btn.innerHTML = '<i class="fa fa-bolt"></i> Download rápido DICOM'; }
+    if (smartBtn) smartBtn.disabled = false;
     if (prog) prog.style.display = 'none';
     if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
 }

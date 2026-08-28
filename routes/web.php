@@ -65,6 +65,7 @@ Router::post('/api/download-lote/iniciar',           'DownloadLoteController@ini
 Router::get('/api/download-lote/status',             'DownloadLoteController@status');
 Router::get('/api/download-lote/baixar',             'DownloadLoteController@baixar');
 Router::get('/api/download-lote/baixar-inteligente', 'DownloadLoteController@baixarInteligente');
+Router::get('/api/download-lote/baixar-rapido',      'DownloadLoteController@baixarRapido');
 // ============================================================
 // VOXEL Desktop — Atualização automática e download do instalador
 // GET  /api/desktop/version  — consultado pelo app ao iniciar
