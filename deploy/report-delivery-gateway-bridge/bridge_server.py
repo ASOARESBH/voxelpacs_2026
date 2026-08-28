@@ -99,7 +99,7 @@ def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
         copied = True
         run = subprocess.run(
             [
-                "/usr/bin/docker", "exec", "-i", "voxelpacs-dicom-gateway", "python", "-",
+                "/usr/bin/docker", "exec", "-u", "0", "-i", "voxelpacs-dicom-gateway", "python", "-",
                 container_artifact, POLICY.target_host, str(POLICY.target_port), POLICY.calling_ae, POLICY.called_ae,
             ],
             input=script_path.read_bytes(),
@@ -121,7 +121,7 @@ def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
     finally:
         if copied:
             subprocess.run(
-                ["/usr/bin/docker", "exec", "voxelpacs-dicom-gateway", "rm", "-f", container_artifact],
+                ["/usr/bin/docker", "exec", "-u", "0", "voxelpacs-dicom-gateway", "rm", "-f", container_artifact],
                 capture_output=True,
                 timeout=10,
                 check=False,
