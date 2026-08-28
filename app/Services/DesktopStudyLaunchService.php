@@ -54,7 +54,10 @@ final class DesktopStudyLaunchService
         $command = '$dicom:get -w "' . $manifestUrl . '"';
 
         return [
-            'launch_uri' => 'weasis://?' . rawurlencode($command),
+            // O protocolo nativo do VOXEL Desktop; o fallback atende instalações
+            // clínicas legadas que ainda registram somente o esquema Weasis.
+            'launch_uri' => 'voxel://?' . rawurlencode($command),
+            'compatibility_uri' => 'weasis://?' . rawurlencode($command),
             'expires_in_seconds' => self::LAUNCH_TTL_SECONDS,
         ];
     }
@@ -70,8 +73,10 @@ final class DesktopStudyLaunchService
 
         $studyData = $study['data'];
         $studyTags = is_array($studyData['MainDicomTags'] ?? null) ? $studyData['MainDicomTags'] : [];
-        $patientName = $this->xml((string) ($studyTags['PatientName'] ?? 'PACIENTE'));
-        $patientId = $this->xml((string) ($studyTags['PatientID'] ?? 'SEM_ID'));
+        $patientTags = is_array($studyData['PatientMainDicomTags'] ?? null) ? $studyData['PatientMainDicomTags'] : [];
+        $patientName = $this->xml((string) ($patientTags['PatientName'] ?? $studyTags['PatientName'] ?? 'PACIENTE'));
+        $patientId = $this->xml((string) ($patientTags['PatientID'] ?? $studyTags['PatientID'] ?? 'SEM_ID'));
+        $patientIssuer = $this->xml((string) ($patientTags['IssuerOfPatientID'] ?? ''));
         $studyUid = $this->xml((string) ($studyTags['StudyInstanceUID'] ?? ''));
         if (!$this->isDicomUid($studyUid)) {
             throw new \RuntimeException('desktop_manifest_study_uid_missing');
@@ -149,7 +154,8 @@ final class DesktopStudyLaunchService
         return '<?xml version="1.0" encoding="UTF-8"?>'
             . '<manifest xmlns="http://www.weasis.org/xsd/2.5">'
             . '<arcQuery arcId="voxel" baseUrl="' . $this->xml($base) . '" requireOnlySOPInstanceUID="false">'
-            . '<Patient PatientID="' . $patientId . '" PatientName="' . $patientName . '">'
+            . '<Patient PatientID="' . $patientId . '" PatientName="' . $patientName . '"'
+            . ($patientIssuer !== '' ? ' IssuerOfPatientID="' . $patientIssuer . '"' : '') . '>'
             . '<Study StudyInstanceUID="' . $studyUid . '" StudyDescription="' . $this->xml((string) ($studyTags['StudyDescription'] ?? '')) . '">'
             . $seriesXml . '</Study></Patient></arcQuery></manifest>';
     }
@@ -161,16 +167,36 @@ final class DesktopStudyLaunchService
         }
         $launch = $this->resolve($token, $signature);
         $orthanc = $this->orthancFor($launch);
-        $instance = $orthanc->getInstance($instanceId);
-        if (!($instance['success'] ?? false) || !is_array($instance['data'] ?? null)
-            || (string) ($instance['data']['ParentStudy'] ?? '') !== (string) $launch['orthanc_study_id']) {
-            throw new \RuntimeException('desktop_instance_not_authorized');
-        }
+        $this->assertInstanceBelongsToLaunch($orthanc, $instanceId, $launch);
         $binary = $orthanc->downloadInstance($instanceId);
         if (!($binary['success'] ?? false)) {
             throw new \RuntimeException('desktop_instance_source_unavailable');
         }
         return $binary;
+    }
+
+    /**
+     * Faz proxy de uma instância autorizada sem carregá-la inteira na memória da API.
+     * Os callbacks recebem apenas cabeçalhos sanitizados e blocos binários do Orthanc.
+     */
+    public function streamInstance(string $token, string $signature, string $instanceId, callable $onHeaders, callable $onChunk): array
+    {
+        if (!preg_match('/^[A-Za-z0-9_-]{8,128}$/', $instanceId)) {
+            throw new \RuntimeException('desktop_instance_invalid');
+        }
+        $launch = $this->resolve($token, $signature);
+        $orthanc = $this->orthancFor($launch);
+        $this->assertInstanceBelongsToLaunch($orthanc, $instanceId, $launch);
+        return $orthanc->streamInstanceFile($instanceId, $onHeaders, $onChunk);
+    }
+
+    private function assertInstanceBelongsToLaunch(OrthancService $orthanc, string $instanceId, array $launch): void
+    {
+        $instance = $orthanc->getInstance($instanceId);
+        if (!($instance['success'] ?? false) || !is_array($instance['data'] ?? null)
+            || (string) ($instance['data']['ParentStudy'] ?? '') !== (string) $launch['orthanc_study_id']) {
+            throw new \RuntimeException('desktop_instance_not_authorized');
+        }
     }
 
     private function resolve(string $token, string $signature): array

@@ -250,6 +250,74 @@ class OrthancService {
         return ['success' => $body !== false && $error === '' && $code >= 200 && $code < 300, 'body' => $body ?: ''];
     }
 
+    /**
+     * Streaming de instância para um proxy autorizado. O callback de cabeçalhos
+     * só é chamado após resposta 2xx do Orthanc; o cliente nunca recebe URL,
+     * usuário ou senha do PACS. Identificadores não entram nos logs técnicos.
+     *
+     * @return array{success:bool,code:int,bytes:int,error?:string}
+     */
+    public function streamInstanceFile(string $instanceId, callable $onHeaders, callable $onChunk): array {
+        $status = 0;
+        $contentType = 'application/dicom';
+        $contentLength = null;
+        $headersDelivered = false;
+        $bytes = 0;
+        $ch = curl_init($this->baseUrl . '/instances/' . rawurlencode($instanceId) . '/file');
+        $options = [
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_CUSTOMREQUEST => 'GET',
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_CONNECTTIMEOUT => min(10, $this->timeout),
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HTTPHEADER => ['Accept: application/dicom'],
+            CURLOPT_HEADERFUNCTION => function ($handle, string $header) use (&$status, &$contentType, &$contentLength, &$headersDelivered, $onHeaders): int {
+                $line = trim($header);
+                if (preg_match('#^HTTP/\\S+\\s+(\\d+)#i', $line, $matches)) {
+                    $status = (int) $matches[1];
+                    return strlen($header);
+                }
+                if (stripos($line, 'Content-Type:') === 0) {
+                    $contentType = trim(substr($line, strlen('Content-Type:')));
+                } elseif (stripos($line, 'Content-Length:') === 0) {
+                    $length = trim(substr($line, strlen('Content-Length:')));
+                    $contentLength = ctype_digit($length) ? (int) $length : null;
+                }
+                if ($line === '' && !$headersDelivered && $status >= 200 && $status < 300) {
+                    $headersDelivered = true;
+                    $onHeaders($contentType, $contentLength);
+                }
+                return strlen($header);
+            },
+            CURLOPT_WRITEFUNCTION => function ($handle, string $chunk) use (&$status, &$headersDelivered, &$bytes, $onChunk): int {
+                if ($headersDelivered && $status >= 200 && $status < 300) {
+                    $bytes += strlen($chunk);
+                    $onChunk($chunk);
+                }
+                return strlen($chunk);
+            },
+        ];
+        if ($this->username !== null && $this->username !== '') {
+            $options[CURLOPT_USERPWD] = $this->username . ':' . ($this->password ?? '');
+            $options[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
+        }
+        curl_setopt_array($ch, $options);
+        $ok = curl_exec($ch);
+        $curlError = curl_error($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $code = $status ?: $httpCode;
+        $success = $ok !== false && $curlError === '' && $headersDelivered && $code >= 200 && $code < 300;
+        if (!$success) {
+            Logger::error('[OrthancService::streamInstanceFile] Falha no streaming autorizado de instância.', [
+                'code' => $code,
+                'transport_error' => $curlError !== '',
+            ]);
+        }
+        return ['success' => $success, 'code' => $code, 'bytes' => $bytes, 'error' => $success ? null : 'desktop_instance_stream_unavailable'];
+    }
+
     public function getPatients(): array { return $this->request('/patients?expand'); }
 
     public function countPatients(): int {

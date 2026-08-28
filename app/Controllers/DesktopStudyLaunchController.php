@@ -28,19 +28,44 @@ final class DesktopStudyLaunchController extends Controller
 
     public function instance(string $token, string $instanceId): void
     {
+        $headersSent = false;
         try {
-            $file = (new DesktopStudyLaunchService())->instance($token, (string) ($_GET['sig'] ?? ''), $instanceId);
-            header('Content-Type: application/dicom');
-            header('Content-Length: ' . strlen((string) $file['body']));
-            header('Cache-Control: no-store, private');
-            header('Pragma: no-cache');
-            header('Referrer-Policy: no-referrer');
-            echo $file['body'];
+            $result = (new DesktopStudyLaunchService())->streamInstance(
+                $token,
+                (string) ($_GET['sig'] ?? ''),
+                $instanceId,
+                static function (string $contentType, ?int $contentLength) use (&$headersSent): void {
+                    // O tipo é fixado pela API: cabeçalhos internos do Orthanc não são repassados.
+                    header('Content-Type: application/dicom');
+                    header('Content-Disposition: inline; filename="instance.dcm"');
+                    header('Cache-Control: no-store, private');
+                    header('Pragma: no-cache');
+                    header('Referrer-Policy: no-referrer');
+                    header('X-Content-Type-Options: nosniff');
+                    if ($contentLength !== null && $contentLength >= 0) {
+                        header('Content-Length: ' . $contentLength);
+                    }
+                    $headersSent = true;
+                },
+                static function (string $chunk): void {
+                    echo $chunk;
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                }
+            );
+            if (!($result['success'] ?? false) && !$headersSent) {
+                throw new \RuntimeException('desktop_instance_stream_unavailable');
+            }
         } catch (\Throwable $ex) {
             Logger::error('[DesktopStudyLaunch::instance] ' . $ex->getMessage());
-            http_response_code(404);
-            header('Cache-Control: no-store');
-            echo 'Instância indisponível.';
+            if (!$headersSent) {
+                http_response_code(404);
+                header('Cache-Control: no-store');
+                header('X-Content-Type-Options: nosniff');
+                echo 'Instância indisponível.';
+            }
         }
     }
 }
