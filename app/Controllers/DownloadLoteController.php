@@ -257,7 +257,7 @@ class DownloadLoteController extends Controller
             }
 
             $pdo     = Database::getInstance();
-            $orthanc = $this->getOrthancService($tenantId, $pdo);
+            $orthanc = $this->getOrthancServiceForJob($tenantId, $userId, $jobId, $pdo);
 
             if (!$orthanc) {
                 http_response_code(503);
@@ -349,7 +349,7 @@ class DownloadLoteController extends Controller
             }
 
             $pdo     = Database::getInstance();
-            $orthanc = $this->getOrthancService($tenantId, $pdo);
+            $orthanc = $this->getOrthancServiceForJob($tenantId, $userId, $jobId, $pdo);
 
             if (!$orthanc) {
                 http_response_code(503);
@@ -419,6 +419,39 @@ class DownloadLoteController extends Controller
     //  2. bi_pacs_servidor (tabela global única, gerenciada pelo superadmin) — fallback
     //  3. $_ENV['ORTHANC_URL'] — fallback de ambiente
     // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Resolve o PACS exclusivamente a partir dos estudos que compõem um job
+     * já auditado para o tenant/usuário atual. Assim polling e streaming não
+     * usam fallback global e não misturam jobs de células distintas.
+     */
+    private function getOrthancServiceForJob(int $tenantId, int $userId, string $jobId, \PDO $pdo): ?OrthancService
+    {
+        try {
+            $log = $pdo->prepare("SELECT estudo_ids FROM bi_download_lote_log WHERE orthanc_job_id = ? AND tenant_id = ? AND usuario_id = ? LIMIT 1");
+            $log->execute([$jobId, $tenantId, $userId]);
+            $row = $log->fetch(\PDO::FETCH_ASSOC);
+            $studyIds = is_array($row) ? json_decode((string) ($row['estudo_ids'] ?? ''), true) : null;
+            if (!is_array($studyIds) || $studyIds === []) {
+                return null;
+            }
+            $studyIds = array_values(array_unique(array_filter(array_map('intval', $studyIds), fn($id) => $id > 0)));
+            if ($studyIds === []) {
+                return null;
+            }
+            $marks = implode(',', array_fill(0, count($studyIds), '?'));
+            $stmt = $pdo->prepare("SELECT DISTINCT servidor_id FROM bi_pacs_estudos WHERE id IN ($marks) AND tenant_id = ? AND servidor_id IS NOT NULL");
+            $stmt->execute(array_merge($studyIds, [$tenantId]));
+            $serverIds = array_values(array_unique(array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN))));
+            if (count($serverIds) !== 1 || $serverIds[0] <= 0) {
+                return null;
+            }
+            return $this->getOrthancService($tenantId, $serverIds[0], $pdo);
+        } catch (\Throwable $e) {
+            Logger::error('[DownloadLote] Não foi possível resolver PACS do job', ['error_type' => get_class($e)]);
+            return null;
+        }
+    }
+
     private function getOrthancService(int $tenantId, int $serverId, \PDO $pdo): ?OrthancService
     {
         // A origem é sempre o servidor gravado no estudo. Células exclusivas
@@ -506,7 +539,7 @@ class DownloadLoteController extends Controller
             }
 
             $pdo     = Database::getInstance();
-            $orthanc = $this->getOrthancService($tenantId, $pdo);
+            $orthanc = $this->getOrthancServiceForJob($tenantId, $userId, $jobId, $pdo);
 
             if (!$orthanc) {
                 http_response_code(503);
