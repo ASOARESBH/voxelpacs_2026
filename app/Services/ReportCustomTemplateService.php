@@ -245,13 +245,19 @@ final class ReportCustomTemplateService
             $timestamp = strtotime($value);
             return $timestamp ? date($time ? 'd/m/Y H:i' : 'd/m/Y', $timestamp) : '—';
         };
+        $snapshotLogo = trim((string) ($report['pdf_snapshot_logo_src'] ?? ''));
         $logoPath = ltrim((string) ($report['unidade_logo_path'] ?? ''), '/');
-        $logo = $logoPath !== '' && str_starts_with($logoPath, 'uploads/unidades/')
-            ? '<img src="/' . htmlspecialchars($logoPath, ENT_QUOTES, 'UTF-8') . '" alt="Logo da unidade" class="voxel-unit-logo">'
-            : '';
-        $signature = !empty($report['assinatura_caminho_arquivo']) && !empty($report['public_token'])
-            ? '<img src="/reports/r/' . rawurlencode((string) $report['public_token']) . '/assinatura" alt="Assinatura médica" class="voxel-signature-image">'
-            : '';
+        $logo = $snapshotLogo !== ''
+            ? '<img src="' . htmlspecialchars($snapshotLogo, ENT_QUOTES, 'UTF-8') . '" alt="Logo da unidade" class="voxel-unit-logo">'
+            : ($logoPath !== '' && str_starts_with($logoPath, 'uploads/unidades/')
+                ? '<img src="/' . htmlspecialchars($logoPath, ENT_QUOTES, 'UTF-8') . '" alt="Logo da unidade" class="voxel-unit-logo">'
+                : '');
+        $snapshotSignature = trim((string) ($report['pdf_snapshot_signature_src'] ?? ''));
+        $signature = $snapshotSignature !== ''
+            ? '<img src="' . htmlspecialchars($snapshotSignature, ENT_QUOTES, 'UTF-8') . '" alt="Assinatura médica" class="voxel-signature-image">'
+            : (!empty($report['assinatura_caminho_arquivo']) && !empty($report['public_token'])
+                ? '<img src="/reports/r/' . rawurlencode((string) $report['public_token']) . '/assinatura" alt="Assinatura médica" class="voxel-signature-image">'
+                : '');
         $institutionalQr = !empty($report['unidade_personalizado_qrcode_habilitado'])
             ? $this->institutionalQrMarkup((string) ($report['unidade_personalizado_qrcode_url'] ?? '')) : '';
         $institutionalSite = !empty($report['unidade_personalizado_site_habilitado'])

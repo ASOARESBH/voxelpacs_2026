@@ -45,9 +45,13 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 `report_signatures`, `report_autotext` e `report_templates` têm definições de coluna conflitantes entre migrations diferentes (histórico de iterações do módulo). `ReportRepository`/`ReportsController` fazem fallback tentando múltiplos schemas em sequência — ver comentários inline e `docs/PENDENCIAS_CONHECIDAS.md` (`report_signatures` tem 3 definições conflitantes — pendência ainda ativa, não afeta o fluxo de `save()`, só o de `assinar()`).
 
-## Renderização de tela/impressão/PDF é um ponto único (2026-08-11)
+## Renderização de tela, impressão e snapshot binário (atualizado em 2026-08-28)
 
-`ReportsController::pdf()` + `app/Views/reports/pdf.php` servem as 3 saídas ao mesmo tempo — o projeto não gera PDF binário (sem dompdf), é HTML com CSS de impressão + `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` no load. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
+`ReportsController::pdf()` + `app/Views/reports/pdf.php` continuam sendo a visualização HTML/impresso do médico. O dispatcher seleciona o template visual de Unidade por `App\Services\ReportLayoutService`; o download da tela usa o fluxo de impressão do navegador. A tela de edição (`show.php`/`_editor.php`, Quill) é independente do template visual.
+
+A devolutiva DICOM não pode reconstruir um PDF simplificado a partir de `reports + report_versions`. Na liberação, `ReportPdfRenderContextService` resolve o mesmo contexto do viewer, `ReportPdfService::renderSnapshotBinary()` produz o PDF binário sem ações de navegador e `ReportPdfSnapshotService` o grava em `storage/report_pdf_snapshots/{tenant}/{report}/v{versao}.pdf`, com permissões restritas. O PostgreSQL registra somente caminho, SHA-256 e tamanho em `report_pdf_snapshots`; o binário não é BLOB. `ReportDeliveryArtifactService` lê exclusivamente esse snapshot, validando vínculo simultâneo com outbox, tenant, laudo e versão, além de hash e tamanho. Snapshot ausente ou divergente deve falhar fechado: é proibido ao worker renderizar um substituto.
+
+O contexto binário incorpora logo e assinatura visual congelada como dados locais e não depende de URL autenticada ou de conexão HTTP. A migration obrigatória é `database/migrations/2026-08-28_report_pdf_snapshots_postgresql.sql`; aplique-a antes do código que chama `ReportPdfSnapshotService`.
 
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 
@@ -104,11 +108,13 @@ A regra vale para editor, `save`, `sign`, histórico, restauração de versão, 
 
 Não use `ReportRepository::findReportById()` diretamente em um endpoint: ele é um acesso de dados e não substitui a política clínica. Todo novo endpoint que receba um identificador de laudo deve chamar `ReportAccessService` antes de consultar conteúdo, criar versão, alterar status ou devolver metadados.
 
-### Assinatura e devolutiva transacional — versão positiva (2026-08-14)
+### Assinatura, snapshot PDF e devolutiva transacional — versão positiva (atualizado em 2026-08-28)
 
 A assinatura usa `ReportRepository::proximaVersao($reportId)` para obter o número que será efetivamente persistido em `report_versions`; esse valor é sempre maior ou igual a 1 e deve ser reutilizado em `createVersion()`, no fechamento de Peer Review e em `ReportDeliveryOutboxService::queueReleasedReport()`. **Nunca subtrair 1** desse retorno: a devolutiva rejeita `report_version < 1` e, quando a feature de Delivery Hub está habilitada, o rollback atômico impede a assinatura e a liberação completas.
 
 Em qualquer exceção de assinatura, `ReportService::assinar()` registra `report_id`, `estudo_id`, `tenant_id`, `modo`, `versao_report` e a mensagem original, sem registrar conteúdo clínico. O código `devolutiva_dados_insuficientes` é traduzido no modal para orientação operacional específica; outras exceções continuam no código genérico de persistência. Essa distinção não substitui rollback: toda falha anterior ao commit continua sem assinar nem liberar parcialmente o laudo.
+
+A criação do snapshot faz parte da transação de **Liberar**. A falha em gerar ou persistir o PDF imutável deve abortar a liberação quando o fluxo exige devolutiva, em vez de permitir um job sem o documento que o médico validou. O `ReportDeliveryOutboxService` também confirma a existência idempotente do snapshot antes de criar jobs, protegendo chamadas futuras ao serviço fora de `ReportService`.
 
 ## Última análise
 2026-08-14

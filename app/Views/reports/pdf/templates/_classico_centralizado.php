@@ -75,7 +75,8 @@
 <body>
 <div class="pdf-page">
 
-    <!-- Ações -->
+    <!-- Ações visíveis somente no viewer. -->
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
@@ -83,6 +84,7 @@
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Cabeçalho -->
     <div class="pdf-header">
@@ -120,8 +122,10 @@
     <!-- Assinatura -->
     <div class="pdf-signature">
         <div class="pdf-sig-info">
-            <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-            <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
+            <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+            <?php if ($assinaturaSrc === '' && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+            <?php if ($assinaturaSrc !== ''): ?>
+            <img src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>"
                  alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
                  style="max-width:220px;max-height:70px;display:block;margin-bottom:.35rem;">
             <?php endif; ?>

@@ -6,13 +6,13 @@
 
 | Evento | Disparado por | Listeners conhecidos | Efeito colateral | Última verificação |
 |---|---|---|---|---|
-| `[A preencher]` | | | | |
+| `report.released` | `ReportService::assinar()` em `fechar` ou `ReportService::liberarAssinado()` | `ReportPdfSnapshotService`, `ReportDeliveryOutboxService`, notificações pós-commit e webhook Copilot | Cria snapshot PDF imutável e outbox por tenant; falha antes do commit impede liberação parcial. | 2026-08-28 |
 
 ## Filas
 
 | Fila | Alimentada por | Worker/Consumer | Idempotente? | Última verificação |
 |---|---|---|---|---|
-| `[A preencher]` | | | | |
+| Delivery Hub de Laudos (`pacs_report_delivery_jobs`) | `ReportDeliveryOutboxService::queueReleasedReport()` após snapshot PDF | `bin/report_delivery_worker.php` / `ReportDeliveryArtifactService` | Sim; job só é consumido quando elegível. O worker lê exclusivamente `report_pdf_snapshots`; snapshot ausente/divergente falha fechado, sem re-renderização. | 2026-08-28 |
 
 ## Jobs assíncronos
 

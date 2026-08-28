@@ -273,9 +273,10 @@ class ReportDeliveryWorkerRepository
     {
         $stmt = $this->pdo->prepare(
             "SELECT j.id, j.outbox_id, j.tenant_id, j.estabelecimento_id, j.transport,
-                    o.report_id, o.report_version, o.estudo_id
+                    o.report_id, o.report_version, o.estudo_id, e.study_instance_uid
              FROM pacs_report_delivery_jobs j
-             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+             INNER JOIN bi_pacs_estudos e ON e.id = o.estudo_id AND e.tenant_id = o.tenant_id
              WHERE j.id = :id
                AND j.status = 'processing'
                AND j.locked_by = :worker_id

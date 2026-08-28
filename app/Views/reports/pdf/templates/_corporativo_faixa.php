@@ -77,6 +77,7 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
 <body>
 <div class="pdf-page">
 
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
@@ -84,11 +85,13 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="pdf-band">
         <div class="pdf-band-logo">
-            <?php if (!empty($r['unidade_logo_path'])): ?>
-                <img src="/<?= htmlspecialchars($r['unidade_logo_path'], ENT_QUOTES) ?>" alt="Logo">
+            <?php $logoSrc = (string) ($r['pdf_snapshot_logo_src'] ?? $r['unidade_logo_path'] ?? ''); ?>
+            <?php if ($logoSrc !== ''): ?>
+                <img src="<?= htmlspecialchars($logoSrc, ENT_QUOTES) ?>" alt="Logo">
             <?php else: ?>
                 <span style="font-size:.55rem;">LOGO</span>
             <?php endif; ?>
@@ -129,8 +132,10 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
 
         <div class="pdf-signature">
             <div class="pdf-sig-info">
-                <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-                <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
+                <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+                <?php if ($assinaturaSrc === '' && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+                <?php if ($assinaturaSrc !== ''): ?>
+                <img src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>"
                      alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
                      style="max-width:220px;max-height:70px;display:block;margin:0 0 .35rem auto;">
                 <?php endif; ?>

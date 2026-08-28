@@ -483,6 +483,14 @@ class ReportService {
             // conexões externas e permanece inativa enquanto a feature flag
             // estiver desligada no ambiente de produção.
             if ($modo === 'fechar') {
+                // Congela o mesmo PDF clínico do viewer antes de qualquer outbox/job.
+                // A falha aborta a liberação para nunca haver entrega sem artefato imutável.
+                (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
+                    (int) $tenantId,
+                    $reportId,
+                    $versaoNumero,
+                    (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null
+                );
                 (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                     (int) $tenantId,
                     $reportId,
@@ -631,6 +639,13 @@ class ReportService {
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
             $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero);
+            // Preserva o PDF clínico no instante da liberação; o worker apenas o consome.
+            (new ReportPdfSnapshotService($pdo))->createForReleasedReport(
+                $tenantId,
+                $reportId,
+                $versaoNumero,
+                (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null
+            );
             (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                 $tenantId,
                 $reportId,

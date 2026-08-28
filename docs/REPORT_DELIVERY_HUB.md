@@ -43,7 +43,8 @@ Worker local supervisionado
 | `pacs_report_delivery_outbox` | Evento imutável de liberação/correção de laudo. |
 | `pacs_report_delivery_jobs` | Uma unidade de trabalho para cada destino selecionado, com marca explícita de elegibilidade do worker. |
 | `pacs_report_delivery_attempts` | Histórico técnico de cada tentativa. |
-| `pacs_report_delivery_artifacts` | Hash e metadados de PDF, SR, HL7 ou manifesto gerados. |
+| `pacs_report_delivery_artifacts` | Hash e metadados de PDF, SR, HL7 ou manifesto gerados, incluindo a referência `released_pdf` do snapshot. |
+| `report_pdf_snapshots` | Referência tenant-scoped, hash e tamanho do PDF imutável criado no instante da liberação. |
 
 ## Configuração de destino
 
@@ -75,6 +76,14 @@ O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da
 O retorno deve preservar **Patient ID** `(0010,0020)` e **Issuer of Patient ID** `(0010,0021)` como atributos distintos. O Patient ID não deve concatenar o issuer com separadores de componentes. Alguns receptores validam a combinação contra o estudo existente e recusam o C-STORE quando qualquer atributo diverge.
 
 O `pdf2dcm --study-from` utilizado no encapsulamento pode não reter `(0010,0021)` no objeto final. Portanto, quando o perfil do destino definir `issuer_of_patient_id`, o worker o reaplica explicitamente no Encapsulated PDF com `--key 0010,0021=<issuer>` antes do C-STORE. A configuração de issuer de saída é uma regra do **destino receptor** e pode divergir do issuer que foi usado para selecionar a origem/routing da outbox. Essa regra precisa ser homologada por destino e validada com PDF sintético antes de qualquer transmissão clínica.
+
+### Snapshot PDF imutável na liberação
+
+No instante de `Assinar e Fechar` ou de **Liberar**, o serviço monta o mesmo contexto de impressão do viewer, incluindo o layout de unidade, o template personalizado já congelado, logo, assinatura visual, conteúdo assinado e dados institucionais autorizados. Em seguida gera um PDF binário e o armazena em diretório privado com permissões mínimas. A tabela `report_pdf_snapshots` registra `tenant_id`, laudo, versão, unidade, caminho, SHA-256 e tamanho; `pacs_report_delivery_artifacts` recebe a referência `released_pdf` da outbox.
+
+O binário não é armazenado como BLOB no PostgreSQL. O banco mantém a referência transacional e a integridade; o arquivo permanece no storage privado. Essa separação reduz impacto no banco e nos backups, permite validação por hash e impede que uma nova renderização posterior altere um documento já liberado.
+
+O worker lê exclusivamente o snapshot associado simultaneamente à mesma outbox, tenant, laudo e versão. Ele confirma existência, tamanho e SHA-256 antes de encapsular o PDF. Se o snapshot estiver ausente, ilegível ou divergente, a entrega falha em modo fechado; **nunca** reconstrói um PDF simplificado a partir do estado atual do laudo.
 
 > Uma configuração que solicita TLS não é rebaixada silenciosamente para TCP. Enquanto não houver perfil de certificados configurado, o job falhará com estado técnico sanitizado e seguirá a política de retentativa/DLQ.
 

@@ -77,6 +77,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 <body>
 <div class="pdf-page">
 
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
@@ -84,6 +85,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="pdf-header">
         <div class="pdf-header-nome"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
@@ -110,8 +112,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     <?php endif; ?>
 
     <div class="pdf-signature">
-        <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-        <img class="pdf-sig-img" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
+        <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+        <?php if ($assinaturaSrc === '' && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+        <?php if ($assinaturaSrc !== ''): ?>
+        <img class="pdf-sig-img" src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>"
              alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>">
         <?php else: ?>
         <div class="pdf-sig-line"></div>

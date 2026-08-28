@@ -19,22 +19,32 @@ if ($unidadeNome === '') {
 
 // O Moderno Lateral só apresenta canais que a própria Unidade habilitou.
 // Sem configuração ativa, o cabeçalho preserva somente o Nome Fantasia.
-$servicoTemplatePersonalizado = new \App\Services\ReportCustomTemplateService();
-$qrInstitucionalCabecalho = !empty($r['unidade_personalizado_qrcode_habilitado'])
-    ? $servicoTemplatePersonalizado->institutionalQrMarkup((string) ($r['unidade_personalizado_qrcode_url'] ?? '')) : '';
+$temCanalInstitucional = !empty($r['unidade_personalizado_qrcode_habilitado'])
+    || !empty($r['unidade_personalizado_site_habilitado'])
+    || !empty($r['unidade_personalizado_instagram_habilitado'])
+    || !empty($r['unidade_personalizado_facebook_habilitado']);
+$qrInstitucionalCabecalho = '';
 $canaisInstitucionaisCabecalho = [];
-foreach ([
-    'site' => 'Site institucional',
-    'instagram' => 'Instagram',
-    'facebook' => 'Facebook',
-] as $canalInstitucional => $rotuloCanal) {
-    if (!empty($r['unidade_personalizado_' . $canalInstitucional . '_habilitado'])) {
-        $linkCanal = $servicoTemplatePersonalizado->institutionalLinkMarkup(
-            (string) ($r['unidade_personalizado_' . $canalInstitucional . '_url'] ?? ''),
-            $rotuloCanal
+if ($temCanalInstitucional) {
+    $servicoTemplatePersonalizado = new \App\Services\ReportCustomTemplateService();
+    if (!empty($r['unidade_personalizado_qrcode_habilitado'])) {
+        $qrInstitucionalCabecalho = $servicoTemplatePersonalizado->institutionalQrMarkup(
+            (string) ($r['unidade_personalizado_qrcode_url'] ?? '')
         );
-        if ($linkCanal !== '') {
-            $canaisInstitucionaisCabecalho[] = $linkCanal;
+    }
+    foreach ([
+        'site' => 'Site institucional',
+        'instagram' => 'Instagram',
+        'facebook' => 'Facebook',
+    ] as $canalInstitucional => $rotuloCanal) {
+        if (!empty($r['unidade_personalizado_' . $canalInstitucional . '_habilitado'])) {
+            $linkCanal = $servicoTemplatePersonalizado->institutionalLinkMarkup(
+                (string) ($r['unidade_personalizado_' . $canalInstitucional . '_url'] ?? ''),
+                $rotuloCanal
+            );
+            if ($linkCanal !== '') {
+                $canaisInstitucionaisCabecalho[] = $linkCanal;
+            }
         }
     }
 }
@@ -65,7 +75,11 @@ $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name
 // O conteúdo clínico configurado pelo médico é a única abertura do laudo.
 // Study Description, procedimento, região anatômica e modalidade DICOM não
 // são promovidos automaticamente a título de impressão.
-$logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+$logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? $r['unidade_logo_path'] ?? ''));
+$assinaturaSrc = trim((string) ($r['pdf_snapshot_signature_src'] ?? ''));
+if ($assinaturaSrc === '' && !empty($r['assinatura_caminho_arquivo'])) {
+    $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura';
+}
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
 $crmExibicao = $crm === '' ? '' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM' . ($crmUf !== '' ? '-' . $crmUf : '') . ' ' . $crm);
@@ -187,6 +201,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     </style>
 </head>
 <body>
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
@@ -194,12 +209,13 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <main class="pdf-page">
         <header class="pdf-header">
             <div class="pdf-header-left">
                 <?php if ($logoUnidade !== ''): ?>
-                    <img class="pdf-logo" src="/<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
+                    <img class="pdf-logo" src="<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
                 <?php else: ?>
                     <div class="pdf-logo-fallback"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
                 <?php endif; ?>
@@ -250,8 +266,8 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         <?php endif; ?>
 
         <section class="pdf-signature" aria-label="Assinatura digital do médico">
-            <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-                <img class="pdf-signature-image" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
+            <?php if ($assinaturaSrc !== ''): ?>
+                <img class="pdf-signature-image" src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
             <?php endif; ?>
             <div class="pdf-signer-name"><?= htmlspecialchars((string) ($r['medico_nome'] ?? '—'), ENT_QUOTES) ?></div>
             <?php if ($especialidadeMedico !== ''): ?>
@@ -289,7 +305,9 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         </footer>
     </main>
 
+    <?php if (empty($snapshotPdf)): ?>
     <script src="/assets/js/shared/voxel-voltar.js?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.2.0' ?>"></script>
+    <?php endif; ?>
     <?php if ($download): ?>
         <script>window.onload = function () { window.print(); };</script>
     <?php endif; ?>

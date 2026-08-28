@@ -107,6 +107,23 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
+            // O snapshot é obrigatório antes de criar jobs: a devolutiva usa exatamente
+            // o PDF clínico congelado na liberação, nunca uma nova renderização do worker.
+            $snapshot = (new ReportPdfSnapshotService($this->pdo))->createForReleasedReport(
+                $tenantId,
+                $reportId,
+                $reportVersion,
+                $estabelecimentoId
+            );
+            $this->recordReleasedPdfArtifact(
+                $outboxId,
+                $tenantId,
+                $estabelecimentoId,
+                $snapshot['storage_path'],
+                $snapshot['sha256'],
+                $snapshot['size']
+            );
+
             $destinations = array_values(array_filter(
                 $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName),
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
@@ -148,6 +165,38 @@ class ReportDeliveryOutboxService
             ]);
             throw $e;
         }
+    }
+
+    private function recordReleasedPdfArtifact(
+        int $outboxId,
+        int $tenantId,
+        ?int $estabelecimentoId,
+        string $storagePath,
+        string $sha256,
+        int $size
+    ): void {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO pacs_report_delivery_artifacts
+                (outbox_id, tenant_id, estabelecimento_id, artifact_type, storage_path, sha256, file_size_bytes)
+             VALUES
+                (:outbox_id, :tenant_id, :estabelecimento_id, 'released_pdf', :storage_path, :sha256, :file_size_bytes)
+             ON CONFLICT (outbox_id, artifact_type) DO UPDATE SET
+                storage_path = EXCLUDED.storage_path,
+                sha256 = EXCLUDED.sha256,
+                file_size_bytes = EXCLUDED.file_size_bytes,
+                created_at = NOW()"
+        );
+        $stmt->bindValue(':outbox_id', $outboxId, \PDO::PARAM_INT);
+        $stmt->bindValue(':tenant_id', $tenantId, \PDO::PARAM_INT);
+        if ($estabelecimentoId === null) {
+            $stmt->bindValue(':estabelecimento_id', null, \PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, \PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':storage_path', $storagePath, \PDO::PARAM_STR);
+        $stmt->bindValue(':sha256', $sha256, \PDO::PARAM_STR);
+        $stmt->bindValue(':file_size_bytes', $size, \PDO::PARAM_INT);
+        $stmt->execute();
     }
 
     private function enabled(): bool
