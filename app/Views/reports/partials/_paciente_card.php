@@ -35,6 +35,8 @@ if ($idade === '—') {
 }
 
 $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_display ?? $estudo->patient_name ?? null) ?: '—';
+$informacoesEstudo = trim((string) ($estudo->informacoes_manual ?? ''));
+$podeVerInformacoes = !empty($canViewStudyInformation) && $informacoesEstudo !== '';
 ?>
 <div class="pacs-card reports-card" id="card-paciente">
     <div class="pacs-card-header"><i class="fa fa-user-injured"></i> Paciente</div>
@@ -64,6 +66,12 @@ $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_displa
             </span>
             <?php endif; ?>
             <span class="rp-idade-destaque"><?= htmlspecialchars($idade) ?></span>
+            <?php if ($podeVerInformacoes): ?>
+                <button type="button" class="rp-informacoes-trigger" data-bs-toggle="modal" data-bs-target="#reportStudyInformationModal" aria-controls="reportStudyInformationModal">
+                    <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span><?= htmlspecialchars(t('reports.paciente.informacoes')) ?></span>
+                </button>
+            <?php endif; ?>
         </div>
 
         <div class="rp-field">
@@ -84,3 +92,18 @@ $nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_displa
 
     </div>
 </div>
+
+<?php if ($podeVerInformacoes): ?>
+    <div class="modal fade" id="reportStudyInformationModal" tabindex="-1" aria-labelledby="reportStudyInformationModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content reports-modal reports-information-modal">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reportStudyInformationModalLabel"><i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars(t('reports.paciente.informacoes')) ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('reports.paciente.informacoes_fechar')) ?>"></button>
+                </div>
+                <div class="modal-body"><p class="reports-information-text"><?= nl2br(htmlspecialchars($informacoesEstudo, ENT_QUOTES, 'UTF-8')) ?></p></div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('reports.paciente.informacoes_fechar')) ?></button></div>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>

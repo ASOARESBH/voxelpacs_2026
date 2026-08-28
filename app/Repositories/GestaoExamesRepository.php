@@ -63,6 +63,7 @@ class GestaoExamesRepository
                 e.study_description_manual,
                 e.medico_solicitante_manual,
                 COALESCE(NULLIF(e.medico_solicitante_manual, ''), e.referring_physician_name, '') AS medico_solicitante_exibicao,
+                e.informacoes_manual,
                 e.situacao,
                 COALESCE(e.dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(e.dicom_priority_override, ''), e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
@@ -91,7 +92,8 @@ class GestaoExamesRepository
         } catch (\PDOException $e) {
             // Permite que a tela informe migration pendente sem esconder a causa.
             if (stripos($e->getMessage(), 'dicom_priority_override') === false
-                && stripos($e->getMessage(), 'medico_solicitante_manual') === false) {
+                && stripos($e->getMessage(), 'medico_solicitante_manual') === false
+                && stripos($e->getMessage(), 'informacoes_manual') === false) {
                 throw $e;
             }
             $fallback = $this->pdo->prepare("
@@ -100,6 +102,7 @@ class GestaoExamesRepository
                     e.modalities, e.study_description, 0 AS study_description_manual,
                     NULL AS medico_solicitante_manual,
                     COALESCE(e.referring_physician_name, '') AS medico_solicitante_exibicao,
+                    NULL AS informacoes_manual,
                     e.situacao,
                     COALESCE(e.dicom_priority, '') AS dicom_priority,
                     COALESCE(e.dicom_priority, 'ROUTINE') AS prioridade_efetiva,
@@ -125,6 +128,7 @@ class GestaoExamesRepository
             SELECT
                 id, tenant_id, study_instance_uid, situacao, modalities, study_description,
                 medico_solicitante_manual,
+                informacoes_manual,
                 COALESCE(dicom_priority, '') AS dicom_priority,
                 COALESCE(NULLIF(dicom_priority_override, ''), dicom_priority, 'ROUTINE') AS prioridade_efetiva,
                 dicom_priority_override
@@ -224,6 +228,46 @@ class GestaoExamesRepository
             'user_id' => $userId,
         ]);
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /** Persiste uma única informação administrativa no estudo já bloqueado pela transação. */
+    public function updateStudyInformation(int $studyId, int $tenantId, ?string $value, int $userId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE bi_pacs_estudos
+                SET informacoes_manual = :value,
+                    informacoes_manual_em = NOW(),
+                    informacoes_manual_por = :user_id
+              WHERE id = :study_id AND tenant_id = :tenant_id'
+        );
+        $stmt->execute([
+            'value' => $value,
+            'user_id' => $userId,
+            'study_id' => $studyId,
+            'tenant_id' => $tenantId,
+        ]);
+    }
+
+    /** Mantém histórico de presença/remoção sem duplicar o texto potencialmente sensível. */
+    public function addStudyInformationAudit(int $studyId, int $tenantId, bool $hadBefore, bool $hasAfter, int $userId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO bi_pacs_estudos_informacoes_auditoria
+                (tenant_id, estudo_id, tinha_informacao_anterior, tem_informacao_nova, usuario_id, criado_em)
+             VALUES (:tenant_id, :study_id, :had_before, :has_after, :user_id, NOW())'
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'study_id' => $studyId,
+            // Evita que false seja convertido em string vazia pelo adaptador
+            // PostgreSQL. Os literais 0/1 são aceitos pelos dois dialetos.
+            'had_before' => $hadBefore ? 1 : 0,
+            'has_after' => $hasAfter ? 1 : 0,
+            'user_id' => $userId,
+        ]);
+        // O adaptador PostgreSQL da aplicação não expõe lastInsertId(). A inserção
+        // é a evidência auditável; o identificador não é necessário ao fluxo.
+        return 0;
     }
 
     public function listPriorityAudit(int $studyId, int $tenantId, int $limit = 20): array

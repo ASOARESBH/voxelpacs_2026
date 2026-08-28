@@ -59,6 +59,8 @@ class GestaoExamesService
             'study_description_manual' => !empty($study['study_description_manual']),
             'requesting_physician' => (string) ($study['medico_solicitante_exibicao'] ?? ''),
             'requesting_physician_manual' => (string) ($study['medico_solicitante_manual'] ?? ''),
+            'study_information' => (string) ($study['informacoes_manual'] ?? ''),
+            'study_information_present' => trim((string) ($study['informacoes_manual'] ?? '')) !== '',
             'situacao' => (string) ($study['situacao'] ?? 'novo'),
             'report_id' => (int) ($study['report_id'] ?? 0),
             'report_situacao' => $reportSituacao,
@@ -189,6 +191,61 @@ class GestaoExamesService
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             Logger::error('[GestaoExamesService::changeRequestingPhysician] falha', [
+                'study_id' => $studyId, 'tenant_id' => $tenantId, 'user_id' => $userId, 'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => 'persistencia_falhou'];
+        }
+    }
+
+    /** Registra informação única para ciência médica, sem semântica de conversa. */
+    public function changeStudyInformation(int $studyId, int $tenantId, int $userId, string $value): array
+    {
+        $value = str_replace(["\r\n", "\r"], "\n", trim($value));
+        $value = preg_replace('/[ \t]+/u', ' ', $value) ?? '';
+        $value = preg_replace('/[ \t]+$/mu', '', $value) ?? '';
+        $value = mb_strtoupper($value, 'UTF-8');
+        if ($value !== '' && (mb_strlen($value, 'UTF-8') < 3 || mb_strlen($value, 'UTF-8') > 1000)) {
+            return ['ok' => false, 'error' => 'informacoes_invalida'];
+        }
+        if ($value !== '' && preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', $value)) {
+            return ['ok' => false, 'error' => 'informacoes_invalida'];
+        }
+
+        $pdo = $this->repo->pdo();
+        try {
+            $pdo->beginTransaction();
+            $study = $this->repo->lockStudyContext($studyId, $tenantId);
+            if (!$study) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
+            if ((string) ($study['situacao'] ?? '') === 'pendente') {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'chat_pendente'];
+            }
+            $before = trim((string) ($study['informacoes_manual'] ?? ''));
+            if ($before === $value) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'informacoes_igual'];
+            }
+            $hasAfter = $value !== '';
+            $this->repo->updateStudyInformation($studyId, $tenantId, $hasAfter ? $value : null, $userId);
+            $auditId = $this->repo->addStudyInformationAudit($studyId, $tenantId, $before !== '', $hasAfter, $userId);
+            $pdo->commit();
+
+            AuditLogger::logChange(
+                'estudo.informacoes_alteradas',
+                'bi_pacs_estudos',
+                $studyId,
+                ['informacao_registrada' => $before !== ''],
+                ['informacao_registrada' => $hasAfter, 'audit_id' => $auditId],
+                $tenantId,
+                'gestao_estudos'
+            );
+            return ['ok' => true, 'value' => $value, 'audit_id' => $auditId];
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::error('[GestaoExamesService::changeStudyInformation] falha', [
                 'study_id' => $studyId, 'tenant_id' => $tenantId, 'user_id' => $userId, 'error' => $e->getMessage(),
             ]);
             return ['ok' => false, 'error' => 'persistencia_falhou'];

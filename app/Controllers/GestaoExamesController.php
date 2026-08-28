@@ -224,7 +224,7 @@ class GestaoExamesController extends Controller
     }
 
     /** Grava somente a sobrescrita administrativa do médico solicitante, sem alterar a tag DICOM de origem. */
-    public function alterarMedicoSolicitante(int $estudoId): void
+    public function alterarSolicitante(int $estudoId): void
     {
         if (!$this->autorizadoGerenciar()) return;
         $input = $this->inputJsonOuPost();
@@ -247,6 +247,35 @@ class GestaoExamesController extends Controller
         $this->json([
             'ok' => true,
             'msg' => t('gestao_gerenciar.solicitante.msg.salvo'),
+            'value' => $result['value'],
+            'audit_id' => $result['audit_id'],
+        ]);
+    }
+
+    /** Salva uma informação única e textual para ciência médica no estudo autorizado. */
+    public function alterarInformacoes(int $estudoId): void
+    {
+        if (!$this->autorizadoGerenciar()) return;
+        $input = $this->inputJsonOuPost();
+        if (!$this->validarCsrf($input['csrf'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''))) {
+            $this->json(['ok' => false, 'msg' => t('gestao_gerenciar.erro.csrf')], 403);
+            return;
+        }
+        $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
+        if ($tenantId === null) return;
+        $result = $this->gerenciarService->changeStudyInformation(
+            $estudoId,
+            $tenantId,
+            (int) (Auth::userId() ?? 0),
+            (string) ($input['informacoes'] ?? '')
+        );
+        if (!$result['ok']) {
+            $this->json(['ok' => false, 'msg' => $this->mensagemGerenciar($result['error'] ?? null)], $this->statusGerenciar($result['error'] ?? null));
+            return;
+        }
+        $this->json([
+            'ok' => true,
+            'msg' => t('gestao_gerenciar.informacoes.msg.salvo'),
             'value' => $result['value'],
             'audit_id' => $result['audit_id'],
         ]);
@@ -536,6 +565,8 @@ class GestaoExamesController extends Controller
             'prioridade_igual' => t('gestao_gerenciar.erro.prioridade_igual'),
             'solicitante_invalido' => t('gestao_gerenciar.solicitante.erro.invalido'),
             'solicitante_igual' => t('gestao_gerenciar.solicitante.erro.igual'),
+            'informacoes_invalida' => t('gestao_gerenciar.informacoes.erro.invalida'),
+            'informacoes_igual' => t('gestao_gerenciar.informacoes.erro.igual'),
             'chat_pendente' => t('gestao_gerenciar.erro.chat_pendente'),
             'estudo_nao_encontrado' => t('gestao_gerenciar.erro.estudo'),
             'persistencia_falhou' => t('gestao_gerenciar.erro.persistencia'),

@@ -14,6 +14,7 @@
         context: null,
         csrf: document.querySelector('#pedidoForm input[name="csrf"]')?.value || '',
         reopenGerenciarAfterDescription: false,
+        reopenGerenciarAfterInformation: false,
     };
 
     const $ = (selector) => document.querySelector(selector);
@@ -55,6 +56,14 @@
 
     function showRequestingPhysicianStatus(message, type = 'danger') {
         const element = $('#gerenciarSolicitanteStatus');
+        if (!element) return;
+        element.className = `alert alert-${type} py-2 small`;
+        element.textContent = message || '';
+        element.style.display = message ? 'block' : 'none';
+    }
+
+    function showStudyInformationStatus(message, type = 'danger') {
+        const element = $('#gerenciarInformacoesStatus');
         if (!element) return;
         element.className = `alert alert-${type} py-2 small`;
         element.textContent = message || '';
@@ -181,12 +190,14 @@
         const descriptionButton = $('#gerenciarDescricao');
         const priorityButton = $('#gerenciarPrioridade');
         const requestingPhysicianButton = $('#gerenciarSolicitante');
+        const informationButton = $('#gerenciarInformacoes');
         const badge = $('#gerenciarChatBadge');
         const lockNotice = $('#gerenciarLockNotice');
         const pending = Boolean(context?.chat_pending);
         if (badge) badge.style.display = pending ? 'inline-flex' : 'none';
         if (priorityButton) priorityButton.disabled = pending;
         if (requestingPhysicianButton) requestingPhysicianButton.disabled = pending;
+        if (informationButton) informationButton.disabled = pending;
         if (lockNotice) lockNotice.style.display = pending ? 'block' : 'none';
         if (chatButton) chatButton.disabled = !state.reportId;
         if (descriptionButton) descriptionButton.disabled = !context?.modalidade;
@@ -197,6 +208,10 @@
             : text('prioridade');
         const requesterDetail = $('#gerenciarSolicitanteDesc');
         if (requesterDetail) requesterDetail.textContent = context?.requesting_physician || text('solicitanteSemInformacao');
+        const informationDetail = $('#gerenciarInformacoesDesc');
+        if (informationDetail) informationDetail.textContent = context?.study_information_present
+            ? text('informacoesRegistradas')
+            : text('informacoesSemInformacao');
 
         const chat = context?.chat || null;
         renderChatHistory(chat);
@@ -296,6 +311,10 @@
 
     function normalizeRequestingPhysicianInput(value) {
         return String(value || '').toLocaleUpperCase();
+    }
+
+    function normalizeStudyInformationInput(value) {
+        return String(value || '').toLocaleUpperCase('pt-BR');
     }
 
     async function openDescriptionModal() {
@@ -401,6 +420,23 @@
         modal('gerenciarSolicitanteModal')?.show();
     }
 
+    function openStudyInformationModal() {
+        if (!state.studyId || state.context?.chat_pending) return;
+        const informationModal = modal('gerenciarInformacoesModal');
+        if (!informationModal) return;
+        $('#gerenciarInformacoesInput').value = normalizeStudyInformationInput(state.context?.study_information || '');
+        showStudyInformationStatus('', 'info');
+        const mainElement = document.getElementById('gerenciarModal');
+        const mainModal = modal('gerenciarModal');
+        if (mainElement?.classList.contains('show') && mainModal) {
+            state.reopenGerenciarAfterInformation = true;
+            mainElement.addEventListener('hidden.bs.modal', () => informationModal.show(), { once: true });
+            mainModal.hide();
+        } else {
+            informationModal.show();
+        }
+    }
+
     async function saveRequestingPhysician(event) {
         event.preventDefault();
         if (!state.studyId || state.context?.chat_pending) return;
@@ -417,6 +453,25 @@
         try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
         if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
         modal('gerenciarSolicitanteModal')?.hide();
+        window.location.reload();
+    }
+
+    async function saveStudyInformation(event) {
+        event.preventDefault();
+        if (!state.studyId || state.context?.chat_pending) return;
+        const input = $('#gerenciarInformacoesInput');
+        const value = normalizeStudyInformationInput(input?.value || '').trim();
+        input.value = value;
+        const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/informacoes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ informacoes: value, csrf: csrfToken() })
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+        modal('gerenciarInformacoesModal')?.hide();
         window.location.reload();
     }
 
@@ -494,6 +549,17 @@
             const input = event.currentTarget;
             input.value = normalizeRequestingPhysicianInput(input.value);
         });
+        const studyInformationInput = $('#gerenciarInformacoesInput');
+        if (studyInformationInput) studyInformationInput.style.textTransform = 'uppercase';
+        studyInformationInput?.addEventListener('input', (event) => {
+            const input = event.currentTarget;
+            const normalized = normalizeStudyInformationInput(input.value);
+            if (input.value !== normalized) input.value = normalized;
+        });
+        studyInformationInput?.addEventListener('change', (event) => {
+            const input = event.currentTarget;
+            input.value = normalizeStudyInformationInput(input.value);
+        });
         document.querySelectorAll('.gerenciar-trigger').forEach((button) => {
             button.addEventListener('click', async () => {
                 modal('gerenciarModal')?.show();
@@ -514,6 +580,12 @@
         });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
         $('#gerenciarSolicitante')?.addEventListener('click', openRequestingPhysicianModal);
+        $('#gerenciarInformacoes')?.addEventListener('click', openStudyInformationModal);
+        document.getElementById('gerenciarInformacoesModal')?.addEventListener('hidden.bs.modal', () => {
+            if (!state.reopenGerenciarAfterInformation || !state.context) return;
+            state.reopenGerenciarAfterInformation = false;
+            modal('gerenciarModal')?.show();
+        });
         $('#gerenciarPrioridadeSelect')?.addEventListener('change', loadPriorityRecipients);
         $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
@@ -537,6 +609,9 @@
         });
         $('#gerenciarSolicitanteForm')?.addEventListener('submit', (event) => {
             saveRequestingPhysician(event).catch((error) => showRequestingPhysicianStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarInformacoesForm')?.addEventListener('submit', (event) => {
+            saveStudyInformation(event).catch((error) => showStudyInformationStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarPrioridadeMotivo')?.addEventListener('input', (event) => {
             $('#gerenciarPrioridadeCount').textContent = `${event.target.value.length}/20`;

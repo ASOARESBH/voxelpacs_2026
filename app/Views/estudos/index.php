@@ -941,6 +941,11 @@ $periodoLabel = [
                         <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante')) ?></strong><small id="gerenciarSolicitanteDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante_desc')) ?></small></span>
                         <i class="fa fa-chevron-right ms-auto"></i>
                     </button>
+                    <button type="button" id="gerenciarInformacoes" class="gerenciar-menu-item">
+                        <i class="fa fa-triangle-exclamation"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.informacoes')) ?></strong><small id="gerenciarInformacoesDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.informacoes_desc')) ?></small></span>
+                        <i class="fa fa-chevron-right ms-auto"></i>
+                    </button>
                 </div>
                 <div id="gerenciarLockNotice" class="gerenciar-lock-notice" style="display:none;">
                     <i class="fa fa-lock"></i> <span><?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></span>
@@ -968,6 +973,29 @@ $periodoLabel = [
                     <small class="text-muted d-block mt-2"><?= htmlspecialchars(t('gestao_gerenciar.solicitante.ajuda')) ?></small>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button><button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> <?= htmlspecialchars(t('gestao_gerenciar.solicitante.salvar')) ?></button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MODAL INFORMAÇÕES -->
+<div class="modal fade" id="gerenciarInformacoesModal" tabindex="-1" aria-labelledby="gerenciarInformacoesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarInformacoesModalLabel"><i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.informacoes.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <form id="gerenciarInformacoesForm">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div id="gerenciarInformacoesStatus" class="alert py-2 small" style="display:none;"></div>
+                    <label class="w-100" for="gerenciarInformacoesInput"><?= htmlspecialchars(t('gestao_gerenciar.informacoes.campo')) ?>
+                        <textarea id="gerenciarInformacoesInput" name="informacoes" class="form-control mt-1" rows="5" maxlength="1000" autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.placeholder')) ?>"></textarea>
+                    </label>
+                    <small class="text-muted d-block mt-2"><?= htmlspecialchars(t('gestao_gerenciar.informacoes.ajuda')) ?></small>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button><button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> <?= htmlspecialchars(t('gestao_gerenciar.informacoes.salvar')) ?></button></div>
             </form>
         </div>
     </div>
@@ -1136,6 +1164,8 @@ $periodoLabel = [
      data-descricao-modalidade="<?= htmlspecialchars(t('gestao_gerenciar.descricao.modalidade')) ?>"
      data-descricao-sem-sugestoes="<?= htmlspecialchars(t('gestao_gerenciar.descricao.sem_sugestoes')) ?>"
      data-solicitante-sem-informacao="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.sem_informacao')) ?>"
+     data-informacoes-sem-informacao="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.sem_informacao')) ?>"
+     data-informacoes-registradas="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.registradas')) ?>"
      data-confirmar-descricao-lote="<?= htmlspecialchars(t('gestao_gerenciar.descricao.confirmar_lote')) ?>"></div>
 <?php endif; ?>
 
@@ -2203,5 +2233,5 @@ function resetDownloadUI() {
 
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-solicitante-caixa-alta-v1"></script>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=20260828-informacoes-estudo-v3"></script>
 <?php endif; ?>

@@ -299,6 +299,35 @@ body.reports-body {
     letter-spacing: -.01em;
     line-height: 1;
 }
+.rp-informacoes-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: .42rem;
+    min-height: 2.2rem;
+    margin-left: auto;
+    padding: .38rem .68rem;
+    border: 1px solid rgba(251, 191, 36, .62);
+    border-radius: 8px;
+    background: rgba(245, 158, 11, .12);
+    color: #fbbf24;
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1.15;
+    cursor: pointer;
+    transition: background .16s ease-out, border-color .16s ease-out, transform .16s ease-out;
+}
+.rp-informacoes-trigger:hover,
+.rp-informacoes-trigger:focus-visible {
+    border-color: #fbbf24;
+    background: rgba(245, 158, 11, .22);
+    color: #fde68a;
+    outline: none;
+}
+.rp-informacoes-trigger:active { transform: scale(.97); }
+.rp-informacoes-trigger i { font-size: .88rem; }
+.reports-information-modal { border-color: rgba(251, 191, 36, .4); }
+.reports-information-modal .modal-title { color: #fbbf24; }
+.reports-information-text { margin: 0; color: var(--pacs-text, #e2e8f0); font-size: .88rem; line-height: 1.55; overflow-wrap: anywhere; }
 
 .reports-card-actions { display: flex; flex-direction: column; gap: .5rem; }
 
@@ -311,10 +340,132 @@ body.reports-body {
     overflow: visible;
 }
 
-.reports-editor-toolbar {
+.reports-editor-toolbar--two-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .18rem;
+    min-height: 76px;
+    padding: .38rem .55rem;
+    overflow: visible;
     border-bottom: 1px solid var(--pacs-border, #1e3a5f) !important;
     background: var(--pacs-card-bg, #0d1b2a);
 }
+.reports-editor-toolbar--two-row .reports-toolbar-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    min-height: 32px;
+    overflow: visible;
+}
+.reports-editor-toolbar--two-row .reports-toolbar-group {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 28px;
+    margin: 0 !important;
+    padding: 0 .45rem;
+    white-space: nowrap;
+}
+.reports-editor-toolbar--two-row .reports-toolbar-group:first-child { padding-left: 0; }
+.reports-editor-toolbar--two-row .reports-toolbar-group + .reports-toolbar-group {
+    border-left: 1px solid var(--pacs-border, #1e3a5f);
+}
+.reports-editor-toolbar--two-row .reports-toolbar-group:last-child { padding-right: 0; }
+.reports-editor-toolbar--two-row .reports-toolbar-group button {
+    display: inline-grid;
+    place-items: center;
+    width: 29px;
+    height: 29px;
+    margin: 0 1px;
+    border-radius: 4px;
+}
+.reports-editor-toolbar--two-row .reports-toolbar-group button:hover,
+.reports-editor-toolbar--two-row .reports-toolbar-group button:focus-visible,
+.reports-editor-page-guide-control:hover,
+.reports-editor-page-guide-control:focus-within {
+    background: rgba(79,195,247,.12);
+    outline: none;
+}
+.reports-toolbar-caption {
+    margin-right: .32rem;
+    color: var(--pacs-text-muted, #8fa3bf);
+    font-size: .69rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+}
+.reports-toolbar-caption--size { margin-left: .42rem; }
+.reports-editor-toolbar--two-row .ql-font,
+.reports-editor-toolbar--two-row .ql-size,
+.reports-editor-spacing-select {
+    height: 29px;
+    margin: 0 3px 0 0;
+    border: 1px solid var(--pacs-border, #1e3a5f);
+    border-radius: 4px;
+    padding: .15rem .35rem;
+    color: var(--pacs-text, #e2e8f0);
+    background: var(--pacs-input-bg, rgba(255,255,255,.04));
+    font-size: .7rem;
+    font-weight: 600;
+}
+.reports-editor-toolbar--two-row .ql-font { width: 92px; }
+.reports-editor-toolbar--two-row .ql-size { width: 70px; }
+.reports-editor-spacing-select { width: 92px; }
+.reports-editor-page-guide-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: .28rem;
+    min-width: 29px;
+    height: 29px;
+    margin: 0;
+    padding: 0 .28rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--pacs-text-muted, #8fa3bf);
+    cursor: pointer;
+    font-size: .69rem;
+    font-weight: 600;
+}
+.reports-editor-page-guide-control input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.reports-editor-page-guide-control:has(input:checked) {
+    border-color: rgba(79,195,247,.62);
+    color: var(--pacs-primary, #4fc3f7);
+    background: rgba(79,195,247,.12);
+}
+.reports-editor-container .ql-editor,
+.reports-editor-container .ql-editor p,
+.reports-editor-container .ql-editor li {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item::before { content: 'Arial'; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before { content: 'Arial'; font-family: Arial, Helvetica, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="verdana"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"]::before { content: 'Verdana'; font-family: Verdana, Geneva, sans-serif; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="times-new-roman"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="times-new-roman"]::before { content: 'Times New Roman'; font-family: 'Times New Roman', Times, serif; }
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before { content: '12 pt'; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="small"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="small"]::before { content: '10 pt'; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="large"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="large"]::before { content: '14 pt'; }
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="huge"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="huge"]::before { content: '16 pt'; }
+.reports-editor-container .ql-editor .ql-font-arial { font-family: Arial, Helvetica, sans-serif; }
+.reports-editor-container .ql-editor .ql-font-verdana { font-family: Verdana, Geneva, sans-serif; }
+.reports-editor-container .ql-editor .ql-font-times-new-roman { font-family: 'Times New Roman', Times, serif; }
+.reports-editor-container .ql-editor .ql-size-small { font-size: 10px; }
+.reports-editor-container .ql-editor .ql-size-large { font-size: 14px; }
+.reports-editor-container .ql-editor .ql-size-huge { font-size: 16px; }
+
 
 .reports-editor-document-title {
     margin: 16px 1rem 12px;
@@ -342,6 +493,38 @@ body.reports-body {
     height: auto;
     overflow: visible;
     overflow-wrap: anywhere;
+}
+
+/* Enter cria um novo parágrafo clínico com afastamento discreto. A distância
+   adicional é aplicada somente pelas classes allowlisted do editor. */
+.reports-editor-container .ql-editor p { margin: 0 0 6px; }
+.reports-editor-container .ql-editor p.ql-spacing-compact { margin-bottom: 2px; }
+.reports-editor-container .ql-editor p.ql-spacing-normal { margin-bottom: 6px; }
+.reports-editor-container .ql-editor p.ql-spacing-medium { margin-bottom: 12px; }
+.reports-editor-container .ql-editor p.ql-spacing-wide { margin-bottom: 20px; }
+
+.reports-editor-card { position: relative; }
+.reports-editor-page-guide {
+    position: absolute;
+    z-index: 5;
+    right: 18mm;
+    left: 18mm;
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    height: 0;
+    border-top: 1px dashed rgba(79, 195, 247, .68);
+    color: var(--pacs-primary, #4fc3f7);
+    pointer-events: none;
+}
+.reports-editor-page-guide::after {
+    content: attr(data-label);
+    padding: 0 .35rem;
+    background: var(--pacs-card-bg, #0d1b2a);
+    font-size: .63rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
 }
 
 .reports-editor-container h4[data-secao] {
@@ -955,6 +1138,16 @@ body.reports-body {
     border-bottom: 1px solid #d9dee5 !important;
     background: #fafafa;
 }
+.reports-editor-card--moderno .reports-toolbar-group + .reports-toolbar-group { border-left-color: #d9dee5; }
+.reports-editor-card--moderno .reports-toolbar-caption,
+.reports-editor-card--moderno .reports-editor-page-guide-control { color: #64748b; }
+.reports-editor-card--moderno .reports-editor-toolbar--two-row .ql-font,
+.reports-editor-card--moderno .reports-editor-toolbar--two-row .ql-size,
+.reports-editor-card--moderno .reports-editor-spacing-select { color: #334155; border-color: #cbd5e1; background: #fff; }
+.reports-editor-card--moderno .reports-toolbar-group button:hover,
+.reports-editor-card--moderno .reports-toolbar-group button:focus-visible,
+.reports-editor-card--moderno .reports-editor-page-guide-control:hover,
+.reports-editor-card--moderno .reports-editor-page-guide-control:focus-within { background: #e8f2fa; }
 .reports-editor-card--moderno .reports-editor-document-title {
     margin: 17px 18mm 14px;
     color: #111;
@@ -997,7 +1190,12 @@ body.reports-body {
 .reports-editor-card--moderno .reports-editor-container h3:not(:first-child) {
     margin-top: 21px;
 }
-.reports-editor-card--moderno .reports-editor-container p { margin: 0 0 11px; }
+.reports-editor-card--moderno .reports-editor-container p { margin: 0 0 6px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-compact { margin-bottom: 2px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-normal { margin-bottom: 6px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-medium { margin-bottom: 12px; }
+.reports-editor-card--moderno .reports-editor-container p.ql-spacing-wide { margin-bottom: 20px; }
+.reports-editor-card--moderno .reports-editor-page-guide::after { background: #edf1f5; }
 .reports-editor-card--moderno .ql-snow .ql-stroke { stroke: #475569; }
 .reports-editor-card--moderno .ql-snow .ql-fill { fill: #475569; }
 .reports-editor-card--moderno .ql-snow .ql-picker { color: #475569; }
@@ -1022,4 +1220,60 @@ body.reports-body {
     .reports-editor-card--moderno .reports-editor-toolbar,
     .reports-editor-card--moderno .reports-editor-container { margin-left: 22px; margin-right: 22px; }
     .reports-editor-card--moderno .reports-signature-block { margin-left: 22px; margin-right: 22px; }
+}
+
+@media (max-width: 680px) {
+    .reports-editor-toolbar--two-row { min-height: 0; }
+    .reports-editor-toolbar--two-row .reports-toolbar-row {
+        flex-wrap: wrap;
+        row-gap: .25rem;
+    }
+    .reports-editor-toolbar--two-row .reports-toolbar-group {
+        padding: 0 .3rem;
+    }
+    .reports-editor-toolbar--two-row .reports-toolbar-group:first-child { padding-left: 0; }
+    .reports-editor-toolbar--two-row .reports-toolbar-group + .reports-toolbar-group { border-left: 0; }
+    .reports-toolbar-caption--size { margin-left: .25rem; }
+}
+
+/* Espaçamento clínico: ações explícitas, sem seletor nativo dependente do tema. */
+.reports-editor-toolbar--two-row .reports-editor-spacing-button {
+    width: auto !important;
+    min-width: 0;
+    height: 27px;
+    margin: 0 1px;
+    padding: 0 .38rem;
+    border: 1px solid var(--pacs-border, #1e3a5f);
+    border-radius: 4px;
+    color: var(--pacs-text-muted, #8fa3bf);
+    background: transparent;
+    font-size: .66rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.reports-editor-toolbar--two-row .reports-editor-spacing-button:hover,
+.reports-editor-toolbar--two-row .reports-editor-spacing-button:focus-visible {
+    border-color: rgba(79,195,247,.62);
+    color: var(--pacs-text, #e2e8f0);
+}
+.reports-editor-toolbar--two-row .reports-editor-spacing-button.is-active {
+    border-color: rgba(79,195,247,.72);
+    color: var(--pacs-primary, #4fc3f7);
+    background: rgba(79,195,247,.14);
+}
+.reports-editor-card--moderno .reports-editor-spacing-button {
+    border-color: #cbd5e1;
+    color: #64748b;
+    background: #fff;
+}
+.reports-editor-card--moderno .reports-editor-spacing-button:hover,
+.reports-editor-card--moderno .reports-editor-spacing-button:focus-visible {
+    border-color: #7fb7de;
+    color: #1e4d6b;
+    background: #f2f8fc;
+}
+.reports-editor-card--moderno .reports-editor-spacing-button.is-active {
+    border-color: #5b9ecb;
+    color: #0f5f91;
+    background: #e8f2fa;
 }

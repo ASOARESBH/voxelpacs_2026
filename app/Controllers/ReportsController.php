@@ -129,6 +129,7 @@ class ReportsController extends Controller
             'csrfToken'         => $this->csrfToken(),
             'page_title'        => 'Laudo — ' . ($estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente'),
             'medicoIdLogado'    => $medicoIdLogado,
+            'canViewStudyInformation' => $medicoIdLogado > 0,
             'reportLayoutCodigo' => $reportLayoutCodigo,
             'reportVisual'       => $contextoVisual,
         ], 'reports');
@@ -615,7 +616,10 @@ class ReportsController extends Controller
                     'hash' => $data['assinatura_hash'] ?? '',
                     'data' => $data['assinado_em'] ?? ''
                 ]))
-            ], $portalPatientPdf ? 'portal_pdf' : 'pacs');
+            // O dispatcher e os templates PDF já são documentos HTML completos.
+            // Não aplicar o layout operacional para evitar cabeçalho, navegação e
+            // scripts do PACS na impressão ou no arquivo salvo pelo usuário.
+            ], '');
         } catch (\Throwable $e) {
             Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
             http_response_code(500);

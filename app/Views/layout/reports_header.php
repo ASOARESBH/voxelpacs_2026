@@ -44,6 +44,8 @@ $modalidadePrincipal = $modalidadesEstudo[0] ?? '';
 $studyDescriptionDicom = \App\Services\StudyDescriptionResolver::text($estudo, '');
 $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($report);
 $acaoPdfIndisponivel = !$laudoPossuiConteudo;
+$empresaImpressao = trim((string) (($reportVisual['unidade_nome'] ?? '') ?: ($estudo->institution_name ?? '')));
+$logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -57,7 +59,7 @@ $acaoPdfIndisponivel = !$laudoPossuiConteudo;
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css">
     <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
     <link rel="stylesheet" href="/assets/css/mobile-responsive.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
-    <link rel="stylesheet" href="/assets/css/reports.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
+    <link rel="stylesheet" href="/assets/css/reports.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>&print-layout=20260828-information">
 </head>
 <body class="reports-body">
 
@@ -77,6 +79,16 @@ $acaoPdfIndisponivel = !$laudoPossuiConteudo;
      data-peer-review-pending="<?= $peerReviewAberto ? '1' : '0' ?>"
      data-peer-review-id="<?= (int) (($peerReview['aberta']->id ?? 0)) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">
+
+    <!-- Visível somente no Ctrl+P do editor. A saída PDF possui template próprio. -->
+    <header class="reports-print-client-header" aria-hidden="true">
+        <?php if ($logoEmpresaImpressao !== ''): ?>
+        <img src="<?= htmlspecialchars($logoEmpresaImpressao, ENT_QUOTES) ?>" alt="">
+        <?php endif; ?>
+        <?php if ($empresaImpressao !== ''): ?>
+        <strong><?= htmlspecialchars($empresaImpressao) ?></strong>
+        <?php endif; ?>
+    </header>
 
     <!-- ═══════════════════════════════════════════════════════
          BARRA SUPERIOR
