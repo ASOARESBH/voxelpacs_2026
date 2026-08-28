@@ -70,6 +70,12 @@ O processo local é instalado como `voxelpacs-report-delivery-worker.service`, s
 
 O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da versão imutável, encapsula o documento em objeto DICOM mantendo o Study UID do evento e executa C-STORE. O processo grava apenas estados técnicos sanitizados em tentativas, usa armazenamento privado para artefatos e falha de modo fechado se parâmetros obrigatórios, identificação do estudo ou perfil TLS solicitado não estiverem completos.
 
+### Identidade DICOM no retorno de laudo
+
+O retorno deve preservar **Patient ID** `(0010,0020)` e **Issuer of Patient ID** `(0010,0021)` como atributos distintos. O Patient ID não deve concatenar o issuer com separadores de componentes. Alguns receptores validam a combinação contra o estudo existente e recusam o C-STORE quando qualquer atributo diverge.
+
+O `pdf2dcm --study-from` utilizado no encapsulamento pode não reter `(0010,0021)` no objeto final. Portanto, quando o perfil do destino definir `issuer_of_patient_id`, o worker o reaplica explicitamente no Encapsulated PDF com `--key 0010,0021=<issuer>` antes do C-STORE. A configuração de issuer de saída é uma regra do **destino receptor** e pode divergir do issuer que foi usado para selecionar a origem/routing da outbox. Essa regra precisa ser homologada por destino e validada com PDF sintético antes de qualquer transmissão clínica.
+
 > Uma configuração que solicita TLS não é rebaixada silenciosamente para TCP. Enquanto não houver perfil de certificados configurado, o job falhará com estado técnico sanitizado e seguirá a política de retentativa/DLQ.
 
 ## Variáveis de ambiente
