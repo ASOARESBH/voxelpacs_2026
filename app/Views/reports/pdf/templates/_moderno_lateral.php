@@ -76,6 +76,10 @@ $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name
 // Study Description, procedimento, região anatômica e modalidade DICOM não
 // são promovidos automaticamente a título de impressão.
 $logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? $r['unidade_logo_path'] ?? ''));
+// No viewer, logo_path é relativo a public/. No snapshot, a fonte é data URI.
+if ($logoUnidade !== '' && !str_starts_with($logoUnidade, 'data:')) {
+    $logoUnidade = '/' . ltrim($logoUnidade, '/');
+}
 $assinaturaSrc = trim((string) ($r['pdf_snapshot_signature_src'] ?? ''));
 if ($assinaturaSrc === '' && !empty($r['assinatura_caminho_arquivo'])) {
     $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura';
@@ -160,7 +164,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-report-content a, .pdf-clinical-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-report-empty { color: #737373; font-style: italic; }
 
-        .pdf-signature { margin-top: auto; padding-top: 50px; text-align: center; page-break-inside: avoid; }
+        .pdf-signature { margin-top: 18px; padding-top: 18px; text-align: center; page-break-inside: avoid; }
         .pdf-signature-image { display: block; max-width: 210px; max-height: 68px; margin: 0 auto 3px; object-fit: contain; }
         .pdf-signer-name { color: #111; font-size: 10px; font-weight: 700; }
         .pdf-signer-role, .pdf-signer-details, .pdf-verification, .pdf-company-details { color: #404040; font-size: 8px; line-height: 1.45; }
@@ -190,17 +194,17 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             html, body { width: 210mm; min-height: 297mm; background: #fff; }
             body { font-size: 11px; }
             .pdf-actions { display: none !important; }
-            .pdf-page { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; margin: 0; padding: 18mm 18mm 23mm; box-shadow: none; }
+            .pdf-page { display: block; width: 210mm; min-height: 0; margin: 0; padding: 14mm 18mm 14mm; box-shadow: none; }
             .pdf-header, .pdf-patient, .pdf-signature, .pdf-footer { position: static; }
             .pdf-patient { margin-top: 11px; }
-            .pdf-signature { margin-top: auto; padding-top: 50px; }
+            .pdf-signature { margin-top: 16px; padding-top: 16px; }
             .pdf-footer { margin-top: 12px; }
             .pdf-report-content, .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }
     </style>
 </head>
-<body>
+<body class="<?= !empty($snapshotPdf) ? 'snapshot-pdf' : '' ?>">
     <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>

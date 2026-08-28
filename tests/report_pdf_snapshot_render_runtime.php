@@ -6,6 +6,9 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Services\ReportPdfService;
 
+$syntheticBody = implode('', array_fill(0, 11, '<p>Texto sintético de homologação para validar paginação do documento clínico.</p>'));
+$syntheticLogo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JxZ4AAAAASUVORK5CYII=';
+
 $context = [
     'report' => [
         'id' => 999,
@@ -30,11 +33,12 @@ $context = [
         'medico_especialidade' => 'Radiologia',
         'assinado_em' => '2026-08-28 12:00:00',
         'assinatura_hash' => str_repeat('a', 64),
-        'corpo_laudo' => '<p>Conteúdo clínico sintético para validação.</p>',
+        'corpo_laudo' => $syntheticBody,
         'unidade_nome_fantasia' => 'Unidade Sintética',
         'unidade_razao_social' => 'Unidade Sintética',
         'unidade_cnpj' => '',
-        'unidade_logo_path' => '',
+        'unidade_logo_path' => 'uploads/unidades/synthetic-logo.png',
+        'pdf_snapshot_logo_src' => $syntheticLogo,
         'unidade_telefone' => '',
         'unidade_email' => '',
         'unidade_logradouro' => '',
@@ -59,6 +63,11 @@ try {
     $pdf = (new ReportPdfService())->renderSnapshotBinary($context);
     if (!str_starts_with($pdf, '%PDF') || strlen($pdf) < 1000) {
         throw new RuntimeException('snapshot_binary_contract_invalid');
+    }
+    if (isset($argv[1]) && $argv[1] !== '') {
+        if (file_put_contents($argv[1], $pdf, LOCK_EX) === false) {
+            throw new RuntimeException('snapshot_pdf_write_failed');
+        }
     }
     fwrite(STDOUT, "snapshot_runtime_ok bytes=" . strlen($pdf) . "\n");
 } catch (Throwable $error) {
