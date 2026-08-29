@@ -31,13 +31,13 @@ O pacote recebido em 2026-08-26 contém uma primeira versão do mesmo conceito, 
 | Token opaco por estudo | Já implementado em tabela dedicada, com tenant e servidor de origem. |
 | Manifesto Weasis | Implementado, com token assinado, consumo único e validação de UIDs. |
 | Proxy de instância | Atualizado para streaming, eliminando o buffer integral da instância. |
-| Protocolo `voxel://` | Estabelecido como protocolo primário; `weasis://` permanece como compatibilidade documentada. |
+| Protocolo `voxel://` | Estabelecido como protocolo primário; `weasis://` permanece como compatibilidade documentada. A abertura usa uma página intermediária com link local, e não um redirecionamento HTTP `Location`, evitando `ERR_FAILED` em navegadores Chromium. |
 | SQL anexado | Incompatível com PostgreSQL e, por isso, não foi executado. |
 | Grants da tabela de launches | A migration PostgreSQL `2026-08-29_voxel_desktop_launch_grants_postgresql.sql` concede ao papel da aplicação somente acesso ao schema, tabela e sequência de launches; ela não altera estudos, instâncias, tokens existentes ou auditorias. |
 
 ## Homologação obrigatória
 
-Use uma conta clínica autorizada e estudo de homologação desidentificado. Verifique, sem inspecionar dados desnecessários, que o clique na Worklist abre uma única instância do VOXEL Desktop, que o estudo correto é carregado e que uma URL de manifesto expirada não é aceita. Não copie URIs de protocolo, token, URLs de manifesto ou URLs de instância para tickets, capturas ou repositórios.
+Use uma conta clínica autorizada e estudo de homologação desidentificado. Após clicar em **VOXEL Desktop**, o navegador deverá apresentar a página curta “Abrindo no VOXEL Desktop”; se o acionamento automático for bloqueado pelo navegador, use o botão **Abrir VOXEL Desktop** exibido nessa mesma página. Não aceite, copie ou registre a URI do protocolo. Verifique, sem inspecionar dados desnecessários, que o clique na Worklist abre uma única instância do VOXEL Desktop, que o estudo correto é carregado e que uma URL de manifesto expirada não é aceita. Não copie URIs de protocolo, token, URLs de manifesto ou URLs de instância para tickets, capturas ou repositórios.
 
 ## Rollback
 

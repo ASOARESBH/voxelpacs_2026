@@ -25,6 +25,10 @@ $checks = [
     'launch remains temporary' => str_contains($service, 'LAUNCH_TTL_SECONDS = 120'),
     'launch stores tenant and source server' => str_contains($service, 'tenant_id, usuario_id, servidor_id, orthanc_study_id'),
     'primary URI uses voxel protocol' => str_contains($service, "'launch_uri' => 'voxel://?'"),
+    'voxel launch uses local handoff page' => str_contains($studies, 'renderVoxelDesktopLauncher')
+        && str_contains($studies, 'id="open-voxel-desktop"')
+        && str_contains($studies, 'launch.click()'),
+    'voxel launch avoids direct HTTP protocol redirect' => !str_contains($studies, "header('Location: ' . \$launch['launch_uri']"),
     'legacy URI is only compatibility metadata' => str_contains($service, "'compatibility_uri' => 'weasis://?'"),
     'manifest endpoint remains public' => str_contains($routes, "DesktopStudyLaunchController@manifest") && str_contains($router, "'/desktop-launch/'"),
     'manifest is single-use' => str_contains($service, 'manifesto_uses = 0'),

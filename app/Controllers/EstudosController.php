@@ -963,10 +963,7 @@ class EstudosController extends Controller
                     'status'            => 'sucesso',
                     'tempo_execucao_ms' => (int) round((microtime(true) - $inicio) * 1000),
                 ]);
-                header('Cache-Control: no-store, private');
-                header('Referrer-Policy: no-referrer');
-                header('Location: ' . $launch['launch_uri'], true, 302);
-                exit;
+                $this->renderVoxelDesktopLauncher((string) $launch['launch_uri']);
             } catch (\Throwable $ex) {
                 $service->registrarAcesso($contexto + [
                     'status' => 'erro',
@@ -1010,6 +1007,55 @@ class EstudosController extends Controller
         ]);
 
         $this->renderLauncherDesktop($viewer, $launcherUri);
+    }
+
+    /**
+     * Aciona o handler local do VOXEL Desktop sem redirecionar a requisição
+     * HTTP diretamente para um esquema customizado. Navegadores Chromium podem
+     * converter um Location: voxel:// em ERR_FAILED, mesmo com o aplicativo
+     * corretamente instalado. O link explícito mantém a URI efêmera no browser,
+     * oferece recuperação manual e nunca expõe credenciais ou topologia DICOM.
+     */
+    private function renderVoxelDesktopLauncher(string $launchUri): void
+    {
+        ?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>VOXEL PACS — Abrindo VOXEL Desktop</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 2.5rem 3rem; max-width: 500px; width: 90%; text-align: center; }
+        .icon { font-size: 3rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.3rem; margin-bottom: .75rem; color: #f0f6fc; }
+        p { font-size: .92rem; color: #8b949e; line-height: 1.6; }
+        .btn { display: inline-block; margin-top: 1.25rem; padding: .7rem 1.4rem; background: #1a56db; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: .9rem; }
+        #fallback { display: none; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <div class="icon" aria-hidden="true">▣</div>
+        <h1>Abrindo no VOXEL Desktop…</h1>
+        <p>O estudo será carregado somente no aplicativo instalado neste computador.</p>
+        <a class="btn" id="open-voxel-desktop" href="<?= htmlspecialchars($launchUri, ENT_QUOTES, 'UTF-8') ?>">Abrir VOXEL Desktop</a>
+        <p id="fallback">Se o aplicativo não abrir automaticamente, selecione <strong>Abrir VOXEL Desktop</strong>.</p>
+    </main>
+    <script>
+        (function () {
+            const launch = document.getElementById('open-voxel-desktop');
+            setTimeout(function () { launch.click(); }, 50);
+            setTimeout(function () { document.getElementById('fallback').style.display = 'block'; }, 1500);
+        }());
+    </script>
+</body>
+</html>
+        <?php
+        exit;
     }
 
     /**
