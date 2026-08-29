@@ -13,8 +13,9 @@ $orthanc = file_get_contents($root . '/app/Services/OrthancService.php');
 $routes = file_get_contents($root . '/routes/web.php');
 $router = file_get_contents($root . '/app/Core/Router.php');
 $studies = file_get_contents($root . '/app/Controllers/EstudosController.php');
+$launchGrantsMigration = file_get_contents($root . '/database/migrations/2026-08-29_voxel_desktop_launch_grants_postgresql.sql');
 
-if ($service === false || $controller === false || $orthanc === false || $routes === false || $router === false || $studies === false) {
+if ($service === false || $controller === false || $orthanc === false || $routes === false || $router === false || $studies === false || $launchGrantsMigration === false) {
     throw new RuntimeException('desktop_contract_files_unavailable');
 }
 
@@ -31,6 +32,11 @@ $checks = [
     'instance streams instead of returning full binary' => str_contains($controller, '->streamInstance(') && str_contains($orthanc, 'function streamInstanceFile('),
     'instance output never forwards Orthanc headers' => str_contains($controller, "header('Content-Type: application/dicom')") && str_contains($controller, 'X-Content-Type-Options'),
     'old generic viewer token table is not used' => !str_contains($service, 'pacs_viewer_tokens'),
+    'launch table grants cover application and sequence' => str_contains($launchGrantsMigration, 'GRANT SELECT, INSERT, UPDATE, DELETE')
+        && str_contains($launchGrantsMigration, 'bi_desktop_study_launches')
+        && str_contains($launchGrantsMigration, 'GRANT USAGE, SELECT')
+        && str_contains($launchGrantsMigration, 'bi_desktop_study_launches_id_seq')
+        && str_contains($launchGrantsMigration, 'TO voxelpacs_homolog'),
 ];
 
 $failed = [];

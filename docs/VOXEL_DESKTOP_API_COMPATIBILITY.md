@@ -33,6 +33,7 @@ O pacote recebido em 2026-08-26 contém uma primeira versão do mesmo conceito, 
 | Proxy de instância | Atualizado para streaming, eliminando o buffer integral da instância. |
 | Protocolo `voxel://` | Estabelecido como protocolo primário; `weasis://` permanece como compatibilidade documentada. |
 | SQL anexado | Incompatível com PostgreSQL e, por isso, não foi executado. |
+| Grants da tabela de launches | A migration PostgreSQL `2026-08-29_voxel_desktop_launch_grants_postgresql.sql` concede ao papel da aplicação somente acesso ao schema, tabela e sequência de launches; ela não altera estudos, instâncias, tokens existentes ou auditorias. |
 
 ## Homologação obrigatória
 
@@ -40,4 +41,4 @@ Use uma conta clínica autorizada e estudo de homologação desidentificado. Ver
 
 ## Rollback
 
-O rollback do patch consiste em restaurar os três arquivos PHP de backup e remover o teste/documentação adicionados. A tabela de launches e o valor `voxel` no enum podem permanecer, pois são aditivos e não afetam OHIF, RadiAnt ou Weasis. Não remova o enum sem antes confirmar que não há auditorias históricas desse viewer.
+O rollback do patch consiste em restaurar os três arquivos PHP de backup e remover o teste/documentação adicionados. Os grants da tabela de launches podem permanecer, pois apenas permitem ao papel da aplicação operar launches temporários já previstos; revogue-os somente em rollback explícito da funcionalidade, após confirmar que não há abertura Desktop em curso. A tabela de launches e o valor `voxel` no enum podem permanecer, pois são aditivos e não afetam OHIF, RadiAnt ou Weasis. Não remova o enum sem antes confirmar que não há auditorias históricas desse viewer.
