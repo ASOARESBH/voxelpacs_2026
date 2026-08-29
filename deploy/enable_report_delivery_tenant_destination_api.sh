@@ -29,6 +29,8 @@ sudo -u postgres pg_dump --dbname="$DATABASE" --schema="$SCHEMA" \
 sudo -u postgres psql --set=ON_ERROR_STOP=1 --dbname="$DATABASE" \
   --set=tenant_id="$TENANT_ID" --set=destination_id="$DESTINATION_ID" <<'SQL'
 BEGIN;
+SELECT set_config('voxelpacs.automation_tenant', :'tenant_id', true);
+SELECT set_config('voxelpacs.automation_destination', :'destination_id', true);
 LOCK TABLE voxelpacs_mysql_source.pacs_report_delivery_destinations IN SHARE ROW EXCLUSIVE MODE;
 
 DO $activate$
@@ -45,8 +47,8 @@ BEGIN
                    '{gateway_bridge_mode}', to_jsonb('tenant_destination'::text), true),
                '{bridge_url}', to_jsonb(format('https://10.0.0.4:9443/v1/report-delivery/tenant/%s/destination/%s', d.tenant_id, d.id)), true),
            updated_at = NOW()
-     WHERE d.id = :'destination_id'::bigint
-       AND d.tenant_id = :'tenant_id'::bigint
+     WHERE d.id = current_setting('voxelpacs.automation_destination')::bigint
+       AND d.tenant_id = current_setting('voxelpacs.automation_tenant')::bigint
        AND d.ambiente::text = 'producao'
        AND d.servidor_pacs_id IS NOT NULL
        AND EXISTS (
