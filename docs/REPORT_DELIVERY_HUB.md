@@ -175,3 +175,34 @@ Após `failed` ou `dead_letter`, o superadmin pode acionar **Reenviar após falh
 | Job automático pendente após a data clínica | Finalizado como falha sanitizada; não transmite no dia seguinte. | **Reenviar após falha**, mediante confirmação. |
 | Falha terminal de homologação | Não há nova criação automática fora da liberação. | **Reenviar após falha**, mediante confirmação. |
 | Entrega concluída | Não é reenfileirada. | Nenhuma. |
+
+## Operação automática controlada por tenant
+
+A automação de produção deve ser habilitada somente depois de um piloto unitário aceito pelo receptor. Cada ativação é restrita a **um** `tenant_id`, **um** `servidor_pacs_id` vinculado ao negócio, Issuers normalizados do destino e **um** `destination_id`. A ponte não aceita um host, AE Title, destino ou tenant fornecido pelo worker: o receptor é definido pela policy root-only do gateway, e o pedido mTLS/HMAC deve transportar o mesmo job, tenant e destino autorizados.
+
+| Controle | Regra operacional |
+|---|---|
+| Feature flag da API | `VOXEL_REPORT_DELIVERY_HUB_ENABLED=true` somente enquanto a automação estiver aprovada. |
+| Worker local | Consome somente jobs `automatic_production` da data clínica corrente, de destino `producao` com disparo ativo e com servidor PACS idêntico ao do estudo. Jobs históricos, manuais e de homologação não são consumidos pelo loop contínuo. |
+| Limite de entrega | O destino de produção é configurado com `max_attempts=1`; a ponte persiste uma trava por job antes da associação externa. Falhas ficam para revisão humana, sem novo C-STORE automático. |
+| Ponte do gateway | Opera apenas em `tenant_destination`, com `BRIDGE_AUTOMATION_ENABLED=true`, mTLS/HMAC e listener privado. A bridge executa C-ECHO imediatamente antes de C-STORE. |
+| Listener | O serviço deve escutar exclusivamente no endereço privado da API; não se publica porta DICOM externa, endpoint HTTP público ou fallback pela Internet. |
+| WireGuard | A rota ao receptor precisa sair pelo peer exclusivo do tenant. Handshake ausente, rota inválida ou container DICOM inativo impedem ativação. |
+| B/C e demais destinos | Permanecem sem policy, listener, peer, rota, container ou automação ativa até aprovação independente. |
+
+### Kill switch e resposta a incidente
+
+Para interromper novas transmissões, execute primeiro o kill switch da **API**, que desliga o worker e a feature flag; em seguida execute o kill switch do **gateway**, que para e desabilita a ponte e registra `BRIDGE_AUTOMATION_ENABLED=false`. A rota e o histórico de auditoria permanecem preservados, mas não há consumo de novos jobs.
+
+```text
+API:     /usr/local/sbin/voxelpacs-disable-report-delivery-api
+Gateway: /usr/local/sbin/voxelpacs-disable-report-delivery-gateway
+```
+
+A reativação exige nova validação de tenant, servidor PACS, Issuer, policy, mTLS/HMAC, listener privado, container DICOM, handshake WireGuard e ausência de jobs históricos elegíveis. Não se reativa automaticamente uma fila anterior; cada falha terminal ou pendência fora da janela clínica deve ser revisada e autorizada no fluxo administrativo controlado.
+
+### Observabilidade sanitizada
+
+A operação deve acompanhar somente estados técnicos: unidade do worker, unidade da ponte, estado do handshake, listener privado, resultado C-ECHO/C-STORE, contagem de jobs por estado e tentativas. Logs não devem registrar PDF, conteúdo do laudo, Patient ID, nome, UIDs completos, endereço do receptor, AE Titles, chaves ou segredos. O identificador interno do job é o correlacionador operacional permitido.
+
+> A ativação de produção não é uma autorização para reenviar pendências. Somente uma nova liberação compatível cria seu próprio evento idempotente, snapshot PDF imutável e job tenant-scoped elegível.
