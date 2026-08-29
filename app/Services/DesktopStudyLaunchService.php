@@ -26,6 +26,8 @@ final class DesktopStudyLaunchService
         }
 
         $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        // Referência opaca curta: evita truncamento de URI em Windows/Chromium.
+        $launchRef = bin2hex(random_bytes(16));
         $signature = hash_hmac('sha256', 'desktop-launch:v1:' . $token, $secret);
         $tokenHash = hash_hmac('sha256', $token, $secret);
         $expiresAt = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
@@ -34,11 +36,12 @@ final class DesktopStudyLaunchService
 
         Database::getInstance()->prepare(
             'INSERT INTO bi_desktop_study_launches
-                (token_hash, signature, estudo_id, tenant_id, usuario_id, servidor_id, orthanc_study_id, ip_origem, expires_at)
+                (token_hash, launch_ref, signature, estudo_id, tenant_id, usuario_id, servidor_id, orthanc_study_id, ip_origem, expires_at)
              VALUES
-                (:token_hash, :signature, :estudo_id, :tenant_id, :usuario_id, :servidor_id, :orthanc_study_id, :ip_origem, :expires_at)'
+                (:token_hash, :launch_ref, :signature, :estudo_id, :tenant_id, :usuario_id, :servidor_id, :orthanc_study_id, :ip_origem, :expires_at)'
         )->execute([
             ':token_hash' => $tokenHash,
+            ':launch_ref' => $launchRef,
             ':signature' => $signature,
             ':estudo_id' => $studyId,
             ':tenant_id' => $tenantId,
@@ -50,7 +53,7 @@ final class DesktopStudyLaunchService
         ]);
 
         $base = $this->publicBaseUrl();
-        $manifestUrl = $base . '/desktop-launch/' . rawurlencode($token) . '/manifest?sig=' . rawurlencode($signature);
+        $manifestUrl = $base . '/desktop-short-launch/' . rawurlencode($launchRef) . '/manifest';
         $command = '$dicom:get -w "' . $manifestUrl . '"';
 
         return [
@@ -64,7 +67,17 @@ final class DesktopStudyLaunchService
 
     public function manifest(string $token, string $signature): string
     {
-        $launch = $this->resolve($token, $signature);
+        return $this->manifestForLaunch($this->resolve($token, $signature), $token, $signature);
+    }
+
+    /** A referência curta é opaca, temporária e suficiente para resolver um único launch. */
+    public function manifestByReference(string $launchRef): string
+    {
+        return $this->manifestForLaunch($this->resolveReference($launchRef));
+    }
+
+    private function manifestForLaunch(array $launch, ?string $legacyToken = null, ?string $legacySignature = null): string
+    {
         $orthanc = $this->orthancFor($launch);
         $study = $orthanc->getStudy((string) $launch['orthanc_study_id']);
         if (!($study['success'] ?? false) || !is_array($study['data'] ?? null)) {
@@ -82,8 +95,14 @@ final class DesktopStudyLaunchService
             throw new \RuntimeException('desktop_manifest_study_uid_missing');
         }
 
-        $base = $this->publicBaseUrl() . '/desktop-launch/' . rawurlencode($token) . '/instance/';
-        $signatureQuery = '?sig=' . rawurlencode($signature);
+        $launchRef = trim((string) ($launch['launch_ref'] ?? ''));
+        $usesShortReference = $launchRef !== '';
+        $base = $this->publicBaseUrl() . ($usesShortReference
+            ? '/desktop-short-launch/' . rawurlencode($launchRef) . '/instance/'
+            : '/desktop-launch/' . rawurlencode((string) $legacyToken) . '/instance/');
+        $signatureQuery = '?sig=' . rawurlencode($usesShortReference
+            ? (string) ($launch['signature'] ?? '')
+            : (string) $legacySignature);
         $seriesXml = '';
         $instanceCount = 0;
 
@@ -190,6 +209,23 @@ final class DesktopStudyLaunchService
         return $orthanc->streamInstanceFile($instanceId, $onHeaders, $onChunk);
     }
 
+    /** O proxy curto usa referência aleatória de 128 bits e revalida o estudo. */
+    public function streamInstanceByReference(string $launchRef, string $signature, string $instanceId, callable $onHeaders, callable $onChunk): array
+    {
+        if (!preg_match('/^[a-f0-9]{32}$/', $launchRef)
+            || !preg_match('/^[a-f0-9]{64}$/', $signature)
+            || !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $instanceId)) {
+            throw new \RuntimeException('desktop_instance_invalid');
+        }
+        $launch = $this->resolveReference($launchRef);
+        if (!hash_equals((string) $launch['signature'], $signature)) {
+            throw new \RuntimeException('desktop_launch_invalid');
+        }
+        $orthanc = $this->orthancFor($launch);
+        $this->assertInstanceBelongsToLaunch($orthanc, $instanceId, $launch);
+        return $orthanc->streamInstanceFile($instanceId, $onHeaders, $onChunk);
+    }
+
     private function assertInstanceBelongsToLaunch(OrthancService $orthanc, string $instanceId, array $launch): void
     {
         $instance = $orthanc->getInstance($instanceId);
@@ -210,7 +246,7 @@ final class DesktopStudyLaunchService
             throw new \RuntimeException('desktop_launch_invalid');
         }
         $stmt = Database::getInstance()->prepare(
-            'SELECT id, estudo_id, tenant_id, usuario_id, servidor_id, orthanc_study_id
+            'SELECT id, launch_ref, signature, estudo_id, tenant_id, usuario_id, servidor_id, orthanc_study_id
              FROM bi_desktop_study_launches
              WHERE token_hash = :token_hash AND signature = :signature AND expires_at > NOW() AND revogado_em IS NULL
              LIMIT 1'
@@ -219,6 +255,25 @@ final class DesktopStudyLaunchService
             ':token_hash' => hash_hmac('sha256', $token, $secret),
             ':signature' => $signature,
         ]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$row) {
+            throw new \RuntimeException('desktop_launch_expired');
+        }
+        return $row;
+    }
+
+    private function resolveReference(string $launchRef): array
+    {
+        if (!preg_match('/^[a-f0-9]{32}$/', $launchRef)) {
+            throw new \RuntimeException('desktop_launch_invalid');
+        }
+        $stmt = Database::getInstance()->prepare(
+            'SELECT id, launch_ref, signature, estudo_id, tenant_id, usuario_id, servidor_id, orthanc_study_id
+             FROM bi_desktop_study_launches
+             WHERE launch_ref = :launch_ref AND expires_at > NOW() AND revogado_em IS NULL
+             LIMIT 1'
+        );
+        $stmt->execute([':launch_ref' => $launchRef]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         if (!$row) {
             throw new \RuntimeException('desktop_launch_expired');

@@ -75,6 +75,8 @@ Router::get('/api/desktop/version', 'DesktopController@version');
 Router::get('/desktop/download',    'DesktopController@download');
 Router::get('/desktop-launch/{token}/manifest', 'DesktopStudyLaunchController@manifest');
 Router::get('/desktop-launch/{token}/instance/{instanceId}', 'DesktopStudyLaunchController@instance');
+Router::get('/desktop-short-launch/{launchRef}/manifest', 'DesktopStudyLaunchController@shortManifest');
+Router::get('/desktop-short-launch/{launchRef}/instance/{instanceId}', 'DesktopStudyLaunchController@shortInstance');
 
 // ============================================================
 // AGENDAMENTOS
