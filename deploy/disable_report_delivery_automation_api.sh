@@ -18,7 +18,7 @@ if test -r "$ENV_FILE"; then
   trap 'rm -f "$TMP"' EXIT
   awk '!/^VOXEL_REPORT_DELIVERY_HUB_ENABLED=/' "$ENV_FILE" > "$TMP"
   printf 'VOXEL_REPORT_DELIVERY_HUB_ENABLED=false\n' >> "$TMP"
-  install -o root -g root -m 0600 "$TMP" "$ENV_FILE"
+  install -o root -g voxel -m 0640 "$TMP" "$ENV_FILE"
 fi
 
 systemctl daemon-reload
