@@ -55,7 +55,7 @@ class ReportDeliveryRepository
         // o estudo. Destinos legados sem servidor podem ser consultados, mas não se
         // tornam elegíveis para novos jobs automáticos.
         $eligibilityWhere = $onlyEligible
-            ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1\n               AND (d.ambiente <> \'producao\' OR d.servidor_pacs_id = :servidor_pacs_id)'
+            ? "AND d.enabled = 1 AND d.disparar_na_liberacao = 1 AND (d.ambiente <> 'producao' OR d.servidor_pacs_id = :servidor_pacs_id)"
             : 'AND (d.servidor_pacs_id IS NULL OR d.servidor_pacs_id = :servidor_pacs_id)';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(

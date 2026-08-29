@@ -6,9 +6,14 @@ umask 077
 APP_ROOT=/var/www/voxelpacs/app
 ENV_FILE="$APP_ROOT/.env"
 WORKER_SERVICE=voxelpacs-report-delivery-worker.service
+RUNTIME_GROUP=voxelpacs-runtime
+PHP_FPM_SERVICE=php8.3-fpm.service
 BACKUP_DIR="/var/backups/voxelpacs/report-delivery-worker-killswitch-$(date -u +%Y%m%dT%H%M%SZ)"
 
 [[ $EUID -eq 0 ]] || { echo 'Execução requer root' >&2; exit 2; }
+getent group "$RUNTIME_GROUP" >/dev/null || groupadd --system "$RUNTIME_GROUP"
+usermod -a -G "$RUNTIME_GROUP" www-data
+usermod -a -G "$RUNTIME_GROUP" voxel
 systemctl disable --now "$WORKER_SERVICE" 2>/dev/null || true
 
 if test -r "$ENV_FILE"; then
@@ -18,7 +23,9 @@ if test -r "$ENV_FILE"; then
   trap 'rm -f "$TMP"' EXIT
   awk '!/^VOXEL_REPORT_DELIVERY_HUB_ENABLED=/' "$ENV_FILE" > "$TMP"
   printf 'VOXEL_REPORT_DELIVERY_HUB_ENABLED=false\n' >> "$TMP"
-  install -o root -g voxel -m 0640 "$TMP" "$ENV_FILE"
+  install -o root -g "$RUNTIME_GROUP" -m 0640 "$TMP" "$ENV_FILE"
+  systemctl reload "$PHP_FPM_SERVICE"
+  systemctl is-active --quiet "$PHP_FPM_SERVICE"
 fi
 
 systemctl daemon-reload

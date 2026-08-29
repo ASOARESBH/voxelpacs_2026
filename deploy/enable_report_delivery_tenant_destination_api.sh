@@ -9,6 +9,8 @@ DESTINATION_ID=${2:?Informe o destination_id positivo}
 APP_ROOT=/var/www/voxelpacs/app
 ENV_FILE="$APP_ROOT/.env"
 WORKER_SERVICE=voxelpacs-report-delivery-worker.service
+RUNTIME_GROUP=voxelpacs-runtime
+PHP_FPM_SERVICE=php8.3-fpm.service
 WORKER_DROPIN_DIR=/etc/systemd/system/voxelpacs-report-delivery-worker.service.d
 WORKER_DROPIN="$WORKER_DROPIN_DIR/10-app-env.conf"
 DATABASE=voxelpacs_homolog
@@ -20,6 +22,9 @@ BACKUP_DIR="/var/backups/voxelpacs/report-delivery-automation-$(date -u +%Y%m%dT
 [[ $EUID -eq 0 ]] || { echo 'Execução requer root' >&2; exit 2; }
 test -r "$ENV_FILE"
 test -x /usr/bin/php
+getent group "$RUNTIME_GROUP" >/dev/null || groupadd --system "$RUNTIME_GROUP"
+usermod -a -G "$RUNTIME_GROUP" www-data
+usermod -a -G "$RUNTIME_GROUP" voxel
 
 systemctl disable --now "$WORKER_SERVICE" 2>/dev/null || true
 install -d -o postgres -g postgres -m 0700 "$BACKUP_DIR"
@@ -81,7 +86,9 @@ TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 awk '!/^VOXEL_REPORT_DELIVERY_HUB_ENABLED=/' "$ENV_FILE" > "$TMP"
 printf 'VOXEL_REPORT_DELIVERY_HUB_ENABLED=true\n' >> "$TMP"
-install -o root -g voxel -m 0640 "$TMP" "$ENV_FILE"
+install -o root -g "$RUNTIME_GROUP" -m 0640 "$TMP" "$ENV_FILE"
+systemctl reload "$PHP_FPM_SERVICE"
+systemctl is-active --quiet "$PHP_FPM_SERVICE"
 
 install -d -o root -g root -m 0755 "$WORKER_DROPIN_DIR"
 cat > "$WORKER_DROPIN" <<EOF

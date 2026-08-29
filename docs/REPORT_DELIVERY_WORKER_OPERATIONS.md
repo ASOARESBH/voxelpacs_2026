@@ -91,3 +91,17 @@ Acompanhe somente estados técnicos e contagens agregadas. A correlação operac
 ## Validação antes de publicação
 
 Execute sintaxe PHP e Python, sintaxe dos scripts, o contrato estático de roteamento e preflights de sistema sem transmissão. Para alterações no runtime, use backup individual e patch cirúrgico; nunca operações Git destrutivas. O commit deve conter somente código, documentação e artefatos sanitizados.
+
+## Evolução opcional: read model resiliente do painel
+
+A tela administrativa hoje calcula o estado de roteamento de cada laudo liberado consultando destinos configurados e ativos. O Worker e a criação da outbox continuam sendo a autoridade para entrega; o painel não deve tomar decisões clínicas ou liberar transmissões. Como evolução opcional, recomenda-se criar um **read model de roteamento** dedicado à interface.
+
+| Elemento | Evolução proposta | Benefício |
+|---|---|---|
+| Consulta | Substituir composição manual de fragmentos SQL por repositório tipado, com consulta PostgreSQL única para a lista de entregas e seu estado de rota. | Evita escapes literais e reduz consultas por linha. |
+| Estado do painel | Materializar ou calcular em `VIEW`/consulta `WITH` o estado `unmapped`, `configured_inactive`, `manual_eligible` e `automatic_only`. | Mantém a regra visual coerente e auditável. |
+| Falha de leitura | Capturar erro somente na camada de read model e exibir estado operacional `indisponível`; registrar categoria técnica sanitizada. | Uma falha de visualização não derruba toda a página administrativa. |
+| Segurança | Manter Worker, outbox e bridge fail-closed e independentes do read model. | O fallback visual nunca pode ativar, criar ou transmitir job. |
+| Teste | Adicionar integração contra PostgreSQL real para as duas ramificações de `findDestinations`, além do contrato estático. | Detecta sintaxe específica do dialeto antes do deploy. |
+
+Essa evolução é recomendada para uma próxima janela de melhoria. Ela não é necessária para a correção atual e não deve ser aplicada junto de mudanças de destino, gateway ou automação sem validação própria.
