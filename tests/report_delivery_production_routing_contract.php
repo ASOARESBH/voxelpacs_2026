@@ -26,6 +26,10 @@ $contracts = [
         'app/Repositories/ReportDeliveryWorkerRepository.php' => [
             'o.id = j.outbox_id AND o.tenant_id = j.tenant_id',
             'd.id = j.destination_id AND d.tenant_id = j.tenant_id',
+            'e.servidor_id = d.servidor_pacs_id',
+            'j.automatic_dispatch_date = :automatic_today',
+            "d.ambiente = 'producao'",
+            'd.disparar_na_liberacao = 1',
         ],
         'bin/report_delivery_worker.php' => [
             "'0008,103E=' . \$this->seriesDescription(\$configuration)",

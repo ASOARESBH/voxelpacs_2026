@@ -46,13 +46,18 @@ class ReportDeliveryWorkerRepository
                  FROM pacs_report_delivery_jobs j
                  INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
                  INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 INNER JOIN bi_pacs_estudos e ON e.id = o.estudo_id
+                    AND e.tenant_id = o.tenant_id
+                    AND e.servidor_id = d.servidor_pacs_id
                  WHERE j.status IN ('queued', 'retrying')
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
                    AND j.worker_eligible_at IS NOT NULL
                    AND j.worker_eligible_at <= NOW()
-                   AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
+                   AND j.automatic_dispatch_date = :automatic_today
                    AND d.enabled = 1
-                   AND d.ambiente IN ('homologacao', 'producao'){$transportWhere}
+                   AND d.disparar_na_liberacao = 1
+                   AND d.ambiente = 'producao'
+                   AND d.servidor_pacs_id IS NOT NULL{$transportWhere}
                  ORDER BY j.created_at ASC
                  LIMIT 1
                  FOR UPDATE"
