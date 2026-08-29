@@ -62,6 +62,8 @@ class Policy:
             raise RuntimeError("invalid_controlled_job_policy")
         if self.mode == "tenant_destination" and (self.tenant_id <= 0 or self.destination_id <= 0):
             raise RuntimeError("invalid_tenant_destination_policy")
+        if self.mode == "tenant_destination" and os.environ.get("BRIDGE_AUTOMATION_ENABLED", "false").strip().lower() != "true":
+            raise RuntimeError("bridge_automation_disabled")
         if self.mode not in {"controlled_job", "tenant_destination"}:
             raise RuntimeError("invalid_bridge_mode")
         if len(self.calling_ae) > 16 or len(self.called_ae) > 16:

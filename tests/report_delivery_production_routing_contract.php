@@ -39,6 +39,8 @@ $contracts = [
         'deploy/report-delivery-gateway-bridge/bridge_server.py' => [
             'BRIDGE_ALLOW_TENANT_ID',
             'BRIDGE_ALLOW_DESTINATION_ID',
+            'BRIDGE_AUTOMATION_ENABLED',
+            'bridge_automation_disabled',
             'def accepts_job(',
             'tenant_id, destination_id',
             'job_id_int, actual_hash[:16]',
