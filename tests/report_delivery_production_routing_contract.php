@@ -9,6 +9,11 @@ if (!in_array($scope, ['api', 'gateway', 'full'], true)) {
 
 $contracts = [
     'api' => [
+        'app/bootstrap.php' => [
+            '$inheritedEnvironment = getenv();',
+            "foreach (\$inheritedEnvironment as \$name => \$value)",
+            "\$_ENV[\$name] = \$value;",
+        ],
         'app/Repositories/ReportDeliveryRepository.php' => [
             'servidor_pacs_id = :servidor_pacs_id',
             'INNER JOIN bi_negocio_servidor_pacs n',

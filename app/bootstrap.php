@@ -129,6 +129,23 @@ if (!function_exists('loadEnv')) {
 // do projeto, evitando que credenciais SMTP sejam versionadas acidentalmente.
 loadEnv('/etc/voxelpacs/mail-credentials.conf');
 
+// Serviços systemd recebem o ambiente por EnvironmentFile. Em CLI, dependendo
+// de variables_order, getenv() pode estar preenchido enquanto $_ENV está vazio.
+// Copiamos somente chaves já injetadas, antes do .env, sem sobrescrever contexto
+// operacional e sem registrar valores sensíveis.
+$inheritedEnvironment = getenv();
+if (is_array($inheritedEnvironment)) {
+    foreach ($inheritedEnvironment as $name => $value) {
+        if (!is_string($name) || !is_string($value) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name)) {
+            continue;
+        }
+        if (!array_key_exists($name, $_ENV)) {
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+    }
+}
+
 // Carrega as variáveis não sensíveis e a configuração legada do projeto.
 loadEnv(BASE_PATH . '/.env');
 
