@@ -9,6 +9,8 @@ DESTINATION_ID=${2:?Informe o destination_id positivo}
 APP_ROOT=/var/www/voxelpacs/app
 ENV_FILE="$APP_ROOT/.env"
 WORKER_SERVICE=voxelpacs-report-delivery-worker.service
+WORKER_DROPIN_DIR=/etc/systemd/system/voxelpacs-report-delivery-worker.service.d
+WORKER_DROPIN="$WORKER_DROPIN_DIR/10-app-env.conf"
 DATABASE=voxelpacs_homolog
 SCHEMA=voxelpacs_mysql_source
 BACKUP_DIR="/var/backups/voxelpacs/report-delivery-automation-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -81,8 +83,18 @@ awk '!/^VOXEL_REPORT_DELIVERY_HUB_ENABLED=/' "$ENV_FILE" > "$TMP"
 printf 'VOXEL_REPORT_DELIVERY_HUB_ENABLED=true\n' >> "$TMP"
 install -o root -g root -m 0600 "$TMP" "$ENV_FILE"
 
-sudo -u voxel bash -lc "cd '$APP_ROOT' && /usr/bin/php -l app/Repositories/ReportDeliveryWorkerRepository.php && VOXEL_REPORT_DELIVERY_CONTRACT_SCOPE=api /usr/bin/php tests/report_delivery_production_routing_contract.php && /usr/bin/php bin/report_delivery_worker.php --check"
+install -d -o root -g root -m 0755 "$WORKER_DROPIN_DIR"
+cat > "$WORKER_DROPIN" <<EOF
+[Service]
+EnvironmentFile=$ENV_FILE
+EOF
+chmod 0644 "$WORKER_DROPIN"
 systemctl daemon-reload
+sudo -u voxel bash -lc "cd '$APP_ROOT' && /usr/bin/php -l app/Repositories/ReportDeliveryWorkerRepository.php && VOXEL_REPORT_DELIVERY_CONTRACT_SCOPE=api /usr/bin/php tests/report_delivery_production_routing_contract.php"
+systemd-run --quiet --wait --collect --unit=voxelpacs-report-delivery-worker-preflight \
+  --property=User=voxel --property=Group=voxel --property=WorkingDirectory="$APP_ROOT" \
+  --property=EnvironmentFile="$ENV_FILE" --property=NoNewPrivileges=true --property=PrivateTmp=true \
+  -- /usr/bin/php "$APP_ROOT/bin/report_delivery_worker.php" --check
 systemctl enable --now "$WORKER_SERVICE"
 sleep 1
 systemctl is-active --quiet "$WORKER_SERVICE"
