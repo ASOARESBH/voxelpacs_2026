@@ -222,7 +222,7 @@ class GestaoExamesRepository
         );
         $stmt->execute([
             'tenant_id' => $tenantId,
-            'estudo_id' => $studyId,
+            'study_id' => $studyId,
             'before' => $before,
             'after' => $after,
             'user_id' => $userId,

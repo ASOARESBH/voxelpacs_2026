@@ -20,6 +20,7 @@ $checks = [
     'service_preserva_tenant' => str_contains($service, 'changeRequestingPhysician(int $studyId, int $tenantId, int $userId, string $value)'),
     'service_audita_sem_expor_valor' => str_contains($service, "'estudo.medico_solicitante_alterado'"),
     'repository_filtra_tenant' => str_contains($repository, 'WHERE id = :study_id AND tenant_id = :tenant_id'),
+    'auditoria_fornece_placeholder_study_id' => $auditoriaSolicitante !== '' && str_contains($auditoriaSolicitante, 'VALUES (:tenant_id, :study_id') && str_contains($auditoriaSolicitante, "'study_id' => \$studyId"),
     'auditoria_nao_depende_de_last_insert_id' => $auditoriaSolicitante !== '' && str_contains($auditoriaSolicitante, 'return 0;'),
 ];
 
