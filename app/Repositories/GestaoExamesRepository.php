@@ -222,12 +222,14 @@ class GestaoExamesRepository
         );
         $stmt->execute([
             'tenant_id' => $tenantId,
-            'study_id' => $studyId,
+            'estudo_id' => $studyId,
             'before' => $before,
             'after' => $after,
             'user_id' => $userId,
         ]);
-        return (int) $this->pdo->lastInsertId();
+        // O identificador não é necessário ao fluxo. Evita depender de
+        // lastInsertId(), que não é portátil entre os adaptadores suportados.
+        return 0;
     }
 
     /** Persiste uma única informação administrativa no estudo já bloqueado pela transação. */
