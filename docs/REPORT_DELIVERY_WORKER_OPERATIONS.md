@@ -61,6 +61,8 @@ A API fornece a feature flag do Hub e executa o Worker em uma unidade systemd. O
 
 No gateway, a bridge roda com listener privado, policy `tenant_destination`, mTLS/HMAC, validação de job/tenant/destino e reinício somente em falha. A rota ao receptor exige handshake WireGuard e container DICOM ativo. O limite inicial é uma tentativa externa por job; falhas passam para revisão humana.
 
+A ativação do destino de produção deve persistir na configuração interna da rota tanto o identificador do tenant quanto o identificador do destino autorizados pela bridge. O cliente privado compara esses dois valores com o job antes de abrir qualquer conexão; uma ausência ou divergência é falha de política e deve permanecer terminal, sem fallback de tenant, destino ou rede.
+
 ## Kill switch e rollback
 
 Em incidente, interrompa primeiro a API e, depois, o gateway. Isso evita que a fila gere ou consuma nova entrega enquanto a bridge ainda estiver disponível.
