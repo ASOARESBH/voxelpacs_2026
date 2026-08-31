@@ -50,9 +50,13 @@ BEGIN
            max_attempts = 1,
            configuration_json = jsonb_set(
                jsonb_set(
-                   ((d.configuration_json::jsonb) - 'bridge_job_id'),
-                   '{gateway_bridge_mode}', to_jsonb('tenant_destination'::text), true),
-               '{bridge_url}', to_jsonb(format('https://10.0.0.4:9443/v1/report-delivery/tenant/%s/destination/%s', d.tenant_id, d.id)), true),
+                   jsonb_set(
+                       jsonb_set(
+                           ((d.configuration_json::jsonb) - 'bridge_job_id'),
+                           '{gateway_bridge_mode}', to_jsonb('tenant_destination'::text), true),
+                       '{bridge_url}', to_jsonb(format('https://10.0.0.4:9443/v1/report-delivery/tenant/%s/destination/%s', d.tenant_id, d.id)), true),
+                   '{bridge_tenant_id}', to_jsonb(d.tenant_id), true),
+               '{bridge_destination_id}', to_jsonb(d.id), true),
            updated_at = NOW()
      WHERE d.id = current_setting('voxelpacs.automation_destination')::bigint
        AND d.tenant_id = current_setting('voxelpacs.automation_tenant')::bigint

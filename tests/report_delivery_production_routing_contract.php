@@ -27,6 +27,8 @@ $contracts = [
             "'X-VOXEL-Tenant-ID: ' . \$tenantId",
             "'X-VOXEL-Destination-ID: ' . \$destinationId",
             "'tenant_destination'",
+            "'bridge_tenant_id'",
+            "'bridge_destination_id'",
         ],
         'app/Repositories/ReportDeliveryWorkerRepository.php' => [
             'o.id = j.outbox_id AND o.tenant_id = j.tenant_id',
@@ -41,6 +43,10 @@ $contracts = [
         ],
     ],
     'gateway' => [
+        'deploy/enable_report_delivery_tenant_destination_api.sh' => [
+            "'{bridge_tenant_id}', to_jsonb(d.tenant_id), true",
+            "'{bridge_destination_id}', to_jsonb(d.id), true",
+        ],
         'deploy/report-delivery-gateway-bridge/bridge_server.py' => [
             'BRIDGE_ALLOW_TENANT_ID',
             'BRIDGE_ALLOW_DESTINATION_ID',
