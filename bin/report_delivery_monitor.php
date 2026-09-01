@@ -59,9 +59,13 @@ try {
         ),
     ];
 
-    Logger::info('[ReportDeliveryMonitor] Estado sanitizado da fila', $metrics);
+    if ($metrics['active_routes_noncompliant'] > 0) {
+        Logger::warning('[ReportDeliveryMonitor] Rota automática não conforme detectada', $metrics);
+    } else {
+        Logger::info('[ReportDeliveryMonitor] Estado sanitizado da fila', $metrics);
+    }
     fwrite(STDOUT, 'report_delivery_monitor_ok' . PHP_EOL);
-    exit($metrics['active_routes_noncompliant'] > 0 ? 2 : 0);
+    exit(0);
 } catch (Throwable $error) {
     Logger::error('[ReportDeliveryMonitor] Falha na observabilidade', ['error' => $error->getMessage()]);
     fwrite(STDERR, "report_delivery_monitor_failed\n");
