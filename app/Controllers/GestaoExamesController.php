@@ -187,6 +187,11 @@ class GestaoExamesController extends Controller
         $tenantId = $this->tenantEfetivoDoEstudo($estudoId);
         $priority = (string) ($input['prioridade'] ?? '');
         $reason = (string) ($input['motivo'] ?? '');
+        $confirmation = $input['confirmar_prioridade'] ?? false;
+        $confirmed = $confirmation === true
+            || $confirmation === 1
+            || $confirmation === '1'
+            || $confirmation === 'true';
         if ($tenantId === null) return;
 
         try {
@@ -195,7 +200,8 @@ class GestaoExamesController extends Controller
                 $tenantId,
                 (int) (Auth::userId() ?? 0),
                 $priority,
-                $reason
+                $reason,
+                $confirmed
             );
             if (!$result['ok']) {
                 $this->json([
@@ -560,6 +566,7 @@ class GestaoExamesController extends Controller
     {
         return match ($codigo) {
             'prioridade_invalida' => t('gestao_gerenciar.erro.prioridade_invalida'),
+            'confirmacao_prioridade_obrigatoria' => t('gestao_gerenciar.erro.confirmacao_prioridade_obrigatoria'),
             'motivo_curto' => t('gestao_gerenciar.erro.motivo_curto'),
             'motivo_longo' => t('gestao_gerenciar.erro.motivo_longo'),
             'prioridade_igual' => t('gestao_gerenciar.erro.prioridade_igual'),

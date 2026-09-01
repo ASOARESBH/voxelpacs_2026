@@ -407,6 +407,7 @@
         fillSelect($('#gerenciarPrioridadeSelect'), priority.options || [], 'value', 'label', priority.effective, priorityLabel);
         $('#gerenciarPrioridadeMotivo').value = '';
         $('#gerenciarPrioridadeCount').textContent = '0/20';
+        $('#gerenciarPrioridadeConfirmacao').checked = false;
         $('#gerenciarPrioridadeAviso').style.display = 'none';
         $('#gerenciarPrioridadeErro').style.display = 'none';
         modal('gerenciarPrioridadeModal')?.show();
@@ -511,13 +512,18 @@
             $('#gerenciarPrioridadeErro').style.display = 'block';
             return;
         }
+        if (!$('#gerenciarPrioridadeConfirmacao')?.checked) {
+            $('#gerenciarPrioridadeErro').textContent = text('confirmacaoPrioridadeObrigatoria');
+            $('#gerenciarPrioridadeErro').style.display = 'block';
+            return;
+        }
         if (!window.confirm(text('confirmarPrioridade'))) return;
         const priority = $('#gerenciarPrioridadeSelect').value;
         const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/prioridade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
-            body: JSON.stringify({ prioridade: priority, motivo: reason, csrf: state.csrf })
+            body: JSON.stringify({ prioridade: priority, motivo: reason, confirmar_prioridade: true, csrf: state.csrf })
         });
         let payload = {};
         try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }

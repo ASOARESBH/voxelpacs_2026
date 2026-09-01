@@ -85,11 +85,12 @@ class GestaoExamesService
         ];
     }
 
-    public function changePriority(int $studyId, int $tenantId, int $userId, string $priority, string $reason): array
+    public function changePriority(int $studyId, int $tenantId, int $userId, string $priority, string $reason, bool $confirmed): array
     {
         $priority = strtoupper(trim($priority));
         $reason = trim($reason);
         if (!in_array($priority, self::PRIORITIES, true)) return ['ok' => false, 'error' => 'prioridade_invalida'];
+        if (!$confirmed) return ['ok' => false, 'error' => 'confirmacao_prioridade_obrigatoria'];
         if (mb_strlen($reason, 'UTF-8') < 20) return ['ok' => false, 'error' => 'motivo_curto'];
         if (mb_strlen($reason, 'UTF-8') > 1000) return ['ok' => false, 'error' => 'motivo_longo'];
 
@@ -122,7 +123,7 @@ class GestaoExamesService
                 'estudo',
                 $studyId,
                 ['prioridade' => $previous],
-                ['prioridade' => $priority, 'audit_id' => $auditId, 'motivo_informado' => true],
+                ['prioridade' => $priority, 'audit_id' => $auditId, 'motivo_informado' => true, 'confirmacao_explicita' => true],
                 $tenantId,
                 'gestao_estudos'
             );

@@ -1116,6 +1116,10 @@ $periodoLabel = [
                         <textarea id="gerenciarPrioridadeMotivo" name="motivo" class="form-control" rows="4" minlength="20" maxlength="1000" required></textarea>
                     </label>
                     <div class="d-flex justify-content-between mt-1"><small class="text-muted"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.minimo')) ?></small><small id="gerenciarPrioridadeCount" class="text-muted">0/20</small></div>
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="gerenciarPrioridadeConfirmacao" required>
+                        <label class="form-check-label small" for="gerenciarPrioridadeConfirmacao"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.confirmacao_dupla')) ?></label>
+                    </div>
                     <div id="gerenciarPrioridadeDestinatarios" class="alert alert-info py-2 small mt-3" style="display:none;">
                         <div class="fw-semibold mb-1"><i class="fa fa-bell me-1"></i><?= htmlspecialchars(t('gestao_gerenciar.prioridade.destinatarios_titulo')) ?></div>
                         <div id="gerenciarPrioridadeDestinatariosLista"></div>
@@ -1180,6 +1184,7 @@ $periodoLabel = [
      data-sem-override="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_override')) ?>"
      data-motivo-curto="<?= htmlspecialchars(t('gestao_gerenciar.js.motivo_curto')) ?>"
      data-confirmar-prioridade="<?= htmlspecialchars(t('gestao_gerenciar.js.confirmar_prioridade')) ?>"
+     data-confirmacao-prioridade-obrigatoria="<?= htmlspecialchars(t('gestao_gerenciar.erro.confirmacao_prioridade_obrigatoria')) ?>"
      data-destinatarios-carregando="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_carregando')) ?>"
      data-destinatarios-nenhum="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_nenhum')) ?>"
      data-destinatarios-grupo="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_grupo')) ?>"

@@ -6,6 +6,16 @@ if (!empty($estudo->study_date)) {
 }
 $hrEstudo = $estudo->study_time ?: '—';
 $studyUid = $estudo->study_instance_uid ?: '—';
+$prioridadeManual = strtoupper(trim((string) ($estudo->dicom_priority_override ?? '')));
+$prioridadeDicom = strtoupper(trim((string) ($estudo->dicom_priority ?? '')));
+$prioridadeEfetiva = $prioridadeManual !== '' ? $prioridadeManual : ($prioridadeDicom !== '' ? $prioridadeDicom : 'ROUTINE');
+$prioridadeLabels = [
+    'STAT' => t('gestao_gerenciar.prioridade.stat'),
+    'HIGH' => t('gestao_gerenciar.prioridade.high'),
+    'ROUTINE' => t('gestao_gerenciar.prioridade.routine'),
+    'MEDIUM' => t('gestao_gerenciar.prioridade.medium'),
+    'LOW' => t('gestao_gerenciar.prioridade.low'),
+];
 ?>
 <div class="pacs-card reports-card" id="card-exame">
     <div class="pacs-card-header"><i class="fa fa-file-waveform"></i> Exame</div>
@@ -19,6 +29,17 @@ $studyUid = $estudo->study_instance_uid ?: '—';
             if (empty($modsCard)): ?>—<?php else: foreach ($modsCard as $cardMod): ?>
                 <span class="dicom-modality"><?= htmlspecialchars(\App\Services\DicomModalityService::code($cardMod)) ?></span>
             <?php endforeach; endif; ?>
+            </span>
+        </div>
+
+        <div class="rp-field">
+            <label><i class="fa fa-flag"></i> <?= htmlspecialchars(t('relatorios.prioridade.efetiva')) ?></label>
+            <span class="rp-value">
+                <strong><?= htmlspecialchars($prioridadeLabels[$prioridadeEfetiva] ?? $prioridadeEfetiva) ?></strong>
+                <?php if ($prioridadeManual !== ''): ?>
+                    <small class="badge text-bg-warning ms-1"><i class="fa fa-shield-halved"></i> <?= htmlspecialchars(t('relatorios.prioridade.manual')) ?></small>
+                    <small class="d-block text-muted mt-1"><?= htmlspecialchars(t('relatorios.prioridade.dicom_original')) ?>: <?= htmlspecialchars($prioridadeLabels[$prioridadeDicom] ?? ($prioridadeDicom !== '' ? $prioridadeDicom : '—')) ?></small>
+                <?php endif; ?>
             </span>
         </div>
 
