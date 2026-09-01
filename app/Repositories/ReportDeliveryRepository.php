@@ -40,16 +40,19 @@ class ReportDeliveryRepository
         }
 
         // Issuer presente nunca cai para InstitutionName: isso evita a devolução
-        // para uma origem que apenas compartilha a mesma instituição.
+        // para uma origem que apenas compartilha a mesma instituição. A política
+        // explícita `accept_any_issuer_from_bound_pacs` é a única exceção: ela
+        // continua exigindo tenant, estabelecimento e servidor PACS idênticos.
         $sourceJoin = $issuerNormalized !== ''
-            ? 'INNER JOIN pacs_report_delivery_destination_issuers ds
-                     ON ds.destination_id = d.id
-                    AND ds.tenant_id = d.tenant_id'
+            ? 'LEFT JOIN pacs_report_delivery_destination_issuers ds
+                    ON ds.destination_id = d.id
+                   AND ds.tenant_id = d.tenant_id
+                   AND ds.issuer_of_patient_id_normalized = :source_value'
             : 'INNER JOIN pacs_report_delivery_destination_institutions di
                      ON di.destination_id = d.id
                     AND di.tenant_id = d.tenant_id';
         $sourceWhere = $issuerNormalized !== ''
-            ? 'ds.issuer_of_patient_id_normalized = :source_value'
+            ? "(ds.id IS NOT NULL OR (d.configuration_json::jsonb ->> 'accept_any_issuer_from_bound_pacs') = 'true')"
             : 'di.institution_name = :source_value';
         // Produção automática exige binding explícito ao servidor PACS que originou
         // o estudo. Destinos legados sem servidor podem ser consultados, mas não se
@@ -57,6 +60,9 @@ class ReportDeliveryRepository
         $eligibilityWhere = $onlyEligible
             ? "AND d.enabled = 1 AND d.disparar_na_liberacao = 1 AND (d.ambiente <> 'producao' OR d.servidor_pacs_id = :servidor_pacs_id)"
             : 'AND (d.servidor_pacs_id IS NULL OR d.servidor_pacs_id = :servidor_pacs_id)';
+        if ($issuerNormalized !== '') {
+            $eligibilityWhere .= " AND (ds.id IS NOT NULL OR (d.configuration_json::jsonb ->> 'accept_any_issuer_from_bound_pacs') = 'true')";
+        }
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
