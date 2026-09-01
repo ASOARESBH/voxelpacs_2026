@@ -16,6 +16,7 @@ KillSignal=SIGTERM
 UMask=0077
 Environment=VOXEL_REPORT_DELIVERY_WORKER_ID=local-dicom-worker
 Environment=VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS=3
+EnvironmentFile=-/etc/voxelpacs/report-delivery-worker.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

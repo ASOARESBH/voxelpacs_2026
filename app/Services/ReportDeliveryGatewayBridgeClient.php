@@ -5,6 +5,7 @@ namespace App\Services;
 
 use RuntimeException;
 
+/** @phpstan-type BridgeTelemetry array{bridge:string,c_echo:string,c_store:string} */
 /**
  * Canal autenticado API -> gateway para um artefato DICOM de devolutiva.
  *
@@ -14,13 +15,14 @@ use RuntimeException;
  */
 final class ReportDeliveryGatewayBridgeClient
 {
-    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array{reference:string,sha256:string,size:int} */
+    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array{reference:string,sha256:string,size:int,c_echo:string,c_store:string} */
     public function send(array $job, array $configuration, string $dicomPath, int $timeout): array
     {
         $jobId = (int) ($job['id'] ?? 0);
         $tenantId = (int) ($job['tenant_id'] ?? 0);
         $destinationId = (int) ($job['destination_id'] ?? 0);
-        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !is_file($dicomPath)) {
+        $attemptNumber = (int) ($job['attempt_number'] ?? 0);
+        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || $attemptNumber <= 0 || !is_file($dicomPath)) {
             throw new RuntimeException('gateway_bridge_invalid_artifact');
         }
 
@@ -47,7 +49,7 @@ final class ReportDeliveryGatewayBridgeClient
         $parts = parse_url($bridgeUrl);
         $path = (string) ($parts['path'] ?? '');
         $timestamp = (string) time();
-        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId, $sha256, (string) $size, $timestamp]);
+        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $attemptNumber, (string) $tenantId, (string) $destinationId, $sha256, (string) $size, $timestamp]);
         $signature = hash_hmac('sha256', $signatureBase, $secret);
         $input = fopen($dicomPath, 'rb');
         if (!is_resource($input)) {
@@ -82,6 +84,7 @@ final class ReportDeliveryGatewayBridgeClient
                     'Content-Type: application/dicom',
                     'Content-Length: ' . $size,
                     'X-VOXEL-Job-ID: ' . $jobId,
+                    'X-VOXEL-Attempt-Number: ' . $attemptNumber,
                     'X-VOXEL-Tenant-ID: ' . $tenantId,
                     'X-VOXEL-Destination-ID: ' . $destinationId,
                     'X-VOXEL-Timestamp: ' . $timestamp,
@@ -97,16 +100,55 @@ final class ReportDeliveryGatewayBridgeClient
             fclose($input);
         }
 
+        $response = is_string($body) ? json_decode($body, true) : null;
+        $telemetry = $this->telemetry($response);
         if ($errno !== 0 || !is_string($body) || $httpCode !== 201) {
-            throw new RuntimeException('gateway_bridge_delivery_failed');
-        }
-        $response = json_decode($body, true);
-        $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
-        if (preg_match('/^gateway-cstore:[a-f0-9]{16}$/', $reference) !== 1) {
-            throw new RuntimeException('gateway_bridge_invalid_response');
+            $error = is_array($response) ? (string) ($response['error'] ?? '') : '';
+            throw new ReportDeliveryGatewayBridgeFailure(
+                $this->failureStage($error),
+                $telemetry + ['bridge' => 'rejected']
+            );
         }
 
-        return ['reference' => $reference, 'sha256' => $sha256, 'size' => $size];
+        $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
+        if (preg_match('/^gateway-cstore:[a-f0-9]{16}$/', $reference) !== 1
+            || $telemetry['c_echo'] !== 'success'
+            || $telemetry['c_store'] !== 'success') {
+            throw new ReportDeliveryGatewayBridgeFailure(
+                'gateway_bridge_invalid_response',
+                $telemetry + ['bridge' => 'invalid_response']
+            );
+        }
+
+        return [
+            'reference' => $reference,
+            'sha256' => $sha256,
+            'size' => $size,
+            'c_echo' => $telemetry['c_echo'],
+            'c_store' => $telemetry['c_store'],
+        ];
+    }
+
+    /** @param mixed $response @return BridgeTelemetry */
+    private function telemetry(mixed $response): array
+    {
+        $echo = is_array($response) ? (string) ($response['c_echo'] ?? 'not_confirmed') : 'not_confirmed';
+        $store = is_array($response) ? (string) ($response['c_store'] ?? 'not_confirmed') : 'not_confirmed';
+        return [
+            'bridge' => 'received',
+            'c_echo' => in_array($echo, ['success', 'failed', 'not_attempted'], true) ? $echo : 'not_confirmed',
+            'c_store' => in_array($store, ['success', 'failed', 'not_attempted'], true) ? $store : 'not_confirmed',
+        ];
+    }
+
+    private function failureStage(string $error): string
+    {
+        $allowed = [
+            'policy_rejected', 'expired_request', 'invalid_signature', 'truncated_body', 'integrity_check_failed',
+            'single_attempt_consumed', 'association_rejected', 'cecho_failed', 'cstore_failed',
+            'container_copy_failed', 'dicom_gateway_execution_failed', 'invalid_dicom', 'invalid_artifact',
+        ];
+        return in_array($error, $allowed, true) ? 'gateway_bridge_' . $error : 'gateway_bridge_delivery_failed';
     }
 
     /** @param array<string,mixed> $configuration */

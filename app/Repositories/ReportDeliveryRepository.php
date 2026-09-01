@@ -654,39 +654,32 @@ class ReportDeliveryRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** Reenfileira manualmente somente tentativas terminais no tenant indicado. */
-    public function retryTerminalJobsForReport(int $reportId, int $tenantId): int
+    /**
+     * Reenfileira manualmente um único job terminal de uma versão de laudo.
+     * O job não volta para a janela automática: fica marcado para claim manual
+     * pelo worker somente após autorização administrativa e auditoria.
+     */
+    public function retryTerminalJobsForReport(int $reportId, int $tenantId, int $requestedBy): int
     {
-        $sql = SqlHelper::isPostgres()
-            ? "UPDATE pacs_report_delivery_jobs j
-               SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                   locked_by = NULL, last_error = NULL, worker_eligible_at = NOW(), automatic_dispatch_date = NULL, updated_at = NOW()
-               FROM pacs_report_delivery_destinations d
-               WHERE j.destination_id = d.id
-               AND j.tenant_id = d.tenant_id
+        if ($reportId <= 0 || $tenantId <= 0 || $requestedBy <= 0) {
+            return 0;
+        }
+        $lookup = $this->pdo->prepare(
+            "SELECT j.id
+             FROM pacs_report_delivery_jobs j
+             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+             WHERE o.report_id = :report_id
                AND j.tenant_id = :tenant_id
                AND j.status IN ('failed', 'dead_letter')
-               AND d.enabled = 1
-               AND d.disparar_na_liberacao = 1
-               AND j.outbox_id IN (
-                     SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
-                 )"
-            : "UPDATE pacs_report_delivery_jobs j
-               INNER JOIN pacs_report_delivery_destinations d
-                  ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
-               SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
-                   j.locked_by = NULL, j.last_error = NULL, j.worker_eligible_at = NOW(), j.automatic_dispatch_date = NULL, j.updated_at = NOW()
-               WHERE j.tenant_id = :tenant_id
-               AND j.status IN ('failed', 'dead_letter')
-               AND d.enabled = 1
-               AND d.disparar_na_liberacao = 1
-               AND j.outbox_id IN (
-                     SELECT id FROM pacs_report_delivery_outbox WHERE report_id = :report_id
-                 )";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':report_id' => $reportId, ':tenant_id' => $tenantId]);
-
-        return $stmt->rowCount();
+             ORDER BY j.id DESC
+             LIMIT 2"
+        );
+        $lookup->execute([':report_id' => $reportId, ':tenant_id' => $tenantId]);
+        $ids = array_map(static fn(array $row): int => (int) $row['id'], $lookup->fetchAll(PDO::FETCH_ASSOC));
+        if (count($ids) !== 1) {
+            return 0;
+        }
+        return $this->retryJob($ids[0], $tenantId, $requestedBy) ? 1 : 0;
     }
 
     /** @return array<string, int> */
@@ -714,32 +707,60 @@ class ReportDeliveryRepository
         ], $stats));
     }
 
-    public function retryJob(int $jobId, int $tenantId): bool
+    /** Reenfileira uma falha terminal somente como exceção manual auditável. */
+    public function retryJob(int $jobId, int $tenantId, int $requestedBy): bool
     {
+        if ($jobId <= 0 || $tenantId <= 0 || $requestedBy <= 0) {
+            return false;
+        }
         $sql = SqlHelper::isPostgres()
             ? "UPDATE pacs_report_delivery_jobs j
                SET status = 'queued', next_attempt_at = NOW(), locked_at = NULL,
-                   locked_by = NULL, last_error = NULL, worker_eligible_at = NOW(), automatic_dispatch_date = NULL
-               FROM pacs_report_delivery_destinations d
+                   locked_by = NULL, last_error = 'Reenvio manual autorizado; aguardando worker.',
+                   worker_eligible_at = NOW(), automatic_dispatch_date = NULL,
+                   manual_retry_requested_at = NOW(), manual_retry_requested_by = :requested_by,
+                   manual_retry_count = manual_retry_count + 1, updated_at = NOW()
+               FROM pacs_report_delivery_destinations d,
+                    pacs_report_delivery_outbox o,
+                    bi_pacs_estudos e,
+                    report_pdf_snapshots s
                WHERE j.destination_id = d.id
                AND j.tenant_id = d.tenant_id
-               AND j.id = :id
-               AND j.tenant_id = :tenant_id
+               AND o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+               AND e.id = o.estudo_id AND e.tenant_id = o.tenant_id AND e.servidor_id = d.servidor_pacs_id
+               AND s.tenant_id = o.tenant_id AND s.report_id = o.report_id AND s.report_version = o.report_version
+               AND j.id = :id AND j.tenant_id = :tenant_id
                AND j.status IN ('failed', 'dead_letter')
-               AND d.enabled = 1
-               AND d.disparar_na_liberacao = 1"
+               AND COALESCE(j.manual_retry_count, 0) < 3
+               AND d.enabled = 1 AND d.disparar_na_liberacao = 1
+               AND d.ambiente = 'producao'
+               AND (d.configuration_json::jsonb)->>'gateway_bridge_mode' = 'tenant_destination'
+               AND (d.configuration_json::jsonb)->>'bridge_tenant_id' ~ '^[0-9]+$'
+               AND (d.configuration_json::jsonb)->>'bridge_destination_id' ~ '^[0-9]+$'
+               AND ((d.configuration_json::jsonb)->>'bridge_tenant_id')::bigint = d.tenant_id
+               AND ((d.configuration_json::jsonb)->>'bridge_destination_id')::bigint = d.id
+               AND s.storage_path <> '' AND s.sha256 <> '' AND s.file_size_bytes >= 100"
             : "UPDATE pacs_report_delivery_jobs j
-               INNER JOIN pacs_report_delivery_destinations d
-                  ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+               INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+               INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+               INNER JOIN bi_pacs_estudos e ON e.id = o.estudo_id AND e.tenant_id = o.tenant_id AND e.servidor_id = d.servidor_pacs_id
+               INNER JOIN report_pdf_snapshots s ON s.tenant_id = o.tenant_id AND s.report_id = o.report_id AND s.report_version = o.report_version
                SET j.status = 'queued', j.next_attempt_at = NOW(), j.locked_at = NULL,
-                   j.locked_by = NULL, j.last_error = NULL, j.worker_eligible_at = NOW(), j.automatic_dispatch_date = NULL
-               WHERE j.id = :id
-               AND j.tenant_id = :tenant_id
+                   j.locked_by = NULL, j.last_error = 'Reenvio manual autorizado; aguardando worker.',
+                   j.worker_eligible_at = NOW(), j.automatic_dispatch_date = NULL,
+                   j.manual_retry_requested_at = NOW(), j.manual_retry_requested_by = :requested_by,
+                   j.manual_retry_count = j.manual_retry_count + 1, j.updated_at = NOW()
+               WHERE j.id = :id AND j.tenant_id = :tenant_id
                AND j.status IN ('failed', 'dead_letter')
-               AND d.enabled = 1
-               AND d.disparar_na_liberacao = 1";
+               AND COALESCE(j.manual_retry_count, 0) < 3
+               AND d.enabled = 1 AND d.disparar_na_liberacao = 1
+               AND d.ambiente = 'producao'
+               AND JSON_UNQUOTE(JSON_EXTRACT(d.configuration_json, '$.gateway_bridge_mode')) = 'tenant_destination'
+               AND CAST(JSON_UNQUOTE(JSON_EXTRACT(d.configuration_json, '$.bridge_tenant_id')) AS UNSIGNED) = d.tenant_id
+               AND CAST(JSON_UNQUOTE(JSON_EXTRACT(d.configuration_json, '$.bridge_destination_id')) AS UNSIGNED) = d.id
+               AND s.storage_path <> '' AND s.sha256 <> '' AND s.file_size_bytes >= 100";
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+        $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId, ':requested_by' => $requestedBy]);
 
         return $stmt->rowCount() === 1;
     }

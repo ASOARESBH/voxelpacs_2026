@@ -5,12 +5,14 @@ use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryGatewayBridgeClient;
+use App\Services\ReportDeliveryGatewayBridgeFailure;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 final class DeliveryWorkerFailure extends RuntimeException
 {
-    public function __construct(public readonly string $stage)
+    /** @param array<string,string> $metadata */
+    public function __construct(public readonly string $stage, public readonly array $metadata = [])
     {
         parent::__construct($stage);
     }
@@ -102,6 +104,8 @@ final class LocalDicomDeliveryWorker
                 'environment' => (string) ($job['ambiente'] ?? ''),
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
+                'c_echo' => $result['c_echo'],
+                'c_store' => $result['c_store'],
             ]);
             Logger::info('[ReportDeliveryWorker] Entrega DICOM concluída', [
                 'job_id' => $jobId,
@@ -109,13 +113,13 @@ final class LocalDicomDeliveryWorker
                 'environment' => (string) ($job['ambiente'] ?? ''),
             ]);
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage);
+            $this->failSafely($jobId, $error->stage, $error->metadata);
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
                 'error' => $error->getMessage(),
             ]);
-            $this->failSafely($jobId, 'unexpected_error');
+            $this->failSafely($jobId, 'unexpected_error', ['c_echo' => 'not_confirmed', 'c_store' => 'not_confirmed']);
         }
     }
 
@@ -179,7 +183,17 @@ final class LocalDicomDeliveryWorker
 
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
             if (!empty($configuration['gateway_bridge'])) {
-                $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($job, $configuration, $dicomPath, $timeout);
+                try {
+                    $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($job, $configuration, $dicomPath, $timeout);
+                } catch (ReportDeliveryGatewayBridgeFailure $error) {
+                    throw new DeliveryWorkerFailure($error->stage, $error->metadata);
+                } catch (RuntimeException $error) {
+                    $stage = $error->getMessage();
+                    if (str_starts_with($stage, 'gateway_bridge_')) {
+                        throw new DeliveryWorkerFailure($stage, ['bridge' => 'not_reached', 'c_echo' => 'not_attempted', 'c_store' => 'not_attempted']);
+                    }
+                    throw $error;
+                }
             } else {
                 $this->runCommand([
                     '/usr/bin/storescu', '--quiet', '--disable-tls',
@@ -191,7 +205,7 @@ final class LocalDicomDeliveryWorker
                     (string) $configuration['port'],
                     $dicomPath,
                 ], 'cstore_failed');
-                $deliveryResult = ['reference' => '', 'sha256' => '', 'size' => 0];
+                $deliveryResult = ['reference' => '', 'sha256' => '', 'size' => 0, 'c_echo' => 'not_applicable', 'c_store' => 'success'];
             }
 
             $finalPath = sprintf('%s/laudo-%d-v%d.dcm', $privateDirectory, (int) $job['report_id'], (int) $job['report_version']);
@@ -215,6 +229,8 @@ final class LocalDicomDeliveryWorker
                 'reference' => $deliveryResult['reference'] !== '' ? $deliveryResult['reference'] : 'dicom-cstore:' . substr($sha256, 0, 16),
                 'sha256' => $sha256,
                 'size' => $size,
+                'c_echo' => (string) ($deliveryResult['c_echo'] ?? 'not_confirmed'),
+                'c_store' => (string) ($deliveryResult['c_store'] ?? 'not_confirmed'),
             ];
         } finally {
             $this->removeDirectory($temporaryDirectory);
@@ -349,13 +365,14 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage): void
+    /** @param array<string,string> $metadata */
+    private function failSafely(int $jobId, string $stage, array $metadata = []): void
     {
         if ($jobId <= 0) {
             return;
         }
         try {
-            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', ['stage' => $stage]);
+            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', ['stage' => $stage] + $metadata);
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,

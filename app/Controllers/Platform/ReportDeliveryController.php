@@ -232,12 +232,13 @@ class ReportDeliveryController extends Controller
         }
 
         try {
-            $queued = $this->repository->retryJob($jobId, $tenantId);
+            $queued = $this->repository->retryJob($jobId, $tenantId, (int) Auth::userId());
             if (!$queued) {
                 $this->json(['success' => false, 'message' => t('delivery_hub.released.reprocessamento_indisponivel')], 422);
             }
             AuditLogger::log('report_delivery.failed_job_requeued', 'pacs_report_delivery_jobs', $jobId, [
                 'tenant_id' => $tenantId,
+                'requested_by' => (int) Auth::userId(),
                 'event_mode' => 'manual_after_terminal_failure',
             ]);
             $this->json(['success' => true, 'message' => t('delivery_hub.released.reprocessamento_aceito')]);
@@ -270,6 +271,7 @@ class ReportDeliveryController extends Controller
                 'tenant_id' => $tenantId,
                 'job_count' => $result['job_count'],
                 'retried_jobs' => $result['retried_jobs'],
+                'requested_by' => (int) Auth::userId(),
                 'event_mode' => 'manual_after_terminal_failure',
             ]);
             $this->json([

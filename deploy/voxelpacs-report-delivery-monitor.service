@@ -1,0 +1,20 @@
+[Unit]
+Description=VOXEL Report Delivery queue monitor (read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=voxel
+Group=voxelpacs-runtime
+WorkingDirectory=/var/www/voxelpacs/app
+EnvironmentFile=-/etc/voxelpacs/report-delivery-worker.env
+ExecStart=/usr/bin/php /var/www/voxelpacs/app/bin/report_delivery_monitor.php
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/www/voxelpacs/app/storage
+
+[Install]
+WantedBy=multi-user.target

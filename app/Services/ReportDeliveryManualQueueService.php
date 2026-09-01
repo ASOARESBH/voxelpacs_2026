@@ -105,7 +105,7 @@ final class ReportDeliveryManualQueueService
         }
 
         $repository = new \App\Repositories\ReportDeliveryRepository($this->pdo);
-        $retried = $repository->retryTerminalJobsForReport($reportId, $tenantId);
+        $retried = $repository->retryTerminalJobsForReport($reportId, $tenantId, $requestedBy);
         if ($retried === 0) {
             throw new DomainException('Nenhuma falha terminal elegível foi encontrada para reenvio manual.');
         }

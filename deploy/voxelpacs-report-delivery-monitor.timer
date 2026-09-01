@@ -1,0 +1,10 @@
+[Unit]
+Description=Run VOXEL Report Delivery queue monitor every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=voxelpacs-report-delivery-monitor.service
+
+[Install]
+WantedBy=timers.target

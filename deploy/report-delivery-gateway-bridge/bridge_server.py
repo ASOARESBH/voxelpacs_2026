@@ -28,9 +28,9 @@ MAX_CLOCK_SKEW_SECONDS = 60
 ROOT = Path("/var/lib/voxelpacs/report-delivery-gateway")
 
 
-def state_file(job_id: int) -> Path:
-    """Mantém a trava de tentativa única separada por job aceito pela policy."""
-    return ROOT / f"attempted-job-{job_id}.json"
+def state_file(job_id: int, attempt_number: int) -> Path:
+    """Mantém a trava de tentativa única por job e tentativa autorizada."""
+    return ROOT / f"attempted-job-{job_id}-attempt-{attempt_number}.json"
 
 
 def env(name: str) -> str:
@@ -96,9 +96,9 @@ logging.basicConfig(
 LOG = logging.getLogger("report_delivery_gateway")
 
 
-def state(job_id: int) -> dict[str, object]:
+def state(job_id: int, attempt_number: int) -> dict[str, object]:
     try:
-        value = json.loads(state_file(job_id).read_text(encoding="utf-8"))
+        value = json.loads(state_file(job_id, attempt_number).read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
     except FileNotFoundError:
         return {}
@@ -106,15 +106,15 @@ def state(job_id: int) -> dict[str, object]:
         return {"state": "unreadable"}
 
 
-def write_state(job_id: int, value: dict[str, object]) -> None:
-    target = state_file(job_id)
+def write_state(job_id: int, attempt_number: int, value: dict[str, object]) -> None:
+    target = state_file(job_id, attempt_number)
     temp = target.with_suffix(".tmp")
     temp.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     os.chmod(temp, 0o600)
     os.replace(temp, target)
 
 
-def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
+def invoke_dicom_scu(artifact: Path) -> tuple[bool, str, str, str]:
     container_artifact = f"/tmp/voxel-report-{secrets.token_hex(16)}.dcm"
     script_path = Path("/opt/voxelpacs/report-delivery-gateway/dicom_scu.py")
     copied = False
@@ -126,7 +126,7 @@ def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
             check=False,
         )
         if copy.returncode != 0:
-            return False, "container_copy_failed"
+            return False, "container_copy_failed", "not_attempted", "not_attempted"
         copied = True
         run = subprocess.run(
             [
@@ -145,10 +145,15 @@ def invoke_dicom_scu(artifact: Path) -> tuple[bool, str]:
                 "invalid_arguments", "invalid_port", "policy_rejected", "invalid_artifact", "invalid_dicom",
                 "unsupported_sop_class", "missing_encapsulated_pdf", "association_rejected", "cecho_failed", "cstore_failed",
             }
-            return False, code if code in allowed_codes else "dicom_scu_execution_failed"
-        return True, "stored"
+            outcome = code if code in allowed_codes else "dicom_scu_execution_failed"
+            if outcome == "cecho_failed":
+                return False, outcome, "failed", "not_attempted"
+            if outcome == "cstore_failed":
+                return False, outcome, "success", "failed"
+            return False, outcome, "not_attempted", "not_attempted"
+        return True, "stored", "success", "success"
     except (OSError, subprocess.TimeoutExpired):
-        return False, "dicom_gateway_execution_failed"
+        return False, "dicom_gateway_execution_failed", "not_attempted", "not_attempted"
     finally:
         if copied:
             subprocess.run(
@@ -183,6 +188,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        attempt_number = self.headers.get("X-VOXEL-Attempt-Number", "")
         tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
         destination_id = self.headers.get("X-VOXEL-Destination-ID", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
@@ -193,21 +199,22 @@ class Handler(BaseHTTPRequestHandler):
             content_length_int = int(content_length)
             timestamp_int = int(timestamp)
             job_id_int = int(job_id)
+            attempt_number_int = int(attempt_number)
             tenant_id_int = int(tenant_id)
             destination_id_int = int(destination_id)
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
             return
-        if not POLICY.accepts_job(job_id_int, tenant_id_int, destination_id_int) or not (256 <= content_length_int <= MAX_BYTES):
+        if attempt_number_int <= 0 or not POLICY.accepts_job(job_id_int, tenant_id_int, destination_id_int) or not (256 <= content_length_int <= MAX_BYTES):
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
-        if state(job_id_int).get("state") in {"attempted", "delivered"}:
+        if state(job_id_int, attempt_number_int).get("state") in {"attempted", "delivered"}:
             self.respond(HTTPStatus.CONFLICT, {"error": "single_attempt_consumed"})
             return
         if abs(int(time.time()) - timestamp_int) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
             return
-        base = "\n".join(["POST", expected_path, job_id, tenant_id, destination_id, supplied_hash, str(content_length_int), timestamp])
+        base = "\n".join(["POST", expected_path, job_id, attempt_number, tenant_id, destination_id, supplied_hash, str(content_length_int), timestamp])
         expected_signature = hmac.new(POLICY.secret, base.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected_signature):
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
@@ -233,16 +240,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(HTTPStatus.BAD_REQUEST, {"error": "integrity_check_failed"})
                 return
 
-            write_state(job_id_int, {"state": "attempted", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
-            success, outcome = invoke_dicom_scu(artifact)
+            write_state(job_id_int, attempt_number_int, {"state": "attempted", "job_id": job_id_int, "attempt_number": attempt_number_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
+            success, outcome, c_echo, c_store = invoke_dicom_scu(artifact)
             if not success:
-                LOG.warning("event=delivery_failed job_id=%s sha256_16=%s stage=%s", job_id_int, actual_hash[:16], outcome)
-                self.respond(HTTPStatus.BAD_GATEWAY, {"error": outcome})
+                write_state(job_id_int, attempt_number_int, {"state": "attempted", "job_id": job_id_int, "attempt_number": attempt_number_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash, "c_echo": c_echo, "c_store": c_store})
+                LOG.warning("event=delivery_failed job_id=%s sha256_16=%s stage=%s c_echo=%s c_store=%s", job_id_int, actual_hash[:16], outcome, c_echo, c_store)
+                self.respond(HTTPStatus.BAD_GATEWAY, {"error": outcome, "c_echo": c_echo, "c_store": c_store})
                 return
-            write_state(job_id_int, {"state": "delivered", "job_id": job_id_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash})
+            write_state(job_id_int, attempt_number_int, {"state": "delivered", "job_id": job_id_int, "attempt_number": attempt_number_int, "tenant_id": tenant_id_int, "destination_id": destination_id_int, "mode": POLICY.mode, "at": int(time.time()), "sha256": actual_hash, "c_echo": c_echo, "c_store": c_store})
             reference = f"gateway-cstore:{actual_hash[:16]}"
-            LOG.info("event=delivery_completed job_id=%s sha256_16=%s", job_id_int, actual_hash[:16])
-            self.respond(HTTPStatus.CREATED, {"reference": reference})
+            LOG.info("event=delivery_completed job_id=%s sha256_16=%s c_echo=%s c_store=%s", job_id_int, actual_hash[:16], c_echo, c_store)
+            self.respond(HTTPStatus.CREATED, {"reference": reference, "c_echo": c_echo, "c_store": c_store})
         finally:
             try:
                 artifact.unlink(missing_ok=True)

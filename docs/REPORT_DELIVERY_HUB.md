@@ -152,14 +152,14 @@ O painel de cada negócio apresenta até 100 laudos com situação `liberado`, m
 | Estado exibido | Critério | Ação disponível |
 |---|---|---|
 | **Entregue** | Todos os jobs daquele laudo foram concluídos pelo worker com `delivered`. | Nenhuma. |
-| **Na fila** | Há job `queued`, `retrying` ou `processing`. | Aguardar o worker; reenvio manual só é oferecido para homologação. |
-| **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | Reenviar reativa somente jobs terminais de homologação. |
+| **Na fila** | Há job `queued`, `retrying` ou `processing`. | Aguardar o worker; retry manual já aceito não pode ser duplicado. |
+| **Falha** | Existem somente jobs terminais `failed` ou `dead_letter`. | **Reenviar após falha** cria uma exceção manual auditável somente na rota de produção tenant/destino vinculada ou na homologação compatível. |
 | **Destino desativado** | O Issuer prioritário, ou o InstitutionName de fallback quando não há Issuer, está vinculado a um destino, mas ele não está elegível (`enabled=0` ou sem disparo na liberação). | Nenhuma; a configuração precisa ser ativada em processo homologado. |
 | **Pronto para reenviar** | Há destino de homologação configurado e elegível, mas ainda não existe job do laudo. | Reenviar reavalia a mesma origem e cria somente jobs idempotentes de homologação. |
 | **Automático na liberação** | Há somente destino de produção elegível e ainda não existe job de laudo histórico. | Nenhuma; novos laudos liberados criam job de produção automaticamente. |
 | **Sem destino** | Não existe vínculo configurado para a origem aplicável do laudo. | Reenviar reavalia Issuer e InstitutionName de fallback contra destinos ativos. |
 
-O botão **Reenviar** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Ele só cria ou reativa jobs para destinos de **homologação** ativos e compatíveis; não se torna um atalho para produzir transmissão. Produção recebe novos jobs exclusivamente pela transação clínica de liberação. O alerta da interface informa aceite na fila, sucesso de entrega ou falha técnica sanitizada conforme o estado persistido; nunca renderiza JSON bruto da API. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker.
+O botão **Reenviar após falha** exige confirmação no navegador, CSRF, sessão de superadmin e escopo do tenant da tela. Para produção, ele só aceita **um** job terminal na rota DICOM vinculada ao tenant, ao servidor PACS de origem, à policy `tenant_destination` da bridge e a um snapshot PDF íntegro. O reenvio recebe marcação manual, administrador solicitante e limite de três solicitações por job; nunca altera um item já entregue, destino desativado, rota sem origem ou rota sem bridge. O endpoint não abre conexão DICOM, HTTPS, HL7 ou SFTP: a transmissão ocorre exclusivamente no worker.
 
 Se não houver destino ativo e compatível, o reenvio retorna sem criar job. Quando um artefato é transmitido e confirmado pelo worker, o job passa para `delivered` e a lista reflete **Entregue**. Um reenvio clínico real deve ser confirmado separadamente antes da ação administrativa.
 
@@ -167,7 +167,7 @@ Se não houver destino ativo e compatível, o reenvio retorna sem criar job. Qua
 
 Um job criado automaticamente por uma liberação em produção recebe a **data clínica da liberação**. O worker processa esse job somente enquanto essa data corresponder ao dia clínico corrente. Ao iniciar um novo dia, pendências automáticas anteriores são finalizadas como falha sanitizada e deixam de ser consumidas automaticamente. Essa regra impede que indisponibilidades antigas resultem em transmissão retardada sem revisão operacional.
 
-Após `failed` ou `dead_letter`, o superadmin pode acionar **Reenviar após falha**. A ação exige CSRF e confirmação no navegador, preserva tenant e unidade, gera evento de auditoria com o modo `manual_after_terminal_failure` e torna o job novamente elegível. O fallback não cria job novo para laudo histórico, não reenvia itens entregues e não contorna a prioridade Issuer–InstitutionName.
+Após `failed` ou `dead_letter`, o superadmin pode acionar **Reenviar após falha**. A ação exige CSRF e confirmação no navegador, preserva tenant e unidade, registra a solicitação manual e torna somente aquele job novamente elegível fora da janela automática. O fallback não cria job novo para laudo histórico, não reenvia itens entregues, não contorna a prioridade Issuer–InstitutionName e não altera outras rotas.
 
 | Situação | Automação | Ação humana |
 |---|---|---|
@@ -183,8 +183,8 @@ A automação de produção deve ser habilitada somente depois de um piloto unit
 | Controle | Regra operacional |
 |---|---|
 | Feature flag da API | `VOXEL_REPORT_DELIVERY_HUB_ENABLED=true` somente enquanto a automação estiver aprovada. |
-| Worker local | Consome somente jobs `automatic_production` da data clínica corrente, de destino `producao` com disparo ativo e com servidor PACS idêntico ao do estudo. Jobs históricos, manuais e de homologação não são consumidos pelo loop contínuo. |
-| Limite de entrega | O destino de produção é configurado com `max_attempts=1`; a ponte persiste uma trava por job antes da associação externa. Falhas ficam para revisão humana, sem novo C-STORE automático. |
+| Worker local | Consome jobs automáticos somente na data clínica corrente e exceções manuais explicitamente marcadas. Em ambos os casos exige destino de produção vinculado, origem idêntica ao estudo e policy `tenant_destination` coerente. |
+| Limite de entrega | O destino de produção mantém `max_attempts=1` para o fluxo automático. O retry manual é solicitado pelo superadmin, limitado a três solicitações por job e auditado. A ponte persiste trava por **job e número de tentativa** antes da associação externa. |
 | Ponte do gateway | Opera apenas em `tenant_destination`, com `BRIDGE_AUTOMATION_ENABLED=true`, mTLS/HMAC e listener privado. A bridge executa C-ECHO imediatamente antes de C-STORE. |
 | Listener | O serviço deve escutar exclusivamente no endereço privado da API; não se publica porta DICOM externa, endpoint HTTP público ou fallback pela Internet. |
 | WireGuard | A rota ao receptor precisa sair pelo peer exclusivo do tenant. Handshake ausente, rota inválida ou container DICOM inativo impedem ativação. |
@@ -203,6 +203,6 @@ A reativação exige nova validação de tenant, servidor PACS, Issuer, policy, 
 
 ### Observabilidade sanitizada
 
-A operação deve acompanhar somente estados técnicos: unidade do worker, unidade da ponte, estado do handshake, listener privado, resultado C-ECHO/C-STORE, contagem de jobs por estado e tentativas. Logs não devem registrar PDF, conteúdo do laudo, Patient ID, nome, UIDs completos, endereço do receptor, AE Titles, chaves ou segredos. O identificador interno do job é o correlacionador operacional permitido.
+A operação deve acompanhar somente estados técnicos: unidade do worker, unidade da ponte, estado do handshake, listener privado, resultado C-ECHO/C-STORE, contagem de jobs por estado e tentativas. O monitor local executa periodicamente como leitura e registra somente contagens de jobs automáticos atuais, retries manuais, leases obsoletos e rotas não conformes; ele nunca faz claim, requeue, C-ECHO, C-STORE ou inicialização do worker. Logs não devem registrar PDF, conteúdo do laudo, Patient ID, nome, UIDs completos, endereço do receptor, AE Titles, chaves ou segredos. O identificador interno do job é o correlacionador operacional permitido.
 
 > A ativação de produção não é uma autorização para reenviar pendências. Somente uma nova liberação compatível cria seu próprio evento idempotente, snapshot PDF imutável e job tenant-scoped elegível.

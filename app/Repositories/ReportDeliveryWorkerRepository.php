@@ -27,6 +27,7 @@ class ReportDeliveryWorkerRepository
         $transportWhere = '';
         $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $parameters = [':automatic_today' => $currentDate];
+        $bridgePolicyWhere = $this->boundProductionBridgeWhere('d');
         if ($transports !== []) {
             $placeholders = [];
             foreach ($transports as $index => $transport) {
@@ -53,11 +54,12 @@ class ReportDeliveryWorkerRepository
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
                    AND j.worker_eligible_at IS NOT NULL
                    AND j.worker_eligible_at <= NOW()
-                   AND j.automatic_dispatch_date = :automatic_today
+                   AND (j.automatic_dispatch_date = :automatic_today
+                        OR (j.automatic_dispatch_date IS NULL AND j.manual_retry_requested_at IS NOT NULL))
                    AND d.enabled = 1
                    AND d.disparar_na_liberacao = 1
                    AND d.ambiente = 'producao'
-                   AND d.servidor_pacs_id IS NOT NULL{$transportWhere}
+                   AND d.servidor_pacs_id IS NOT NULL{$transportWhere}{$bridgePolicyWhere}
                  ORDER BY j.created_at ASC
                  LIMIT 1
                  FOR UPDATE"
@@ -416,6 +418,14 @@ class ReportDeliveryWorkerRepository
             ':terminal' => in_array($status, ['completed', 'dead_letter', 'failed', 'no_destination'], true) ? 1 : 0,
             ':id' => $outboxId,
         ]);
+    }
+
+    private function boundProductionBridgeWhere(string $alias): string
+    {
+        if (\App\Core\SqlHelper::isPostgres()) {
+            return "\n                   AND ({$alias}.configuration_json::jsonb)->>'gateway_bridge_mode' = 'tenant_destination'\n                   AND ({$alias}.configuration_json::jsonb)->>'bridge_tenant_id' ~ '^[0-9]+$'\n                   AND ({$alias}.configuration_json::jsonb)->>'bridge_destination_id' ~ '^[0-9]+$'\n                   AND (({$alias}.configuration_json::jsonb)->>'bridge_tenant_id')::bigint = {$alias}.tenant_id\n                   AND (({$alias}.configuration_json::jsonb)->>'bridge_destination_id')::bigint = {$alias}.id";
+        }
+        return "\n                   AND JSON_UNQUOTE(JSON_EXTRACT({$alias}.configuration_json, '$.gateway_bridge_mode')) = 'tenant_destination'\n                   AND CAST(JSON_UNQUOTE(JSON_EXTRACT({$alias}.configuration_json, '$.bridge_tenant_id')) AS UNSIGNED) = {$alias}.tenant_id\n                   AND CAST(JSON_UNQUOTE(JSON_EXTRACT({$alias}.configuration_json, '$.bridge_destination_id')) AS UNSIGNED) = {$alias}.id";
     }
 
     private function validDate(?string $value): bool
