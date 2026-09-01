@@ -183,7 +183,7 @@ final class RelatorioProdutividadeMedicosRepository
                 COALESCE(e.patient_id, \'—\') AS patient_id,
                 e.institution_name AS unidade,
                 e.modalities,
-                {$prioridadeSql} AS prioridade,
+                ' . $prioridadeSql . ' AS prioridade,
                 (NULLIF(BTRIM(e.dicom_priority_override), \'\') IS NOT NULL) AS prioridade_manual,
                 COALESCE(NULLIF(BTRIM(e.dicom_priority), \'\'), NULLIF(BTRIM(e.prioridade), \'\'), \'ROUTINE\') AS prioridade_origem,
                 COALESCE(

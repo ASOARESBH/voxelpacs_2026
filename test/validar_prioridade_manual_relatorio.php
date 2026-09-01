@@ -33,6 +33,7 @@ $checks = [
     'auditoria registra confirmação explícita' => str_contains($service, "confirmacao_explicita' => true"),
     'modal exige confirmação dupla' => str_contains($worklist, 'gerenciarPrioridadeConfirmacao') && str_contains($js, 'confirmar_prioridade: true'),
     'relatório usa prioridade efetiva' => str_contains($produtividade, 'prioridadeEfetivaSql') && str_contains($produtividade, 'dicom_priority_override'),
+    'expressão de prioridade é concatenada na consulta' => str_contains($produtividade, "' . \$prioridadeSql . ' AS prioridade") && !str_contains($produtividade, '{$prioridadeSql} AS prioridade'),
     'relatório marca alteração manual' => str_contains($produtividade, 'prioridade_manual') && str_contains($laudario, 'relatorios.prioridade.manual'),
     'exportação registra origem e indicador' => str_contains($exportacao, 'Prioridade DICOM original') && str_contains($exportacao, 'prioridade_origem'),
     'PDF registra origem e indicador' => str_contains($pdf, 'fmtPrioridade') && str_contains($pdf, 'Alterada manualmente'),
