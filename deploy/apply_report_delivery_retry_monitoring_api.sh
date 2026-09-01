@@ -58,6 +58,7 @@ for relative in "${files[@]}"; do
   install -D -m 0644 "$STAGE_DIR/$relative" "$APP_DIR/$relative"
 done
 chmod 0755 "$APP_DIR/bin/report_delivery_monitor.php" "$APP_DIR/deploy/install_report_delivery_monitor_api.sh"
+install -m 0644 "$APP_DIR/ops/systemd/voxelpacs-report-delivery-worker.service" /etc/systemd/system/voxelpacs-report-delivery-worker.service
 install -m 0644 "$APP_DIR/deploy/voxelpacs-report-delivery-monitor.service" /etc/systemd/system/voxelpacs-report-delivery-monitor.service
 install -m 0644 "$APP_DIR/deploy/voxelpacs-report-delivery-monitor.timer" /etc/systemd/system/voxelpacs-report-delivery-monitor.timer
 
