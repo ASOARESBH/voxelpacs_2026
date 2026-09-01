@@ -12,6 +12,7 @@ $arquivos = [
     'laudario' => $base . '/app/Views/reports/partials/_exame_card.php',
     'exportacao' => $base . '/app/Services/RelatorioExportService.php',
     'pdf' => $base . '/app/Views/relatorios/pdf/medicos.php',
+    'view_relatorio' => $base . '/app/Views/relatorios/medicos.php',
 ];
 
 foreach ($arquivos as $nome => $arquivo) {
@@ -26,6 +27,7 @@ $produtividade = file_get_contents($arquivos['produtividade']);
 $laudario = file_get_contents($arquivos['laudario']);
 $exportacao = file_get_contents($arquivos['exportacao']);
 $pdf = file_get_contents($arquivos['pdf']);
+$viewRelatorio = file_get_contents($arquivos['view_relatorio']);
 
 $checks = [
     'backend recebe confirmação explícita' => str_contains($controller, "confirmar_prioridade") && str_contains($service, 'bool $confirmed'),
@@ -34,6 +36,9 @@ $checks = [
     'modal exige confirmação dupla' => str_contains($worklist, 'gerenciarPrioridadeConfirmacao') && str_contains($js, 'confirmar_prioridade: true'),
     'relatório usa prioridade efetiva' => str_contains($produtividade, 'prioridadeEfetivaSql') && str_contains($produtividade, 'dicom_priority_override'),
     'expressão de prioridade é concatenada na consulta' => str_contains($produtividade, "' . \$prioridadeSql . ' AS prioridade") && !str_contains($produtividade, '{$prioridadeSql} AS prioridade'),
+    'totaliza liberados por modalidade e prioridade' => str_contains($produtividade, 'resumirLiberados') && str_contains($produtividade, "situacao_laudo'] ?? '') !== 'liberado"),
+    'tela mostra os dois resumos liberados' => str_contains($viewRelatorio, 'resumoLiberados') && str_contains($viewRelatorio, 'liberados_por_modalidade') && str_contains($viewRelatorio, 'liberados_por_prioridade'),
+    'exportações mostram os dois resumos liberados' => str_contains($exportacao, 'LIBERADOS POR MODALIDADE') && str_contains($exportacao, 'LIBERADOS POR PRIORIDADE') && str_contains($pdf, 'breakdowns'),
     'relatório marca alteração manual' => str_contains($produtividade, 'prioridade_manual') && str_contains($laudario, 'relatorios.prioridade.manual'),
     'exportação registra origem e indicador' => str_contains($exportacao, 'Prioridade DICOM original') && str_contains($exportacao, 'prioridade_origem'),
     'PDF registra origem e indicador' => str_contains($pdf, 'fmtPrioridade') && str_contains($pdf, 'Alterada manualmente'),
@@ -45,7 +50,7 @@ foreach ($checks as $descricao => $ok) {
 
 foreach (['pt_BR.php', 'en.php', 'es.php'] as $idioma) {
     $catalogo = file_get_contents($base . '/lang/' . $idioma);
-    foreach (['gestao_gerenciar.prioridade.confirmacao_dupla', 'gestao_gerenciar.erro.confirmacao_prioridade_obrigatoria', 'relatorios.prioridade.manual'] as $chave) {
+    foreach (['gestao_gerenciar.prioridade.confirmacao_dupla', 'gestao_gerenciar.erro.confirmacao_prioridade_obrigatoria', 'relatorios.prioridade.manual', 'relatorios.medicos.liberados_por_modalidade', 'relatorios.medicos.liberados_por_prioridade'] as $chave) {
         if (!str_contains($catalogo, $chave)) throw new RuntimeException("Tradução ausente em {$idioma}: {$chave}");
     }
 }

@@ -157,7 +157,7 @@ final class RelatorioProdutividadeMedicosRepository
 
     /**
      * @param array{tenant_id:int,data_de:string,data_ate:string,base_periodo:string,unidade:string,modalidades:array<int,string>,estudo:string,medico_id:?int,pagina:int,por_pagina:int,medico_restrito_id:?int} $filtros
-     * @return array{linhas:array<int,array<string,mixed>>,total:int,totalizadores:array<string,int|null>,por_medico:array<int,array<string,mixed>>}
+     * @return array{linhas:array<int,array<string,mixed>>,total:int,totalizadores:array<string,int|null>,porMedico:array<int,array<string,mixed>>,resumoLiberados:array{modalidades:array<string,int>,prioridades:array<string,int>}}
      */
     public function buscar(array $filtros): array
     {
@@ -229,13 +229,14 @@ final class RelatorioProdutividadeMedicosRepository
 
         $totalizadores = $this->totalizar($all);
         $porMedico = $this->agruparPorMedico($all);
+        $resumoLiberados = $this->resumirLiberados($all);
 
         $total = count($all);
         $porPagina = max(1, min(100, (int) $filtros['por_pagina']));
         $pagina = max(1, (int) $filtros['pagina']);
         $linhas = array_slice($all, ($pagina - 1) * $porPagina, $porPagina);
 
-        return compact('linhas', 'total', 'totalizadores', 'porMedico');
+        return compact('linhas', 'total', 'totalizadores', 'porMedico', 'resumoLiberados');
     }
 
     /** @param array<string,mixed> $filtros @return array{0:array<int,string>,1:array<string,mixed>} */
@@ -311,6 +312,43 @@ final class RelatorioProdutividadeMedicosRepository
             'sla_medio_min' => $conclusoes ? (int) round(array_sum($conclusoes) / count($conclusoes)) : null,
             'sla_total_min' => $conclusoes ? (int) array_sum($conclusoes) : null,
         ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $linhas
+     * @return array{modalidades:array<string,int>,prioridades:array<string,int>}
+     */
+    private function resumirLiberados(array $linhas): array
+    {
+        $modalidades = [];
+        $prioridades = [];
+        $ordemPrioridade = array_flip(array_keys(self::PRIORIDADES_DICOM));
+
+        foreach ($linhas as $linha) {
+            if (($linha['situacao_laudo'] ?? '') !== 'liberado') {
+                continue;
+            }
+
+            $modalidadesDaLinha = [];
+            foreach (explode('\\', (string) ($linha['modalities'] ?? '')) as $modalidade) {
+                $modalidade = strtoupper(trim($modalidade));
+                if ($modalidade !== '') {
+                    $modalidadesDaLinha[$modalidade] = true;
+                }
+            }
+            foreach (array_keys($modalidadesDaLinha) as $modalidade) {
+                $modalidades[$modalidade] = ($modalidades[$modalidade] ?? 0) + 1;
+            }
+
+            $prioridade = strtoupper(trim((string) ($linha['prioridade'] ?? 'ROUTINE')));
+            $prioridade = array_key_exists($prioridade, self::PRIORIDADES_DICOM) ? $prioridade : 'ROUTINE';
+            $prioridades[$prioridade] = ($prioridades[$prioridade] ?? 0) + 1;
+        }
+
+        ksort($modalidades, SORT_NATURAL);
+        uksort($prioridades, static fn(string $a, string $b): int => ($ordemPrioridade[$a] ?? PHP_INT_MAX) <=> ($ordemPrioridade[$b] ?? PHP_INT_MAX));
+
+        return ['modalidades' => $modalidades, 'prioridades' => $prioridades];
     }
 
     /** @param array<int,array<string,mixed>> $linhas @return array<int,array<string,mixed>> */

@@ -162,7 +162,7 @@ class RelatorioExportService
     // ─────────────────────────────────────────────────────────────────────
     // CSV — Relatório de produtividade médica
     // ─────────────────────────────────────────────────────────────────────
-    public function streamCsvMedicos(array $linhas, array $porMedico, array $totalizadores, array $resumoFiltros, string $tenantNome, string $usuarioNome, string $filename): void
+    public function streamCsvMedicos(array $linhas, array $porMedico, array $totalizadores, array $resumoLiberados, array $resumoFiltros, string $tenantNome, string $usuarioNome, string $filename): void
     {
         header('Content-Type: text/csv; charset=UTF-8');
         header("Content-Disposition: attachment; filename=\"{$filename}\"");
@@ -193,6 +193,16 @@ class RelatorioExportService
         fputcsv($out, ['Com Peer Review', $totalizadores['peer_reviews'] ?? 0], ';');
         fputcsv($out, ['SLA médio médico', $this->formatarMinutos($totalizadores['sla_medio_min'] ?? null)], ';');
         fputcsv($out, ['SLA total acumulado', $this->formatarMinutos($totalizadores['sla_total_min'] ?? null)], ';');
+        fputcsv($out, [], ';');
+        fputcsv($out, ['LIBERADOS POR MODALIDADE'], ';');
+        foreach (($resumoLiberados['modalidades'] ?? []) as $modalidade => $quantidade) {
+            fputcsv($out, [$modalidade, $quantidade], ';');
+        }
+        fputcsv($out, [], ';');
+        fputcsv($out, ['LIBERADOS POR PRIORIDADE'], ';');
+        foreach (($resumoLiberados['prioridades'] ?? []) as $prioridade => $quantidade) {
+            fputcsv($out, [RelatorioProdutividadeMedicosRepository::prioridadeLabel((string) $prioridade), $quantidade], ';');
+        }
         fputcsv($out, [], ';');
         fputcsv($out, ['DETALHAMENTO DOS EXAMES LAUDADOS'], ';');
         fputcsv($out, ['Data do estudo', 'Paciente', 'ID paciente', 'Estudo', 'Unidade', 'Modalidade', 'Prioridade efetiva', 'Prioridade DICOM original', 'Alterada manualmente', 'Médico', 'Assumido em', 'Assinado em', 'Liberado em', 'Tempo médico', 'Tempo até conclusão', 'Peer Review'], ';');

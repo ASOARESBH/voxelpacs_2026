@@ -4,6 +4,7 @@
 /** @var array<int,array<string,mixed>> $linhas */
 /** @var array<string,int|null> $totalizadores */
 /** @var array<int,array<string,mixed>> $porMedico */
+/** @var array{modalidades:array<string,int>,prioridades:array<string,int>} $resumoLiberados */
 
 function relMedicosMinutos(?int $minutos): string {
     if ($minutos === null) return '—';
@@ -53,6 +54,7 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
 .rel-med-card-label{display:block;color:var(--pacs-text-muted,#8892a4);font-size:.7rem;text-transform:uppercase;font-weight:700;letter-spacing:.04em;}
 .rel-med-card-value{display:block;margin-top:.35rem;color:var(--pacs-text,#e2e8f0);font-size:1.35rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .rel-med-card-value.primary{color:#60a5fa}.rel-med-card-value.success{color:#34d399}.rel-med-card-value.purple{color:#c084fc}.rel-med-card-value.warning{color:#fbbf24}
+.rel-med-breakdowns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:0 0 1.1rem}.rel-med-breakdown{background:var(--pacs-card-bg,#1e2330);border:1px solid var(--pacs-border,#2d3244);border-radius:10px;padding:.8rem .9rem}.rel-med-breakdown h2{margin:0 0 .58rem;color:var(--pacs-text,#e2e8f0);font-size:.74rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.rel-med-breakdown-list{display:flex;gap:.45rem;flex-wrap:wrap}.rel-med-breakdown-item{display:inline-flex;align-items:center;gap:.4rem;min-height:28px;padding:.22rem .48rem;border:1px solid var(--pacs-border,#3a3f4b);border-radius:5px;background:var(--pacs-input-bg,#252b3b);color:var(--pacs-text,#e2e8f0);font-size:.75rem}.rel-med-breakdown-item b{font-weight:800}.rel-med-breakdown-item strong{color:#60a5fa;font-size:.9rem}.rel-med-breakdown-empty{color:var(--pacs-text-muted,#8892a4);font-size:.78rem}
 .rel-med-section{margin:1.1rem 0 .65rem;color:var(--pacs-text,#e2e8f0);font-size:.94rem;font-weight:800;}
 .rel-med-table-wrap{overflow:auto;margin-bottom:1rem;}
 .rel-med-table{width:100%;border-collapse:collapse;font-size:.79rem;min-width:940px;}
@@ -62,7 +64,7 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
 .rel-med-patient{font-weight:700}.rel-med-muted{color:var(--pacs-text-muted,#8892a4)}.rel-med-empty{text-align:center;padding:2.5rem!important;color:var(--pacs-text-muted,#8892a4)!important}
 .rel-med-badge{display:inline-flex;align-items:center;gap:.25rem;border-radius:99px;padding:.2rem .45rem;font-size:.68rem;font-weight:700;white-space:nowrap}.rel-med-badge.peer{color:#c084fc;background:rgba(192,132,252,.12);border:1px solid rgba(192,132,252,.28)}.rel-med-badge.none{color:#94a3b8;background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2)}
 .rel-med-pagination{display:flex;align-items:center;justify-content:space-between;padding:.75rem .9rem;color:var(--pacs-text-muted,#8892a4);font-size:.78rem}.rel-med-pages{display:flex;gap:.3rem}.rel-med-page{padding:.25rem .55rem;border-radius:5px;border:1px solid var(--pacs-border,#3a3f4b);color:var(--pacs-text-muted,#8892a4);text-decoration:none}.rel-med-page.active{background:var(--pacs-primary,#1a56db);color:#fff;border-color:var(--pacs-primary,#1a56db)}
-@media(max-width:1180px){.rel-med-cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.rel-med-page{padding:1rem}.rel-med-header{display:block}.rel-med-cards{grid-template-columns:repeat(2,1fr)}.rel-med-modalities{align-items:flex-start;flex-direction:column;gap:.3rem}.rel-med-modalities .rel-med-label{min-width:0}.rel-med-chips{flex-wrap:wrap;overflow:visible}}
+@media(max-width:1180px){.rel-med-cards{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.rel-med-page{padding:1rem}.rel-med-header{display:block}.rel-med-cards{grid-template-columns:repeat(2,1fr)}.rel-med-breakdowns{grid-template-columns:1fr}.rel-med-modalities{align-items:flex-start;flex-direction:column;gap:.3rem}.rel-med-modalities .rel-med-label{min-width:0}.rel-med-chips{flex-wrap:wrap;overflow:visible}}
 </style>
 
 <div class="rel-med-page">
@@ -150,6 +152,23 @@ function relMedicosExportUrl(array $filtros, string $formato): string {
         <div class="rel-med-card"><span class="rel-med-card-label">Com Peer Review</span><span class="rel-med-card-value purple"><?= (int)$totalizadores['peer_reviews'] ?></span></div>
         <div class="rel-med-card"><span class="rel-med-card-label">SLA médio médico</span><span class="rel-med-card-value"><?= relMedicosMinutos($totalizadores['sla_medio_min']) ?></span></div>
         <div class="rel-med-card"><span class="rel-med-card-label">SLA total acumulado</span><span class="rel-med-card-value"><?= relMedicosMinutos($totalizadores['sla_total_min']) ?></span></div>
+    </div>
+
+    <div class="rel-med-breakdowns">
+        <section class="rel-med-breakdown" aria-label="<?= htmlspecialchars(t('relatorios.medicos.liberados_por_modalidade')) ?>">
+            <h2><?= htmlspecialchars(t('relatorios.medicos.liberados_por_modalidade')) ?></h2>
+            <div class="rel-med-breakdown-list">
+                <?php if (empty($resumoLiberados['modalidades'])): ?><span class="rel-med-breakdown-empty"><?= htmlspecialchars(t('relatorios.medicos.nenhum_liberado')) ?></span>
+                <?php else: foreach ($resumoLiberados['modalidades'] as $modalidade => $quantidade): ?><span class="rel-med-breakdown-item"><b><?= htmlspecialchars($modalidade) ?></b><strong><?= (int)$quantidade ?></strong></span><?php endforeach; endif; ?>
+            </div>
+        </section>
+        <section class="rel-med-breakdown" aria-label="<?= htmlspecialchars(t('relatorios.medicos.liberados_por_prioridade')) ?>">
+            <h2><?= htmlspecialchars(t('relatorios.medicos.liberados_por_prioridade')) ?></h2>
+            <div class="rel-med-breakdown-list">
+                <?php if (empty($resumoLiberados['prioridades'])): ?><span class="rel-med-breakdown-empty"><?= htmlspecialchars(t('relatorios.medicos.nenhum_liberado')) ?></span>
+                <?php else: foreach ($resumoLiberados['prioridades'] as $prioridade => $quantidade): ?><span class="rel-med-breakdown-item"><b><?= htmlspecialchars(\App\Repositories\RelatorioProdutividadeMedicosRepository::prioridadeLabel($prioridade)) ?></b><strong><?= (int)$quantidade ?></strong></span><?php endforeach; endif; ?>
+            </div>
+        </section>
     </div>
 
     <h2 class="rel-med-section">Produtividade por médico</h2>
