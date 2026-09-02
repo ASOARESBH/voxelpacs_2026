@@ -753,28 +753,41 @@ $periodoLabel = [
                         <?php endif; ?>
                         <?php endif; ?>
 
-                        <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
+                        <?php
+                        $viewerStates = is_array($e['viewer_states'] ?? null) ? $e['viewer_states'] : [];
+                        $viewerVisible = static fn (string $key): bool => !empty($viewerStates[$key]['visible']);
+                        $hasViewerVisible = $viewerVisible('voxel_view') || $viewerVisible('voxel_desktop') || $viewerVisible('radiant') || $viewerVisible('weasis');
+                        ?>
+                        <?php if ((!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])) && $hasViewerVisible): ?>
                         <div class="wl-viewer-wrap">
                             <button type="button" class="wl-btn-abrir viewer-trigger" title="Abrir estudo">
                                 <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.55rem;"></i>
                             </button>
                             <div class="wl-viewer-menu">
+                                <?php if ($viewerVisible('voxel_view')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
                                     <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('voxel_desktop')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
-                                    <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
+                                    <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> <?= htmlspecialchars(t('viewer_access.catalog.voxel_desktop')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('radiant')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
                                     <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('weasis')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="wl-vm-item" target="_blank">
                                     <img src="/assets/img/icon-weasis.svg" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
                                 </a>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <?php else: ?>
-                        <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="Sem UID">
+                        <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="<?= htmlspecialchars(t('viewer_access.worklist.indisponivel'), ENT_QUOTES) ?>">
                             <i class="fa fa-eye-slash"></i>
                         </span>
                         <?php endif; ?>

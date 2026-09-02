@@ -6,6 +6,8 @@ use App\Core\Database;
 use App\Core\SqlHelper;
 use App\Core\Auth;
 use App\Core\Access\MedicoAccess;
+use App\Core\Access\ViewerAccess;
+use App\Core\Access\ViewerRegistry;
 use App\Services\DesktopViewerService;
 use App\Services\DesktopStudyLaunchService;
 use App\Services\InstitutionResolverService;
@@ -481,6 +483,7 @@ class EstudosController extends Controller
                     e.num_instances,
                     e.study_instance_uid,
                     e.tenant_id,
+                    e.servidor_id,
                     e.manufacturer,
                     COALESCE(e.situacao,     'novo')   AS situacao,
                     COALESCE(e.especialidade,'')       AS especialidade,
@@ -519,6 +522,13 @@ class EstudosController extends Controller
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             $estudos = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            foreach ($estudos as &$estudo) {
+                $estudo['viewer_states'] = ViewerAccess::statesForCurrentUser(
+                    (int) ($estudo['tenant_id'] ?? 0),
+                    isset($estudo['servidor_id']) ? (int) $estudo['servidor_id'] : null
+                );
+            }
+            unset($estudo);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] SELECT: ' . $ex->getMessage());
         }
@@ -795,6 +805,11 @@ class EstudosController extends Controller
             return;
         }
 
+        if (!ViewerAccess::isUserEnabled('voxel_view')) {
+            $this->renderErroViewer(403, \App\Core\Translator::t('viewer_access.abertura.negada'));
+            return;
+        }
+
         $studyUid       = $estudo['study_instance_uid'] ?? '';
         $orthancId       = $estudo['orthanc_id']         ?? '';
         $estudoTenantId  = (int) ($estudo['tenant_id'] ?? 0);
@@ -963,6 +978,16 @@ class EstudosController extends Controller
                 'mensagem_erro' => 'Estudo não encontrado ou sem permissão de acesso.',
             ]);
             $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
+            return;
+        }
+
+        $viewerKey = ViewerRegistry::keyForDesktopViewer($viewer);
+        if ($viewerKey === null || !ViewerAccess::isUserEnabled($viewerKey)) {
+            $service->registrarAcesso($contexto + [
+                'status' => 'negado',
+                'mensagem_erro' => 'visualizador_restrito_por_usuario',
+            ]);
+            $this->renderErroViewer(403, \App\Core\Translator::t('viewer_access.abertura.negada'));
             return;
         }
 
