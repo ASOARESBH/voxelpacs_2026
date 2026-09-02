@@ -18,7 +18,7 @@ Administradores do negócio e superadmins mantêm todos os visualizadores habili
 
 ## Contrato implementado
 
-`ViewerRegistry` é a fonte única das chaves aceitas. `ViewerAccess` aplica o modelo opt-out: a ausência de linha em `bi_user_viewers` preserva o acesso legado, e apenas exceções desabilitadas são gravadas por `(user_id, tenant_id, viewer_key)`. A Worklist só renderiza opções na interseção entre disponibilidade do tenant e permissão individual; os emissores autenticados de Voxel View, VOXEL Desktop, RadiAnt e Weasis repetem a mesma guarda antes de emitir token, URI ou manifesto.
+`ViewerRegistry` é a fonte única das chaves aceitas. `ViewerAccess` aplica o modelo opt-out: a ausência de linha em `bi_user_viewers` preserva o acesso legado, e apenas exceções desabilitadas são gravadas por `(user_id, tenant_id, viewer_key)`. A Worklist só renderiza opções na interseção entre disponibilidade do tenant e permissão individual; os emissores autenticados de Voxel View, VOXEL Desktop, RadiAnt e Weasis repetem a mesma guarda antes de emitir token, URI ou manifesto. A publicação técnica deve incluir o arquivo de migration PostgreSQL no schema operacional antes de qualquer configuração individual ser salva.
 
 A disponibilidade de RadiAnt e Weasis é resolvida pela configuração existente do tenant, com o fallback legado já controlado pelo `DesktopViewerService`. A tela administrativa somente usa o estado cinza quando a indisponibilidade pode ser determinada com segurança; a abertura continua falhando fechada pela validação de configuração existente para células exclusivas.
 

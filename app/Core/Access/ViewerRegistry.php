@@ -2,7 +2,7 @@
 
 namespace App\Core\Access;
 
-/** Catálogo único dos visualizadores expostos pelo menu Abrir da Worklist. */
+/** Catálogo único dos visualizadores expostos pelo menu Abrir da Worklist. Publicação técnica acompanha a migration opt-out. */
 final class ViewerRegistry
 {
     private const VIEWERS = [

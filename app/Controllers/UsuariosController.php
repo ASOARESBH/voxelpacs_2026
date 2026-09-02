@@ -14,7 +14,7 @@ use App\Core\Access\ViewerRegistry;
 use App\Services\WorklistPreferenceService;
 
 /**
- * UsuariosController — Módulo de Usuários do Negócio (tenant)
+ * UsuariosController — Módulo de Usuários do Negócio (tenant), incluindo restrições opt-out de visualizadores.
  *
  * Perfis disponíveis (bi_user_tenants.perfil):
  *   admin      → acesso total ao negócio

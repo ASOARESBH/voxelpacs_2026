@@ -212,6 +212,7 @@ return [
     'viewer_desktop.menu.web'              => 'Voxel View',
     'viewer_desktop.menu.radiant'           => 'RadiAnt Viewer',
     'viewer_desktop.menu.weasis'            => 'Weasis Viewer',
+    // Restricciones de visor por usuario, combinadas con la disponibilidad del negocio.
     'viewer_access.catalog.voxel_view'      => 'Voxel View',
     'viewer_access.catalog.voxel_desktop'   => 'VOXEL Desktop',
     'viewer_access.catalog.radiant'         => 'RadiAnt Viewer',

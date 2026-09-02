@@ -10,7 +10,7 @@ use App\Services\DesktopViewerService;
 
 /**
  * Interseção de disponibilidade do tenant e restrição individual de viewer.
- * Ausência de registro em bi_user_viewers significa acesso habilitado.
+ * Ausência de registro em bi_user_viewers significa acesso habilitado. A tabela é criada pela migration aditiva da mesma entrega.
  */
 final class ViewerAccess
 {

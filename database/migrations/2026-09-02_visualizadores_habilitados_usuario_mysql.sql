@@ -1,4 +1,4 @@
--- Visualizadores habilitados por usuário (modelo opt-out, MySQL 5.7+).
+-- Visualizadores habilitados por usuário (modelo opt-out, MySQL 5.7+; entrega acompanhada por par PostgreSQL).
 -- Ausência de linha em bi_user_viewers significa que o visualizador permanece habilitado.
 CREATE TABLE IF NOT EXISTS `bi_user_viewers` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

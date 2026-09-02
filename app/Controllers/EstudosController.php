@@ -20,7 +20,7 @@ use App\Services\WorklistPreferenceService;
  *
  * Worklist principal: lista, busca, filtros avançados e abertura de estudos DICOM.
  * Fonte: bi_pacs_estudos (cache do Orthanc sincronizado via /platform/servidor-pacs).
- * Abertura: redireciona diretamente para OHIF Viewer com StudyInstanceUID.
+ * Abertura: redireciona diretamente para OHIF Viewer com StudyInstanceUID, respeitando a permissão individual de visualizador.
  *
  * Filtros:
  *   q             → pesquisa global (patient_name, patient_id, study_instance_uid,

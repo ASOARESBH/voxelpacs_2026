@@ -1,4 +1,4 @@
--- Visualizadores habilitados por usuário (modelo opt-out, PostgreSQL 16).
+-- Visualizadores habilitados por usuário (modelo opt-out, PostgreSQL 16; schema operacional).
 -- Ausência de linha em bi_user_viewers significa que o visualizador permanece habilitado.
 CREATE TABLE IF NOT EXISTS voxelpacs_mysql_source.bi_user_viewers (
     id BIGSERIAL PRIMARY KEY,

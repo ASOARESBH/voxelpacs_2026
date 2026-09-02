@@ -36,6 +36,7 @@ $errorMsgs = [
 ?>
 
 <style>
+/* Mantém os controles de visualizador no mesmo padrão visual de permissões do PACS. */
 .modulo-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.5rem;margin-top:.5rem; }
 .modulo-item { display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:6px;border:1px solid var(--pacs-border);cursor:pointer;transition:all .15s; }
 .modulo-item:hover { border-color:var(--pacs-primary);background:rgba(79,195,247,.05); }
