@@ -30,6 +30,7 @@ $reportService = source('app/Services/ReportService.php');
 $reportsController = source('app/Controllers/ReportsController.php');
 $view = source('app/Views/reports/partials/_chat_card.php');
 $show = source('app/Views/reports/show.php');
+$reportIndex = source('app/Views/reports/index.php');
 $js = source('public/assets/js/reports/reports-chat.js');
 $signature = source('public/assets/js/reports/reports-signature.js');
 $header = source('app/Views/layout/reports_header.php');
@@ -61,11 +62,12 @@ mustContain($repo, 'findDefaultAdministrativeGroup', 'Repository não resolve o 
 mustContain($repo, 'listUsersByGroup', 'Repository não resolve os membros do grupo real.');
 mustContain($repo, 'findActiveUser', 'Repository não valida usuário ativo do tenant.');
 mustContain($repo, 'bi_grupo_usuarios', 'Repository não consulta o pivot de membros do grupo.');
-mustContain($repo, 'status = "pendente"', 'Repository não consulta pendências abertas.');
-mustContain($repo, 'status = "concluido"', 'Repository não conclui a conversa.');
+mustContain($repo, "status = \\'pendente\\'", 'Repository não consulta pendências abertas.');
+mustContain($repo, "status = \\'concluido\\'", 'Repository não conclui a conversa.');
 mustContain($repo, 'lastMessageAuthorId', 'Repository não identifica o último autor da conversa.');
 mustContain($repo, 'findByReportForUpdate', 'Repository não oferece lock transacional da conversa.');
-mustContain($repo, 'COALESCE(r.situacao, e.situacao', 'Contexto do Chat não prioriza a situação do laudo.');
+mustContain($repo, 'r.situacao AS report_situacao', 'Contexto do CHAT não projeta a situação do laudo.');
+mustContain($repo, 'e.usuario_responsavel_id', 'Contexto do CHAT não preserva a posse médica para restaurar a fila.');
 
 mustContain($service, 'findDefaultAdministrativeGroup', 'Service não seleciona Administrativo como grupo padrão.');
 mustContain($service, 'findActiveGroup', 'Service não valida o grupo recebido no tenant.');
@@ -73,6 +75,9 @@ mustContain($service, 'listUsersByGroup', 'Service não notifica os membros do g
 mustContain($service, 'Mailer::send', 'Notificação por e-mail ausente.');
 mustContain($service, 'updateStudySituation((int) $context[\'estudo_id\'], $tenantId, \'pendente\')', 'Envio não muda estudo para pendente.');
 mustContain($service, 'normalizarSituacaoRestaurada', 'Conclusão não restaura a situação anterior.');
+mustContain($service, "return 'a_laudar';", 'Conclusão de pendência não devolve o estudo clínico à fila do médico responsável.');
+mustContain($service, "['assinado', 'liberado', 'peer_review']", 'Conclusão de pendência pode reabrir estado final ou Peer Review.');
+mustContain($service, 'bool $hasMedicoResponsavel', 'Conclusão de pendência não diferencia fluxo médico de fluxo administrativo.');
 mustContain($service, 'destinatario_invalido', 'Validação de destinatário ausente.');
 mustContain($service, 'aguardando_contraparte', 'Chat não bloqueia nova interação do mesmo autor enquanto pendente.');
 mustContain($service, 'origemGestao', 'Chat não possui exceção explícita para origem Gestão de Exames.');
@@ -104,6 +109,9 @@ mustContain($view, 'btn-chat-complete', 'Botão Concluído ausente.');
 mustContain($js, '/api/reports/chat/send', 'Frontend não envia interação ao endpoint correto.');
 mustContain($js, '/api/reports/chat/complete', 'Frontend não conclui CHAT pelo endpoint correto.');
 mustContain($js, 'reports:chat-status', 'Frontend não publica estado da pendência.');
+mustContain($js, 'reports:chat-completed', 'Conclusão no laudário não solicita a retomada de em_laudo.');
+mustContain($reportIndex, 'reports:chat-completed', 'Laudário não retoma em_laudo após concluir pendência aberta.');
+mustContain(source('public/assets/js/gestao-exames-gerenciar.js'), 'window.location.reload()', 'Gestão de Exames não recarrega a Worklist após concluir pendência.');
 mustContain($signature, 'chatPendente', 'Assinatura não reage ao estado do CHAT.');
 mustContain($header, 'data-chat-pending', 'Header não expõe o estado inicial do CHAT.');
 
