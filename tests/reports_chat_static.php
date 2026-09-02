@@ -78,6 +78,8 @@ mustContain($service, 'normalizarSituacaoRestaurada', 'Conclusão não restaura 
 mustContain($service, "return 'a_laudar';", 'Conclusão de pendência não devolve o estudo clínico à fila do médico responsável.');
 mustContain($service, "['assinado', 'liberado', 'peer_review']", 'Conclusão de pendência pode reabrir estado final ou Peer Review.');
 mustContain($service, 'bool $hasMedicoResponsavel', 'Conclusão de pendência não diferencia fluxo médico de fluxo administrativo.');
+mustContain($service, "'can_complete' => \$contraparteRespondeu", 'CHAT não permite que a contraparte que respondeu conclua a pendência.');
+mustContain($service, '$autorOriginalId !== $userId', 'CHAT permite que o autor original conclua a própria pendência.');
 mustContain($service, 'destinatario_invalido', 'Validação de destinatário ausente.');
 mustContain($service, 'aguardando_contraparte', 'Chat não bloqueia nova interação do mesmo autor enquanto pendente.');
 mustContain($service, 'origemGestao', 'Chat não possui exceção explícita para origem Gestão de Exames.');
