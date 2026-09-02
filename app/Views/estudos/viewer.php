@@ -186,7 +186,7 @@
     <div class="viewer-info">
         <div class="viewer-info-item">
             <span class="viewer-info-label">Paciente</span>
-            <span class="viewer-info-value"><?= htmlspecialchars($estudo['patient_name'] ?? 'ANON') ?></span>
+            <span class="viewer-info-value"><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'ANON') ?></span>
         </div>
         <div class="viewer-info-item">
             <span class="viewer-info-label">Estudo</span>
@@ -257,7 +257,7 @@
             </a>
             <dl class="info-grid">
                 <dt>Paciente</dt>
-                <dd><?= htmlspecialchars($estudo['patient_name'] ?? 'ANON') ?></dd>
+                <dd><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'ANON') ?></dd>
                 <dt>Estudo</dt>
                 <dd><?= htmlspecialchars($estudo['study_description'] ?? '—') ?></dd>
                 <dt>ID do <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?></dt>

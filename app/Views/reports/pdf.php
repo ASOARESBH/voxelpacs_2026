@@ -154,7 +154,7 @@ if (!$corpoLaudoAtual && trim($corpoLaudo) === '') {
     ], static fn($valor) => trim(strip_tags($valor)) !== '');
     $corpoLaudo = implode('<br><br>', $blocosLegados);
 }
-$paciente = htmlspecialchars($r['patient_name_display'] ?? $r['patient_name'] ?? 'Paciente', ENT_QUOTES);
+$paciente = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($r) ?: 'Paciente', ENT_QUOTES);
 $download = $download ?? false;
 $portalPatientPdf = !empty($portalPatientPdf);
 $reportToken = trim((string) ($r['public_token'] ?? ''));

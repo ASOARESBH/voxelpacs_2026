@@ -129,7 +129,7 @@ class ReportsController extends Controller
             'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,
             'csrfToken'         => $this->csrfToken(),
-            'page_title'        => 'Laudo — ' . ($estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente'),
+            'page_title'        => 'Laudo — ' . (\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente'),
             'medicoIdLogado'    => $medicoIdLogado,
             'canViewStudyInformation' => $medicoIdLogado > 0,
             'reportLayoutCodigo' => $reportLayoutCodigo,
@@ -451,7 +451,7 @@ class ReportsController extends Controller
             $institutionJoinSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', 'e.institution_name');
             $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
-                "SELECT r.*, e.patient_name_display, e.patient_name, e.patient_id,
+                "SELECT r.*, e.patient_name_display, e.patient_name, e.tags_raw, e.patient_id,
 
                         e.patient_birth_date, e.patient_sex, e.patient_age,
                         e.study_date, e.study_time, e.study_description,

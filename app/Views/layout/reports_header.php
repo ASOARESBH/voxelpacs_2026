@@ -4,7 +4,7 @@
 /** @var bool $readonly */
 /** @var array|null $lockInfo */
 /** @var string $csrfToken */
-$pacienteNome = $estudo->patient_name_display ?? $estudo->patient_name ?? 'Paciente';
+$pacienteNome = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente';
 $situacao     = $report->situacao ?? $report->status ?? 'rascunho';
 $reportId     = (int) $report->id;
 $peerReview   = $peerReview ?? null;

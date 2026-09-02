@@ -464,6 +464,7 @@ $periodoLabel = [
             $sit  = $e['situacao']  ?? 'novo';
             $prio = $e['prioridade']?? 'normal';
             $sex  = strtoupper(trim($e['patient_sex'] ?? ''));
+            $pacienteDisplay = \App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—';
             $mods = array_filter(array_map('trim', explode('\\', $e['modalities'] ?? '')));
             if (empty($mods) && !empty($e['modalities'])) $mods = [trim($e['modalities'])];
             $rowClass = 'wl-row' . ($prio==='urgente'?' row-urgente':($prio==='critico'?' row-critico':''));
@@ -537,7 +538,7 @@ $periodoLabel = [
                 <div class="wl-pac-row">
                     <?= sexoIcon($sex) ?>
                     <div class="wl-pac-info">
-                        <div class="wl-pac-nome"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></div>
+                        <div class="wl-pac-nome"><?= htmlspecialchars($pacienteDisplay) ?></div>
                         <div class="wl-pac-sub">
                             <?php $idade = formatarIdade($e); if ($idade) echo $idade; ?>
                             <?php if (!empty($e['patient_id'])): ?>
@@ -672,7 +673,7 @@ $periodoLabel = [
                         <?php if ($podeGerenciarPedido): ?>
                         <button type="button" class="wl-btn-pedido pedido-trigger"
                                 data-id="<?= (int) $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay, ENT_QUOTES) ?>"
                                 data-pedido-id="<?= (int) ($e['pedido_id'] ?? 0) ?>"
                                 data-pedido-nome="<?= htmlspecialchars($e['pedido_nome_original'] ?? '', ENT_QUOTES) ?>"
                                 data-pedido-mime="<?= htmlspecialchars($e['pedido_mime_type'] ?? '', ENT_QUOTES) ?>"
@@ -694,7 +695,7 @@ $periodoLabel = [
                         <?php if ($podeGerenciarPedido): ?>
                         <button type="button" class="wl-btn-gerenciar gerenciar-trigger"
                                 data-id="<?= (int) $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay, ENT_QUOTES) ?>"
                                 data-report-id="<?= (int) ($e['report_id'] ?? 0) ?>"
                                 data-report-situacao="<?= htmlspecialchars((string) ($e['report_situacao'] ?? ''), ENT_QUOTES) ?>"
                                 data-chat-status="<?= htmlspecialchars((string) ($e['chat_status'] ?? ''), ENT_QUOTES) ?>"
@@ -728,7 +729,7 @@ $periodoLabel = [
                         <?php if ($podeAssumir): ?>
                         <button type="button" class="wl-btn-assumir"
                                 data-id="<?= $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay) ?>"
                                 data-study-uid="<?= htmlspecialchars($e['study_instance_uid'] ?? '') ?>"
                                 title="Assumir para laudo">
                             <i class="fa fa-hand-holding-medical"></i> Assumir

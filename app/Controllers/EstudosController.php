@@ -276,6 +276,7 @@ class EstudosController extends Controller
         // preparados contra os campos clínicos permitidos no escopo do tenant.
         $searchFields = [
             'e.patient_name',
+            'e.patient_name_display',
             'e.patient_id',
             'e.study_instance_uid',
             'e.accession_number',
@@ -286,7 +287,12 @@ class EstudosController extends Controller
             $searchFields[] = 'e.scheduled_procedure_step_desc';
         }
         $this->aplicarBuscaNormalizada($where, $params, $filtros['q'], $searchFields);
-        $this->aplicarBuscaNormalizada($where, $params, $filtros['paciente'], ['e.patient_name']);
+        $this->aplicarBuscaNormalizada(
+            $where,
+            $params,
+            $filtros['paciente'],
+            ['e.patient_name', 'e.patient_name_display']
+        );
         $campoDataPeriodo = $this->campoDataPeriodoParaSituacao($filtros['situacao']);
         if ($filtros['dt_inicio'] !== '') {
             $where[]  = $campoDataPeriodo . ' >= ?';
@@ -459,6 +465,8 @@ class EstudosController extends Controller
                     e.study_time,
                     e.patient_id,
                     e.patient_name,
+                    e.patient_name_display,
+                    e.tags_raw,
                     e.patient_sex,
                     e.patient_age,
                     e.patient_birth_date,

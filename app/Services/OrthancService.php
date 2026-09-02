@@ -2,6 +2,7 @@
 namespace App\Services;
 
 use App\Core\Logger;
+use App\Helpers\DicomPersonName;
 
 class OrthancService {
     private string $baseUrl;
@@ -531,14 +532,8 @@ class OrthancService {
      */
     private function buildDisplayName(string $raw): ?string
     {
-        if (empty($raw)) return null;
-        $parts = array_filter(array_map('trim', explode('^', $raw)));
-        if (empty($parts)) return null;
-        $arr = array_values($parts);
-        if (count($arr) >= 2) {
-            return trim($arr[1] . ' ' . $arr[0]) ?: null;
-        }
-        return $arr[0] ?: null;
+        $display = DicomPersonName::format($raw);
+        return $display !== '' ? $display : null;
     }
 
     private function parseDicomDate(string $raw): ?string

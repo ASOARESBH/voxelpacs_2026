@@ -10,7 +10,7 @@ $reportId    = $r ? (int)$r->id : 0;
 $reportToken = $r ? (string)($r->public_token ?? '') : '';
 $estudoId    = (int)($e['id'] ?? 0);
 $studyUid    = htmlspecialchars($e['study_instance_uid'] ?? '', ENT_QUOTES);
-$paciente    = htmlspecialchars($e['patient_name_display'] ?? $e['patient_name'] ?? 'Paciente', ENT_QUOTES);
+$paciente    = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: 'Paciente', ENT_QUOTES);
 $modalidade  = '';
 foreach (array_filter(array_map('trim', explode('\\', $e['modalities'] ?? ''))) as $modItem) {
     $modalidade .= sprintf(

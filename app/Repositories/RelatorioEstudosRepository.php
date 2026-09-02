@@ -13,6 +13,7 @@
 namespace App\Repositories;
 
 use PDO;
+use App\Helpers\DicomPersonName;
 
 class RelatorioEstudosRepository
 {
@@ -134,7 +135,7 @@ class RelatorioEstudosRepository
 
         $sql = "
             SELECT
-                e.id, e.patient_name, e.study_date, e.study_time,
+                e.id, e.patient_name, e.patient_name_display, e.tags_raw, e.study_date, e.study_time,
                 e.institution_name, e.modalities,
                 COALESCE(e.prioridade, 'normal')   AS prioridade,
                 COALESCE(e.situacao,   'novo')     AS situacao,
@@ -154,6 +155,10 @@ class RelatorioEstudosRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         $linhas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($linhas as &$linha) {
+            $linha['patient_name'] = DicomPersonName::displayFromStudy($linha) ?: '';
+        }
+        unset($linha);
 
         return ['linhas' => $linhas, 'total' => $paginar ? $total : count($linhas)];
     }

@@ -34,7 +34,7 @@ if ($idade === '—') {
     }
 }
 
-$nomeDisplay = \App\Helpers\DicomPersonName::format($estudo->patient_name_display ?? $estudo->patient_name ?? null) ?: '—';
+$nomeDisplay = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: '—';
 $informacoesEstudo = trim((string) ($estudo->informacoes_manual ?? ''));
 $podeVerInformacoes = !empty($canViewStudyInformation) && $informacoesEstudo !== '';
 ?>

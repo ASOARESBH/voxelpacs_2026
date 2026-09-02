@@ -27,17 +27,18 @@ class EstudosRepository
 
         if ($filtros['q'] !== '') {
             $like = '%' . $filtros['q'] . '%';
-            $where[] = '(e.patient_name LIKE :q1 OR e.patient_id LIKE :q2
-                      OR e.study_instance_uid LIKE :q3 OR e.accession_number LIKE :q4
-                      OR e.study_description LIKE :q5 OR e.institution_name LIKE :q6)';
-            $params[':q1'] = $like; $params[':q2'] = $like;
-            $params[':q3'] = $like; $params[':q4'] = $like;
-            $params[':q5'] = $like; $params[':q6'] = $like;
+            $where[] = '(e.patient_name LIKE :q1 OR e.patient_name_display LIKE :q2 OR e.patient_id LIKE :q3
+                      OR e.study_instance_uid LIKE :q4 OR e.accession_number LIKE :q5
+                      OR e.study_description LIKE :q6 OR e.institution_name LIKE :q7)';
+            $params[':q1'] = $like; $params[':q2'] = $like; $params[':q3'] = $like;
+            $params[':q4'] = $like; $params[':q5'] = $like; $params[':q6'] = $like;
+            $params[':q7'] = $like;
         }
 
         if ($filtros['paciente'] !== '') {
-            $where[]        = 'e.patient_name LIKE :pac';
-            $params[':pac'] = '%' . $filtros['paciente'] . '%';
+            $where[] = '(e.patient_name LIKE :pac_raw OR e.patient_name_display LIKE :pac_display)';
+            $params[':pac_raw'] = '%' . $filtros['paciente'] . '%';
+            $params[':pac_display'] = '%' . $filtros['paciente'] . '%';
         }
 
         if ($filtros['dt_inicio'] !== '') {
@@ -111,6 +112,8 @@ class EstudosRepository
                 e.study_time,
                 e.patient_id,
                 e.patient_name,
+                e.patient_name_display,
+                e.tags_raw,
                 e.patient_sex,
                 e.patient_age,
                 e.patient_birth_date,

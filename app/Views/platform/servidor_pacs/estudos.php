@@ -44,7 +44,7 @@ $statusLabelMap = [
 <?php foreach ($conflitos as $e): ?>
 <?php $candidatos = json_decode($e['roteamento_candidatos'] ?? '[]', true) ?: []; ?>
 <tr>
-<td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
+<td class="small"><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—') ?></td>
 <td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '—') ?></code></td>
                         <td><code class="small"><?= htmlspecialchars($e['issuer_of_patient_id'] ?? '—') ?></code></td>
 <td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
@@ -93,7 +93,7 @@ $statusLabelMap = [
                 <tbody>
 <?php foreach ($naoIdentificados as $e): ?>
 <tr>
-<td class="small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></td>
+<td class="small"><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—') ?></td>
 <td><code class="small"><?= htmlspecialchars($e['institution_name'] ?? '(vazio)') ?></code></td>
                         <td><code class="small"><?= htmlspecialchars($e['issuer_of_patient_id'] ?? '—') ?></code></td>
 <td class="small"><?= htmlspecialchars($e['servidor_nome'] ?? '—') ?></td>
@@ -209,7 +209,7 @@ $statusLabelMap = [
                             <?php $sb = $statusBadge[$e['roteamento_status']] ?? $statusBadge['nao_identificado']; ?>
                             <tr>
                                 <td>
-                                    <div class="fw-semibold small"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></div>
+                                    <div class="fw-semibold small"><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—') ?></div>
                                     <div class="text-muted" style="font-size:.75rem;">ID: <?= htmlspecialchars($e['patient_id'] ?? '—') ?></div>
                                 </td>
                                 <td class="small">

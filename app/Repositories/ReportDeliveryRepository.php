@@ -5,6 +5,7 @@ namespace App\Repositories;
 use DomainException;
 use PDO;
 use App\Core\SqlHelper;
+use App\Helpers\DicomPersonName;
 
 /**
  * Persistência do VOXEL Report Delivery Hub.
@@ -525,7 +526,9 @@ class ReportDeliveryRepository
                     e.id AS estudo_id,
                     e.unidade_id AS estabelecimento_id,
                     COALESCE(e.institution_name, '') AS institution_name,
-                    COALESCE(NULLIF(e.patient_name_display, ''), NULLIF(e.patient_name, ''), '—') AS patient_name,
+                    e.patient_name,
+                    e.patient_name_display,
+                    e.tags_raw,
                     COALESCE(e.modalities, '') AS modalities,
                     COALESCE(e.issuer_of_patient_id, '') AS issuer_of_patient_id,
                     COALESCE(e.issuer_of_patient_id_normalized, '') AS issuer_of_patient_id_normalized,
@@ -556,7 +559,8 @@ class ReportDeliveryRepository
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
              WHERE r.tenant_id = :tenant_id
                AND r.situacao = 'liberado'
-               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, e.patient_name, '')) LIKE LOWER(:patient_like))
+               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, '')) LIKE LOWER(:patient_like)
+                    OR LOWER(COALESCE(e.patient_name, '')) LIKE LOWER(:patient_like))
                AND (:modality = '' OR LOWER(COALESCE(e.modalities, '')) LIKE LOWER(:modality_like))
                AND (:issuer = '' OR LOWER(COALESCE(e.issuer_of_patient_id, '')) LIKE LOWER(:issuer_like))
              ORDER BY (r.liberado_em IS NULL) ASC, r.liberado_em DESC, r.id DESC
@@ -572,7 +576,13 @@ class ReportDeliveryRepository
         $stmt->bindValue(':limit', max(1, min(200, $limit)), PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $deliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($deliveries as &$delivery) {
+            $delivery['patient_name'] = DicomPersonName::displayFromStudy($delivery) ?: '—';
+        }
+        unset($delivery);
+
+        return $deliveries;
     }
 
     /** Reenfileira manualmente somente tentativas terminais no tenant indicado. */
