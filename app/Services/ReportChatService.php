@@ -81,6 +81,15 @@ class ReportChatService
             ));
         }
 
+        $chatPendente = $chat && ($chat['status'] ?? '') === 'pendente';
+        $autorOriginalId = (int) ($chat['criado_por'] ?? 0);
+        $contraparteRespondeu = $chatPendente
+            && $currentUserId > 0
+            && $lastAuthorId !== null
+            && $lastAuthorId === $currentUserId
+            && $autorOriginalId > 0
+            && $autorOriginalId !== $currentUserId;
+
         return [
             'report_id' => $reportId,
             'estudo_id' => (int) $report['estudo_id'],
@@ -102,8 +111,10 @@ class ReportChatService
             'groups' => $groupOptions,
             'users' => $this->repo->listActiveUsers($tenantId, $currentUserId),
             'last_message_author_id' => $lastAuthorId,
-            'can_interact' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
-            'can_complete' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
+            'can_interact' => !($chatPendente && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
+            // A contraparte encerra somente depois de responder. O autor
+            // original não pode concluir a própria solicitação clínica.
+            'can_complete' => $contraparteRespondeu,
         ];
     }
 
@@ -298,7 +309,12 @@ class ReportChatService
                 return ['ok' => false, 'error' => 'chat_sem_pendencia'];
             }
             $lastAuthorId = $this->repo->lastMessageAuthorId((int) $chat['id'], $tenantId);
-            if ($lastAuthorId !== null && $lastAuthorId === $userId) {
+            $autorOriginalId = (int) ($chat['criado_por'] ?? 0);
+            $contraparteRespondeu = $lastAuthorId !== null
+                && $lastAuthorId === $userId
+                && $autorOriginalId > 0
+                && $autorOriginalId !== $userId;
+            if (!$contraparteRespondeu) {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'aguardando_contraparte'];
             }
