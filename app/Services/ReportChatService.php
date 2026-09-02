@@ -185,7 +185,9 @@ class ReportChatService
             }
             $situacaoAnterior = (string) ($chat['situacao_anterior'] ?? '');
             if (!$chat || ($chat['status'] ?? '') === 'concluido' || $situacaoAnterior === '') {
-                $situacaoAnterior = $situacaoAtual === 'pendente' ? 'em_laudo' : $situacaoAtual;
+                $situacaoAnterior = $situacaoAtual === 'pendente'
+                    ? ((int) ($context['usuario_responsavel_id'] ?? 0) > 0 ? 'a_laudar' : 'aberto')
+                    : $situacaoAtual;
             }
             $chatId = $this->repo->upsertPending(
                 $reportId,
@@ -305,7 +307,10 @@ class ReportChatService
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_sem_pendencia'];
             }
-            $restore = $this->normalizarSituacaoRestaurada((string) ($chat['situacao_anterior'] ?? ''));
+            $restore = $this->normalizarSituacaoRestaurada(
+                (string) ($chat['situacao_anterior'] ?? ''),
+                (int) ($context['usuario_responsavel_id'] ?? 0) > 0
+            );
             $this->repo->updateStudySituation((int) $context['estudo_id'], $tenantId, $restore);
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -328,10 +333,25 @@ class ReportChatService
         return ['ok' => true, 'status' => 'concluido', 'situacao' => $restore];
     }
 
-    private function normalizarSituacaoRestaurada(string $situacao): string
+    private function normalizarSituacaoRestaurada(string $situacao, bool $hasMedicoResponsavel): string
     {
-        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review', 'assinado', 'liberado'];
-        return in_array($situacao, $permitidas, true) ? $situacao : 'em_laudo';
+        // Uma pendência clínica concluída não pode manter o estudo bloqueado em
+        // "pendente". Para fluxos ainda em edição, a fila volta a "a_laudar":
+        // a posse do médico responsável não é alterada e a abertura autorizada
+        // do laudário faz a transição normal para "em_laudo". Estados finais ou
+        // de revisão conservam seu significado e nunca são reabertos pelo CHAT.
+        if (in_array($situacao, ['assinado', 'liberado', 'peer_review'], true)) {
+            return $situacao;
+        }
+
+        if ($hasMedicoResponsavel) {
+            return 'a_laudar';
+        }
+
+        // Para qualquer fluxo sem posse médica, restaura-se o estado anterior
+        // permitido; um valor ausente ou inválido recai em aberto.
+        $administrativas = ['novo', 'aberto', 'urgente', 'a_laudar', 'em_laudo', 'rascunho', 'revisao'];
+        return in_array($situacao, $administrativas, true) ? $situacao : 'aberto';
     }
 
     private function canAccessStudyModalities(array $context, int $tenantId, int $userId): bool

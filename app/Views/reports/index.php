@@ -1167,6 +1167,12 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
         atualizarStatusLaudo('em_laudo', false);
     });
 
+    // Depois de uma pendência ser concluída neste próprio laudário, o estudo
+    // retorna da fila a_laudar para em_laudo sem trocar o médico responsável.
+    document.addEventListener('reports:chat-completed', function() {
+        atualizarStatusLaudo('em_laudo', false);
+    });
+
     // Ao fechar sem liberar: marca rascunho
     window.addEventListener('beforeunload', function() {
         if (!_laudoLiberado) {

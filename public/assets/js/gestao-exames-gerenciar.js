@@ -273,18 +273,27 @@
     async function completeChat() {
         if (!state.reportId || $('#gerenciarChatConcluir').disabled) return;
         if (!window.confirm(text('confirmarConclusao'))) return;
+        const button = $('#gerenciarChatConcluir');
+        if (button) button.disabled = true;
         showChatStatus(text('concluindo'), 'info');
-        const response = await fetch('/api/reports/chat/complete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ report_id: state.reportId, csrf: state.csrf, origem: 'gestao_exames' })
-        });
-        let payload = {};
-        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
-        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
-        await loadContext(state.studyId);
-        showChatStatus(text('concluido'), 'success');
+        try {
+            const response = await fetch('/api/reports/chat/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ report_id: state.reportId, csrf: state.csrf, origem: 'gestao_exames' })
+            });
+            let payload = {};
+            try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            showChatStatus(text('concluido'), 'success');
+            // A Worklist é a fonte visual do estado. Recarrega os dados já
+            // restaurados pelo backend, sem simular status apenas no navegador.
+            window.setTimeout(() => window.location.reload(), 250);
+        } catch (error) {
+            showChatStatus(error.message || text('erroOperacao'), 'danger');
+            if (button) button.disabled = false;
+        }
     }
 
     function renderDescriptionSuggestions(suggestions) {

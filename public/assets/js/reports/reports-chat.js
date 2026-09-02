@@ -191,6 +191,11 @@ window.VoxelReports.chat = (function () {
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             setFeedback('CHAT concluído. O estudo voltou para a evolução do fluxo.');
             await load();
+            // O médico está no laudário autorizado neste instante. A página
+            // principal faz a transição de a_laudar para em_laudo no backend.
+            document.dispatchEvent(new CustomEvent('reports:chat-completed', {
+                detail: { situacao: data.situacao || 'a_laudar' }
+            }));
         } catch (error) {
             setFeedback(error.message || text('error'), true);
         } finally {
