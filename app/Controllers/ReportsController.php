@@ -129,6 +129,7 @@ class ReportsController extends Controller
             'lockInfo'          => $lockInfo,
             'exames_anteriores' => $examesAnteriores,
             'csrfToken'         => $this->csrfToken(),
+            // Título recebe somente a projeção visual do PN DICOM autorizado.
             'page_title'        => 'Laudo — ' . (\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente'),
             'medicoIdLogado'    => $medicoIdLogado,
             'canViewStudyInformation' => $medicoIdLogado > 0,
