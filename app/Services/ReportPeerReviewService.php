@@ -22,8 +22,16 @@ class ReportPeerReviewService
         $this->repo = new ReportPeerReviewRepository();
     }
 
-    public function abrir(int $reportId, string $motivo): array
+    /**
+     * @param object $report Contexto já autorizado por ReportAccessService.
+     */
+    public function abrir(object $report, string $motivo): array
     {
+        $reportId = (int) ($report->id ?? 0);
+        if ($reportId <= 0) {
+            return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        }
+
         $motivo = trim($motivo);
         if ($this->length($motivo) < self::MIN_MOTIVO_CHARS) {
             return [
@@ -46,11 +54,6 @@ class ReportPeerReviewService
                 'report_id' => $reportId, 'tenant_id' => $tenantId, 'usuario_id' => $userId,
             ]);
             return ['ok' => false, 'error' => 'medico_nao_vinculado'];
-        }
-
-        $report = $this->repo->findReportContext($reportId);
-        if (!$report) {
-            return ['ok' => false, 'error' => 'report_nao_encontrado'];
         }
 
         $situacao = (string) ($report->situacao ?? $report->status ?? '');
