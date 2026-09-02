@@ -156,6 +156,7 @@ class RelatorioEstudosRepository
         $stmt->execute($params);
         $linhas = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($linhas as &$linha) {
+            // Projeção de saída; não atualiza o cache de estudos nem os dados DICOM.
             $linha['patient_name'] = DicomPersonName::displayFromStudy($linha) ?: '';
         }
         unset($linha);

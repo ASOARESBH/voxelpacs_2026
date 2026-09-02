@@ -464,6 +464,7 @@ $periodoLabel = [
             $sit  = $e['situacao']  ?? 'novo';
             $prio = $e['prioridade']?? 'normal';
             $sex  = strtoupper(trim($e['patient_sex'] ?? ''));
+            // Exibição somente: o registro e os identificadores continuam inalterados.
             $pacienteDisplay = \App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—';
             $mods = array_filter(array_map('trim', explode('\\', $e['modalities'] ?? '')));
             if (empty($mods) && !empty($e['modalities'])) $mods = [trim($e['modalities'])];

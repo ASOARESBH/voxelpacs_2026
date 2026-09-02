@@ -154,6 +154,7 @@ if (!$corpoLaudoAtual && trim($corpoLaudo) === '') {
     ], static fn($valor) => trim(strip_tags($valor)) !== '');
     $corpoLaudo = implode('<br><br>', $blocosLegados);
 }
+// PDF consome o mesmo nome visual do laudário; a fonte clínica permanece preservada.
 $paciente = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($r) ?: 'Paciente', ENT_QUOTES);
 $download = $download ?? false;
 $portalPatientPdf = !empty($portalPatientPdf);

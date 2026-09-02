@@ -1,5 +1,6 @@
 <?php
 // View: Servidor PACS — Lista de estudos importados (todos os servidores) + filas de pendência
+// Listagem administrativa: Person Name é formatado apenas no momento da leitura.
 $statusBadge = [
     'roteado'          => ['class' => 'success', 'icon' => 'fa-check-circle'],
     'nao_identificado' => ['class' => 'warning text-dark', 'icon' => 'fa-question-circle'],

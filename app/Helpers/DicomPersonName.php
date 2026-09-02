@@ -56,6 +56,7 @@ class DicomPersonName
      * Quando disponível, tags_raw é a fonte DICOM primária e permite corrigir
      * estudos legados cujo patient_name_display tenha sido gravado antes desta
      * normalização. Não há escrita, atualização de identidade ou auditoria.
+     * O método é reutilizável em qualquer contexto de estudo já autorizado.
      *
      * @param array<string,mixed>|object $study
      */

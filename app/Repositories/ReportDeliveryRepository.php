@@ -578,6 +578,7 @@ class ReportDeliveryRepository
 
         $deliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($deliveries as &$delivery) {
+            // Texto de painel somente; o job de entrega continua usando seus próprios metadados.
             $delivery['patient_name'] = DicomPersonName::displayFromStudy($delivery) ?: '—';
         }
         unset($delivery);

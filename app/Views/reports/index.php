@@ -10,6 +10,7 @@ $reportId    = $r ? (int)$r->id : 0;
 $reportToken = $r ? (string)($r->public_token ?? '') : '';
 $estudoId    = (int)($e['id'] ?? 0);
 $studyUid    = htmlspecialchars($e['study_instance_uid'] ?? '', ENT_QUOTES);
+// Cabeçalho do laudário: projeção de PN sem escrita no estudo.
 $paciente    = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: 'Paciente', ENT_QUOTES);
 $modalidade  = '';
 foreach (array_filter(array_map('trim', explode('\\', $e['modalities'] ?? ''))) as $modItem) {

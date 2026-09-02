@@ -177,6 +177,7 @@
 <body>
 
 <!-- Header do viewer -->
+<?php $pacienteDisplay = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'ANON'; ?>
 <div class="viewer-header">
     <div class="viewer-logo">
         <i class="fa fa-x-ray"></i>
@@ -186,7 +187,7 @@
     <div class="viewer-info">
         <div class="viewer-info-item">
             <span class="viewer-info-label">Paciente</span>
-            <span class="viewer-info-value"><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'ANON') ?></span>
+            <span class="viewer-info-value"><?= htmlspecialchars($pacienteDisplay) ?></span>
         </div>
         <div class="viewer-info-item">
             <span class="viewer-info-label">Estudo</span>
@@ -257,7 +258,7 @@
             </a>
             <dl class="info-grid">
                 <dt>Paciente</dt>
-                <dd><?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'ANON') ?></dd>
+                <dd><?= htmlspecialchars($pacienteDisplay) ?></dd>
                 <dt>Estudo</dt>
                 <dd><?= htmlspecialchars($estudo['study_description'] ?? '—') ?></dd>
                 <dt>ID do <?= htmlspecialchars(\App\Config\BrandConfig::PACS_SERVER_NAME) ?></dt>

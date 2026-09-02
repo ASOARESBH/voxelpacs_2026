@@ -1,6 +1,7 @@
 <?php
 // View: Detalhe de Estudo DICOM
 $orthancBase = rtrim($servidor['url'] ?? '', '/');
+// A tela usa uma projeção visual segura e não regrava o PatientName.
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">

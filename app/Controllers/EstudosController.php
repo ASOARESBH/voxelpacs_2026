@@ -466,7 +466,7 @@ class EstudosController extends Controller
                     e.patient_id,
                     e.patient_name,
                     e.patient_name_display,
-                    e.tags_raw,
+                    e.tags_raw, -- fonte somente leitura do fallback visual PN
                     e.patient_sex,
                     e.patient_age,
                     e.patient_birth_date,

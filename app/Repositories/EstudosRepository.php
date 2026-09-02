@@ -26,6 +26,7 @@ class EstudosRepository
         }
 
         if ($filtros['q'] !== '') {
+            // Busca aceita a representação anterior e a representação visual PN.
             $like = '%' . $filtros['q'] . '%';
             $where[] = '(e.patient_name LIKE :q1 OR e.patient_name_display LIKE :q2 OR e.patient_id LIKE :q3
                       OR e.study_instance_uid LIKE :q4 OR e.accession_number LIKE :q5

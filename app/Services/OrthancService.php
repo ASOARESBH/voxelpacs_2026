@@ -529,6 +529,7 @@ class OrthancService {
 
     /**
      * Formata nome DICOM (Sobrenome^Nome) para exibição (Nome Sobrenome)
+     * sem alterar a representação clínica preservada nas tags do estudo.
      */
     private function buildDisplayName(string $raw): ?string
     {

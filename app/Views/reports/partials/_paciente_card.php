@@ -34,6 +34,7 @@ if ($idade === '—') {
     }
 }
 
+// O card prioriza a apresentação de PN, sem alterar metadados ou auditoria.
 $nomeDisplay = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: '—';
 $informacoesEstudo = trim((string) ($estudo->informacoes_manual ?? ''));
 $podeVerInformacoes = !empty($canViewStudyInformation) && $informacoesEstudo !== '';

@@ -4,6 +4,7 @@
 /** @var bool $readonly */
 /** @var array|null $lockInfo */
 /** @var string $csrfToken */
+// O nome abaixo é uma projeção visual; o valor DICOM original não é modificado.
 $pacienteNome = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente';
 $situacao     = $report->situacao ?? $report->status ?? 'rascunho';
 $reportId     = (int) $report->id;
