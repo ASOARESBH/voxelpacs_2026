@@ -23,8 +23,7 @@
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-1">Criar Senha de Acesso</h5>
                 <p class="text-muted small mb-4">
-                    Olá, <strong><?= htmlspecialchars($tokenData['user_name'] ?? '') ?></strong>!<br>
-                    Defina uma senha segura para o e-mail <strong><?= htmlspecialchars($tokenData['user_email'] ?? '') ?></strong>.
+                    <?= htmlspecialchars(t('auth.reset.criar_senha_subtitulo')) ?>
                 </p>
                 
                 <?php if (!empty($_SESSION['error'])): ?>
@@ -35,7 +34,7 @@
                 <?php endif; ?>
                 
                 <form method="POST" action="/acesso/criar-senha/<?= htmlspecialchars($token) ?>" id="formSenha">
-                    <input type="hidden" name="_csrf_token" value="<?= $_SESSION['csrf_token'] ?? '' ?>">
+                    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES) ?>">
                     
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Nova Senha</label>

@@ -21,6 +21,8 @@ return [
     'auth.login.direitos_reservados'       => 'All rights reserved',
     'auth.login.erro_campos_obrigatorios'  => 'Complete all fields.',
     'auth.login.erro_credenciais'          => 'Incorrect email or password.',
+    'auth.reset.criar_senha_subtitulo'     => 'Set a secure password to finish accessing your account.',
+    'auth.reset.erro_csrf'                  => 'We could not validate your request. Open the link you received again.',
     'auth.2fa.titulo'                      => 'Two-step verification',
     'auth.2fa.subtitulo'                   => 'We sent an access code to your registered email address.',
     'auth.2fa.codigo_label'                => 'Six-digit code',

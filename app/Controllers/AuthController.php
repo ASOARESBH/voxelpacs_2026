@@ -7,6 +7,7 @@ use App\Core\Translator;
 use App\Core\Audit\AuditLogger;
 use App\Services\TwoFactorService;
 use App\Services\RegraAcessoService;
+use App\Services\LoginAttemptGuard;
 
 class AuthController extends Controller {
 
@@ -39,6 +40,14 @@ class AuthController extends Controller {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
 
+        if (!$this->validCsrf()) {
+            $this->view('auth/login', [
+                'title' => 'Login — VOXEL PACS',
+                'error' => Translator::t('auth.login.erro_credenciais'),
+            ], 'auth');
+            return;
+        }
+
         $email    = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
 
@@ -51,15 +60,28 @@ class AuthController extends Controller {
             return;
         }
 
+        $attempts = new LoginAttemptGuard();
+        $remoteIp = $_SERVER['REMOTE_ADDR'] ?? null;
+        if (!$attempts->allows($email, $remoteIp)) {
+            $this->view('auth/login', [
+                'title' => 'Login — VOXEL PACS',
+                'error' => Translator::t('auth.login.erro_credenciais'),
+            ], 'auth');
+            return;
+        }
+
         $user = Auth::credentials($email, $password);
         if (!$user) {
-                        $this->view('auth/login', [
+            $attempts->recordFailure($email, $remoteIp);
+            $this->view('auth/login', [
                 'title' => 'Login — VOXEL PACS',
                 'error' => Translator::t('auth.login.erro_credenciais'),
 
             ], 'auth');
             return;
         }
+
+        $attempts->clearFailures($email, $remoteIp);
 
         $ruleResult = (new RegraAcessoService())->checkLoginForUser($user);
         if (!$ruleResult['allowed']) {

@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Mailer;
 use App\Core\SqlHelper;
+use App\Core\Translator;
 
 /**
  * AccessTokenController
@@ -20,13 +21,13 @@ class AccessTokenController extends Controller
      */
     public function formCriarSenha(string $token): void
     {
+        $this->csrfToken();
         $pdo   = Database::getInstance();
         $token = preg_replace('/[^a-zA-Z0-9]/', '', $token);
 
         $stmt = $pdo->prepare("
-            SELECT t.*, u.name as user_name, u.email as user_email
+            SELECT t.*
             FROM bi_tenant_access_tokens t
-            JOIN bi_users u ON u.id = t.user_id
             WHERE t.token = :token
               AND t.usado  = 0
               AND t.expires_at > NOW()
@@ -47,7 +48,6 @@ class AccessTokenController extends Controller
         $this->view('auth/criar_senha', [
             'title'     => 'Criar Senha de Acesso',
             'token'     => $token,
-            'tokenData' => $tokenData,
         ], 'none');
     }
 
@@ -60,12 +60,17 @@ class AccessTokenController extends Controller
         $pdo   = Database::getInstance();
         $token = preg_replace('/[^a-zA-Z0-9]/', '', $token);
 
+        if (!$this->validCsrf()) {
+            $_SESSION['error'] = Translator::t('auth.reset.erro_csrf');
+            $this->redirect('/acesso/criar-senha/' . $token);
+            return;
+        }
+
         try {
             // Busca token válido
             $stmt = $pdo->prepare("
-                SELECT t.*, u.id as user_id, u.email as user_email
+                SELECT t.*
                 FROM bi_tenant_access_tokens t
-                JOIN bi_users u ON u.id = t.user_id
                 WHERE t.token = :token
                   AND t.usado  = 0
                   AND t.expires_at > NOW()
@@ -107,7 +112,7 @@ class AccessTokenController extends Controller
                 ->execute([$token]);
 
             // Log de auditoria
-            Logger::info("[AccessToken] Senha criada via token para user_id={$tokenData['user_id']} email={$tokenData['user_email']} tenant_id={$tokenData['tenant_id']}");
+            Logger::info('[AccessToken] Senha criada via token de acesso.');
 
             $pdo->commit();
 
@@ -128,6 +133,7 @@ class AccessTokenController extends Controller
      */
     public function formEsqueciSenha(): void
     {
+        $this->csrfToken();
         $this->view('auth/esqueci_senha', [
             'title' => 'Esqueci minha senha',
         ], 'auth');
@@ -148,13 +154,14 @@ class AccessTokenController extends Controller
      */
     public function enviarLinkRedefinicao(): void
     {
+        $this->csrfToken();
         $email = trim($_POST['email'] ?? '');
 
         // Mensagem sempre idêntica, independentemente do resultado interno.
         $mensagemGenerica = 'Se este e-mail estiver cadastrado em nossa base, '
             . 'enviamos um link para redefinição de senha. Verifique também a caixa de spam.';
 
-        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (!$this->validCsrf() || empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->view('auth/esqueci_senha', [
                 'title'   => 'Esqueci minha senha',
                 'sucesso' => $mensagemGenerica,
@@ -217,9 +224,7 @@ class AccessTokenController extends Controller
                         ]);
                     }
 
-                    $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                    $baseUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'voxelpacs.com.br');
-                    $link    = $baseUrl . '/acesso/criar-senha/' . $token;
+                    $link = $this->publicBaseUrl() . '/acesso/criar-senha/' . $token;
 
                     $html = '<p>Olá, ' . htmlspecialchars($user['name']) . '!</p>'
                         . '<p>Recebemos um pedido de redefinição de senha para sua conta no VOXEL PACS.</p>'
@@ -228,16 +233,16 @@ class AccessTokenController extends Controller
                         . 'Se você não solicitou isso, apenas ignore este e-mail — sua senha atual continua válida.</p>';
 
                     if (Mailer::send($email, 'Redefinição de senha — VOXEL PACS', $html)) {
-                        Logger::info("[AccessToken::enviarLinkRedefinicao] SMTP aceitou a redefinição para user_id={$user['id']}");
+                        Logger::info('[AccessToken::enviarLinkRedefinicao] Solicitação de redefinição aceita pelo SMTP.');
                     } else {
                         // A resposta externa permanece genérica para não revelar contas válidas.
-                        Logger::warning("[AccessToken::enviarLinkRedefinicao] SMTP recusou a redefinição para user_id={$user['id']}");
+                        Logger::warning('[AccessToken::enviarLinkRedefinicao] SMTP não aceitou uma solicitação de redefinição.');
                     }
                 } else {
                     // Conta existe mas sem tenant vinculado (ex: superadmin
                     // puro) — não há como gerar o token (FK obrigatória).
                     // Não revela isso ao usuário; só registra internamente.
-                    Logger::warning("[AccessToken::enviarLinkRedefinicao] user_id={$user['id']} sem tenant vinculado — token não gerado");
+                    Logger::warning('[AccessToken::enviarLinkRedefinicao] Solicitação sem tenant elegível para token.');
                 }
             }
         } catch (\Throwable $e) {
@@ -248,5 +253,22 @@ class AccessTokenController extends Controller
             'title'   => 'Esqueci minha senha',
             'sucesso' => $mensagemGenerica,
         ], 'auth');
+    }
+
+    private function validCsrf(): bool
+    {
+        $csrf = (string) ($_POST['_csrf_token'] ?? '');
+        return $csrf !== '' && !empty($_SESSION['csrf_token'])
+            && hash_equals((string) $_SESSION['csrf_token'], $csrf);
+    }
+
+    private function publicBaseUrl(): string
+    {
+        $configured = rtrim(trim((string) ($_ENV['AUTH_PUBLIC_BASE_URL'] ?? '')), '/');
+        if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_URL)
+            && strtolower((string) parse_url($configured, PHP_URL_SCHEME)) === 'https') {
+            return $configured;
+        }
+        return 'https://server.voxelpacs.com.br';
     }
 }

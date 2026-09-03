@@ -45,8 +45,7 @@
         <div class="field-wrap">
             <i class="fa fa-envelope field-icon"></i>
             <input type="email" id="inputEmail" name="email" class="field-input"
-                   placeholder="admin@voxelpacs.com.br" required autofocus
-                   value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+                   autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
         </div>
     </div>
 

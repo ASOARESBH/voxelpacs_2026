@@ -21,6 +21,8 @@ return [
     'auth.login.direitos_reservados'       => 'Todos los derechos reservados',
     'auth.login.erro_campos_obrigatorios'  => 'Complete todos los campos.',
     'auth.login.erro_credenciais'          => 'Correo electrónico o contraseña incorrectos.',
+    'auth.reset.criar_senha_subtitulo'     => 'Defina una contraseña segura para completar el acceso a su cuenta.',
+    'auth.reset.erro_csrf'                  => 'No fue posible validar su solicitud. Abra nuevamente el enlace recibido.',
     'auth.2fa.titulo'                      => 'Verificación en dos pasos',
     'auth.2fa.subtitulo'                   => 'Enviamos un código de acceso a su correo registrado.',
     'auth.2fa.codigo_label'                => 'Código de seis dígitos',
