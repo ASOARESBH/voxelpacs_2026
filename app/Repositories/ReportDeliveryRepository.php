@@ -348,7 +348,7 @@ class ReportDeliveryRepository
     }
 
     /**
-     * Lista somente servidores PACS ativos e vinculados ao negócio atual.
+     * Publicação: lista somente servidores PACS ativos e vinculados ao negócio atual.
      * O painel usa estes dados para apresentar a origem; a consulta não
      * carrega dados DICOM, estudos, destinos ou parâmetros de conexão.
      *
