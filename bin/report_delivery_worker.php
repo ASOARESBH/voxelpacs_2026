@@ -10,7 +10,10 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 final class DeliveryWorkerFailure extends RuntimeException
 {
-    public function __construct(public readonly string $stage)
+    public function __construct(
+        public readonly string $stage,
+        public readonly ?string $reasonCategory = null
+    )
     {
         parent::__construct($stage);
     }
@@ -19,6 +22,14 @@ final class DeliveryWorkerFailure extends RuntimeException
 final class LocalDicomDeliveryWorker
 {
     private const SUPPORTED_TRANSPORTS = ['dicom_pdf'];
+    private const CSTORE_REASON_CATEGORIES = [
+        'timeout',
+        'connect_failed',
+        'association_rejected',
+        'tls_required',
+        'command_failed',
+    ];
+    private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
 
     private ReportDeliveryWorkerRepository $repository;
     private ReportDeliveryArtifactService $artifactService;
@@ -109,7 +120,7 @@ final class LocalDicomDeliveryWorker
                 'environment' => (string) ($job['ambiente'] ?? ''),
             ]);
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
@@ -127,7 +138,7 @@ final class LocalDicomDeliveryWorker
             throw new DeliveryWorkerFailure('invalid_job');
         }
         if (!empty($configuration['use_tls'])) {
-            throw new DeliveryWorkerFailure('tls_profile_required');
+            throw new DeliveryWorkerFailure('tls_profile_required', 'tls_required');
         }
 
         $basePath = defined('BASE_PATH') ? rtrim((string) BASE_PATH, '/') : dirname(__DIR__);
@@ -319,7 +330,7 @@ final class LocalDicomDeliveryWorker
         $timeoutSeconds = max(1, min(180, $timeoutSeconds));
         $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['PATH' => '/usr/bin:/bin']);
         if (!is_resource($process)) {
-            throw new DeliveryWorkerFailure($stage);
+            throw new DeliveryWorkerFailure($stage, $stage === 'cstore_failed' ? 'command_failed' : null);
         }
 
         foreach ($pipes as $pipe) {
@@ -331,14 +342,11 @@ final class LocalDicomDeliveryWorker
         $deadline = microtime(true) + $timeoutSeconds;
         $timedOut = false;
         $exitCode = -1;
+        $cstoreStderr = $stage === 'cstore_failed' ? '' : null;
         try {
             while (true) {
                 $status = proc_get_status($process);
-                foreach ($pipes as $pipe) {
-                    if (is_resource($pipe)) {
-                        stream_get_contents($pipe);
-                    }
-                }
+                $this->drainCommandPipes($pipes, $cstoreStderr);
                 if (!$status['running']) {
                     $exitCode = (int) $status['exitcode'];
                     break;
@@ -356,9 +364,9 @@ final class LocalDicomDeliveryWorker
                 usleep(50000);
             }
         } finally {
+            $this->drainCommandPipes($pipes, $cstoreStderr);
             foreach ($pipes as $pipe) {
                 if (is_resource($pipe)) {
-                    stream_get_contents($pipe);
                     fclose($pipe);
                 }
             }
@@ -366,8 +374,56 @@ final class LocalDicomDeliveryWorker
         }
 
         if ($timedOut || ($exitCode !== 0 && $closeCode !== 0)) {
-            throw new DeliveryWorkerFailure($stage);
+            throw new DeliveryWorkerFailure(
+                $stage,
+                $stage === 'cstore_failed' ? $this->classifyCstoreFailure($timedOut, $cstoreStderr ?? '') : null
+            );
         }
+    }
+
+    /**
+     * Drena stdout/stderr para não bloquear o subprocesso. Somente stderr de
+     * C-STORE fica em memória, limitado e efêmero, para classificação local.
+     * Nenhuma saída bruta é persistida, registrada ou devolvida pela API.
+     *
+     * @param array<int,resource> $pipes
+     */
+    private function drainCommandPipes(array $pipes, ?string &$cstoreStderr): void
+    {
+        foreach ($pipes as $descriptor => $pipe) {
+            if (!is_resource($pipe)) {
+                continue;
+            }
+            $output = stream_get_contents($pipe);
+            if ($descriptor !== 2 || $cstoreStderr === null || !is_string($output) || $output === '') {
+                continue;
+            }
+            $remaining = self::CSTORE_DIAGNOSTIC_MAX_BYTES - strlen($cstoreStderr);
+            if ($remaining > 0) {
+                $cstoreStderr .= substr($output, 0, $remaining);
+            }
+        }
+    }
+
+    private function classifyCstoreFailure(bool $timedOut, string $cstoreStderr): string
+    {
+        if ($timedOut) {
+            return 'timeout';
+        }
+
+        if (preg_match('/\b(?:connection refused|connection reset by peer|network is unreachable|no route to host|connection timed out)\b/i', $cstoreStderr) === 1) {
+            return 'connect_failed';
+        }
+
+        if (preg_match('/\bassociation(?: request)? rejected\b/i', $cstoreStderr) === 1) {
+            return 'association_rejected';
+        }
+
+        if (preg_match('/\b(?:tls|ssl)\b.*\b(?:required|handshake|certificate|protocol)\b|\b(?:required|handshake|certificate|protocol)\b.*\b(?:tls|ssl)\b/i', $cstoreStderr) === 1) {
+            return 'tls_required';
+        }
+
+        return 'command_failed';
     }
 
     /** @param array<string,mixed>|null $data */
@@ -380,13 +436,17 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage): void
+    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null): void
     {
         if ($jobId <= 0) {
             return;
         }
         try {
-            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', ['stage' => $stage]);
+            $metadata = ['stage' => $stage];
+            if (in_array($reasonCategory, self::CSTORE_REASON_CATEGORIES, true)) {
+                $metadata['reason_category'] = $reasonCategory;
+            }
+            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,
