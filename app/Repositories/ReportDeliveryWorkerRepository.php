@@ -10,6 +10,9 @@ use Throwable;
  *
  * O worker consulta jobs explicitamente elegíveis gerados pelo fluxo correto:
  * homologação manual ou produção automática após liberação clínica.
+ *
+ * Esta cópia é publicada de forma coesa com o executável do worker para evitar
+ * divergência de critérios de claim entre o processo e o repositório carregado.
  */
 class ReportDeliveryWorkerRepository
 {
