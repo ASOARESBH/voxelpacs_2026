@@ -157,7 +157,7 @@ final class LocalDicomDeliveryWorker
             }
             chmod($metadataDumpPath, 0600);
 
-            $this->runCommand(['/usr/bin/dump2dcm', '--quiet', $metadataDumpPath, $metadataDicomPath], 'metadata_conversion_failed');
+            $this->runCommand(['/usr/bin/dump2dcm', '--quiet', $metadataDumpPath, $metadataDicomPath], 'metadata_conversion_failed', 45);
             $pdf2dcmCommand = ['/usr/bin/pdf2dcm', '--quiet', '--study-from', $metadataDicomPath];
             $issuerOfPatientId = $this->issuerOfPatientId($payload, $configuration);
             if ($issuerOfPatientId !== '') {
@@ -167,7 +167,7 @@ final class LocalDicomDeliveryWorker
             $pdf2dcmCommand[] = '--instance-one';
             $pdf2dcmCommand[] = $pdfPath;
             $pdf2dcmCommand[] = $dicomPath;
-            $this->runCommand($pdf2dcmCommand, 'pdf_encapsulation_failed');
+            $this->runCommand($pdf2dcmCommand, 'pdf_encapsulation_failed', 45);
             if (!is_file($dicomPath) || filesize($dicomPath) < 256) {
                 throw new DeliveryWorkerFailure('invalid_dicom_artifact');
             }
@@ -185,7 +185,7 @@ final class LocalDicomDeliveryWorker
                     (string) $configuration['host'],
                     (string) $configuration['port'],
                     $dicomPath,
-                ], 'cstore_failed');
+                ], 'cstore_failed', min(135, $timeout + 15));
                 $deliveryResult = ['reference' => '', 'sha256' => '', 'size' => 0];
             }
 
@@ -309,19 +309,58 @@ final class LocalDicomDeliveryWorker
     }
 
     /** @param list<string> $command */
-    private function runCommand(array $command, string $stage): void
+    private function runCommand(array $command, string $stage, int $timeoutSeconds = 60): void
     {
+        $timeoutSeconds = max(1, min(180, $timeoutSeconds));
         $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['PATH' => '/usr/bin:/bin']);
         if (!is_resource($process)) {
             throw new DeliveryWorkerFailure($stage);
         }
+
         foreach ($pipes as $pipe) {
             if (is_resource($pipe)) {
-                stream_get_contents($pipe);
-                fclose($pipe);
+                stream_set_blocking($pipe, false);
             }
         }
-        if (proc_close($process) !== 0) {
+
+        $deadline = microtime(true) + $timeoutSeconds;
+        $timedOut = false;
+        $exitCode = -1;
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                foreach ($pipes as $pipe) {
+                    if (is_resource($pipe)) {
+                        stream_get_contents($pipe);
+                    }
+                }
+                if (!$status['running']) {
+                    $exitCode = (int) $status['exitcode'];
+                    break;
+                }
+                if (microtime(true) >= $deadline) {
+                    $timedOut = true;
+                    proc_terminate($process);
+                    usleep(250000);
+                    $afterTerminate = proc_get_status($process);
+                    if ($afterTerminate['running']) {
+                        proc_terminate($process, 9);
+                    }
+                    break;
+                }
+                usleep(50000);
+            }
+        } finally {
+            foreach ($pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    stream_get_contents($pipe);
+                    fclose($pipe);
+                }
+            }
+            $closeCode = proc_close($process);
+        }
+
+        if ($timedOut || ($exitCode !== 0 && $closeCode !== 0)) {
             throw new DeliveryWorkerFailure($stage);
         }
     }
