@@ -41,7 +41,10 @@ final class ViewerAccess
             $states[$key] = [
                 'enabled' => $enabled,
                 'tenant_available' => $tenantAvailable,
-                'visible' => $enabled && $tenantAvailable,
+                // O menu exibe todos os visualizadores habilitados para o
+                // usuário. A validação técnica do tenant continua no emissor
+                // autenticado, antes da URI ou do launcher ser gerado.
+                'visible' => $enabled,
             ];
         }
         return $states;

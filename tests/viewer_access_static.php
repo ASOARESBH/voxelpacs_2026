@@ -51,6 +51,10 @@ viewerMustContain($estudos, "'visualizador_restrito_por_usuario'", 'Negação de
 viewerMustContain($estudos, "'viewer_states'", 'Worklist não recebe estados efetivos de visualizadores.');
 viewerMustContain($worklist, '$hasViewerVisible', 'Worklist não oculta o menu sem visualizador efetivamente autorizado.');
 viewerMustContain($worklist, "viewerVisible('voxel_desktop')", 'Worklist não aplica a interseção à opção VOXEL Desktop.');
+viewerMustContain($access, "'visible' => \$enabled", 'Worklist não aplica a regra aprovada de ocultar somente visualizadores desmarcados.');
+if (strpos($access, "'visible' => \$enabled && \$tenantAvailable") !== false) {
+    throw new RuntimeException('Worklist ainda oculta visualizador marcado por indisponibilidade técnica do tenant.');
+}
 viewerMustContain($usuarios, 'ViewerRegistry::all()', 'Usuários não usa o catálogo central de visualizadores.');
 viewerMustContain($usuarios, 'salvarVisualizadores', 'Usuários não persiste exceções de visualizador.');
 viewerMustContain($usuarios, "SqlHelper::hasTable(\$pdo, 'bi_user_viewers')", 'Cadastro de usuários não preserva compatibilidade enquanto a migration estiver pendente.');
