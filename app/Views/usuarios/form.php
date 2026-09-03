@@ -441,10 +441,18 @@ function atualizarVisualizadoresPorPerfil() {
         if (!input) return;
         if (isAdmin) {
             input.checked = true;
-            input.disabled = true;
+            // Administrador permanece integralmente habilitado. Mantemos o
+            // controle visualmente ativo, porém imutável, sem usar disabled
+            // (que o navegador renderiza como indisponível).
+            input.disabled = false;
+            input.setAttribute('aria-disabled', 'true');
+            input.onclick = (event) => event.preventDefault();
             item.classList.add('checked');
-            item.style.opacity = '.6';
+            item.classList.toggle('is-disabled', !tenantAvailable);
+            item.style.opacity = tenantAvailable ? '1' : '.45';
         } else {
+            input.removeAttribute('aria-disabled');
+            input.onclick = null;
             input.disabled = !tenantAvailable;
             item.style.opacity = tenantAvailable ? '1' : '.45';
         }

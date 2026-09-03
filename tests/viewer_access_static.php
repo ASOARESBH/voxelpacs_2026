@@ -61,6 +61,9 @@ viewerMustContain($form, 'name="visualizadores_present"', 'Formulário não dife
 viewerMustContain($form, 'name="_csrf_token"', 'Formulário de usuários não envia CSRF.');
 viewerMustContain($form, 'data-tenant-available', 'Formulário não expõe indisponibilidade do tenant.');
 viewerMustContain($form, 'atualizarVisualizadoresPorPerfil', 'Formulário não preserva o bypass visual de administrador.');
+viewerMustContain($form, "input.setAttribute('aria-disabled', 'true')", 'Administrador não recebe indicação acessível de controle imutável.');
+viewerMustContain($form, "item.style.opacity = tenantAvailable ? '1' : '.45'", 'Administrador é visualmente confundido com indisponibilidade do tenant.');
+viewerMustContain($form, 'input.onclick = (event) => event.preventDefault()', 'Administrador pode alterar visualizadores apesar do bypass obrigatório.');
 viewerMustContain($access, "'bi_user_viewers'", 'Camada de acesso não consulta tabela tenant-scoped.');
 viewerMustContain($access, 'Auth::isPlatformAdmin() || Auth::perfilAtual() === \'admin\'', 'Camada de acesso não preserva bypass administrativo.');
 viewerMustContain($mysql, 'UNIQUE KEY `uq_user_viewer_tenant` (`user_id`, `tenant_id`, `viewer_key`)', 'Migration MySQL sem unicidade tenant-scoped.');
