@@ -588,6 +588,7 @@ class UsuariosController extends Controller
     ): array {
         // A migration é aditiva; enquanto não aplicada, preserva o comportamento
         // legado sem impedir o cadastro ou a edição de usuários.
+        // Não permita que um search_path legado silencie uma exceção individual.
         if (!ViewerAccess::restrictionStoreAvailable($pdo)) return [];
         $selecionados = array_values(array_unique(array_filter(
             array_map('strval', $selecionados),

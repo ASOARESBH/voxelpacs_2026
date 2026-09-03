@@ -14,6 +14,7 @@ use App\Services\DesktopViewerService;
  */
 final class ViewerAccess
 {
+    // A migration publicada fixa esta tabela no schema operacional PostgreSQL.
     private const POSTGRES_RESTRICTION_TABLE = 'voxelpacs_mysql_source.bi_user_viewers';
     /** @var array<string, array<string, bool>> */
     private static array $disabledCache = [];
