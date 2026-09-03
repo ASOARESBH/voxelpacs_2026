@@ -308,7 +308,12 @@ final class LocalDicomDeliveryWorker
         return strlen($value) <= 64 && preg_match('/^(?:[0-9]+)(?:\.[0-9]+)*$/', $value) === 1;
     }
 
-    /** @param list<string> $command */
+    /**
+     * Executa somente binários allowlisted com watchdog local; nunca delega
+     * prazo de término exclusivamente ao processo externo.
+     *
+     * @param list<string> $command
+     */
     private function runCommand(array $command, string $stage, int $timeoutSeconds = 60): void
     {
         $timeoutSeconds = max(1, min(180, $timeoutSeconds));
