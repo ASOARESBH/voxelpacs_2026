@@ -14,6 +14,7 @@ use App\Services\DesktopViewerService;
  */
 final class ViewerAccess
 {
+    private const POSTGRES_RESTRICTION_TABLE = 'voxelpacs_mysql_source.bi_user_viewers';
     /** @var array<string, array<string, bool>> */
     private static array $disabledCache = [];
     /** @var array<string, bool> */
@@ -75,6 +76,32 @@ final class ViewerAccess
         return array_keys(self::disabledForUser($userId, $tenantId));
     }
 
+    /**
+     * A migration PostgreSQL cria a tabela no schema operacional explícito.
+     * Não depender de `current_schema()` evita que um search_path legado torne
+     * a política opt-out silenciosamente inoperante.
+     */
+    public static function restrictionStoreAvailable(?\PDO $pdo = null): bool
+    {
+        try {
+            $pdo ??= Database::getInstance();
+            if (!SqlHelper::isPostgres()) {
+                return SqlHelper::hasTable($pdo, 'bi_user_viewers');
+            }
+
+            return $pdo->query("SELECT to_regclass('" . self::POSTGRES_RESTRICTION_TABLE . "')")
+                ->fetchColumn() !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** Nome constante e seguro da tabela de restrições no dialeto ativo. */
+    public static function restrictionStoreTable(): string
+    {
+        return SqlHelper::isPostgres() ? self::POSTGRES_RESTRICTION_TABLE : 'bi_user_viewers';
+    }
+
     public static function isPrivilegedTarget(string $perfil, ?string $role = null): bool
     {
         return $perfil === 'admin' || $role === 'superadmin';
@@ -112,9 +139,10 @@ final class ViewerAccess
         self::$disabledCache[$cacheKey] = [];
         try {
             $pdo = Database::getInstance();
-            if (!SqlHelper::hasTable($pdo, 'bi_user_viewers')) return self::$disabledCache[$cacheKey];
+            if (!self::restrictionStoreAvailable($pdo)) return self::$disabledCache[$cacheKey];
+            $table = self::restrictionStoreTable();
             $stmt = $pdo->prepare(
-                'SELECT viewer_key FROM bi_user_viewers WHERE user_id = ? AND tenant_id = ? AND habilitado = 0'
+                "SELECT viewer_key FROM {$table} WHERE user_id = ? AND tenant_id = ? AND habilitado = 0"
             );
             $stmt->execute([$userId, $tenantId]);
             foreach ($stmt->fetchAll(\PDO::FETCH_COLUMN) as $viewerKey) {

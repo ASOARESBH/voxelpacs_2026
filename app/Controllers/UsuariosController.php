@@ -588,7 +588,7 @@ class UsuariosController extends Controller
     ): array {
         // A migration é aditiva; enquanto não aplicada, preserva o comportamento
         // legado sem impedir o cadastro ou a edição de usuários.
-        if (!SqlHelper::hasTable($pdo, 'bi_user_viewers')) return [];
+        if (!ViewerAccess::restrictionStoreAvailable($pdo)) return [];
         $selecionados = array_values(array_unique(array_filter(
             array_map('strval', $selecionados),
             static fn (string $key): bool => ViewerRegistry::has($key)
@@ -615,13 +615,14 @@ class UsuariosController extends Controller
 
         // Modelo opt-out: apagar a configuração anterior restaura o padrão
         // habilitado; gravamos somente as exceções explicitamente desmarcadas.
-        $pdo->prepare('DELETE FROM bi_user_viewers WHERE user_id = ? AND tenant_id = ?')
+        $table = ViewerAccess::restrictionStoreTable();
+        $pdo->prepare("DELETE FROM {$table} WHERE user_id = ? AND tenant_id = ?")
             ->execute([$userId, $tenantId]);
         if (!$desabilitados) return [];
 
         $sql = SqlHelper::isPostgres()
-            ? 'INSERT INTO bi_user_viewers (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON CONFLICT (user_id, tenant_id, viewer_key) DO UPDATE SET habilitado = EXCLUDED.habilitado, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()'
-            : 'INSERT INTO bi_user_viewers (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado = VALUES(habilitado), updated_by_user_id = VALUES(updated_by_user_id), updated_at = CURRENT_TIMESTAMP';
+            ? "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON CONFLICT (user_id, tenant_id, viewer_key) DO UPDATE SET habilitado = EXCLUDED.habilitado, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()"
+            : "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado = VALUES(habilitado), updated_by_user_id = VALUES(updated_by_user_id), updated_at = CURRENT_TIMESTAMP";
         $insert = $pdo->prepare($sql);
         foreach ($desabilitados as $viewerKey) {
             $insert->execute([$userId, $tenantId, $viewerKey, 0, Auth::userId()]);

@@ -57,7 +57,8 @@ if (strpos($access, "'visible' => \$enabled && \$tenantAvailable") !== false) {
 }
 viewerMustContain($usuarios, 'ViewerRegistry::all()', 'Usuários não usa o catálogo central de visualizadores.');
 viewerMustContain($usuarios, 'salvarVisualizadores', 'Usuários não persiste exceções de visualizador.');
-viewerMustContain($usuarios, "SqlHelper::hasTable(\$pdo, 'bi_user_viewers')", 'Cadastro de usuários não preserva compatibilidade enquanto a migration estiver pendente.');
+viewerMustContain($usuarios, 'ViewerAccess::restrictionStoreAvailable($pdo)', 'Cadastro de usuários não verifica a tabela de restrições no schema operacional.');
+viewerMustContain($usuarios, 'ViewerAccess::restrictionStoreTable()', 'Cadastro de usuários não grava no schema de restrições resolvido pelo dialeto.');
 viewerMustContain($usuarios, 'auth.visualizadores_usuario_atualizados', 'Alteração de visualizadores não é auditada como acesso.');
 viewerMustContain($usuarios, 'validCsrfPost()', 'Criação ou edição de usuários não valida CSRF.');
 viewerMustContain($form, 'name="visualizadores[]"', 'Formulário não envia as escolhas de visualizadores.');
@@ -69,6 +70,8 @@ viewerMustContain($form, "input.setAttribute('aria-disabled', 'true')", 'Adminis
 viewerMustContain($form, "item.style.opacity = tenantAvailable ? '1' : '.45'", 'Administrador é visualmente confundido com indisponibilidade do tenant.');
 viewerMustContain($form, 'input.onclick = (event) => event.preventDefault()', 'Administrador pode alterar visualizadores apesar do bypass obrigatório.');
 viewerMustContain($access, "'bi_user_viewers'", 'Camada de acesso não consulta tabela tenant-scoped.');
+viewerMustContain($access, 'POSTGRES_RESTRICTION_TABLE', 'Camada de acesso não fixa o schema operacional PostgreSQL da tabela de restrições.');
+viewerMustContain($access, "to_regclass('", 'Camada de acesso não verifica a tabela PostgreSQL fora do search_path legado.');
 viewerMustContain($access, 'Auth::isPlatformAdmin() || Auth::perfilAtual() === \'admin\'', 'Camada de acesso não preserva bypass administrativo.');
 viewerMustContain($mysql, 'UNIQUE KEY `uq_user_viewer_tenant` (`user_id`, `tenant_id`, `viewer_key`)', 'Migration MySQL sem unicidade tenant-scoped.');
 viewerMustContain($postgres, 'voxelpacs_mysql_source.bi_user_viewers', 'Migration PostgreSQL fora do schema operacional.');
