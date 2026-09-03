@@ -42,8 +42,9 @@ final class ViewerAccess
                 'enabled' => $enabled,
                 'tenant_available' => $tenantAvailable,
                 // O menu exibe todos os visualizadores habilitados para o
-                // usuário. A validação técnica do tenant continua no emissor
-                // autenticado, antes da URI ou do launcher ser gerado.
+                // usuário, ocultando somente exceções individuais. A validação
+                // técnica do tenant continua no emissor autenticado, antes da
+                // URI ou do launcher ser gerado.
                 'visible' => $enabled,
             ];
         }
