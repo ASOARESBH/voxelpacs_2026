@@ -1,5 +1,5 @@
 <?php
-// Instalador legado removido da superfície pública.
+// Instalador legado removido da superfície pública; migrations são operadas fora da web.
 http_response_code(404);
 header('Content-Type: text/plain; charset=utf-8');
 header('Cache-Control: no-store');

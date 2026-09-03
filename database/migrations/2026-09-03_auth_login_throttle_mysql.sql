@@ -1,4 +1,4 @@
--- Proteção aditiva contra tentativa repetida de senha (MySQL/MariaDB).
+-- Proteção aditiva contra tentativa repetida de senha (MySQL/MariaDB; sem dados em claro).
 -- Persistem somente hashes HMAC; não há senha, e-mail ou IP em texto claro.
 CREATE TABLE IF NOT EXISTS bi_auth_login_attempts (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

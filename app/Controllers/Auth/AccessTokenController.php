@@ -21,6 +21,7 @@ class AccessTokenController extends Controller
      */
     public function formCriarSenha(string $token): void
     {
+        // O token é gerado antes de renderizar qualquer formulário público.
         $this->csrfToken();
         $pdo   = Database::getInstance();
         $token = preg_replace('/[^a-zA-Z0-9]/', '', $token);

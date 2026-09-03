@@ -1,4 +1,4 @@
--- Proteção aditiva contra tentativa repetida de senha (PostgreSQL 16).
+-- Proteção aditiva contra tentativa repetida de senha (PostgreSQL 16; sem dados em claro).
 -- Persistem somente hashes HMAC; não há senha, e-mail ou IP em texto claro.
 CREATE TABLE IF NOT EXISTS voxelpacs_mysql_source.bi_auth_login_attempts (
     id BIGSERIAL PRIMARY KEY,

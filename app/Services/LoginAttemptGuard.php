@@ -6,7 +6,8 @@ use App\Core\SqlHelper;
 
 /**
  * Segurança de autenticação pública: mantém somente hashes com segredo de
- * servidor e nunca persiste senha, e-mail ou IP em texto claro.
+ * servidor e nunca persiste senha, e-mail ou IP em texto claro. Esta classe
+ * é utilizada somente em tentativas novas de autenticação.
  */
 final class LoginAttemptGuard
 {

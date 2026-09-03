@@ -22,6 +22,7 @@
         <div class="card">
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-1">Criar Senha de Acesso</h5>
+                <!-- A página por token permanece neutra e não mostra o titular. -->
                 <p class="text-muted small mb-4">
                     <?= htmlspecialchars(t('auth.reset.criar_senha_subtitulo')) ?>
                 </p>

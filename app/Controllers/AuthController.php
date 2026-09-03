@@ -60,6 +60,8 @@ class AuthController extends Controller {
             return;
         }
 
+        // A limitação é adicional às credenciais e nunca altera a semântica
+        // externa da mensagem de falha.
         $attempts = new LoginAttemptGuard();
         $remoteIp = $_SERVER['REMOTE_ADDR'] ?? null;
         if (!$attempts->allows($email, $remoteIp)) {
