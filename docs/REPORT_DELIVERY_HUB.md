@@ -120,6 +120,8 @@ Nenhum destino clínico é habilitado pela implantação: a habilitação e a co
 
 ## Roteamento por Issuer e PACS de origem
 
+O painel administrativo lista servidores PACS exclusivamente através dos vínculos ativos do próprio negócio em `bi_negocio_servidor_pacs`. A consulta devolve somente identificador técnico interno e nome administrativo do servidor; ela não carrega URL, credenciais, AE Titles, estudos ou objetos DICOM.
+
 Um mesmo negócio pode receber estudos de vários PACS. Cada destino pode vincular um ou mais **Issuers** e, opcionalmente, InstitutionNames de fallback. O Issuer é normalizado antes da comparação e vem de `bi_pacs_estudos.issuer_of_patient_id`; o InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name`.
 
 Ao liberar ou reenviar um laudo, o Hub aplica **Issuer como chave prioritária**. InstitutionName só é consultado quando o estudo não tem Issuer utilizável. O snapshot da outbox registra o valor recebido, o Issuer normalizado, o InstitutionName canônico e a base da decisão de roteamento.

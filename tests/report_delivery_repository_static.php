@@ -24,4 +24,17 @@ foreach ([
     }
 }
 
+foreach ([
+    'function listTenantPacsServers(int $tenantId): array',
+    'FROM bi_pacs_servidor s',
+    'INNER JOIN bi_negocio_servidor_pacs bsp',
+    'bsp.tenant_id = :tenant_id',
+    'bsp.ativo = 1',
+    'SELECT s.id, s.nome',
+] as $contract) {
+    if (!str_contains($source, $contract)) {
+        throw new RuntimeException('Contrato tenant-scoped de servidores PACS ausente no Delivery Hub.');
+    }
+}
+
 fwrite(STDOUT, "REPORT_DELIVERY_REPOSITORY_STATIC_OK\n");

@@ -347,6 +347,29 @@ class ReportDeliveryRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * Lista somente servidores PACS ativos e vinculados ao negócio atual.
+     * O painel usa estes dados para apresentar a origem; a consulta não
+     * carrega dados DICOM, estudos, destinos ou parâmetros de conexão.
+     *
+     * @return array<int,array{id:int,nome:string}>
+     */
+    public function listTenantPacsServers(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              ORDER BY s.nome ASC, s.id ASC"
+        );
+        $stmt->execute([':tenant_id' => $tenantId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function createOutboxIfAbsent(
         int $tenantId,
         ?int $estabelecimentoId,
