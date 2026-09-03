@@ -70,6 +70,8 @@ O processo local é instalado como `voxelpacs-report-delivery-worker.service`, s
 
 O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da versão imutável, encapsula o documento em objeto DICOM mantendo o Study UID do evento e executa C-STORE. O processo grava apenas estados técnicos sanitizados em tentativas, usa armazenamento privado para artefatos e falha de modo fechado se parâmetros obrigatórios, identificação do estudo ou perfil TLS solicitado não estiverem completos. Cada subprocesso local é drenado de modo não bloqueante e possui watchdog com prazo limitado; um comando travado falha de forma controlada e não bloqueia indefinidamente o loop do serviço.
 
+Nas falhas de C-STORE direto, o worker mantém uma parcela limitada do `stderr` somente em memória para classificá-la e descartá-la imediatamente. A tentativa persiste somente `reason_category`, sem saída bruta, comando, argumentos, parâmetros de rede ou atributos DICOM. As categorias permitidas são `timeout`, `connect_failed`, `association_rejected`, `tls_required` e `command_failed`. A classificação não altera o lease, o backoff, a DLQ nem a política de retentativa.
+
 > O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada.
 
 ### Identidade DICOM no retorno de laudo
