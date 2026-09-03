@@ -559,8 +559,8 @@ class ReportDeliveryRepository
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
              WHERE r.tenant_id = :tenant_id
                AND r.situacao = 'liberado'
-               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, '')) LIKE LOWER(:patient_like)
-                    OR LOWER(COALESCE(e.patient_name, '')) LIKE LOWER(:patient_like))
+               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, '')) LIKE LOWER(:patient_display_like)
+                    OR LOWER(COALESCE(e.patient_name, '')) LIKE LOWER(:patient_raw_like))
                AND (:modality = '' OR LOWER(COALESCE(e.modalities, '')) LIKE LOWER(:modality_like))
                AND (:issuer = '' OR LOWER(COALESCE(e.issuer_of_patient_id, '')) LIKE LOWER(:issuer_like))
              ORDER BY (r.liberado_em IS NULL) ASC, r.liberado_em DESC, r.id DESC
@@ -568,7 +568,10 @@ class ReportDeliveryRepository
         );
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
         $stmt->bindValue(':patient', $patient, PDO::PARAM_STR);
-        $stmt->bindValue(':patient_like', '%' . $patient . '%', PDO::PARAM_STR);
+        // PostgreSQL com prepared statements nativos não aceita o mesmo
+        // placeholder nomeado em posições distintas da consulta.
+        $stmt->bindValue(':patient_display_like', '%' . $patient . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':patient_raw_like', '%' . $patient . '%', PDO::PARAM_STR);
         $stmt->bindValue(':modality', $modality, PDO::PARAM_STR);
         $stmt->bindValue(':modality_like', '%' . $modality . '%', PDO::PARAM_STR);
         $stmt->bindValue(':issuer', $issuer, PDO::PARAM_STR);

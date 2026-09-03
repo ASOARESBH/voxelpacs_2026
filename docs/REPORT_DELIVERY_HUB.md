@@ -138,6 +138,8 @@ No painel **Devolutiva de Laudos**, selecione os Issuers dos servidores PACS ant
 
 ## Laudos liberados, estados e reenvio controlado
 
+Na listagem administrativa de laudos liberados, os filtros por nome usam parâmetros distintos para a representação de exibição e o valor DICOM bruto. Isso preserva a compatibilidade com PostgreSQL em prepared statements nativos e não altera o escopo obrigatório por tenant.
+
 O painel de cada negócio apresenta até 100 laudos com situação `liberado`, mesmo quando ainda não existe job de integração. A lista é sempre filtrada por tenant e permite filtrar por nome do paciente, modalidade ou Issuer. Não exibe conteúdo do laudo, token público, credenciais nem configuração sensível do destino.
 
 | Estado exibido | Critério | Ação disponível |
