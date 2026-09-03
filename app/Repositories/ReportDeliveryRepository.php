@@ -568,8 +568,8 @@ class ReportDeliveryRepository
         );
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
         $stmt->bindValue(':patient', $patient, PDO::PARAM_STR);
-        // PostgreSQL com prepared statements nativos não aceita o mesmo
-        // placeholder nomeado em posições distintas da consulta.
+        // Publicação: PostgreSQL com prepared statements nativos não aceita o
+        // mesmo placeholder nomeado em posições distintas da consulta.
         $stmt->bindValue(':patient_display_like', '%' . $patient . '%', PDO::PARAM_STR);
         $stmt->bindValue(':patient_raw_like', '%' . $patient . '%', PDO::PARAM_STR);
         $stmt->bindValue(':modality', $modality, PDO::PARAM_STR);
