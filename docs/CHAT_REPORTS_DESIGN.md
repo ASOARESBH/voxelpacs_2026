@@ -14,9 +14,13 @@ O módulo usa o cadastro real de grupos organizacionais `bi_grupos` e `bi_grupo_
 
 O estado da conversa é `pendente` ou `concluido`. Ao enviar uma interação, a conversa é criada ou reaberta e o estudo recebe `situacao = 'pendente'`. O estado anterior é salvo para que a conclusão restaure o fluxo anterior de forma determinística. Ao concluir, o estudo retorna ao estado anterior permitido, preferindo `em_laudo` quando o valor anterior não for um estado editável.
 
-## Assuntos
+## Formulário reduzido no Laudário
 
-O seletor usa temas padronizados: **Erro no pedido**, **Contraste**, **Exames complementares**, **Dúvida administrativa** e **Outro**. O campo livre de assunto permanece obrigatório para explicar o caso; o tema serve para classificação e para o assunto do e-mail.
+No laudário, o formulário operacional exibe somente o seletor único de destinatário, o campo de interação e a ação de envio. O seletor reúne grupos e usuários ativos do tenant, mas o navegador continua enviando internamente o tipo e o identificador de destinatário esperados pelo serviço. O tema comum e o campo livre de assunto deixam de ser exibidos; a interação comum utiliza a classificação interna `outro` e o assunto correspondente, preservando o histórico, o e-mail e a auditoria existentes.
+
+**Achado crítico** permanece uma ação médica separada e explícita. Ela habilita o modo crítico no mesmo formulário, exibe aviso visual, exige a confirmação reforçada já existente e continua limitada pelo servidor ao perfil médico. O fluxo preserva a marcação clínica, a auditoria e a notificação obrigatória dos administradores ativos do tenant.
+
+Após resposta da contraparte, a conclusão continua explícita e auditável pelo botão **Concluir pendência e liberar evolução**. A resposta isolada não reabre nem libera automaticamente o fluxo do laudo.
 
 ## E-mail
 

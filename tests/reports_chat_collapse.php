@@ -20,6 +20,14 @@ $regras = [
     'identificadores da lógica de Chat foram preservados' => str_contains($card, 'id="reportChatForm"')
         && str_contains($card, 'id="btn-chat-send"')
         && str_contains($card, 'id="btn-chat-complete"'),
+    'formulário reduzido usa um seletor único de destinatário' => str_contains($card, 'id="chatDestinatario"')
+        && str_contains($card, '<optgroup')
+        && !str_contains($card, 'chatDestinatarioTipo')
+        && !str_contains($card, 'chatDestinatarioGrupo')
+        && !str_contains($card, 'chatDestinatarioUsuario'),
+    'achado crítico permanece ação explícita' => str_contains($card, 'id="btn-chat-critical"')
+        && str_contains($card, 'id="chat-critical-alert"')
+        && str_contains($script, 'function setCriticalMode(enabled)'),
     'botão de envio usa padrão primário' => str_contains($card, 'class="btn-pacs-primary reports-chat-send-btn" id="btn-chat-send"')
         && !str_contains($card, 'class="pacs-btn pacs-btn-primary"'),
     'botão de conclusão não depende de pacs-btn' => str_contains($card, 'class="btn-pacs-outline reports-chat-complete-btn" id="btn-chat-complete"'),
@@ -30,6 +38,7 @@ $regras = [
     'Bootstrap bundle é carregado' => str_contains($footer, 'bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'),
     'i18n expõe pluralização ao JavaScript' => str_contains($footer, "'countSingular' => t('report_chat.interacao_count_singular')")
         && str_contains($footer, "'countPlural' => t('report_chat.interacao_count_plural')"),
+    'i18n expõe a ação crítica ao JavaScript' => str_contains($footer, "'criticalConfirm' => t('report_chat.confirmar_achado_critico')"),
     'todas as traduções possuem contador' => str_contains($pt, 'report_chat.interacao_count_singular')
         && str_contains($en, 'report_chat.interacao_count_singular')
         && str_contains($es, 'report_chat.interacao_count_singular'),

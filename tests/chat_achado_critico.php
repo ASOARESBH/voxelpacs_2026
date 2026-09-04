@@ -55,7 +55,7 @@ requireCritical($repo, 'achado_critico_em = NOW()', 'Marcação não registra da
 requireCritical($repo, 'achado_critico_por = :user_id', 'Marcação não registra o médico.');
 requireCritical($repo, 'achado_critico_assunto = :assunto', 'Marcação não registra o assunto.');
 requireCritical($repo, 'ut.tenant_id = :tenant_id', 'Administradores não possuem escopo explícito por tenant.');
-requireCritical($repo, 'ut.perfil = "admin"', 'Destinatários obrigatórios não estão restritos a administradores do tenant.');
+requireCritical($repo, "ut.perfil = \\'admin\\'", 'Destinatários obrigatórios não estão restritos a administradores do tenant.');
 
 // Serviço: somente médico, sem alterar prioridade, auditável e com e-mail verificável.
 requireCritical($service, "'achado_critico' => 'ACHADO CRÍTICO'", 'Tema ACHADO CRÍTICO não está cadastrado.');
@@ -74,10 +74,11 @@ if (strpos($service, 'SET prioridade') !== false) {
 
 // Endpoint e interface do Laudário.
 requireCritical($controller, 'achado_critico_restrito_medico', 'Controller não traduz a restrição do Achado Crítico.');
-requireCritical($chatView, 'chatAssuntoCodigo', 'Card de CHAT não expõe seletor de tema.');
+requireCritical($chatView, 'btn-chat-critical', 'Card de CHAT não expõe ação explícita de Achado Crítico.');
 requireCritical($chatView, 'chat-critical-alert', 'Card de CHAT não possui alerta visual de Achado Crítico.');
 requireCritical($reportsJs, "'achado_critico'", 'JavaScript do Laudário não reconhece o tema crítico.');
 requireCritical($reportsJs, 'criticalConfirm', 'JavaScript do Laudário não confirma a comunicação crítica.');
+requireCritical($reportsJs, 'setCriticalMode', 'JavaScript do Laudário não controla o modo crítico explícito.');
 requireCritical($reportsJs, 'email_warning', 'JavaScript do Laudário não mostra aviso de e-mail.');
 requireCritical($reportsCss, '.reports-chat-critical-alert', 'CSS do alerta clínico no CHAT ausente.');
 

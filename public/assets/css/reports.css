@@ -771,6 +771,12 @@ body.reports-body {
 }
 .reports-chat-critical-alert i { color: #d946ef; margin-top: .1rem; }
 .reports-chat-critical-alert.d-none { display: none !important; }
+.reports-chat-critical-controls { display: flex; flex-direction: column; gap: .45rem; }
+.reports-chat-critical-btn { align-self: flex-start; color: #f0abfc; border-color: rgba(217,70,239,.5); }
+.reports-chat-critical-btn:hover,
+.reports-chat-critical-btn:focus-visible,
+.reports-chat-critical-btn.is-active { color: #f5d0fe; border-color: #d946ef; background: rgba(217,70,239,.16); }
+.reports-chat-critical-btn.is-active { box-shadow: 0 0 0 3px rgba(217,70,239,.12); }
 .reports-chat-messages {
     max-height: none;
     overflow: visible;

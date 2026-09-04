@@ -100,16 +100,23 @@ mustContain($reportsController, 'atualizarStatus bloqueado por CHAT pendente', '
 
 mustContain($show, "_chat_card.php", 'CHAT não foi incluído no Report.');
 mustNotContain($show, "_equipamento_card.php", 'Quadrante Equipamento ainda está incluído no Report.');
-mustContain($view, 'chatDestinatarioTipo', 'Seletor de destinatário ausente.');
-mustContain($view, 'destinatario_grupo_id', 'View não expõe o vínculo do grupo real.');
-mustContain($view, 'chatDestinatarioGrupo', 'Seletor de grupo ausente.');
-mustContain($view, 'chatDestinatarioUsuario', 'Seletor de usuário ausente.');
-mustContain($view, 'chatAssuntoCodigo', 'Seletor de temas ausente.');
+mustContain($view, 'chatDestinatario', 'Seletor único de destinatário ausente.');
+mustContain($view, 'grupo:', 'View não expõe a opção de grupo no seletor único.');
+mustContain($view, 'usuario:', 'View não expõe a opção de usuário no seletor único.');
+mustNotContain($view, 'chatDestinatarioTipo', 'View mantém o seletor técnico de tipo de destinatário.');
+mustNotContain($view, 'chatDestinatarioGrupo', 'View mantém o seletor separado de grupo.');
+mustNotContain($view, 'chatDestinatarioUsuario', 'View mantém o seletor separado de usuário.');
+mustNotContain($view, 'chatAssuntoCodigo', 'View mantém o seletor de tema comum.');
+mustNotContain($view, 'id="chatAssunto"', 'View mantém o campo livre de assunto.');
+mustContain($view, 'btn-chat-critical', 'Ação explícita de Achado Crítico ausente.');
 mustContain($view, 'chatMensagem', 'Campo de interação ausente.');
 mustContain($view, 'btn-chat-complete', 'Botão Concluído ausente.');
 
 mustContain($js, '/api/reports/chat/send', 'Frontend não envia interação ao endpoint correto.');
 mustContain($js, '/api/reports/chat/complete', 'Frontend não conclui CHAT pelo endpoint correto.');
+mustContain($js, 'function parseRecipient()', 'Frontend não separa com segurança o destinatário único.');
+mustContain($js, "assunto_codigo: isCritical ? 'achado_critico' : 'outro'", 'Frontend não preserva a classificação interna da interação.');
+mustContain($js, 'function setCriticalMode(enabled)', 'Frontend não preserva o modo explícito de Achado Crítico.');
 mustContain($js, 'reports:chat-status', 'Frontend não publica estado da pendência.');
 mustContain($js, 'reports:chat-completed', 'Conclusão no laudário não solicita a retomada de em_laudo.');
 mustContain($reportIndex, 'reports:chat-completed', 'Laudário não retoma em_laudo após concluir pendência aberta.');

@@ -6,8 +6,9 @@ window.VoxelReports = window.VoxelReports || {};
 
 window.VoxelReports.chat = (function () {
     let config = null;
-    let state = { pending: false, status: 'sem_chat', messages: [] };
+    let state = { pending: false, status: 'sem_chat', messages: [], can_complete: false };
     let busy = false;
+    let criticalMode = false;
 
     const fallbackText = {
         pending: 'Pendente',
@@ -16,6 +17,9 @@ window.VoxelReports.chat = (function () {
         error: 'Não foi possível processar a interação.',
         confirm: 'Concluir esta pendência? O estudo voltará à situação anterior.',
         criticalConfirm: 'Confirmar o registro de ACHADO CRÍTICO? A sinalização será gravada no estudo e os administradores do tenant serão notificados por e-mail.',
+        recipientRequired: 'Selecione um destinatário antes de enviar.',
+        sent: 'Interação registrada e destinatários notificados.',
+        completed: 'CHAT concluído. O estudo voltou para a evolução do fluxo.',
     };
 
     function text(key) {
@@ -90,22 +94,36 @@ window.VoxelReports.chat = (function () {
             badge.classList.toggle('is-clear', !state.pending);
         }
         if (alertEl) alertEl.classList.toggle('d-none', !state.pending);
-        if (complete) complete.style.display = state.pending ? '' : 'none';
+        if (complete) complete.style.display = state.pending && state.can_complete === true ? '' : 'none';
         renderMessages(state.messages || []);
         document.dispatchEvent(new CustomEvent('reports:chat-status', { detail: { pending: state.pending } }));
     }
 
-    function updateCriticalAlert() {
-        const isCritical = document.getElementById('chatAssuntoCodigo')?.value === 'achado_critico';
-        document.getElementById('chat-critical-alert')?.classList.toggle('d-none', !isCritical);
+    function setCriticalMode(enabled) {
+        const button = document.getElementById('btn-chat-critical');
+        criticalMode = Boolean(enabled && button);
+        if (button) {
+            button.classList.toggle('is-active', criticalMode);
+            button.setAttribute('aria-pressed', criticalMode ? 'true' : 'false');
+        }
+        document.getElementById('chat-critical-alert')?.classList.toggle('d-none', !criticalMode);
     }
 
-    function updateRecipientFields() {
-        const type = document.getElementById('chatDestinatarioTipo')?.value || 'grupo';
-        const group = document.getElementById('chatGrupoField');
-        const user = document.getElementById('chatUsuarioField');
-        if (group) group.style.display = type === 'grupo' ? '' : 'none';
-        if (user) user.style.display = type === 'usuario' ? '' : 'none';
+    function selectedRecipient(chat) {
+        const type = chat?.destinatario_tipo === 'usuario' ? 'usuario' : 'grupo';
+        const id = type === 'usuario' ? chat?.destinatario_user_id : chat?.destinatario_grupo_id;
+        return id ? `${type}:${id}` : '';
+    }
+
+    function parseRecipient() {
+        const value = document.getElementById('chatDestinatario')?.value || '';
+        const match = /^(grupo|usuario):([1-9][0-9]*)$/.exec(value);
+        if (!match) return null;
+        return {
+            type: match[1],
+            groupId: match[1] === 'grupo' ? match[2] : '',
+            userId: match[1] === 'usuario' ? match[2] : null,
+        };
     }
 
     async function load() {
@@ -117,11 +135,8 @@ window.VoxelReports.chat = (function () {
             const data = await response.json();
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             renderStatus(data.chat || {});
-            setSelectValue('chatDestinatarioTipo', data.chat?.destinatario_tipo || 'grupo');
-            setSelectValue('chatDestinatarioGrupo', data.chat?.destinatario_grupo_id || data.chat?.destinatario_grupo || '');
-            setSelectValue('chatDestinatarioUsuario', data.chat?.destinatario_user_id || '');
-            setSelectValue('chatAssuntoCodigo', data.chat?.assunto_codigo || 'outro');
-            updateRecipientFields();
+            setSelectValue('chatDestinatario', selectedRecipient(data.chat));
+            setCriticalMode(false);
             return data.chat;
         } catch (error) {
             setFeedback(error.message || text('error'), true);
@@ -134,10 +149,16 @@ window.VoxelReports.chat = (function () {
         if (busy) return;
         const message = document.getElementById('chatMensagem');
         const body = (message?.value || '').trim();
-        const isCritical = document.getElementById('chatAssuntoCodigo')?.value === 'achado_critico';
+        const recipient = parseRecipient();
+        const isCritical = criticalMode;
         if (!body) {
             setFeedback(text('required'), true);
             message?.focus();
+            return;
+        }
+        if (!recipient) {
+            setFeedback(text('recipientRequired'), true);
+            document.getElementById('chatDestinatario')?.focus();
             return;
         }
         if (isCritical && !window.confirm(text('criticalConfirm'))) return;
@@ -149,11 +170,11 @@ window.VoxelReports.chat = (function () {
         const payload = {
             report_id: config.reportId,
             csrf: config.csrf,
-            destinatario_tipo: document.getElementById('chatDestinatarioTipo')?.value || 'grupo',
-            destinatario_grupo: document.getElementById('chatDestinatarioGrupo')?.value || '',
-            destinatario_user_id: document.getElementById('chatDestinatarioUsuario')?.value || null,
-            assunto_codigo: document.getElementById('chatAssuntoCodigo')?.value || 'outro',
-            assunto: document.getElementById('chatAssunto')?.value || '',
+            destinatario_tipo: recipient.type,
+            destinatario_grupo: recipient.groupId,
+            destinatario_user_id: recipient.userId,
+            assunto_codigo: isCritical ? 'achado_critico' : 'outro',
+            assunto: '',
             mensagem: body,
         };
         try {
@@ -165,7 +186,7 @@ window.VoxelReports.chat = (function () {
             const data = await response.json();
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             if (message) message.value = '';
-            setFeedback(data.email_warning || 'Interação registrada e destinatários notificados.', Boolean(data.email_warning));
+            setFeedback(data.email_warning || text('sent'), Boolean(data.email_warning));
             await load();
         } catch (error) {
             setFeedback(error.message || text('error'), true);
@@ -189,7 +210,7 @@ window.VoxelReports.chat = (function () {
             });
             const data = await response.json();
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
-            setFeedback('CHAT concluído. O estudo voltou para a evolução do fluxo.');
+            setFeedback(text('completed'));
             await load();
             // O médico está no laudário autorizado neste instante. A página
             // principal faz a transição de a_laudar para em_laudo no backend.
@@ -209,11 +230,10 @@ window.VoxelReports.chat = (function () {
     function init(cfg) {
         config = cfg;
         const form = document.getElementById('reportChatForm');
-        document.getElementById('chatDestinatarioTipo')?.addEventListener('change', updateRecipientFields);
-        document.getElementById('chatAssuntoCodigo')?.addEventListener('change', updateCriticalAlert);
+        document.getElementById('btn-chat-critical')?.addEventListener('click', () => setCriticalMode(!criticalMode));
         document.getElementById('btn-chat-complete')?.addEventListener('click', complete);
         if (form) form.addEventListener('submit', send);
-        updateCriticalAlert();
+        setCriticalMode(false);
         load();
     }
 
