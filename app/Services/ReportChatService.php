@@ -12,6 +12,7 @@ use App\Repositories\ReportChatRepository;
  * Regras de negócio do CHAT contextual do Report.
  * Destinatários e estados sempre são resolvidos dentro do tenant atual.
  * A ação crítica é validada antes da mesma transação que abre a pendência.
+ * O médico autor ativo é apenas a sugestão inicial da resposta administrativa.
  */
 class ReportChatService
 {
