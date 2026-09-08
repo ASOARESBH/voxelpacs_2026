@@ -47,6 +47,9 @@
                 <li class="nav-item" role="presentation">
                     <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/imagiflow"><i class="fa fa-link me-1"></i> Conector Imagiflow</a>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/voxel-desktop"><i class="fa fa-desktop me-1"></i><?= htmlspecialchars(t('voxel_desktop.tab')) ?></a>
+                </li>
             <?php endif; ?>
         </ul>
     </div>

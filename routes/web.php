@@ -43,6 +43,11 @@ Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopil
 Router::post('/api/integracoes/imagiflow/v1/medicos/consultar', 'ImagiflowApiController@medico');
 Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos', 'ImagiflowApiController@apuracao');
 
+// Voxel Desktop Router — API pull autenticada por token tenant-scoped; sem sessão de navegador.
+Router::post('/api/voxel-desktop/v1/jobs/claim', 'VoxelDesktopRouterController@claim');
+Router::get('/api/voxel-desktop/v1/jobs/{id}/document', 'VoxelDesktopRouterController@document');
+Router::post('/api/voxel-desktop/v1/jobs/{id}/status', 'VoxelDesktopRouterController@status');
+
 // ============================================================
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar
 // ============================================================

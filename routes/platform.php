@@ -64,6 +64,11 @@ Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
 
+// Voxel Desktop — pull não-DICOM por tenant; o destino nasce desativado.
+Router::get('/platform/negocios/{id}/voxel-desktop', 'Platform\VoxelDesktopController@show');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations', 'Platform\VoxelDesktopController@save');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}', 'Platform\VoxelDesktopController@save');
+
 // Imagiflow — integração de apuração por negócio (somente superadmin)
 Router::get('/platform/negocios/{id}/imagiflow',          'Platform\ImagiflowIntegrationController@show');
 Router::post('/platform/negocios/{id}/imagiflow/gerar',   'Platform\ImagiflowIntegrationController@generate');

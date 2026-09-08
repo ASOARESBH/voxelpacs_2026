@@ -501,6 +501,10 @@ class ReportService {
                     $assinadoEm,
                     $hash
                 );
+                (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
+                    (int) $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
+                    (int) $userId, $assinadoEm, $hash
+                );
             }
 
             if ($peerReviewAberto && $peerReviewService) {
@@ -648,6 +652,10 @@ class ReportService {
                 $userId,
                 $liberadoEm,
                 $hash
+            );
+            (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
+                $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
+                $userId, $liberadoEm, $hash
             );
             $pdo->commit();
         } catch (\Throwable $e) {
