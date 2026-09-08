@@ -1,4 +1,5 @@
--- VOXEL PACS: comunicados da plataforma e eventos in-app; não substitui
+-- VOXEL PACS: comunicados da plataforma e eventos in-app; materialização controlada.
+-- Não substitui
 -- bi_grupo_notificacao_config, que continua reservado a alertas operacionais por grupo.
 SET search_path TO voxelpacs_mysql_source;
 

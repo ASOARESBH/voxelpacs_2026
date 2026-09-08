@@ -1,4 +1,5 @@
--- VOXEL PACS: comunicados da plataforma e eventos in-app; não substitui
+-- VOXEL PACS: comunicados da plataforma e eventos in-app; materialização controlada.
+-- Não substitui
 -- bi_grupo_notificacao_config, que continua reservado a alertas operacionais por grupo.
 CREATE TABLE IF NOT EXISTS bi_platform_notificacoes (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
