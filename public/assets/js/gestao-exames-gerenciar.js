@@ -162,7 +162,8 @@
     function renderContext(context) {
         state.context = context || {};
         state.reportId = Number(context?.report_id || 0);
-        $('#gerenciarPacienteNome').textContent = context?.patient_name || '—';
+        const patientName = $('#gerenciarPacienteNome');
+        if (patientName) patientName.textContent = context?.patient_name || '—';
         const reportStatus = reportStatusLabel(context?.report_situacao);
         const effectivePriorityLabel = priorityLabel(context?.priority || {});
         const meta = [
@@ -170,7 +171,8 @@
             reportStatus ? `${text('laudo')}: ${reportStatus}` : text('semLaudo'),
             context?.priority?.effective ? `${text('prioridade')}: ${effectivePriorityLabel}` : ''
         ].filter(Boolean).join(' · ');
-        $('#gerenciarEstudoMeta').textContent = meta;
+        const studyMeta = $('#gerenciarEstudoMeta');
+        if (studyMeta) studyMeta.textContent = meta;
 
         const viewReport = $('#gerenciarVerLaudo');
         if (viewReport) {
@@ -196,9 +198,12 @@
         if (descriptionButton) descriptionButton.disabled = !context?.modalidade;
         const descriptionDetail = $('#gerenciarDescricaoDesc');
         if (descriptionDetail) descriptionDetail.textContent = context?.modalidade || text('erroOperacao');
-        $('#gerenciarPrioridadeDesc').textContent = context?.priority?.effective
-            ? priorityLabel(context.priority)
-            : text('prioridade');
+        const priorityDetail = $('#gerenciarPrioridadeDesc');
+        if (priorityDetail) {
+            priorityDetail.textContent = context?.priority?.effective
+                ? priorityLabel(context.priority)
+                : text('prioridade');
+        }
         const requesterDetail = $('#gerenciarSolicitanteDesc');
         if (requesterDetail) requesterDetail.textContent = context?.requesting_physician || text('solicitanteSemInformacao');
         const informationDetail = $('#gerenciarInformacoesDesc');
@@ -212,11 +217,14 @@
         const canCommunicateCritical = (chat?.subjects || []).some((subject) => subject?.codigo === 'achado_critico');
         const critical = $('#gerenciarChatCritical');
         if (critical) critical.style.display = canCommunicateCritical ? '' : 'none';
-        $('#gerenciarChatReportId').value = String(state.reportId);
+        const reportIdInput = $('#gerenciarChatReportId');
+        if (reportIdInput) reportIdInput.value = String(state.reportId);
         updateChatControls(chat || {}, context);
     }
 
     function selectedChatRecipient(chat) {
+        const preferredUserId = Number(chat?.destinatario_preferencial_user_id || 0);
+        if (preferredUserId > 0) return `usuario:${preferredUserId}`;
         const type = chat?.destinatario_tipo === 'usuario' ? 'usuario' : 'grupo';
         const id = type === 'usuario' ? chat?.destinatario_user_id : chat?.destinatario_grupo_id;
         return id ? `${type}:${id}` : '';
@@ -325,9 +333,9 @@
     }
 
     async function completeChat() {
-        if (!state.reportId || $('#gerenciarChatConcluir').disabled) return;
-        if (!window.confirm(text('confirmarConclusao'))) return;
         const button = $('#gerenciarChatConcluir');
+        if (!state.reportId || !button || button.disabled) return;
+        if (!window.confirm(text('confirmarConclusao'))) return;
         if (button) button.disabled = true;
         showChatStatus(text('concluindo'), 'info');
         try {

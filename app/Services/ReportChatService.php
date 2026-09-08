@@ -84,6 +84,13 @@ class ReportChatService
 
         $chatPendente = $chat && ($chat['status'] ?? '') === 'pendente';
         $autorOriginalId = (int) ($chat['criado_por'] ?? 0);
+        $destinatarioPreferencialUserId = null;
+        if ($chatPendente && $autorOriginalId > 0 && $autorOriginalId !== $currentUserId) {
+            $autorOriginal = $this->repo->findActiveUser($autorOriginalId, $tenantId);
+            if (($autorOriginal['perfil'] ?? '') === 'medico') {
+                $destinatarioPreferencialUserId = (int) $autorOriginal['id'];
+            }
+        }
         $contraparteRespondeu = $chatPendente
             && $currentUserId > 0
             && $lastAuthorId !== null
@@ -101,6 +108,9 @@ class ReportChatService
             'destinatario_grupo_id' => $selectedGroupId > 0 ? $selectedGroupId : null,
             'destinatario_grupo_nome' => (string) ($chat['destinatario_grupo'] ?? ($defaultGroup['nome'] ?? 'Administrativo')),
             'destinatario_user_id' => isset($chat['destinatario_user_id']) ? (int) $chat['destinatario_user_id'] : null,
+            // Somente sugestão de interface: o endpoint de envio mantém a validação
+            // de tenant, usuário ativo e impedimento de autor como destinatário.
+            'destinatario_preferencial_user_id' => $destinatarioPreferencialUserId,
             'assunto_codigo' => $chat['assunto_codigo'] ?? 'outro',
             'assunto' => $chat['assunto'] ?? '',
             'situacao_anterior' => $chat['situacao_anterior'] ?? null,

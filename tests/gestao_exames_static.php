@@ -114,6 +114,8 @@ $expect(str_contains($gerenciarJs, 'origem: \'gestao_exames\'') && str_contains(
 $expect(str_contains($view, 'gerenciarChatDestinatario') && !str_contains($view, 'gerenciarChatTipo'), 'Modal do Gerenciar não usa o formulário reduzido com destinatário único.');
 $expect(str_contains($view, 'gerenciarChatCritical') && str_contains($gerenciarJs, "sendChat(null, 'comunicar_achado_critico')"), 'Gestão de Exames não exige a ação crítica explícita após a interação.');
 $expect(str_contains($gerenciarJs, 'assunto_codigo: isCritical ? \'achado_critico\' : \'outro\'') && str_contains($gerenciarJs, 'acao: action'), 'Gestão de Exames não classifica nem envia a ação de CHAT corretamente.');
+$expect(str_contains($gerenciarJs, 'const reportIdInput = $(\'#gerenciarChatReportId\');') && str_contains($gerenciarJs, 'if (reportIdInput) reportIdInput.value'), 'Modal do Gerenciar não protege a referência opcional do identificador de laudo.');
+$expect(str_contains($gerenciarJs, 'destinatario_preferencial_user_id') && str_contains($chatService, 'findActiveUser($autorOriginalId, $tenantId)'), 'Gestão de Exames não sugere o médico autor ativo como destinatário da resposta.');
 $expect(str_contains($gerenciarJs, 'reason.length < 20'), 'Frontend não valida motivo mínimo da prioridade.');
 $expect(str_contains($gerenciarJs, "hidden.bs.modal") && str_contains($gerenciarJs, 'reopenGerenciarAfterDescription'), 'Descrição do Estudo não faz transição segura entre modais Bootstrap.');
 $expect(str_contains($gerenciarJs, 'function csrfToken()') && str_contains($gerenciarJs, 'csrf: csrfToken()'), 'Descrição do Estudo não recupera token CSRF do próprio formulário.');

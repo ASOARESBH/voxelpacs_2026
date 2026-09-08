@@ -123,6 +123,8 @@ mustContain($js, 'reports:chat-status', 'Frontend não publica estado da pendên
 mustContain($js, 'reports:chat-completed', 'Conclusão no laudário não solicita a retomada de em_laudo.');
 mustContain($reportIndex, 'reports:chat-completed', 'Laudário não retoma em_laudo após concluir pendência aberta.');
 mustContain(source('public/assets/js/gestao-exames-gerenciar.js'), 'window.location.reload()', 'Gestão de Exames não recarrega a Worklist após concluir pendência.');
+mustContain($service, 'destinatario_preferencial_user_id', 'Contexto do CHAT não expõe o médico autor como destinatário preferencial.');
+mustContain($service, 'findActiveUser($autorOriginalId, $tenantId)', 'Destinatário preferencial não é validado como usuário ativo do tenant.');
 mustContain($signature, 'chatPendente', 'Assinatura não reage ao estado do CHAT.');
 mustContain($header, 'data-chat-pending', 'Header não expõe o estado inicial do CHAT.');
 

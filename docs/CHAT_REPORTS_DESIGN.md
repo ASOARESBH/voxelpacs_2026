@@ -22,6 +22,8 @@ No laudário e no modal de Gestão de Exames, o formulário operacional exibe so
 
 Toda interação válida, crítica ou comum, é persistida na mesma transação que abre ou mantém o CHAT em `pendente` e altera a situação do estudo para `pendente`. A liberação do fluxo continua dependente de resposta da contraparte e conclusão explícita, não de um envio isolado.
 
+Quando a pendência foi aberta por um médico e outro usuário autorizado do mesmo tenant acessa o CHAT pela Gestão de Exames, o contexto sugere esse médico ativo como destinatário individual inicial da resposta. A sugestão não altera a regra do endpoint: o servidor continua exigindo que o usuário esteja ativo no tenant e impede o autor atual de enviar interação para si próprio. Se o médico original não estiver ativo ou o próprio médico abrir o CHAT, a interface usa o destinatário configurado ou o grupo administrativo padrão.
+
 Após resposta da contraparte, a conclusão continua explícita e auditável pelo botão **Concluir pendência e liberar evolução**. A resposta isolada não reabre nem libera automaticamente o fluxo do laudo.
 
 ## E-mail
