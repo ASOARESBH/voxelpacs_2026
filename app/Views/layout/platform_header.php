@@ -6,9 +6,13 @@
     <title><?= htmlspecialchars($title ?? 'VOXEL PACS — Plataforma') ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <?php if (!empty($includeQuill)): ?>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css">
+    <?php endif; ?>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
     <link rel="stylesheet" href="/assets/css/mobile-responsive.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
+    <link rel="stylesheet" href="/assets/css/notification-center.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
 </head>
 <body>
 <div class="platform-wrapper">
@@ -22,6 +26,7 @@
             <a href="/platform/dashboard" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/dashboard')?'active':'' ?>"><i class="fa fa-gauge-high"></i><span>Dashboard</span></a>
             <a href="/platform/negocios" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/negocios')?'active':'' ?>"><i class="fa fa-building"></i><span>Negócios</span></a>
             <a href="/platform/plans" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/plans')?'active':'' ?>"><i class="fa fa-tags"></i><span>Planos</span></a>
+            <a href="/platform/notificacoes" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/notificacoes')?'active':'' ?>"><i class="fa fa-bell"></i><span><?= htmlspecialchars(t('platform_notifications.title')) ?></span></a>
             <a href="/platform/reports" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/reports')?'active':'' ?>"><i class="fa fa-chart-line"></i><span>Relatórios</span></a>
             <a href="/platform/configuracao-modulos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/configuracao-modulos')?'active':'' ?>"><i class="fa fa-sliders"></i><span><?= htmlspecialchars(t('config_modulos.nav_plataforma')) ?></span></a>
             <div class="sidebar-section-title">Infraestrutura</div>
@@ -38,6 +43,7 @@
                     <div class="sidebar-user-role" style="color:#4fc3f7;">Superadmin</div>
                 </div>
             </div>
+            <?php require __DIR__ . '/notification_center.php'; ?>
             <a href="/logout" class="btn-pacs-outline w-100 justify-content-center" style="font-size:.75rem;"><i class="fa fa-right-from-bracket"></i> Sair</a>
         </div>
     </nav>

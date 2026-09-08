@@ -16,6 +16,7 @@
 <script src="/assets/js/unidades/canais-personalizados.js?v=<?= $v ?>"></script>
 <?php endif; ?>
 <script src="/assets/js/shared/voxel-voltar.js?v=<?= $v ?>"></script>
+<script src="/assets/js/shared/notification-center.js?v=<?= $v ?>"></script>
 <script>
 // ── SIDEBAR TOGGLE ──────────────────────────────────────────
 (function() {

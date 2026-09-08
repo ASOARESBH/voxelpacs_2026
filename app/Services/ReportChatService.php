@@ -274,6 +274,16 @@ class ReportChatService
                 (string) ($context['public_token'] ?? '')
             );
 
+        // O sino recebe apenas um resumo operacional; textos clínicos e tokens
+        // de acesso continuam restritos ao canal do CHAT e às autorizações já existentes.
+        (new PlatformNotificationService())->emitOperationalEvent(
+            $isAchadoCritico ? 'achado_critico' : 'chat_pendente',
+            $tenantId,
+            (array) ($notification['recipient_ids'] ?? []),
+            $userId,
+            (int) $messageId
+        );
+
         if ($isAchadoCritico) {
             AuditLogger::log('estudo.achado_critico_marcado', 'bi_pacs_estudos', (int) $context['estudo_id'], [
                 'usuario_id' => $userId,

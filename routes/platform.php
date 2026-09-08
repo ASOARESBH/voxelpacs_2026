@@ -13,6 +13,18 @@ Router::get('/platform/configuracao-modulos',                 'Platform\ModuloCo
 Router::post('/platform/configuracao-modulos/salvar',         'Platform\ModuloConfiguracoesController@salvarGlobal');
 Router::post('/platform/configuracao-modulos/estudos/salvar', 'Platform\ModuloConfiguracoesController@salvarEstudos');
 
+// Comunicados da plataforma (superadmin; distinto das notificações operacionais por grupo).
+Router::get('/platform/notificacoes',                         'Platform\NotificacoesController@index');
+Router::get('/platform/notificacoes/nova',                    'Platform\NotificacoesController@create');
+Router::post('/platform/notificacoes',                        'Platform\NotificacoesController@save');
+Router::get('/platform/notificacoes/{id}/editar',             'Platform\NotificacoesController@edit');
+Router::post('/platform/notificacoes/{id}/atualizar',         'Platform\NotificacoesController@update');
+Router::post('/platform/notificacoes/{id}/pausar',            'Platform\NotificacoesController@pause');
+Router::post('/platform/notificacoes/{id}/reativar',          'Platform\NotificacoesController@resume');
+Router::post('/platform/notificacoes/{id}/arquivar',          'Platform\NotificacoesController@archive');
+Router::post('/platform/notificacoes/prever-alcance',         'Platform\NotificacoesController@previewAudience');
+Router::get('/platform/notificacoes/{id}/estatisticas',       'Platform\NotificacoesController@stats');
+
 // ============================================================
 // Negócios (Multi-Tenant)
 // ============================================================

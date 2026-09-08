@@ -13,6 +13,7 @@
     <link rel="preload" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" as="style" fetchpriority="high">
     <link rel="stylesheet" href="/assets/css/pacs.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" fetchpriority="high">
     <link rel="stylesheet" href="/assets/css/mobile-responsive.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>" fetchpriority="high">
+    <link rel="stylesheet" href="/assets/css/notification-center.css?v=<?= defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0' ?>">
     <!-- PWA: manifest + meta tags para instalação como app nativo -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1d4ed8">
@@ -225,6 +226,7 @@ try {
                     <div class="sidebar-user-role"><?= htmlspecialchars(\App\Core\TenantContext::name() ?: 'Plataforma') ?></div>
                 </div>
             </div>
+            <?php require __DIR__ . '/notification_center.php'; ?>
             <a href="/logout" class="btn-pacs-outline w-100 justify-content-center" style="font-size:.75rem;">
                 <i class="fa fa-right-from-bracket"></i>
                 <span class="sidebar-label">Sair</span>
@@ -309,6 +311,7 @@ try {
 
             <!-- Usuário logado -->
             <div class="d-flex align-items-center gap-2 ms-auto">
+                <?php require __DIR__ . '/notification_center.php'; ?>
                 <div class="sidebar-user-avatar" style="width:28px;height:28px;font-size:.7rem;">
                     <?= strtoupper(substr(\App\Core\Auth::user()?->name ?? 'U', 0, 1)) ?>
                 </div>
