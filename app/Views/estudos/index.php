@@ -2351,6 +2351,7 @@ function resetDownloadUI() {
 
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
+<!-- Asset do submenu Gerenciar: versão centralizada para evitar cache de runtime obsoleto. -->
 <?php $gestaoAssetVersion = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
 <script src="/assets/js/gestao-exames-gerenciar.js?v=<?= rawurlencode((string) $gestaoAssetVersion) ?>"></script>
 <?php endif; ?>
