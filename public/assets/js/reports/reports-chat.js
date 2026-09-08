@@ -2,6 +2,7 @@
  * VOXEL PACS — Reports / CHAT contextual
  * Uma conversa por report/tenant, com histórico e transição pendente/concluído.
  * Sincronização de publicação do formulário reduzido já validado.
+ * A ação crítica envia a interação já preenchida para validação no servidor.
  */
 window.VoxelReports = window.VoxelReports || {};
 

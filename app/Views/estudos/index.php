@@ -2,6 +2,7 @@
 /**
  * VOXEL PACS — Worklist de Estudos (v4)
  * Layout reformulado: compacto, ícones de sexo coloridos, SLA semafórico, Ações espaçosas e menu de visualizadores efetivo.
+ * O modal de CHAT reutiliza o contrato reduzido de destinatário e interação.
  */
 
 /* ─── helpers de URL ─────────────────────────────────────────────────────── */

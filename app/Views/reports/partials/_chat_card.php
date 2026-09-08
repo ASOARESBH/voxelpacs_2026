@@ -1,5 +1,6 @@
 <?php
 // Sincronização de publicação: formulário reduzido do CHAT já validado neste arquivo.
+// A ação crítica envia a interação preenchida por identificador explícito.
 /** @var array|null $chat */
 /** @var bool $readonly */
 $chat = is_array($chat ?? null) ? $chat : [];

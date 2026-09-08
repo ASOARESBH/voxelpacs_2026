@@ -1,5 +1,6 @@
 /* Gestão de Exames — submenu Gerenciar
  * O backend continua sendo a autoridade para tenant, pendência e prioridade.
+ * O CHAT usa o mesmo destinatário único e a mesma ação crítica explícita.
  */
 (function () {
     'use strict';

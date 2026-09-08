@@ -11,6 +11,7 @@ use App\Repositories\ReportChatRepository;
 /**
  * Regras de negócio do CHAT contextual do Report.
  * Destinatários e estados sempre são resolvidos dentro do tenant atual.
+ * A ação crítica é validada antes da mesma transação que abre a pendência.
  */
 class ReportChatService
 {

@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+// Mantém a validação da ação clínica explícita no endpoint compartilhado do CHAT.
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Logger;
