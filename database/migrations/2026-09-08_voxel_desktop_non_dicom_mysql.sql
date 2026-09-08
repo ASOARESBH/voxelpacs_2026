@@ -1,5 +1,6 @@
 -- VOXEL PACS: Voxel Desktop / Philips VUE Non-DICOM pull integration.
 -- Compatibilidade MySQL/MariaDB; destinos permanecem desligados até ativação controlada.
+-- Materialização de publicação restrita; sem alteração adicional de schema.
 CREATE TABLE IF NOT EXISTS pacs_voxel_desktop_destinations (
     id BIGINT NOT NULL AUTO_INCREMENT,
     tenant_id BIGINT NOT NULL,

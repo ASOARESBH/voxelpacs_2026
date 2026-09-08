@@ -1,5 +1,6 @@
 -- VOXEL PACS: Voxel Desktop / Philips VUE Non-DICOM pull integration.
 -- Estado inicial seguro: destinos desativados; nenhuma entrega é criada sem flag e destino elegível.
+-- Materialização de publicação restrita; sem alteração adicional de schema.
 SET search_path TO voxelpacs_mysql_source;
 
 CREATE TABLE IF NOT EXISTS pacs_voxel_desktop_destinations (
