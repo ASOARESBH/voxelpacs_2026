@@ -116,7 +116,9 @@ mustContain($js, '/api/reports/chat/send', 'Frontend não envia interação ao e
 mustContain($js, '/api/reports/chat/complete', 'Frontend não conclui CHAT pelo endpoint correto.');
 mustContain($js, 'function parseRecipient()', 'Frontend não separa com segurança o destinatário único.');
 mustContain($js, "assunto_codigo: isCritical ? 'achado_critico' : 'outro'", 'Frontend não preserva a classificação interna da interação.');
-mustContain($js, 'function setCriticalMode(enabled)', 'Frontend não preserva o modo explícito de Achado Crítico.');
+mustContain($js, "async function send(event, action = 'enviar_interacao')", 'Frontend não separa o envio comum da ação crítica explícita.');
+mustContain($js, "send(null, 'comunicar_achado_critico')", 'Ação crítica não envia a interação já preenchida.');
+mustContain($js, 'acao: action', 'Frontend não informa a ação explícita ao backend.');
 mustContain($js, 'reports:chat-status', 'Frontend não publica estado da pendência.');
 mustContain($js, 'reports:chat-completed', 'Conclusão no laudário não solicita a retomada de em_laudo.');
 mustContain($reportIndex, 'reports:chat-completed', 'Laudário não retoma em_laudo após concluir pendência aberta.');

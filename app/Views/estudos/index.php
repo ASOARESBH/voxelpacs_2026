@@ -1076,34 +1076,18 @@ $periodoLabel = [
                     <input type="hidden" id="gerenciarChatReportId" name="report_id" value="0">
                     <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
                     <input type="hidden" name="origem" value="gestao_exames">
-                    <div class="gerenciar-chat-grid">
-                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.destinatario')) ?>
-                            <select id="gerenciarChatTipo" name="destinatario_tipo" class="form-select form-select-sm">
-                                <option value="grupo"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?></option>
-                                <option value="usuario"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?></option>
-                            </select>
-                        </label>
-                        <label id="gerenciarChatGrupoWrap"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?>
-                            <select id="gerenciarChatGrupo" name="destinatario_grupo" class="form-select form-select-sm"></select>
-                        </label>
-                        <label id="gerenciarChatUsuarioWrap" style="display:none;"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?>
-                            <select id="gerenciarChatUsuario" name="destinatario_user_id" class="form-select form-select-sm"></select>
-                        </label>
-                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.tema')) ?>
-                            <select id="gerenciarChatAssuntoCodigo" name="assunto_codigo" class="form-select form-select-sm"></select>
-                        </label>
-                        <label class="gerenciar-chat-assunto"><?= htmlspecialchars(t('gestao_gerenciar.chat.assunto')) ?>
-                            <input id="gerenciarChatAssunto" name="assunto" class="form-control form-control-sm" maxlength="180" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.chat.assunto_placeholder')) ?>">
-                        </label>
-                    </div>
+                    <label class="gerenciar-chat-recipient" for="gerenciarChatDestinatario"><?= htmlspecialchars(t('gestao_gerenciar.chat.selecione_destinatario')) ?>
+                        <select id="gerenciarChatDestinatario" class="form-select form-select-sm"></select>
+                    </label>
                     <label class="gerenciar-chat-mensagem"><?= htmlspecialchars(t('gestao_gerenciar.chat.mensagem')) ?>
-                        <textarea id="gerenciarChatMensagem" name="mensagem" class="form-control" rows="3" maxlength="5000" required></textarea>
+                        <textarea id="gerenciarChatMensagem" name="mensagem" class="form-control" rows="3" maxlength="5000" required placeholder="<?= htmlspecialchars(t('gestao_gerenciar.chat.mensagem_placeholder')) ?>"></textarea>
                     </label>
                     <div class="gerenciar-chat-footer">
                         <small id="gerenciarChatHint" class="text-muted"></small>
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary btn-sm" id="gerenciarChatEnviar"><i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.enviar')) ?></button>
-                            <button type="button" class="btn btn-success btn-sm" id="gerenciarChatConcluir"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.concluir')) ?></button>
+                            <button type="submit" class="btn btn-primary btn-sm" id="gerenciarChatEnviar"><i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.enviar_interacao')) ?></button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" id="gerenciarChatCritical" style="display:none;"><i class="fa fa-triangle-exclamation"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.acao_achado_critico')) ?></button>
+                            <button type="button" class="btn btn-success btn-sm" id="gerenciarChatConcluir"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.concluir_liberar_evolucao')) ?></button>
                         </div>
                     </div>
                 </form>
@@ -1190,6 +1174,13 @@ $periodoLabel = [
      data-aguardando-saneamento="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_saneamento')) ?>"
      data-aguardando-contraparte="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_contraparte')) ?>"
      data-primeiro-envio="<?= htmlspecialchars(t('gestao_gerenciar.js.primeiro_envio')) ?>"
+     data-chat-mensagem-obrigatoria="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_mensagem_obrigatoria')) ?>"
+     data-chat-destinatario-obrigatorio="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_destinatario_obrigatorio')) ?>"
+     data-chat-confirmar-achado-critico="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_confirmar_achado_critico')) ?>"
+     data-chat-destinatarios-grupos="<?= htmlspecialchars(t('gestao_gerenciar.chat.destinatarios_grupos')) ?>"
+     data-chat-destinatarios-usuarios="<?= htmlspecialchars(t('gestao_gerenciar.chat.destinatarios_usuarios')) ?>"
+     data-chat-usuario="<?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?>"
+     data-chat-nenhum-destinatario="<?= htmlspecialchars(t('gestao_gerenciar.chat.nenhum_destinatario')) ?>"
      data-enviando="<?= htmlspecialchars(t('gestao_gerenciar.js.enviando')) ?>"
      data-enviado="<?= htmlspecialchars(t('gestao_gerenciar.js.enviado')) ?>"
      data-concluindo="<?= htmlspecialchars(t('gestao_gerenciar.js.concluindo')) ?>"
@@ -1463,9 +1454,7 @@ $periodoLabel = [
 .gerenciar-chat-message.is-own{border-left:3px solid var(--pacs-primary);}
 .gerenciar-chat-message header{display:flex;justify-content:space-between;gap:.5rem;font-size:.67rem;color:var(--pacs-text-muted);margin-bottom:.25rem;}
 .gerenciar-chat-message p{white-space:pre-wrap;word-break:break-word;font-size:.76rem;color:var(--pacs-text-primary);margin:0;}
-.gerenciar-chat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;}
-.gerenciar-chat-grid label,.gerenciar-chat-form>label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;font-weight:700;color:var(--pacs-text-secondary);}
-.gerenciar-chat-assunto{grid-column:1/-1;}
+.gerenciar-chat-recipient,.gerenciar-chat-form>label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;font-weight:700;color:var(--pacs-text-secondary);}
 .gerenciar-chat-mensagem{margin-top:.6rem;}
 .gerenciar-chat-footer{display:flex;justify-content:space-between;gap:.6rem;align-items:center;margin-top:.65rem;flex-wrap:wrap;}
 .gerenciar-prioridade-atual{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.7rem;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.18);border-radius:7px;margin-bottom:1rem;}
@@ -1475,8 +1464,6 @@ $periodoLabel = [
 #gerenciarPrioridadeForm label{font-size:.7rem;font-weight:700;color:var(--pacs-text-secondary);}
 @media (max-width: 720px){
     .gerenciar-submenu{grid-template-columns:1fr;}
-    .gerenciar-chat-grid{grid-template-columns:1fr;}
-    .gerenciar-chat-assunto{grid-column:auto;}
     .gerenciar-chat-history{max-height:38vh;}
 }
 .wl-btn-assumir{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;

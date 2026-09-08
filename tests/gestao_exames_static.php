@@ -111,6 +111,9 @@ $expect(str_contains($gerenciarMigration, 'INFORMATION_SCHEMA.COLUMNS') && str_c
 $expect(str_contains($gerenciarMigration, 'dicom_priority_override') && str_contains($gerenciarMigration, 'bi_pacs_estudos_prioridade_auditoria'), 'Migration sem override e auditoria de prioridade.');
 $expect(str_contains($gerenciarJs, '/api/gestao-exames/estudos/') && str_contains($gerenciarJs, '/prioridade'), 'Frontend não chama o endpoint de prioridade.');
 $expect(str_contains($gerenciarJs, 'origem: \'gestao_exames\'') && str_contains($gerenciarJs, '/api/reports/chat/send'), 'Frontend do Gerenciar não envia Chat com origem administrativa.');
+$expect(str_contains($view, 'gerenciarChatDestinatario') && !str_contains($view, 'gerenciarChatTipo'), 'Modal do Gerenciar não usa o formulário reduzido com destinatário único.');
+$expect(str_contains($view, 'gerenciarChatCritical') && str_contains($gerenciarJs, "sendChat(null, 'comunicar_achado_critico')"), 'Gestão de Exames não exige a ação crítica explícita após a interação.');
+$expect(str_contains($gerenciarJs, 'assunto_codigo: isCritical ? \'achado_critico\' : \'outro\'') && str_contains($gerenciarJs, 'acao: action'), 'Gestão de Exames não classifica nem envia a ação de CHAT corretamente.');
 $expect(str_contains($gerenciarJs, 'reason.length < 20'), 'Frontend não valida motivo mínimo da prioridade.');
 $expect(str_contains($gerenciarJs, "hidden.bs.modal") && str_contains($gerenciarJs, 'reopenGerenciarAfterDescription'), 'Descrição do Estudo não faz transição segura entre modais Bootstrap.');
 $expect(str_contains($gerenciarJs, 'function csrfToken()') && str_contains($gerenciarJs, 'csrf: csrfToken()'), 'Descrição do Estudo não recupera token CSRF do próprio formulário.');

@@ -25,9 +25,10 @@ $regras = [
         && !str_contains($card, 'chatDestinatarioTipo')
         && !str_contains($card, 'chatDestinatarioGrupo')
         && !str_contains($card, 'chatDestinatarioUsuario'),
-    'achado crítico permanece ação explícita' => str_contains($card, 'id="btn-chat-critical"')
-        && str_contains($card, 'id="chat-critical-alert"')
-        && str_contains($script, 'function setCriticalMode(enabled)'),
+    'achado crítico envia a interação já preenchida por ação explícita' => str_contains($card, 'id="btn-chat-critical"')
+        && str_contains($script, "send(null, 'comunicar_achado_critico')")
+        && str_contains($script, 'acao: action')
+        && !str_contains($script, 'function setCriticalMode(enabled)'),
     'botão de envio usa padrão primário' => str_contains($card, 'class="btn-pacs-primary reports-chat-send-btn" id="btn-chat-send"')
         && !str_contains($card, 'class="pacs-btn pacs-btn-primary"'),
     'botão de conclusão não depende de pacs-btn' => str_contains($card, 'class="btn-pacs-outline reports-chat-complete-btn" id="btn-chat-complete"'),

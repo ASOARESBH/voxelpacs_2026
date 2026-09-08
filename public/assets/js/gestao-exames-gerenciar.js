@@ -89,18 +89,6 @@
         return labels[value] || option?.label || value;
     }
 
-    function subjectLabel(option) {
-        const labels = {
-            erro_pedido: text('temaErroPedido'),
-            contraste: text('temaContraste'),
-            exames_complementares: text('temaExamesComplementares'),
-            duvida_administrativa: text('temaDuvidaAdministrativa'),
-            achado_critico: 'ACHADO CRÍTICO',
-            outro: text('temaOutro'),
-        };
-        return labels[String(option?.codigo || '')] || option?.label || option?.codigo || '';
-    }
-
     function reportStatusLabel(status) {
         const normalized = String(status || '').toLowerCase();
         const labels = {
@@ -152,11 +140,15 @@
         const canInteract = context?.can_interact !== false;
         const canComplete = context?.can_complete !== false;
         const send = $('#gerenciarChatEnviar');
+        const critical = $('#gerenciarChatCritical');
         const complete = $('#gerenciarChatConcluir');
         const message = $('#gerenciarChatMensagem');
+        const recipient = $('#gerenciarChatDestinatario');
         const hint = $('#gerenciarChatHint');
         if (send) send.disabled = !canInteract;
+        if (critical) critical.disabled = !canInteract;
         if (message) message.disabled = !canInteract;
+        if (recipient) recipient.disabled = !canInteract;
         if (complete) complete.disabled = !pending || !canComplete;
         if (hint) {
             hint.textContent = pending
@@ -215,22 +207,52 @@
 
         const chat = context?.chat || null;
         renderChatHistory(chat);
-        fillSelect($('#gerenciarChatGrupo'), chat?.groups || [], 'id', 'label', chat?.destinatario_grupo_id);
-        fillSelect($('#gerenciarChatUsuario'), chat?.users || [], 'id', 'name', chat?.destinatario_user_id);
-        fillSelect($('#gerenciarChatAssuntoCodigo'), chat?.subjects || [], 'codigo', 'label', chat?.assunto_codigo, subjectLabel);
-        $('#gerenciarChatTipo').value = chat?.destinatario_tipo || 'grupo';
-        $('#gerenciarChatAssunto').value = chat?.assunto || '';
+        fillChatRecipients(chat || {});
+        const canCommunicateCritical = (chat?.subjects || []).some((subject) => subject?.codigo === 'achado_critico');
+        const critical = $('#gerenciarChatCritical');
+        if (critical) critical.style.display = canCommunicateCritical ? '' : 'none';
         $('#gerenciarChatReportId').value = String(state.reportId);
-        updateChatRecipientVisibility();
         updateChatControls(chat || {}, context);
     }
 
-    function updateChatRecipientVisibility() {
-        const isUser = $('#gerenciarChatTipo')?.value === 'usuario';
-        const groupWrap = $('#gerenciarChatGrupoWrap');
-        const userWrap = $('#gerenciarChatUsuarioWrap');
-        if (groupWrap) groupWrap.style.display = isUser ? 'none' : 'flex';
-        if (userWrap) userWrap.style.display = isUser ? 'flex' : 'none';
+    function selectedChatRecipient(chat) {
+        const type = chat?.destinatario_tipo === 'usuario' ? 'usuario' : 'grupo';
+        const id = type === 'usuario' ? chat?.destinatario_user_id : chat?.destinatario_grupo_id;
+        return id ? `${type}:${id}` : '';
+    }
+
+    function fillChatRecipients(chat) {
+        const select = $('#gerenciarChatDestinatario');
+        if (!select) return;
+        const selected = selectedChatRecipient(chat);
+        const groups = Array.isArray(chat?.groups) ? chat.groups : [];
+        const users = Array.isArray(chat?.users) ? chat.users : [];
+        const groupOptions = groups.map((group) => {
+            const id = Number(group?.id || 0);
+            const count = Number(group?.total_membros || 0);
+            const label = `${group?.label || text('chatDestinatariosGrupos')}${count > 0 ? ` (${count})` : ''}`;
+            return `<option value="grupo:${id}"${selected === `grupo:${id}` ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        const userOptions = users.map((user) => {
+            const id = Number(user?.id || 0);
+            const label = `${user?.name || text('chatUsuario')}${user?.perfil ? ` — ${user.perfil}` : ''}`;
+            return `<option value="usuario:${id}"${selected === `usuario:${id}` ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        select.innerHTML = [
+            groupOptions ? `<optgroup label="${escapeHtml(text('chatDestinatariosGrupos'))}">${groupOptions}</optgroup>` : '',
+            userOptions ? `<optgroup label="${escapeHtml(text('chatDestinatariosUsuarios'))}">${userOptions}</optgroup>` : '',
+        ].join('') || `<option value="" selected disabled>${escapeHtml(text('chatNenhumDestinatario'))}</option>`;
+    }
+
+    function parseChatRecipient() {
+        const value = $('#gerenciarChatDestinatario')?.value || '';
+        const match = /^(grupo|usuario):([1-9][0-9]*)$/.exec(value);
+        if (!match) return null;
+        return {
+            type: match[1],
+            groupId: match[1] === 'grupo' ? match[2] : '',
+            userId: match[1] === 'usuario' ? match[2] : null,
+        };
     }
 
     async function loadContext(studyId) {
@@ -247,27 +269,58 @@
         showFeedback('', 'info');
     }
 
-    async function sendChat(event) {
-        event.preventDefault();
+    async function sendChat(event, action = 'enviar_interacao') {
+        event?.preventDefault();
         if (!state.reportId || state.context?.can_interact === false) return;
-        const form = $('#gerenciarChatForm');
-        const data = Object.fromEntries(new FormData(form).entries());
-        data.report_id = state.reportId;
-        data.csrf = state.csrf;
-        if (data.assunto_codigo === 'achado_critico' && !window.confirm('Confirmar o registro de ACHADO CRÍTICO? A sinalização será gravada no estudo e os administradores do tenant serão notificados por e-mail.')) return;
+        const message = $('#gerenciarChatMensagem');
+        const body = String(message?.value || '').trim();
+        const recipient = parseChatRecipient();
+        const isCritical = action === 'comunicar_achado_critico';
+        if (!body) {
+            showChatStatus(text('chatMensagemObrigatoria'), 'danger');
+            message?.focus();
+            return;
+        }
+        if (!recipient) {
+            showChatStatus(text('chatDestinatarioObrigatorio'), 'danger');
+            $('#gerenciarChatDestinatario')?.focus();
+            return;
+        }
+        if (isCritical && !window.confirm(text('chatConfirmarAchadoCritico'))) return;
+        const data = {
+            report_id: state.reportId,
+            csrf: state.csrf,
+            origem: 'gestao_exames',
+            destinatario_tipo: recipient.type,
+            destinatario_grupo: recipient.groupId,
+            destinatario_user_id: recipient.userId,
+            assunto_codigo: isCritical ? 'achado_critico' : 'outro',
+            assunto: '',
+            mensagem: body,
+            acao: action,
+        };
         showChatStatus(text('enviando'), 'info');
-        const response = await fetch('/api/reports/chat/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin',
-            body: JSON.stringify(data)
-        });
-        let payload = {};
-        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
-        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
-        $('#gerenciarChatMensagem').value = '';
-        await loadContext(state.studyId);
-        showChatStatus(payload.email_warning || text('enviado'), payload.email_warning ? 'warning' : 'success');
+        const send = $('#gerenciarChatEnviar');
+        const critical = $('#gerenciarChatCritical');
+        if (send) send.disabled = true;
+        if (critical) critical.disabled = true;
+        try {
+            const response = await fetch('/api/reports/chat/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                body: JSON.stringify(data)
+            });
+            let payload = {};
+            try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            message.value = '';
+            await loadContext(state.studyId);
+            showChatStatus(payload.email_warning || text('enviado'), payload.email_warning ? 'warning' : 'success');
+        } finally {
+            if (send) send.disabled = false;
+            if (critical) critical.disabled = false;
+        }
     }
 
     async function completeChat() {
@@ -602,9 +655,11 @@
             modal('gerenciarModal')?.show();
         });
         $('#gerenciarPrioridadeSelect')?.addEventListener('change', loadPriorityRecipients);
-        $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
             sendChat(event).catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarChatCritical')?.addEventListener('click', () => {
+            sendChat(null, 'comunicar_achado_critico').catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarChatConcluir')?.addEventListener('click', () => {
             completeChat().catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));

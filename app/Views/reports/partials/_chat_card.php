@@ -102,19 +102,6 @@ $selectedRecipient = $recipientType === 'usuario' && $recipientUser > 0
                 </select>
             </div>
 
-            <?php if ($chatCanCommunicateCritical): ?>
-            <div class="reports-chat-critical-controls">
-                <button type="button" class="btn-pacs-outline reports-chat-critical-btn" id="btn-chat-critical" aria-pressed="false">
-                    <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
-                    <?= htmlspecialchars(t('report_chat.acao_achado_critico')) ?>
-                </button>
-                <div id="chat-critical-alert" class="reports-chat-critical-alert d-none" role="alert">
-                    <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
-                    <span><?= htmlspecialchars(t('report_chat.aviso_achado_critico')) ?></span>
-                </div>
-            </div>
-            <?php endif; ?>
-
             <div class="reports-chat-field">
                 <label for="chatMensagem"><?= htmlspecialchars(t('report_chat.mensagem')) ?></label>
                 <textarea id="chatMensagem" class="form-control form-control-sm" rows="4" maxlength="5000"
@@ -125,6 +112,12 @@ $selectedRecipient = $recipientType === 'usuario' && $recipientUser > 0
                 <button type="submit" class="btn-pacs-primary reports-chat-send-btn" id="btn-chat-send">
                     <i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('report_chat.enviar')) ?>
                 </button>
+                <?php if ($chatCanCommunicateCritical): ?>
+                <button type="button" class="btn-pacs-outline reports-chat-critical-btn" id="btn-chat-critical">
+                    <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
+                    <?= htmlspecialchars(t('report_chat.acao_achado_critico')) ?>
+                </button>
+                <?php endif; ?>
                 <button type="button" class="btn-pacs-outline reports-chat-complete-btn" id="btn-chat-complete" <?= $chatPending && !empty($chat['can_complete']) ? '' : 'style="display:none"' ?>>
                     <i class="fa fa-check"></i> <?= htmlspecialchars(t('report_chat.concluir_liberar_evolucao')) ?>
                 </button>

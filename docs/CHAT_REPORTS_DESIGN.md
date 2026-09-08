@@ -14,11 +14,13 @@ O módulo usa o cadastro real de grupos organizacionais `bi_grupos` e `bi_grupo_
 
 O estado da conversa é `pendente` ou `concluido`. Ao enviar uma interação, a conversa é criada ou reaberta e o estudo recebe `situacao = 'pendente'`. O estado anterior é salvo para que a conclusão restaure o fluxo anterior de forma determinística. Ao concluir, o estudo retorna ao estado anterior permitido, preferindo `em_laudo` quando o valor anterior não for um estado editável.
 
-## Formulário reduzido no Laudário
+## Formulário reduzido no Laudário e na Gestão de Exames
 
-No laudário, o formulário operacional exibe somente o seletor único de destinatário, o campo de interação e a ação de envio. O seletor reúne grupos e usuários ativos do tenant, mas o navegador continua enviando internamente o tipo e o identificador de destinatário esperados pelo serviço. O tema comum e o campo livre de assunto deixam de ser exibidos; a interação comum utiliza a classificação interna `outro` e o assunto correspondente, preservando o histórico, o e-mail e a auditoria existentes.
+No laudário e no modal de Gestão de Exames, o formulário operacional exibe somente o seletor único de destinatário, o campo de interação e a ação de envio. O seletor reúne grupos e usuários ativos do tenant, mas o navegador continua enviando internamente o tipo e o identificador de destinatário esperados pelo serviço. O tema comum e o campo livre de assunto deixam de ser exibidos; a interação comum utiliza a classificação interna `outro` e o assunto correspondente, preservando o histórico, o e-mail e a auditoria existentes.
 
-**Achado crítico** permanece uma ação médica separada e explícita. Ela habilita o modo crítico no mesmo formulário, exibe aviso visual, exige a confirmação reforçada já existente e continua limitada pelo servidor ao perfil médico. O fluxo preserva a marcação clínica, a auditoria e a notificação obrigatória dos administradores ativos do tenant.
+**Achado crítico** permanece uma ação médica separada e explícita. O médico deve preencher a interação e acionar **Comunicar achado crítico**; a ação exige confirmação reforçada no cliente e um identificador de ação correspondente no servidor. O servidor rejeita marcação crítica enviada pela ação comum, mantém a restrição de perfil médico e preserva a marcação clínica, auditoria e notificação obrigatória dos administradores ativos do tenant.
+
+Toda interação válida, crítica ou comum, é persistida na mesma transação que abre ou mantém o CHAT em `pendente` e altera a situação do estudo para `pendente`. A liberação do fluxo continua dependente de resposta da contraparte e conclusão explícita, não de um envio isolado.
 
 Após resposta da contraparte, a conclusão continua explícita e auditável pelo botão **Concluir pendência e liberar evolução**. A resposta isolada não reabre nem libera automaticamente o fluxo do laudo.
 

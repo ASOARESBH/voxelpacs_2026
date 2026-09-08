@@ -163,6 +163,8 @@ class ReportChatController extends Controller
             'destinatario_autor' => 'Escolha outro usuário para receber a interação.',
             'aguardando_contraparte' => 'A pendência está aguardando a resposta da parte contrária.',
             'estudo_finalizado' => 'Este estudo já foi finalizado e não aceita novas pendências.',
+            'acao_chat_invalida' => 'Ação de CHAT inválida.',
+            'achado_critico_acao_explicita' => 'Digite a interação e use Comunicar achado crítico para registrar a comunicação clínica.',
             'achado_critico_restrito_medico' => 'Somente médicos podem comunicar achados críticos.',
             'chat_sem_pendencia' => 'Não há pendência aberta para concluir.',
             'persistencia_falhou' => 'Não foi possível salvar a interação. Verifique a migration do CHAT.',

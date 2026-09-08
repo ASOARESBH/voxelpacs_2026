@@ -173,6 +173,16 @@ class ReportChatService
         if (mb_strlen($assunto, 'UTF-8') > 180) $assunto = mb_substr($assunto, 0, 180, 'UTF-8');
 
         $isAchadoCritico = $assuntoCodigo === 'achado_critico';
+        $acao = (string) ($input['acao'] ?? 'enviar_interacao');
+        if (!in_array($acao, ['enviar_interacao', 'comunicar_achado_critico'], true)) {
+            return ['ok' => false, 'error' => 'acao_chat_invalida'];
+        }
+        if ($isAchadoCritico && $acao !== 'comunicar_achado_critico') {
+            return ['ok' => false, 'error' => 'achado_critico_acao_explicita'];
+        }
+        if (!$isAchadoCritico && $acao === 'comunicar_achado_critico') {
+            return ['ok' => false, 'error' => 'acao_chat_invalida'];
+        }
         if ($isAchadoCritico && Auth::perfilAtual() !== 'medico') {
             return ['ok' => false, 'error' => 'achado_critico_restrito_medico'];
         }
@@ -272,6 +282,7 @@ class ReportChatService
             'destinatario_grupo_id' => $destinatarioGrupoId,
             'destinatario_user_id' => $destinatarioUserId,
             'achado_critico' => $isAchadoCritico,
+            'acao' => $acao,
         ], $tenantId, 'gestao_estudos');
 
         Logger::info('[ReportChatService::send] interação registrada', [

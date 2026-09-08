@@ -61,6 +61,8 @@ requireCritical($repo, "ut.perfil = \\'admin\\'", 'Destinatários obrigatórios 
 requireCritical($service, "'achado_critico' => 'ACHADO CRÍTICO'", 'Tema ACHADO CRÍTICO não está cadastrado.');
 requireCritical($service, "Auth::perfilAtual() !== 'medico'", 'A regra de perfil médico não é validada no servidor.');
 requireCritical($service, 'achado_critico_restrito_medico', 'Erro de permissão do Achado Crítico ausente.');
+requireCritical($service, "'comunicar_achado_critico'", 'Serviço não exige a ação crítica explícita.');
+requireCritical($service, 'achado_critico_acao_explicita', 'Serviço não bloqueia Achado Crítico enviado pela ação comum.');
 requireCritical($service, 'markCriticalFinding', 'Serviço não delega a persistência do Achado Crítico.');
 requireCritical($service, "AuditLogger::log('estudo.achado_critico_marcado'", 'Auditoria de Achado Crítico ausente.');
 requireCritical($service, 'notifyCriticalRecipients', 'Notificação clínica obrigatória não foi separada.');
@@ -68,6 +70,8 @@ requireCritical($service, 'listActiveTenantAdmins', 'Administradores não são i
 requireCritical($service, 'Mailer::send', 'Resultado real de envio de e-mail não é verificado.');
 requireCritical($service, 'email_warning', 'Falha de e-mail não retorna aviso ao CHAT.');
 requireCritical($service, 'VIEWER_ERP_URL', 'Link do e-mail não usa a URL oficial do ERP.');
+requireCritical($service, '$this->repo->upsertPending(', 'Interação válida não mantém a pendência contextual do CHAT.');
+requireCritical($service, "updateStudySituation((int) \$context['estudo_id'], \$tenantId, 'pendente')", 'Interação válida não submete o estudo à pendência.');
 if (strpos($service, 'SET prioridade') !== false) {
     throw new RuntimeException('Achado Crítico não pode alterar o campo prioridade.');
 }
@@ -75,12 +79,11 @@ if (strpos($service, 'SET prioridade') !== false) {
 // Endpoint e interface do Laudário.
 requireCritical($controller, 'achado_critico_restrito_medico', 'Controller não traduz a restrição do Achado Crítico.');
 requireCritical($chatView, 'btn-chat-critical', 'Card de CHAT não expõe ação explícita de Achado Crítico.');
-requireCritical($chatView, 'chat-critical-alert', 'Card de CHAT não possui alerta visual de Achado Crítico.');
 requireCritical($reportsJs, "'achado_critico'", 'JavaScript do Laudário não reconhece o tema crítico.');
 requireCritical($reportsJs, 'criticalConfirm', 'JavaScript do Laudário não confirma a comunicação crítica.');
-requireCritical($reportsJs, 'setCriticalMode', 'JavaScript do Laudário não controla o modo crítico explícito.');
+requireCritical($reportsJs, "send(null, 'comunicar_achado_critico')", 'JavaScript do Laudário não envia a interação pela ação crítica explícita.');
+requireCritical($reportsJs, 'acao: action', 'JavaScript do Laudário não informa a ação crítica ao backend.');
 requireCritical($reportsJs, 'email_warning', 'JavaScript do Laudário não mostra aviso de e-mail.');
-requireCritical($reportsCss, '.reports-chat-critical-alert', 'CSS do alerta clínico no CHAT ausente.');
 
 // Worklist: projeção, contador com escopo, card e badge distintos de urgência.
 requireCritical($worklistController, 'e.achado_critico_em', 'Worklist não projeta data do Achado Crítico.');
@@ -93,8 +96,11 @@ requireCritical($worklistView, 'wl-card-achado-critico', 'Card de resumo de Acha
 requireCritical($pacsCss, '.achado-critico-badge', 'CSS do badge de Achado Crítico ausente.');
 requireCritical($pacsCss, '#d946ef', 'Badge de Achado Crítico não usa cor visualmente distinta.');
 
-// Gestão de Exames usa o mesmo endpoint e reconhece o mesmo tema.
-requireCritical($managementJs, "achado_critico: 'ACHADO CRÍTICO'", 'Gestão de Exames não lista o tema crítico.');
+// Gestão de Exames usa o mesmo endpoint e a mesma ação crítica explícita.
+requireCritical($worklistView, 'gerenciarChatDestinatario', 'Gestão de Exames não possui o seletor único de destinatário.');
+requireCritical($worklistView, 'gerenciarChatCritical', 'Gestão de Exames não expõe a ação crítica explícita.');
+requireCritical($managementJs, 'function parseChatRecipient()', 'Gestão de Exames não separa o destinatário único com segurança.');
+requireCritical($managementJs, "sendChat(null, 'comunicar_achado_critico')", 'Gestão de Exames não envia a interação pela ação crítica explícita.');
 requireCritical($managementJs, '/api/reports/chat/send', 'Gestão de Exames não usa o endpoint compartilhado do CHAT.');
 requireCritical($managementJs, 'email_warning', 'Gestão de Exames não exibe falha de e-mail do Achado Crítico.');
 

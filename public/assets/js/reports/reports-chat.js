@@ -9,7 +9,6 @@ window.VoxelReports.chat = (function () {
     let config = null;
     let state = { pending: false, status: 'sem_chat', messages: [], can_complete: false };
     let busy = false;
-    let criticalMode = false;
 
     const fallbackText = {
         pending: 'Pendente',
@@ -100,16 +99,6 @@ window.VoxelReports.chat = (function () {
         document.dispatchEvent(new CustomEvent('reports:chat-status', { detail: { pending: state.pending } }));
     }
 
-    function setCriticalMode(enabled) {
-        const button = document.getElementById('btn-chat-critical');
-        criticalMode = Boolean(enabled && button);
-        if (button) {
-            button.classList.toggle('is-active', criticalMode);
-            button.setAttribute('aria-pressed', criticalMode ? 'true' : 'false');
-        }
-        document.getElementById('chat-critical-alert')?.classList.toggle('d-none', !criticalMode);
-    }
-
     function selectedRecipient(chat) {
         const type = chat?.destinatario_tipo === 'usuario' ? 'usuario' : 'grupo';
         const id = type === 'usuario' ? chat?.destinatario_user_id : chat?.destinatario_grupo_id;
@@ -137,7 +126,6 @@ window.VoxelReports.chat = (function () {
             if (!response.ok || !data.ok) throw new Error(data.msg || text('error'));
             renderStatus(data.chat || {});
             setSelectValue('chatDestinatario', selectedRecipient(data.chat));
-            setCriticalMode(false);
             return data.chat;
         } catch (error) {
             setFeedback(error.message || text('error'), true);
@@ -145,13 +133,13 @@ window.VoxelReports.chat = (function () {
         }
     }
 
-    async function send(event) {
-        event.preventDefault();
+    async function send(event, action = 'enviar_interacao') {
+        event?.preventDefault();
         if (busy) return;
         const message = document.getElementById('chatMensagem');
         const body = (message?.value || '').trim();
         const recipient = parseRecipient();
-        const isCritical = criticalMode;
+        const isCritical = action === 'comunicar_achado_critico';
         if (!body) {
             setFeedback(text('required'), true);
             message?.focus();
@@ -166,8 +154,10 @@ window.VoxelReports.chat = (function () {
 
         busy = true;
         setFeedback('');
-        const button = document.getElementById('btn-chat-send');
-        if (button) button.disabled = true;
+        const sendButton = document.getElementById('btn-chat-send');
+        const criticalButton = document.getElementById('btn-chat-critical');
+        if (sendButton) sendButton.disabled = true;
+        if (criticalButton) criticalButton.disabled = true;
         const payload = {
             report_id: config.reportId,
             csrf: config.csrf,
@@ -177,6 +167,7 @@ window.VoxelReports.chat = (function () {
             assunto_codigo: isCritical ? 'achado_critico' : 'outro',
             assunto: '',
             mensagem: body,
+            acao: action,
         };
         try {
             const response = await fetch('/api/reports/chat/send', {
@@ -193,7 +184,8 @@ window.VoxelReports.chat = (function () {
             setFeedback(error.message || text('error'), true);
         } finally {
             busy = false;
-            if (button) button.disabled = false;
+            if (sendButton) sendButton.disabled = false;
+            if (criticalButton) criticalButton.disabled = false;
         }
     }
 
@@ -231,10 +223,9 @@ window.VoxelReports.chat = (function () {
     function init(cfg) {
         config = cfg;
         const form = document.getElementById('reportChatForm');
-        document.getElementById('btn-chat-critical')?.addEventListener('click', () => setCriticalMode(!criticalMode));
+        document.getElementById('btn-chat-critical')?.addEventListener('click', () => send(null, 'comunicar_achado_critico'));
         document.getElementById('btn-chat-complete')?.addEventListener('click', complete);
         if (form) form.addEventListener('submit', send);
-        setCriticalMode(false);
         load();
     }
 
