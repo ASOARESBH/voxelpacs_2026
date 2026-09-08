@@ -2351,5 +2351,6 @@ function resetDownloadUI() {
 
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260828-informacoes-estudo-v3"></script>
+<?php $gestaoAssetVersion = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=<?= rawurlencode((string) $gestaoAssetVersion) ?>"></script>
 <?php endif; ?>

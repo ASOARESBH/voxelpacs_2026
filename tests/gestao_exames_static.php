@@ -55,6 +55,8 @@ $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi rend
 $expect(str_contains($view, 'gerenciar-trigger') && str_contains($view, "t('gestao_gerenciar.acao.gerenciar')"), 'Botão Gerenciar não está na Worklist ou não está internacionalizado.');
 $expect(str_contains($view, 'id="gerenciarModal"') && str_contains($view, 'id="gerenciarChatModal"') && str_contains($view, 'id="gerenciarPrioridadeModal"') && str_contains($view, 'id="gerenciarDescricaoModal"'), 'Modais do submenu Gerenciar incompletos.');
 $expect(str_contains($view, 'gestao-exames-gerenciar.js'), 'JavaScript do submenu Gerenciar não foi carregado.');
+$expect(str_contains($view, "\$gestaoAssetVersion = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'") && str_contains($view, 'rawurlencode((string) $gestaoAssetVersion)'), 'JavaScript do submenu Gerenciar não usa o versionamento central de assets.');
+$expect(!str_contains($view, 'gestao-exames-gerenciar.js?v=20260828-informacoes-estudo-v3'), 'JavaScript do submenu Gerenciar mantém uma versão fixa de cache obsoleta.');
 $expect(str_contains($view, "setAttribute('capture', 'environment')"), 'Fallback de câmera não está configurado.');
 $expect(str_contains($view, 'id="pedidoCameraFile"') && str_contains($view, 'accept="image/*" capture="environment"'), 'Input nativo exclusivo de câmera ausente.');
 $expect(str_contains($view, 'cameraInput.click()'), 'Botão Câmera não aciona o input exclusivo.');
