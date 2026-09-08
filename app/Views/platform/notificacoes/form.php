@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 $item = $notification ?? []; $isEdit = !empty($item['id']); $action = $isEdit ? '/platform/notificacoes/' . (int) $item['id'] . '/atualizar' : '/platform/notificacoes';
 $value = static fn(string $key, string $default = ''): string => htmlspecialchars((string) ($item[$key] ?? $default), ENT_QUOTES, 'UTF-8');
 ?>

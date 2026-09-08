@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 $success = $_SESSION['success'] ?? null; $error = $_SESSION['error'] ?? null; unset($_SESSION['success'], $_SESSION['error']);
 $statusClass = static fn(string $status): string => match ($status) { 'ativa' => 'success', 'agendada' => 'primary', 'pausada' => 'warning', 'arquivada' => 'secondary', default => 'light text-dark' };
 ?>

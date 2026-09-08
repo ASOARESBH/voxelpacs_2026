@@ -13,7 +13,7 @@ Router::get('/platform/configuracao-modulos',                 'Platform\ModuloCo
 Router::post('/platform/configuracao-modulos/salvar',         'Platform\ModuloConfiguracoesController@salvarGlobal');
 Router::post('/platform/configuracao-modulos/estudos/salvar', 'Platform\ModuloConfiguracoesController@salvarEstudos');
 
-// Comunicados da plataforma (superadmin; distinto das notificações operacionais por grupo).
+// Comunicados da plataforma (superadmin; distinto das notificações operacionais por grupo; runtime controlado).
 Router::get('/platform/notificacoes',                         'Platform\NotificacoesController@index');
 Router::get('/platform/notificacoes/nova',                    'Platform\NotificacoesController@create');
 Router::post('/platform/notificacoes',                        'Platform\NotificacoesController@save');

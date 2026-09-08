@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 
 namespace App\Repositories;
 

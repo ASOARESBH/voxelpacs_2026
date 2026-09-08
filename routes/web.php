@@ -219,7 +219,7 @@ Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::post('/configuracoes/viewer-desktop/salvar', 'ConfiguracoesController@salvarViewerDesktop');
 
-// Central do sino: identificação de usuário e tenant é sempre derivada da sessão.
+// Central do sino: identificação de usuário e tenant é sempre derivada da sessão; runtime controlado.
 Router::get('/api/notificacoes',              'NotificationCenterController@list');
 Router::post('/api/notificacoes/{id}/visto',  'NotificationCenterController@viewed');
 Router::post('/api/notificacoes/{id}/confirmar', 'NotificationCenterController@confirm');

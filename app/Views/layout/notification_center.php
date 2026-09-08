@@ -1,3 +1,4 @@
+<!-- Materialização controlada do runtime de notificações. -->
 <div class="notification-center" data-notification-center
      data-empty="<?= htmlspecialchars(t('platform_notifications.empty_bell'), ENT_QUOTES) ?>"
      data-confirm="<?= htmlspecialchars(t('platform_notifications.confirm_continue'), ENT_QUOTES) ?>"

@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 // English. Must have the exact same keys as pt_BR.php and es.php (ver diagnostics/i18n.md).
 // Runtime publication synchronization for the reduced Reports CHAT form.
 // Management keeps the same reduced operational CHAT form.

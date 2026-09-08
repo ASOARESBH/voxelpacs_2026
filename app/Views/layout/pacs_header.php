@@ -34,6 +34,7 @@
 <body>
 
 <?php
+// Materialização controlada do runtime de notificações.
 $medicoRestrito = \App\Core\Access\MedicoAccess::isRestricted();
 $moduleAccess = '\\App\\Core\\Access\\ModuleAccess';
 $canModule = static fn (string $key): bool => $moduleAccess::canAccess($key);

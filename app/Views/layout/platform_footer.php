@@ -7,6 +7,7 @@
 <script src="/assets/js/shared/voxel-quill-factory.js?v=<?= $v ?>"></script>
 <?php endif; ?>
 <script src="/assets/js/shared/voxel-voltar.js?v=<?= $v ?>"></script>
+<!-- Materialização controlada do runtime de notificações. -->
 <script src="/assets/js/shared/notification-center.js?v=<?= $v ?>"></script>
 <script>
 // Tooltips (ex: descrição de modalidade DICOM — dicom-modality)
