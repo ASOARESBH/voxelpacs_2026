@@ -4,7 +4,9 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 
-<?php $v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
+<?php
+// Sincronização de publicação: manter os textos do CHAT reduzido disponíveis no runtime.
+$v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
 <script>
     window.VoxelReports = window.VoxelReports || {};
     window.VoxelReports.chatI18n = <?= json_encode([

@@ -1,4 +1,5 @@
 <?php
+// Sincronização de publicação: formulário reduzido do CHAT já validado neste arquivo.
 /** @var array|null $chat */
 /** @var bool $readonly */
 $chat = is_array($chat ?? null) ? $chat : [];

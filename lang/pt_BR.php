@@ -1,6 +1,7 @@
 <?php
 // Idioma padrão do sistema — fallback de qualquer chave ausente nos outros idiomas.
 // Convenção de chave: modulo.tela.elemento (ver patterns/padrao-i18n.md).
+// Sincronização de publicação do formulário reduzido do CHAT.
 return [
     // Vocabulário comum, reutilizável entre telas
     'comum.idioma.pt_br' => 'Português (Brasil)',

@@ -1,5 +1,6 @@
 <?php
 // Español. Debe tener exactamente las mismas claves que pt_BR.php y en.php (ver diagnostics/i18n.md).
+// Sincronización de publicación del formulario reducido de CHAT en Reports.
 return [
     'comum.idioma.pt_br' => 'Portugués (Brasil)',
     'comum.idioma.en'    => 'Inglés',

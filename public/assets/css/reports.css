@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    VOXEL PACS — Módulo Reports (Editor de Laudo)
    Reaproveita as variáveis --pacs-* definidas em pacs.css
+   Sincronização de publicação do formulário reduzido do CHAT
    ═══════════════════════════════════════════════════════════════ */
 
 * { box-sizing: border-box; }
