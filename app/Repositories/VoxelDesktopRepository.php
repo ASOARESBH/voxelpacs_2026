@@ -31,6 +31,21 @@ final class VoxelDesktopRepository
         return $row ?: null;
     }
 
+    public function setDestinationEnabled(int $tenantId, int $destinationId, bool $enabled): bool
+    {
+        $destination = $this->findDestination($tenantId, $destinationId, true);
+        if (!$destination) throw new DomainException('destination_not_found');
+        if ($enabled && trim((string)$destination['configuration_secret']) === '') throw new DomainException('destination_token_missing');
+        if ($enabled) {
+            $conflict=$this->pdo->prepare('SELECT 1 FROM pacs_voxel_desktop_destinations WHERE router_id=:router_id AND site_id=:site_id AND enabled=1 AND id<>:id LIMIT 1');
+            $conflict->execute([':router_id'=>(string)$destination['router_id'], ':site_id'=>(string)$destination['site_id'], ':id'=>$destinationId]);
+            if ($conflict->fetchColumn()) throw new DomainException('destination_pair_conflict');
+        }
+        $stmt=$this->pdo->prepare('UPDATE pacs_voxel_desktop_destinations SET enabled=:enabled, disparar_na_liberacao=0, updated_at=NOW() WHERE id=:id AND tenant_id=:tenant_id');
+        $stmt->execute([':enabled'=>$enabled?1:0, ':id'=>$destinationId, ':tenant_id'=>$tenantId]);
+        return $stmt->rowCount()===1;
+    }
+
     /** @param array<string,mixed> $data */
     public function saveDestination(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
@@ -38,7 +53,7 @@ final class VoxelDesktopRepository
             $existing = $this->findDestination($tenantId, $destinationId, true);
             if (!$existing) throw new DomainException('Destino Voxel Desktop não encontrado neste negócio.');
             $stmt = $this->pdo->prepare("UPDATE pacs_voxel_desktop_destinations SET nome=:nome, router_id=:router_id, site_id=:site_id, profile=:profile, ambiente=:ambiente, enabled=:enabled, disparar_na_liberacao=:disparar, issuer_of_patient_id_normalized=:issuer, institution_name=:institution, configuration_json=:config, configuration_secret=CASE WHEN :secret_check = '' THEN configuration_secret ELSE :secret_value END, timeout_seconds=:timeout, max_attempts=:attempts, updated_at=NOW() WHERE id=:id AND tenant_id=:tenant_id");
-            $stmt->execute([':nome'=>$data['nome'], ':router_id'=>$data['router_id'], ':site_id'=>$data['site_id'], ':profile'=>$data['profile'], ':ambiente'=>$data['ambiente'], ':enabled'=>(int)$data['enabled'], ':disparar'=>(int)$data['disparar_na_liberacao'], ':issuer'=>$data['issuer_of_patient_id_normalized'] ?: null, ':institution'=>$data['institution_name'] ?: null, ':config'=>$data['configuration_json'], ':secret_check'=>$data['configuration_secret'], ':secret_value'=>$data['configuration_secret'], ':timeout'=>(int)$data['timeout_seconds'], ':attempts'=>(int)$data['max_attempts'], ':id'=>$destinationId, ':tenant_id'=>$tenantId]);
+            $stmt->execute([':nome'=>$data['nome'], ':router_id'=>$data['router_id'], ':site_id'=>$data['site_id'], ':profile'=>$data['profile'], ':ambiente'=>$data['ambiente'], ':enabled'=>(int)$data['enabled'], ':disparar'=>0, ':issuer'=>$data['issuer_of_patient_id_normalized'] ?: null, ':institution'=>$data['institution_name'] ?: null, ':config'=>$data['configuration_json'], ':secret_check'=>$data['configuration_secret'], ':secret_value'=>$data['configuration_secret'], ':timeout'=>(int)$data['timeout_seconds'], ':attempts'=>(int)$data['max_attempts'], ':id'=>$destinationId, ':tenant_id'=>$tenantId]);
             return $destinationId;
         }
         $sql = 'INSERT INTO pacs_voxel_desktop_destinations (tenant_id, estabelecimento_id, nome, router_id, site_id, profile, ambiente, enabled, disparar_na_liberacao, issuer_of_patient_id_normalized, institution_name, configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by) VALUES (:tenant_id, :estabelecimento_id, :nome, :router_id, :site_id, :profile, :ambiente, :enabled, :disparar, :issuer, :institution, :config, :secret, :timeout, :attempts, :created_by)';
@@ -53,20 +68,83 @@ final class VoxelDesktopRepository
         return (int)$this->pdo->lastInsertId();
     }
 
+    /** @return array{test_id:int,expires_at:string} */
+    public function prepareManualTest(int $tenantId, int $destinationId, int $reportId, int $estudoId, int $version, int $requestedBy): array
+    {
+        $existing=$this->pdo->prepare("SELECT id FROM pacs_voxel_desktop_manual_tests WHERE tenant_id=:tenant AND destination_id=:destination AND report_id=:report AND report_version=:version AND status IN ('prepared','leased','artifact_ready','package_submitted') AND expires_at>NOW() LIMIT 1");
+        $existing->execute([':tenant'=>$tenantId, ':destination'=>$destinationId, ':report'=>$reportId, ':version'=>$version]);
+        if ($existing->fetchColumn()) throw new DomainException('manual_test_already_prepared');
+        $key=hash('sha256', implode('|',[$tenantId,$destinationId,$reportId,$version,bin2hex(random_bytes(16))]));
+        $expires=gmdate('Y-m-d H:i:sP', time()+20*60);
+        $sql='INSERT INTO pacs_voxel_desktop_manual_tests (tenant_id,destination_id,report_id,estudo_id,report_version,idempotency_key,expires_at,requested_by) VALUES (:tenant,:destination,:report,:study,:version,:key,:expires,:requested_by)';
+        $params=[':tenant'=>$tenantId, ':destination'=>$destinationId, ':report'=>$reportId, ':study'=>$estudoId, ':version'=>$version, ':key'=>$key, ':expires'=>$expires, ':requested_by'=>$requestedBy];
+        if (SqlHelper::isPostgres()) { $stmt=$this->pdo->prepare($sql.' RETURNING id'); $stmt->execute($params); $id=(int)$stmt->fetchColumn(); }
+        else { $stmt=$this->pdo->prepare($sql); $stmt->execute($params); $id=(int)$this->pdo->lastInsertId(); }
+        return ['test_id'=>$id, 'expires_at'=>$expires];
+    }
+
+    /** @return array<string,mixed>|null */
+    public function claimManualTest(int $destinationId, int $tenantId, string $routerId): ?array
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $suffix=SqlHelper::isPostgres()?' FOR UPDATE SKIP LOCKED':' FOR UPDATE';
+            $stmt=$this->pdo->prepare("SELECT * FROM pacs_voxel_desktop_manual_tests WHERE destination_id=:destination AND tenant_id=:tenant AND status='prepared' AND expires_at>NOW() ORDER BY id ASC LIMIT 1{$suffix}");
+            $stmt->execute([':destination'=>$destinationId, ':tenant'=>$tenantId]); $test=$stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$test) { $this->pdo->commit(); return null; }
+            $lease=bin2hex(random_bytes(24));
+            $update=$this->pdo->prepare("UPDATE pacs_voxel_desktop_manual_tests SET status='leased', lease_token=:lease, leased_by_router_id=:router, leased_at=NOW(), updated_at=NOW() WHERE id=:id AND tenant_id=:tenant");
+            $update->execute([':lease'=>$lease, ':router'=>$routerId, ':id'=>(int)$test['id'], ':tenant'=>$tenantId]);
+            $this->pdo->commit(); $test['lease_token']=$lease; $test['status']='leased'; $test['leased_by_router_id']=$routerId; return $test;
+        } catch (\Throwable $e) { if ($this->pdo->inTransaction()) $this->pdo->rollBack(); throw $e; }
+    }
+
+    /** @return array<string,mixed>|null */
+    public function findLeasedManualTest(int $testId, int $destinationId, int $tenantId, string $routerId): ?array
+    {
+        $stmt=$this->pdo->prepare("SELECT * FROM pacs_voxel_desktop_manual_tests WHERE id=:id AND destination_id=:destination AND tenant_id=:tenant AND leased_by_router_id=:router AND status IN ('leased','artifact_ready','package_submitted') AND expires_at>NOW() LIMIT 1");
+        $stmt->execute([':id'=>$testId, ':destination'=>$destinationId, ':tenant'=>$tenantId, ':router'=>$routerId]); $row=$stmt->fetch(PDO::FETCH_ASSOC); return $row?:null;
+    }
+
+    /** @return array<string,mixed>|null */
+    public function manualTestMetadata(array $test): ?array
+    {
+        $stmt=$this->pdo->prepare('SELECT e.* FROM reports r INNER JOIN bi_pacs_estudos e ON e.id=r.estudo_id WHERE r.id=:report AND r.tenant_id=:tenant AND e.id=:study LIMIT 1');
+        $stmt->execute([':report'=>(int)$test['report_id'], ':tenant'=>(int)$test['tenant_id'], ':study'=>(int)$test['estudo_id']]); $row=$stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return null;
+        return ['patient_id'=>(string)($row['patient_id']??''), 'patient_name'=>(string)($row['patient_name']??''), 'patient_birth_date'=>(string)($row['patient_birth_date']??''), 'patient_sex'=>(string)($row['patient_sex']??''), 'accession_number'=>(string)($row['accession_number']??$row['numero_acesso']??''), 'modality'=>(string)($row['modality']??$row['modalidade']??'')];
+    }
+
+    public function recordManualTestArtifact(int $testId, int $tenantId, string $path, string $sha256, int $size): void
+    {
+        $stmt=$this->pdo->prepare("UPDATE pacs_voxel_desktop_manual_tests SET artifact_path=:path, artifact_sha256=:sha, artifact_size_bytes=:size, status='artifact_ready', updated_at=NOW() WHERE id=:id AND tenant_id=:tenant AND status IN ('leased','artifact_ready')");
+        $stmt->execute([':path'=>$path, ':sha'=>$sha256, ':size'=>$size, ':id'=>$testId, ':tenant'=>$tenantId]);
+    }
+
+    public function markManualTestStatus(int $testId, int $destinationId, int $tenantId, string $routerId, string $status): bool
+    {
+        $allowed=['package_submitted','receiver_completed','receiver_failed']; if (!in_array($status,$allowed,true)) throw new DomainException('manual_test_invalid_status');
+        $stmt=$this->pdo->prepare("UPDATE pacs_voxel_desktop_manual_tests SET status=:status, completed_at=CASE WHEN :final=1 THEN NOW() ELSE completed_at END, updated_at=NOW() WHERE id=:id AND destination_id=:destination AND tenant_id=:tenant AND leased_by_router_id=:router AND status IN ('leased','artifact_ready','package_submitted')");
+        $stmt->execute([':status'=>$status, ':final'=>$status==='receiver_completed'?1:0, ':id'=>$testId, ':destination'=>$destinationId, ':tenant'=>$tenantId, ':router'=>$routerId]); return $stmt->rowCount()===1;
+    }
+
     /** @return array<int,array{occurred_at:string,event:string,source:string,status:string}> */
     public function technicalEvents(int $tenantId, int $limit = 30): array
     {
         $limit = max(1, min($limit, 50));
         $events = [];
-        $audit = $this->pdo->prepare("SELECT created_at, action, details FROM bi_audit_logs WHERE tenant_id = :tenant_id AND entity = 'pacs_voxel_desktop_destinations' AND action IN ('voxel_desktop.destination.save','voxel_desktop.destination.rejected','voxel_desktop.destination.failed') ORDER BY created_at DESC LIMIT {$limit}");
+        $audit = $this->pdo->prepare("SELECT created_at, action, details FROM bi_audit_logs WHERE tenant_id = :tenant_id AND ((entity = 'pacs_voxel_desktop_destinations' AND action IN ('voxel_desktop.destination.save','voxel_desktop.destination.rejected','voxel_desktop.destination.failed','voxel_desktop.destination.activated','voxel_desktop.destination.deactivated')) OR (entity = 'pacs_voxel_desktop_manual_tests' AND action = 'voxel_desktop.manual_test.prepared')) ORDER BY created_at DESC LIMIT {$limit}");
         $audit->execute([':tenant_id' => $tenantId]);
         foreach ($audit->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $details = json_decode((string)($row['details'] ?? ''), true);
             $code = is_array($details) ? (string)($details['reason_code'] ?? $details['result'] ?? 'recorded') : 'recorded';
-            if (!in_array($code, ['saved_disabled','destination_incomplete','invalid_identifier','identifier_too_long','unsupported_profile','invalid_router_token','technical_failure'], true)) $code = 'recorded';
+            if (!in_array($code, ['saved_disabled','activated','deactivated','destination_incomplete','invalid_identifier','identifier_too_long','unsupported_profile','invalid_router_token','technical_failure'], true)) $code = 'recorded';
             $event = match ((string)$row['action']) {
                 'voxel_desktop.destination.save' => 'configuration_saved',
                 'voxel_desktop.destination.rejected' => 'configuration_rejected',
+                'voxel_desktop.destination.activated' => 'destination_activated',
+                'voxel_desktop.destination.deactivated' => 'destination_deactivated',
+                'voxel_desktop.manual_test.prepared' => 'manual_test_prepared',
                 default => 'configuration_failed',
             };
             $events[] = ['occurred_at' => (string)$row['created_at'], 'event' => $event, 'source' => 'pacs', 'status' => $code];
@@ -80,6 +158,14 @@ final class VoxelDesktopRepository
         }
         usort($events, static fn(array $a, array $b): int => strcmp($b['occurred_at'], $a['occurred_at']));
         return array_slice($events, 0, $limit);
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    public function listManualTests(int $tenantId): array
+    {
+        if (!SqlHelper::hasTable('pacs_voxel_desktop_manual_tests')) return [];
+        $stmt=$this->pdo->prepare('SELECT t.id,t.destination_id,t.status,t.expires_at,t.created_at,t.updated_at,d.nome AS destination_name FROM pacs_voxel_desktop_manual_tests t INNER JOIN pacs_voxel_desktop_destinations d ON d.id=t.destination_id AND d.tenant_id=t.tenant_id WHERE t.tenant_id=:tenant ORDER BY t.id DESC LIMIT 20');
+        $stmt->execute([':tenant'=>$tenantId]); return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     /** @return array<int,array<string,mixed>> */
@@ -130,7 +216,7 @@ final class VoxelDesktopRepository
     /** @return array<string,mixed>|null */
     public function findRouterDestination(string $routerId, string $siteId): ?array
     {
-        $stmt=$this->pdo->prepare('SELECT * FROM pacs_voxel_desktop_destinations WHERE router_id=:router_id AND site_id=:site_id LIMIT 1');
+        $stmt=$this->pdo->prepare('SELECT * FROM pacs_voxel_desktop_destinations WHERE router_id=:router_id AND site_id=:site_id ORDER BY enabled DESC, updated_at DESC, id DESC LIMIT 1');
         $stmt->execute([':router_id'=>$routerId, ':site_id'=>$siteId]);
         $row=$stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;

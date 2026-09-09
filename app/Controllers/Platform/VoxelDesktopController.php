@@ -12,6 +12,7 @@ use App\Core\Audit\AuditLogger;
 use App\Repositories\VoxelDesktopRepository;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\DicomIssuerService;
+use App\Services\VoxelDesktopManualTestService;
 use DomainException;
 
 /** Control-plane superadmin do Router Desktop; não inicia transmissões nem executa jobs. */
@@ -27,6 +28,7 @@ final class VoxelDesktopController extends Controller
             'tenant' => $tenant,
             'destinations' => $repo->listDestinations($id),
             'technicalLogs' => $repo->technicalEvents($id),
+            'manualTests' => $repo->listManualTests($id),
             'csrfToken' => $this->csrfToken(),
         ], 'platform');
     }
@@ -59,7 +61,7 @@ final class VoxelDesktopController extends Controller
             ], $id, 'platform');
             $_SESSION['error'] = $this->messageFor($code);
         } catch (\Throwable $e) {
-            Logger::warning('[VoxelDesktopController::save] Configuração recusada', ['tenant_id'=>$id, 'error'=>$e->getMessage()]);
+            Logger::warning('[VoxelDesktopController::save] Configuração recusada', ['tenant_id'=>$id, 'reason'=>'technical_failure']);
             AuditLogger::log('voxel_desktop.destination.failed', 'pacs_voxel_desktop_destinations', $destinationId, [
                 'tenant_id' => $id,
                 'reason_code' => 'technical_failure',
@@ -68,6 +70,50 @@ final class VoxelDesktopController extends Controller
             $_SESSION['error'] = t('voxel_desktop.save_error');
         }
         $this->redirect('/platform/negocios/'.$id.'/voxel-desktop');
+    }
+
+    public function activate(int $tenantId, int $destinationId): void
+    {
+        $this->requirePlatformAdmin(); $this->tenant($tenantId); $this->assertCsrf();
+        try {
+            if ((string)($_POST['confirm_activation'] ?? '') !== '1') throw new DomainException('activation_confirmation_required');
+            $repo=new VoxelDesktopRepository(Database::getInstance()); $destination=$repo->findDestination($tenantId,$destinationId,true);
+            if (!$destination) throw new DomainException('destination_not_found');
+            if ((string)$destination['ambiente']==='producao' && (string)($_POST['confirm_production_activation'] ?? '') !== '1') throw new DomainException('production_confirmation_required');
+            $repo->setDestinationEnabled($tenantId,$destinationId,true);
+            AuditLogger::log('voxel_desktop.destination.activated','pacs_voxel_desktop_destinations',$destinationId,['tenant_id'=>$tenantId,'ambiente'=>(string)$destination['ambiente'],'automatic_release'=>false]);
+            $_SESSION['success']=t('voxel_desktop.activated');
+        } catch (DomainException $e) { $_SESSION['error']=$this->messageFor($e->getMessage()); }
+        catch (\Throwable $e) { Logger::warning('[VoxelDesktopController::activate] Falha técnica', ['tenant_id'=>$tenantId,'destination_id'=>$destinationId,'reason'=>'technical_failure']); $_SESSION['error']=t('voxel_desktop.action_error'); }
+        $this->redirect('/platform/negocios/'.$tenantId.'/voxel-desktop');
+    }
+
+    public function deactivate(int $tenantId, int $destinationId): void
+    {
+        $this->requirePlatformAdmin(); $this->tenant($tenantId); $this->assertCsrf();
+        try {
+            if ((string)($_POST['confirm_deactivation'] ?? '') !== '1') throw new DomainException('deactivation_confirmation_required');
+            $repo=new VoxelDesktopRepository(Database::getInstance());
+            $repo->setDestinationEnabled($tenantId,$destinationId,false);
+            AuditLogger::log('voxel_desktop.destination.deactivated','pacs_voxel_desktop_destinations',$destinationId,['tenant_id'=>$tenantId,'automatic_release'=>false]);
+            $_SESSION['success']=t('voxel_desktop.deactivated');
+        } catch (DomainException $e) { $_SESSION['error']=$this->messageFor($e->getMessage()); }
+        catch (\Throwable $e) { Logger::warning('[VoxelDesktopController::deactivate] Falha técnica', ['tenant_id'=>$tenantId,'destination_id'=>$destinationId,'reason'=>'technical_failure']); $_SESSION['error']=t('voxel_desktop.action_error'); }
+        $this->redirect('/platform/negocios/'.$tenantId.'/voxel-desktop');
+    }
+
+    public function prepareManualTest(int $tenantId): void
+    {
+        $this->requirePlatformAdmin(); $this->tenant($tenantId); $this->assertCsrf();
+        try {
+            if ((string)($_POST['confirm_single_manual_test'] ?? '') !== '1') throw new DomainException('manual_test_confirmation_required');
+            $destinationId=(int)($_POST['destination_id'] ?? 0); $token=strtolower(trim((string)($_POST['report_public_token'] ?? '')));
+            $result=(new VoxelDesktopManualTestService(Database::getInstance()))->prepare($tenantId,$destinationId,$token,(int)Auth::userId());
+            AuditLogger::log('voxel_desktop.manual_test.prepared','pacs_voxel_desktop_manual_tests',(int)$result['test_id'],['tenant_id'=>$tenantId,'destination_id'=>$destinationId,'expires_at'=>$result['expires_at'],'automatic_release'=>false]);
+            $_SESSION['success']=t('voxel_desktop.manual_test_prepared');
+        } catch (DomainException $e) { $_SESSION['error']=$this->messageFor($e->getMessage()); }
+        catch (\Throwable $e) { Logger::warning('[VoxelDesktopController::prepareManualTest] Falha técnica', ['tenant_id'=>$tenantId,'reason'=>'technical_failure']); $_SESSION['error']=t('voxel_desktop.action_error'); }
+        $this->redirect('/platform/negocios/'.$tenantId.'/voxel-desktop');
     }
 
     /** @return array<string,mixed> */
@@ -82,7 +128,7 @@ final class VoxelDesktopController extends Controller
         $environment = (string)($_POST['ambiente'] ?? 'homologacao');
         if ($name === '' || $router === '' || $site === '' || ($issuer === '' && $institution === '')) throw new DomainException('destination_incomplete');
         if (mb_strlen($router) > 120 || mb_strlen($site) > 120) throw new DomainException('identifier_too_long');
-        if ($profile !== 'submission_document' || $environment !== 'homologacao') throw new DomainException('unsupported_profile');
+        if ($profile !== 'submission_document' || !in_array($environment,['homologacao','producao'],true)) throw new DomainException('unsupported_profile');
         $token = trim((string)($_POST['router_token'] ?? ''));
         $secret = '';
         if ($token !== '') {
@@ -91,7 +137,7 @@ final class VoxelDesktopController extends Controller
         }
         return [
             'nome'=>$name, 'router_id'=>$router, 'site_id'=>$site, 'profile'=>$profile, 'ambiente'=>$environment,
-            'enabled'=>0, 'disparar_na_liberacao'=>1, 'issuer_of_patient_id_normalized'=>$issuer,
+            'enabled'=>0, 'disparar_na_liberacao'=>0, 'issuer_of_patient_id_normalized'=>$issuer,
             'institution_name'=>$issuer === '' ? $institution : '', 'configuration_json'=>json_encode(['api_version'=>'v1'], JSON_UNESCAPED_SLASHES),
             'configuration_secret'=>$secret, 'timeout_seconds'=>30, 'max_attempts'=>4, 'estabelecimento_id'=>null,
         ];
@@ -105,6 +151,7 @@ final class VoxelDesktopController extends Controller
         if (!$tenant) { http_response_code(404); exit; }
         return $tenant;
     }
+    private function assertCsrf(): void { if (!hash_equals((string)($_SESSION['csrf_token'] ?? ''),(string)($_POST['_csrf_token'] ?? ''))) throw new DomainException('csrf_error'); }
     private function messageFor(string $code): string { return t('voxel_desktop.error.' . $code); }
-    private function requirePlatformAdmin(): void { if (!Auth::check() || !Auth::isPlatformAdmin()) { http_response_code(403); exit; } }
+    private function requirePlatformAdmin(): void { if (!Auth::check() || !Auth::isPlatformAdmin() || Auth::isImpersonating()) { http_response_code(403); exit; } }
 }

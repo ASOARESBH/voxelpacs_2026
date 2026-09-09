@@ -20,9 +20,11 @@ Cada versão liberada cria uma chave de idempotência baseada em tenant, laudo, 
 
 Antes de ativar qualquer destino são necessários: homologação com artefatos sintéticos, validação do XML no VUE PACS, conferência de permissão dos diretórios locais no Router e autorização específica para ativar a transmissão. A instalação de serviço, configuração de token e diretórios ocorre somente no Router Desktop do receptor.
 
-## Salvamento desativado e diagnóstico técnico
+## Control-plane, edição e diagnóstico técnico
 
-O formulário do control-plane aceita somente um destino em homologação, com `enabled=0`. Router ID e Site ID são identificadores administrativos livres, com limite de armazenamento de 120 caracteres, e precisam corresponder literalmente aos valores configurados no Router Desktop. O roteamento exige Issuer ou InstitutionName; quando há Issuer, ele tem precedência.
+O formulário do control-plane salva qualquer criação ou edição com `enabled=0` e `disparar_na_liberacao=0`. Router ID e Site ID são identificadores administrativos livres, com limite de armazenamento de 120 caracteres, e precisam corresponder literalmente aos valores configurados no Router Desktop. O roteamento exige Issuer ou InstitutionName; quando há Issuer, ele tem precedência.
+
+O superadmin, sem impersonação, pode habilitar separadamente um destino em **Homologação** ou **Produção**. A ativação exige confirmação explícita; Produção pede uma segunda confirmação. A ação verifica o token protegido, impede dois destinos habilitados com o mesmo par Router ID/Site ID e preserva `disparar_na_liberacao=false`. Não existe nesta etapa botão nem endpoint para habilitar o disparo automático após a liberação de um laudo.
 
 Em PostgreSQL, a criação do destino usa `RETURNING id`; não depende de `lastInsertId()`. Falhas de validação são registradas na auditoria por código sanitizado, sem token, segredo, caminho local, URL, payload de laudo ou identificadores clínicos.
 
@@ -31,3 +33,9 @@ A tela tenant-scoped apresenta, abaixo dos destinos, um log técnico para supera
 ## Teste de conectividade
 
 O Router consulta um endpoint autenticado de status antes de qualquer operação de pull. Ele exige o par Router ID/Site ID e o token correspondente, mas aceita o destino ainda desativado e responde apenas com o estado de configuração. A chamada não reivindica job, não acessa artefato, não gera XML/PDF e não altera fila. Um retorno `configured_disabled` confirma a comunicação de leitura e mantém a ativação como decisão separada.
+
+## Teste manual isolado
+
+Depois de habilitar **um único** destino em Homologação, o superadmin pode preparar uma entrega manual usando somente o token público de um laudo já liberado do mesmo negócio. A preparação cria um registro de uso único com expiração curta, não cria outbox, não cria job automático, não invoca o worker e não libera retransmissão.
+
+O Router Desktop possui uma ação local distinta para buscar esse teste. Ela recusa execução enquanto o processador estiver em execução, busca no máximo um registro preparado, valida o PDF e grava PDF/XML diretamente no diretório Philips por escrita atômica. A confirmação do Router é auditada pelo estado allowlisted `package_submitted`. A seleção do laudo e o envio real continuam sujeitos à confirmação operacional específica; nenhum identificador clínico, token, diretório local ou conteúdo de laudo é exibido no control-plane ou em logs técnicos.

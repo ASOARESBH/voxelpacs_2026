@@ -45,4 +45,26 @@ final class VoxelDesktopArtifactService
         @chmod($path,0600); $sha=hash('sha256',$binary); $this->repo->recordArtifact((int)$job['outbox_id'],(int)$job['tenant_id'],$path,$sha,strlen($binary));
         return ['path'=>$path,'sha256'=>$sha,'size'=>strlen($binary),'filename'=>$filename];
     }
+
+    /** @return array{path:string,sha256:string,size:int,filename:string} */
+    public function buildForManualTest(array $test): array
+    {
+        if (!empty($test['artifact_path']) && is_file((string)$test['artifact_path'])) return ['path'=>(string)$test['artifact_path'], 'sha256'=>(string)$test['artifact_sha256'], 'size'=>(int)$test['artifact_size_bytes'], 'filename'=>'manual-test-'.(int)$test['id'].'.pdf'];
+        $reportStmt=$this->pdo->prepare('SELECT * FROM reports WHERE id=:id AND tenant_id=:tenant LIMIT 1');
+        $reportStmt->execute([':id'=>(int)$test['report_id'], ':tenant'=>(int)$test['tenant_id']]); $report=$reportStmt->fetch(PDO::FETCH_OBJ);
+        $studyStmt=$this->pdo->prepare('SELECT * FROM bi_pacs_estudos WHERE id=:id AND tenant_id=:tenant LIMIT 1');
+        $studyStmt->execute([':id'=>(int)$test['estudo_id'], ':tenant'=>(int)$test['tenant_id']]); $study=$studyStmt->fetch(PDO::FETCH_OBJ);
+        if (!$report || !$study) throw new RuntimeException('Teste manual sem laudo ou estudo no mesmo tenant.');
+        $content=false;
+        try { $versionStmt=$this->pdo->prepare('SELECT secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao FROM report_versions WHERE report_id=:report AND versao=:version LIMIT 1'); $versionStmt->execute([':report'=>(int)$test['report_id'], ':version'=>(int)$test['report_version']]); $row=$versionStmt->fetch(PDO::FETCH_ASSOC); if($row) $content=json_encode(['secoes'=>['exame'=>$row['secao_exame']??'','tecnica'=>$row['secao_tecnica']??'','achados'=>$row['secao_achados']??'','conclusao'=>$row['secao_conclusao']??'','recomendacao'=>$row['secao_recomendacao']??'']],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); } catch (\Throwable) { }
+        if (!is_string($content) || $content==='') { try { $versionStmt=$this->pdo->prepare('SELECT conteudo FROM report_versions WHERE report_id=:report AND versao_numero=:version LIMIT 1'); $versionStmt->execute([':report'=>(int)$test['report_id'], ':version'=>(int)$test['report_version']]); $content=$versionStmt->fetchColumn(); } catch (\Throwable) { $content=false; } }
+        if (!is_string($content) || $content==='') throw new RuntimeException('Versão imutável indisponível para teste manual.');
+        $report->conteudo=$content; $binary=(new ReportPdfService())->renderBinary($study,$report);
+        if(strlen($binary)<100 || !str_starts_with($binary,'%PDF')) throw new RuntimeException('PDF do teste manual inválido.');
+        $base=(defined('BASE_PATH')?(string)BASE_PATH:dirname(__DIR__,2)).'/storage/voxel_desktop/manual-tests/'.(int)$test['tenant_id'].'/'.(int)$test['id'];
+        if(!is_dir($base) && !mkdir($base,0700,true) && !is_dir($base)) throw new RuntimeException('Armazenamento privado de teste indisponível.');
+        $path=$base.'/manual-test-'.(int)$test['id'].'.pdf'; if(file_put_contents($path,$binary,LOCK_EX)===false) throw new RuntimeException('Não foi possível gravar o PDF de teste.'); @chmod($path,0600);
+        $sha=hash('sha256',$binary); $this->repo->recordManualTestArtifact((int)$test['id'],(int)$test['tenant_id'],$path,$sha,strlen($binary));
+        return ['path'=>$path,'sha256'=>$sha,'size'=>strlen($binary),'filename'=>'manual-test-'.(int)$test['id'].'.pdf'];
+    }
 }

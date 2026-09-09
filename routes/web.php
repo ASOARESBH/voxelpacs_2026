@@ -49,6 +49,9 @@ Router::get('/api/voxel-desktop/v1/status', 'VoxelDesktopRouterController@connec
 Router::post('/api/voxel-desktop/v1/jobs/claim', 'VoxelDesktopRouterController@claim');
 Router::get('/api/voxel-desktop/v1/jobs/{id}/document', 'VoxelDesktopRouterController@document');
 Router::post('/api/voxel-desktop/v1/jobs/{id}/status', 'VoxelDesktopRouterController@status');
+Router::post('/api/voxel-desktop/v1/manual-tests/claim', 'VoxelDesktopRouterController@claimManualTest');
+Router::get('/api/voxel-desktop/v1/manual-tests/{id}/document', 'VoxelDesktopRouterController@manualTestDocument');
+Router::post('/api/voxel-desktop/v1/manual-tests/{id}/status', 'VoxelDesktopRouterController@manualTestStatus');
 
 // ============================================================
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar

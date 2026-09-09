@@ -80,6 +80,9 @@ Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend'
 Router::get('/platform/negocios/{id}/voxel-desktop', 'Platform\VoxelDesktopController@show');
 Router::post('/platform/negocios/{id}/voxel-desktop/destinations', 'Platform\VoxelDesktopController@save');
 Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}', 'Platform\VoxelDesktopController@save');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}/activate', 'Platform\VoxelDesktopController@activate');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}/deactivate', 'Platform\VoxelDesktopController@deactivate');
+Router::post('/platform/negocios/{id}/voxel-desktop/manual-tests', 'Platform\VoxelDesktopController@prepareManualTest');
 
 // Imagiflow — integração de apuração por negócio (somente superadmin)
 Router::get('/platform/negocios/{id}/imagiflow',          'Platform\ImagiflowIntegrationController@show');
