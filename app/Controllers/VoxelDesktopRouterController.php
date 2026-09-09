@@ -15,6 +15,13 @@ final class VoxelDesktopRouterController extends Controller
     private VoxelDesktopRepository $repo;
     public function __construct(){ $this->repo=new VoxelDesktopRepository(\App\Core\Database::getInstance()); }
 
+    /** Endpoint de leitura para o Router: autentica o par, não reivindica job e aceita destino desativado. */
+    public function connectionStatus(): void
+    {
+        [$destination] = $this->routerContext(false);
+        $this->json(['status' => (bool)$destination['enabled'] ? 'configured_enabled' : 'configured_disabled']);
+    }
+
     public function claim(): void
     {
         [$destination,$router]=$this->routerContext();
@@ -46,13 +53,13 @@ final class VoxelDesktopRouterController extends Controller
     }
 
     /** @return array{0:array<string,mixed>,1:string} */
-    private function routerContext(): array
+    private function routerContext(bool $requireEnabled = true): array
     {
         $router=trim((string)($_SERVER['HTTP_X_VOXEL_ROUTER_ID'] ?? '')); $site=trim((string)($_SERVER['HTTP_X_VOXEL_SITE_ID'] ?? ''));
         $authorization=(string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''); $token=str_starts_with($authorization,'Bearer ')?substr($authorization,7):'';
         if($router===''||$site===''||$token==='') $this->json(['error'=>'router_auth_required'],401);
         $destination=$this->repo->findRouterDestination($router,$site);
-        if(!$destination || !(bool)$destination['enabled']) $this->json(['error'=>'router_destination_disabled'],403);
+        if(!$destination || ($requireEnabled && !(bool)$destination['enabled'])) $this->json(['error'=>'router_destination_disabled'],403);
         try { $secret=json_decode((new ReportDeliveryCryptoService())->decrypt((string)$destination['configuration_secret']),true) ?: []; } catch (\Throwable) { $this->json(['error'=>'router_configuration_invalid'],403); }
         if(empty($secret['router_token_hash']) || !hash_equals((string)$secret['router_token_hash'],hash('sha256',$token))) $this->json(['error'=>'router_auth_invalid'],403);
         return [$destination,$router];

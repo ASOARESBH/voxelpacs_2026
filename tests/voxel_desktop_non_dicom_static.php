@@ -8,6 +8,7 @@ $files = [
     'repository' => $root.'/app/Repositories/VoxelDesktopRepository.php',
     'service' => $root.'/app/Services/VoxelDesktopOutboxService.php',
     'router' => $root.'/app/Controllers/VoxelDesktopRouterController.php',
+    'routes' => $root.'/routes/web.php',
     'platform' => $root.'/app/Controllers/Platform/VoxelDesktopController.php',
     'view' => $root.'/app/Views/platform/negocios/voxel_desktop.php',
     'report' => $root.'/app/Services/ReportService.php',
@@ -17,6 +18,7 @@ $migration = file_get_contents($files['migration']);
 $repository = file_get_contents($files['repository']);
 $service = file_get_contents($files['service']);
 $router = file_get_contents($files['router']);
+$routes = file_get_contents($files['routes']);
 $platform = file_get_contents($files['platform']);
 $view = file_get_contents($files['view']);
 $report = file_get_contents($files['report']);
@@ -31,6 +33,7 @@ foreach (['pacs_voxel_desktop_attempts','j.tenant_id = :tenant_id','configuratio
 if (str_contains($repository, 'SELECT * FROM pacs_voxel_desktop_attempts')) throw new RuntimeException('Log técnico não pode expor tentativas brutas.');
 if (!str_contains($view, 'voxel_desktop.logs_title') || !str_contains($view, 'technicalLogs')) throw new RuntimeException('Painel de log técnico ausente.');
 if (!str_contains($router,'hash_equals') || !str_contains($router,'router_destination_disabled')) throw new RuntimeException('API do Router exige token e destino habilitado.');
+if (!str_contains($routes, "Router::get('/api/voxel-desktop/v1/status'") || !str_contains($router, 'connectionStatus') || !str_contains($router, 'routerContext(false)')) throw new RuntimeException('Teste de conexão autenticado e sem entrega ausente.');
 if (!str_contains($report,'new VoxelDesktopOutboxService($pdo)')) throw new RuntimeException('Liberação deve registrar a outbox Voxel Desktop na transação clínica.');
 foreach (['C:\\','ProgramData','files'] as $forbidden) if (str_contains($migration.$repository.$service.$router.$platform,$forbidden)) throw new RuntimeException('PACS não pode persistir caminho local do receptor.');
 echo "VOXEL_DESKTOP_NON_DICOM_STATIC_OK\n";
