@@ -164,7 +164,7 @@ final class VoxelDesktopRepository
     /** @return array<int,array<string,mixed>> */
     public function listManualTests(int $tenantId): array
     {
-        if (!SqlHelper::hasTable('pacs_voxel_desktop_manual_tests')) return [];
+        if (!SqlHelper::hasTable($this->pdo, 'pacs_voxel_desktop_manual_tests')) return [];
         $stmt=$this->pdo->prepare('SELECT t.id,t.destination_id,t.status,t.expires_at,t.created_at,t.updated_at,d.nome AS destination_name FROM pacs_voxel_desktop_manual_tests t INNER JOIN pacs_voxel_desktop_destinations d ON d.id=t.destination_id AND d.tenant_id=t.tenant_id WHERE t.tenant_id=:tenant ORDER BY t.id DESC LIMIT 20');
         $stmt->execute([':tenant'=>$tenantId]); return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
