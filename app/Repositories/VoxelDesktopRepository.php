@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime da correção de introspecção tenant-scoped de testes manuais.
 // Sincronização de runtime da persistência tenant-scoped de testes manuais isolados.
 // Materialização de runtime para publicação restrita do Voxel Desktop com eventos sanitizados e IDs livres.
 declare(strict_types=1);
