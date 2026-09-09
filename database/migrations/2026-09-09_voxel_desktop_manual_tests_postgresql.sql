@@ -1,4 +1,5 @@
 -- Voxel Desktop: teste manual isolado, sem outbox, sem fila e sem disparo automático.
+-- Materialização técnica isolada para cópia controlada; a execução exige comando fechado root-owned.
 SET search_path TO voxelpacs_mysql_source;
 
 -- A ativação manual nunca habilita o gatilho clínico de liberação.
