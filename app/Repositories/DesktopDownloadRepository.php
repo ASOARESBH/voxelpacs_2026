@@ -1,5 +1,6 @@
 <?php
 // Catálogo Downloads: separa produtos e mantém exclusão restrita a rascunhos sem telemetria.
+// Materialização de runtime para publicação restrita da separação de produtos.
 namespace App\Repositories;
 
 use App\Core\Database;

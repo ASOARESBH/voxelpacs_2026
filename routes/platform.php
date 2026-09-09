@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.
 // Materialização de runtime para publicação restrita do Voxel Desktop.
 // Materialização de runtime do catálogo Downloads para publicação restrita.
 use App\Core\Router;

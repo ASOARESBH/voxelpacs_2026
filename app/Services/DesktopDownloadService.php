@@ -1,5 +1,6 @@
 <?php
 // Catálogo Downloads: ZIP privado por produto; View/Desktop é o único produto distribuído pela Worklist.
+// Materialização de runtime para publicação restrita da separação de produtos.
 namespace App\Services;
 
 use App\Repositories\DesktopDownloadRepository;

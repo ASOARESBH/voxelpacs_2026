@@ -1,5 +1,6 @@
 <?php
 // Catálogo Downloads: administração global, produtos separados e exclusão auditada apenas de rascunhos.
+// Materialização de runtime para publicação restrita da separação de produtos.
 namespace App\Controllers\Platform;
 
 use App\Core\Audit\AuditLogger;
