@@ -12,6 +12,7 @@ readonly APP_ROOT=/var/www/voxelpacs/app
 readonly FORCE_COMMAND=/usr/local/sbin/voxelpacs-deploy-force
 readonly RUNNER=/usr/local/sbin/voxelpacs-voxel-desktop-activation-diagnose
 readonly SUDOERS_FILE=/etc/sudoers.d/voxelpacs-voxel-desktop-activation-diagnose
+readonly EXPECTED_REPOSITORY_SHA256=feb9e505da5eb214192e141ca2872dc067202343a0899122a3d724eeb5e571df
 readonly MARKER='# VOXEL_DESKTOP_ACTIVATION_DIAGNOSE_EXACT_COMMAND'
 
 test -d "$APP_ROOT"
@@ -30,6 +31,7 @@ fi
 readonly APP_ROOT=/var/www/voxelpacs/app
 readonly ENV_FILE="$APP_ROOT/.env"
 readonly EXPECTED_SCHEMA=voxelpacs_mysql_source
+readonly EXPECTED_REPOSITORY_SHA256=feb9e505da5eb214192e141ca2872dc067202343a0899122a3d724eeb5e571df
 
 env_value() {
   local key="$1"
@@ -51,6 +53,13 @@ schema="$(env_value DB_SCHEMA)"
 test -n "$db_name"
 test "$schema" = "$EXPECTED_SCHEMA"
 
+printf '%s\n' '=== ACTIVATION_RUNTIME_VERSION ==='
+if test "$(sha256sum "$APP_ROOT/app/Repositories/VoxelDesktopRepository.php" | awk '{print $1}')" = "$EXPECTED_REPOSITORY_SHA256"; then
+  printf '%s\n' 'ACTIVATION_RUNTIME_REPOSITORY_CURRENT'
+else
+  printf '%s\n' 'ACTIVATION_RUNTIME_REPOSITORY_STALE'
+fi
+
 printf '%s\n' '=== ACTIVATION_SCHEMA ==='
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -At -d "$db_name" -c "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='${EXPECTED_SCHEMA}' AND table_name='pacs_voxel_desktop_destinations' AND column_name='enabled' AND data_type='boolean') THEN 'ACTIVATION_ENABLED_BOOLEAN_OK' ELSE 'ACTIVATION_ENABLED_BOOLEAN_INVALID' END;"
 
@@ -69,10 +78,14 @@ printf '%s\n' 'ACTIVATION_QUERY_PARSE_OK'
 printf '%s\n' '=== ACTIVATION_LOG_CLASS ==='
 log="$APP_ROOT/storage/logs/error-$(date +%F).log"
 if test -r "$log" && grep -E 'VoxelDesktopController::activate|voxel-desktop/destinations/.*/activate|VoxelDesktopRepository' "$log" >/dev/null 2>&1; then
-  grep -E 'VoxelDesktopController::activate|voxel-desktop/destinations/.*/activate|VoxelDesktopRepository' "$log" \
-    | tail -n 1 \
-    | sed -nE 's/.*"exception":"([A-Za-z_\\]+).*/ACTIVATION_EXCEPTION_CLASS=\1/p' \
-    | head -n 1
+  activation_line="$(grep -E 'VoxelDesktopController::activate|voxel-desktop/destinations/.*/activate|VoxelDesktopRepository' "$log" | tail -n 1)"
+  case "$activation_line" in
+    *'SqlHelper::hasTable'*|*'SqlHelper\\\\hasTable'*) printf '%s\n' 'ACTIVATION_ERROR_SCHEMA_HELPER_ARGUMENTS' ;;
+    *'boolean = integer'*|*'operator does not exist: boolean'*) printf '%s\n' 'ACTIVATION_ERROR_BOOLEAN_COMPARISON' ;;
+    *'permission denied'*) printf '%s\n' 'ACTIVATION_ERROR_DATABASE_PERMISSION' ;;
+    *'duplicate key'*|*'unique constraint'*) printf '%s\n' 'ACTIVATION_ERROR_DESTINATION_CONFLICT' ;;
+    *) printf '%s\n' 'ACTIVATION_ERROR_UNCLASSIFIED' ;;
+  esac
   printf '%s\n' 'ACTIVATION_LOG_MATCHED'
 else
   printf '%s\n' 'ACTIVATION_LOG_NO_MATCH'
