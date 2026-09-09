@@ -9,7 +9,8 @@
  *       Consultado pelo VOXEL Desktop ao iniciar.
  *
  *  GET  /desktop/download
- *       Redireciona para o instalador mais recente (Windows).
+     *       Serve o instalador mais recente do catálogo privado ou mantém o
+     *       redirecionamento apenas para releases legadas ainda configuradas.
  *       Usado pelo botão "Download VOXEL Desktop" na worklist.
  *
  *  POST /api/desktop/ping
@@ -20,9 +21,11 @@
  */
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
+use App\Services\DesktopDownloadService;
 
 class DesktopController extends Controller
 {
@@ -45,6 +48,22 @@ class DesktopController extends Controller
         if (!in_array($canal, ['stable', 'beta'], true)) $canal = 'stable';
 
         try {
+            $catalog = new DesktopDownloadService();
+            $package = $catalog->resolvePublished($plataforma, $canal);
+            if ($package) {
+                echo json_encode([
+                    'versao' => $package['version_name'],
+                    'plataforma' => $package['platform'],
+                    'canal' => $package['channel'],
+                    'download_url' => 'https://server.voxelpacs.com.br/desktop/download?platform=' . rawurlencode((string) $package['platform']) . '&channel=' . rawurlencode((string) $package['channel']) . '&source=desktop_app',
+                    'tamanho_bytes' => (int) $package['size_bytes'],
+                    'checksum_sha256' => $package['checksum_sha256'],
+                    'notas' => $package['notes'],
+                    'lancado_em' => $package['published_at'],
+                    'disponivel' => true,
+                ]);
+                return;
+            }
             $pdo  = Database::getInstance();
             $stmt = $pdo->prepare("
                 SELECT versao, plataforma, canal, download_url,
@@ -58,12 +77,12 @@ class DesktopController extends Controller
             $release = $stmt->fetch(\PDO::FETCH_ASSOC);
 
             if (!$release) {
-                // Nenhuma release cadastrada ainda — retorna versão placeholder
+                // Nenhuma release cadastrada: não anuncia URL histórica inexistente.
                 echo json_encode([
                     'versao'       => '1.0.0',
                     'plataforma'   => $plataforma,
                     'canal'        => $canal,
-                    'download_url' => 'https://server.voxelpacs.com.br/downloads/VOXELDesktopSetup.exe',
+                    'download_url' => null,
                     'notas'        => null,
                     'disponivel'   => false, // Sem release real cadastrada
                 ]);
@@ -89,7 +108,7 @@ class DesktopController extends Controller
                 'versao'       => '1.0.0',
                 'plataforma'   => $plataforma,
                 'canal'        => $canal,
-                'download_url' => 'https://server.voxelpacs.com.br/downloads/VOXELDesktopSetup.exe',
+                'download_url' => null,
                 'notas'        => null,
                 'disponivel'   => false,
             ]);
@@ -105,8 +124,39 @@ class DesktopController extends Controller
     {
         $plataforma = strtolower(trim($_GET['platform'] ?? 'windows'));
         if (!in_array($plataforma, ['windows', 'mac', 'linux'], true)) $plataforma = 'windows';
+        $canal = strtolower(trim($_GET['channel'] ?? 'stable'));
+        if (!in_array($canal, ['stable', 'beta'], true)) $canal = 'stable';
+        $source = strtolower(trim($_GET['source'] ?? 'public'));
+        if (!in_array($source, ['worklist', 'installer_page', 'platform', 'desktop_app', 'public'], true)) $source = 'public';
 
         try {
+            $catalog = new DesktopDownloadService();
+            $package = $catalog->resolvePublished($plataforma, $canal);
+            if ($package) {
+                $path = $catalog->pathFor($package);
+                if (!$path) {
+                    Logger::warning('[DesktopController::download] pacote publicado ausente');
+                    http_response_code(410);
+                    exit;
+                }
+                $userId = Auth::check() ? (int) Auth::userId() : null;
+                $tenantId = Auth::check() ? (int) (Auth::tenantId() ?: 0) : null;
+                $secret = (string) ($_ENV['APP_SECRET'] ?? $_ENV['JWT_SECRET'] ?? '');
+                $ipHash = $secret !== '' && !empty($_SERVER['REMOTE_ADDR']) ? hash_hmac('sha256', (string) $_SERVER['REMOTE_ADDR'], $secret) : null;
+                $agentHash = $secret !== '' && !empty($_SERVER['HTTP_USER_AGENT']) ? hash_hmac('sha256', (string) $_SERVER['HTTP_USER_AGENT'], $secret) : null;
+                try {
+                    $catalog->repository()->recordDownload((int) $package['id'], $userId, $tenantId ?: null, $source, $ipHash, $agentHash);
+                } catch (\Throwable) {
+                    Logger::warning('[DesktopController::download] telemetria não registrada');
+                }
+                header('Content-Type: application/zip');
+                header('Content-Length: ' . (string) filesize($path));
+                header('Content-Disposition: attachment; filename="VOXELDesktop-' . preg_replace('/[^A-Za-z0-9._-]/', '-', (string) $package['version_name']) . '.zip"');
+                header('Cache-Control: no-store, private');
+                header('X-Content-Type-Options: nosniff');
+                readfile($path);
+                exit;
+            }
             $pdo  = Database::getInstance();
             $stmt = $pdo->prepare("
                 SELECT download_url FROM bi_desktop_releases
@@ -119,9 +169,10 @@ class DesktopController extends Controller
             $url = null;
         }
 
-        // Fallback para URL padrão
+        // Compatibilidade com o fluxo histórico até que o primeiro ZIP seja publicado.
         if (!$url) {
-            $url = 'https://server.voxelpacs.com.br/downloads/VOXELDesktopSetup.exe';
+            http_response_code(404);
+            exit;
         }
 
         header('Location: ' . $url, true, 302);

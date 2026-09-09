@@ -28,6 +28,7 @@
             <a href="/platform/negocios" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/negocios')?'active':'' ?>"><i class="fa fa-building"></i><span>Negócios</span></a>
             <a href="/platform/plans" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/plans')?'active':'' ?>"><i class="fa fa-tags"></i><span>Planos</span></a>
             <a href="/platform/notificacoes" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/notificacoes')?'active':'' ?>"><i class="fa fa-bell"></i><span><?= htmlspecialchars(t('platform_notifications.title')) ?></span></a>
+            <a href="/platform/downloads" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/downloads')?'active':'' ?>"><i class="fa fa-download"></i><span><?= htmlspecialchars(t('downloads.nav')) ?></span></a>
             <a href="/platform/reports" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/reports')?'active':'' ?>"><i class="fa fa-chart-line"></i><span>Relatórios</span></a>
             <a href="/platform/configuracao-modulos" class="nav-link <?= str_contains($_SERVER['REQUEST_URI'],'/platform/configuracao-modulos')?'active':'' ?>"><i class="fa fa-sliders"></i><span><?= htmlspecialchars(t('config_modulos.nav_plataforma')) ?></span></a>
             <div class="sidebar-section-title">Infraestrutura</div>

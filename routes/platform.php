@@ -26,6 +26,14 @@ Router::post('/platform/notificacoes/{id}/arquivar',          'Platform\Notifica
 Router::post('/platform/notificacoes/prever-alcance',         'Platform\NotificacoesController@previewAudience');
 Router::get('/platform/notificacoes/{id}/estatisticas',       'Platform\NotificacoesController@stats');
 
+// Catálogo de instaladores VOXEL Desktop (somente superadmin, sem impersonação).
+Router::get('/platform/downloads',                            'Platform\DownloadsController@index');
+Router::get('/platform/downloads/new',                        'Platform\DownloadsController@create');
+Router::post('/platform/downloads',                           'Platform\DownloadsController@store');
+Router::post('/platform/downloads/{id}/publish',              'Platform\DownloadsController@publish');
+Router::post('/platform/downloads/{id}/archive',              'Platform\DownloadsController@archive');
+Router::get('/platform/downloads/{id}/statistics',            'Platform\DownloadsController@stats');
+
 // ============================================================
 // Negócios (Multi-Tenant)
 // ============================================================

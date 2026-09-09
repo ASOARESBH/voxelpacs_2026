@@ -131,6 +131,11 @@
         <div class="pwa-install-title">VOXEL PACS — Worklist</div>
         <div class="pwa-install-sub">Instale o app no seu computador ou celular para acessar a worklist diretamente, sem precisar abrir o browser.</div>
 
+        <a class="pwa-install-btn mb-3" href="/desktop/download?platform=windows&amp;channel=stable&amp;source=installer_page">
+            <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('downloads.worklist_cta')) ?>
+        </a>
+        <div class="pwa-install-sub"><?= htmlspecialchars(t('downloads.installer_help')) ?></div>
+
         <!-- Botão de instalação automática (Chrome/Edge) -->
         <button class="pwa-install-btn" id="btnInstalarPwa" style="display:none;">
             <i class="fa fa-download"></i> Instalar App Agora

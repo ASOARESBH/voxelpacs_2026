@@ -220,6 +220,9 @@ $periodoLabel = [
         <span><?= htmlspecialchars($modoGestao ? t('gestao_exames.titulo') : 'Worklist de Estudos') ?></span>
         <?php if ($modoGestao): ?><span class="wl-mode-badge"><?= htmlspecialchars(t('gestao_exames.badge')) ?></span><?php endif; ?>
     </div>
+    <a href="/desktop/download?platform=windows&amp;channel=stable&amp;source=worklist" class="wl-desktop-btn" title="<?= htmlspecialchars(t('downloads.worklist_title'), ENT_QUOTES) ?>">
+        <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('downloads.worklist_cta')) ?>
+    </a>
     <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
         <i class="fa fa-download"></i> Instalar App
     </a>
