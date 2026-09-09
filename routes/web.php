@@ -44,7 +44,7 @@ Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopil
 Router::post('/api/integracoes/imagiflow/v1/medicos/consultar', 'ImagiflowApiController@medico');
 Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos', 'ImagiflowApiController@apuracao');
 
-// Voxel Desktop Router — API pull autenticada por token tenant-scoped; sem sessão de navegador.
+// Voxel Desktop Router — API pull e status de leitura autenticados por token tenant-scoped; sem sessão de navegador.
 Router::get('/api/voxel-desktop/v1/status', 'VoxelDesktopRouterController@connectionStatus');
 Router::post('/api/voxel-desktop/v1/jobs/claim', 'VoxelDesktopRouterController@claim');
 Router::get('/api/voxel-desktop/v1/jobs/{id}/document', 'VoxelDesktopRouterController@document');
