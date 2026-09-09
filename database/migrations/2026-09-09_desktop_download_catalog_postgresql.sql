@@ -1,3 +1,4 @@
+-- Materialização controlada para o publicador técnico; não executa esta migration.
 -- Catálogo privado de pacotes VOXEL Desktop: upload ZIP, versionamento e auditoria de downloads.
 -- Não substitui o launch clínico assinado nem torna qualquer pacote automaticamente disponível.
 SET search_path TO voxelpacs_mysql_source;
