@@ -1,5 +1,5 @@
 <?php
-// Materialização de runtime para publicação restrita do Voxel Desktop.
+// Materialização de runtime para publicação restrita do Voxel Desktop com diagnóstico sanitizado.
 declare(strict_types=1);
 
 namespace App\Controllers\Platform;

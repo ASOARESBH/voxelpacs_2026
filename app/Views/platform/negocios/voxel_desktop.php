@@ -1,4 +1,4 @@
-<?php // Materialização de runtime para publicação restrita do Voxel Desktop. ?>
+<?php // Materialização de runtime para publicação restrita do Voxel Desktop com log técnico sanitizado. ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div><h1 class="h3 mb-1"><i class="fa fa-desktop me-2"></i><?= htmlspecialchars(t('voxel_desktop.title')) ?></h1><p class="text-muted mb-0"><?= htmlspecialchars(t('voxel_desktop.subtitle')) ?></p></div>
     <a class="btn btn-outline-secondary" href="/platform/negocios/<?= (int)$tenant['id'] ?>/edit"><?= htmlspecialchars(t('voxel_desktop.back')) ?></a>

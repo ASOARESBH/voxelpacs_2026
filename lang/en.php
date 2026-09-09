@@ -1,4 +1,5 @@
 <?php
+// Runtime materialization: Voxel Desktop safe diagnostic messages.
 // Runtime publication materialization for Voxel Desktop.
 // Runtime materialization for restricted Downloads catalog publication.
 // Materialização controlada do runtime de notificações.
