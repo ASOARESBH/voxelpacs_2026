@@ -29,10 +29,12 @@ readonly VHOST_CONF=/etc/nginx/sites-enabled/voxel-api.conf
 readonly BACKUP_ROOT=/var/backups/voxelpacs/infrastructure
 readonly OLD_LIMIT='client_max_body_size 50m;'
 readonly NEW_LIMIT='client_max_body_size 1100M;'
+readonly OLD_LIMIT_PATTERN='^[[:space:]]*client_max_body_size[[:space:]]+50m;[[:space:]]*$'
+readonly NEW_LIMIT_PATTERN='^[[:space:]]*client_max_body_size[[:space:]]+1100M;[[:space:]]*$'
 
 test -f "$VHOST_CONF"
 install -d -o root -g root -m 0700 "$BACKUP_ROOT"
-count="$(grep -Fxc "$OLD_LIMIT" "$VHOST_CONF" || true)"
+count="$(grep -Ec "$OLD_LIMIT_PATTERN" "$VHOST_CONF" || true)"
 test "$count" = '1'
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -41,16 +43,16 @@ install -d -o root -g root -m 0700 "$backup_dir"
 install -m 0600 "$VHOST_CONF" "$backup_dir/voxel-api.conf"
 
 temp_conf="$(mktemp)"
-sed "s|^${OLD_LIMIT}$|${NEW_LIMIT}|" "$VHOST_CONF" > "$temp_conf"
-test "$(grep -Fxc "$NEW_LIMIT" "$temp_conf" || true)" = '1'
-test "$(grep -Fxc "$OLD_LIMIT" "$temp_conf" || true)" = '0'
+sed -E 's/^([[:space:]]*)client_max_body_size[[:space:]]+50m;[[:space:]]*$/\1client_max_body_size 1100M;/' "$VHOST_CONF" > "$temp_conf"
+test "$(grep -Ec "$NEW_LIMIT_PATTERN" "$temp_conf" || true)" = '1'
+test "$(grep -Ec "$OLD_LIMIT_PATTERN" "$temp_conf" || true)" = '0'
 install -o root -g root -m 0644 "$temp_conf" "$VHOST_CONF"
 rm -f "$temp_conf"
 
 nginx -t
 systemctl reload nginx
 systemctl is-active --quiet nginx
-test "$(grep -Fxc "$NEW_LIMIT" "$VHOST_CONF" || true)" = '1'
+test "$(grep -Ec "$NEW_LIMIT_PATTERN" "$VHOST_CONF" || true)" = '1'
 nginx -T 2>&1 | awk '
   /^# configuration file \/etc\/nginx\/sites-enabled\/voxel-api\.conf:/ { source = 1; next }
   /^# configuration file / { source = 0 }
