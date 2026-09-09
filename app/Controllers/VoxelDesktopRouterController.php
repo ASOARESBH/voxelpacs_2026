@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime para publicação restrita do Voxel Desktop.
 declare(strict_types=1);
 
 namespace App\Controllers;

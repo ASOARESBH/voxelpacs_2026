@@ -1,4 +1,5 @@
 <?php
+// Materialización de runtime para publicación restringida de Voxel Desktop.
 // Materialización controlada del runtime de notificaciones.
 // Español. Debe tener exactamente las mismas claves que pt_BR.php y en.php (ver diagnostics/i18n.md).
 // Sincronización de publicación del formulario reducido de CHAT en Reports.

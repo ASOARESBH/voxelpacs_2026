@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime para publicação restrita do Voxel Desktop.
 // Materialização controlada do runtime de notificações.
 // Idioma padrão do sistema — fallback de qualquer chave ausente nos outros idiomas.
 // Convenção de chave: modulo.tela.elemento (ver patterns/padrao-i18n.md).
