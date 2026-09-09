@@ -25,6 +25,7 @@ foreach (['downloads.package_deleted', 'deleteDraft(', 'deleteDraftWithoutDownlo
 foreach (['PRODUCT_VIEW_DESKTOP', 'PRODUCT_ROUTER_DESKTOP', 'product_key', 'voxel-view-desktop', 'voxel-router-desktop'] as $guard) if (!str_contains($service, $guard)) throw new RuntimeException("Separação de produto ausente: {$guard}");
 if (!str_contains($desktop, 'resolvePublished($plataforma, $canal)')) throw new RuntimeException('Endpoint público não mantém o View/Desktop como produto padrão.');
 foreach (['voxel_view_desktop', 'voxel_router_desktop'] as $product) if (!str_contains($form . $index . $productsPg . $productsMysql, $product)) throw new RuntimeException("Produto ausente: {$product}");
+if (substr_count($form, 'type="radio"') !== 2) throw new RuntimeException('Escolha explícita de produto ausente no formulário.');
 if (!str_contains($routes, 'DownloadsController@delete') || !str_contains($index, 'downloads.delete_confirm')) throw new RuntimeException('Rota ou confirmação de exclusão ausente.');
 if (!str_contains($desktop, 'recordDownload') || !str_contains($desktop, 'Content-Disposition: attachment')) throw new RuntimeException('Distribuição não registra ou não força download.');
 if (str_contains($desktop, '/downloads/VOXELDesktopSetup.exe')) throw new RuntimeException('Manifesto ainda anuncia URL histórica indisponível.');
