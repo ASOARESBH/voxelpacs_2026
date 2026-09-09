@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Instala exclusivamente o subcomando SSH `downloads-products-migration`.
+# Materialização técnica isolada para cópia controlada ao servidor; não instala nem executa por si só.
 # Execute uma única vez como root; o subcomando aplica somente a migration aprovada de classificação.
 set -euo pipefail
 
@@ -13,7 +14,7 @@ readonly FORCE_COMMAND=/usr/local/sbin/voxelpacs-deploy-force
 readonly RUNNER=/usr/local/sbin/voxelpacs-downloads-products-migration
 readonly SUDOERS_FILE=/etc/sudoers.d/voxelpacs-downloads-products-migration
 readonly MIGRATION_REL=database/migrations/2026-09-09_desktop_download_catalog_products_postgresql.sql
-readonly MIGRATION_SHA256=de8b3e0d266a52f973f85f797212833471296ff4208026047103d59ebd34c059
+readonly MIGRATION_SHA256=181ddb6dbdcb9f8e05062ce1aa8d9f765de8bc994ed9155749dfd0ca50769a74
 readonly EXPECTED_SCHEMA=voxelpacs_mysql_source
 readonly MARKER='# DOWNLOADS_PRODUCTS_MIGRATION_EXACT_COMMAND'
 
@@ -35,7 +36,7 @@ fi
 readonly APP_ROOT=/var/www/voxelpacs/app
 readonly ENV_FILE="$APP_ROOT/.env"
 readonly MIGRATION="$APP_ROOT/database/migrations/2026-09-09_desktop_download_catalog_products_postgresql.sql"
-readonly EXPECTED_SHA256=de8b3e0d266a52f973f85f797212833471296ff4208026047103d59ebd34c059
+readonly EXPECTED_SHA256=181ddb6dbdcb9f8e05062ce1aa8d9f765de8bc994ed9155749dfd0ca50769a74
 readonly EXPECTED_SCHEMA=voxelpacs_mysql_source
 
 env_value() {

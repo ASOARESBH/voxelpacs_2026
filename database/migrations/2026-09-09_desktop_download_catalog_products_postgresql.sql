@@ -1,4 +1,5 @@
 -- Catálogo Downloads: mantém o rascunho legado e permite separar View/Desktop de Router Desktop.
+-- Materialização técnica isolada para cópia controlada ao servidor; não executa a migration.
 SET search_path TO voxelpacs_mysql_source;
 
 DO $$
