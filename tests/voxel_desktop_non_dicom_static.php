@@ -25,7 +25,8 @@ foreach (['tenant_id','idempotency_key','configuration_secret','enabled'] as $gu
 if (!str_contains($service,"if (\$destinations === []) return ['created'=>false,'jobs'=>0,'reason'=>'no_eligible_destination'];")) throw new RuntimeException('Outbox deve permanecer inerte sem destino elegível.');
 if (!str_contains($service,"'reason'=>'feature_disabled'")) throw new RuntimeException('Outbox deve permanecer inerte enquanto a feature estiver desativada.');
 if (!str_contains($platform,"'enabled'=>0")) throw new RuntimeException('Piloto não pode habilitar destino pelo formulário.');
-foreach (['destination_incomplete','invalid_identifier','invalid_router_token','voxel_desktop.destination.rejected','technicalEvents'] as $guard) if (!str_contains($platform.$repository, $guard)) throw new RuntimeException("Diagnóstico sanitizado ausente: {$guard}");
+foreach (['destination_incomplete','identifier_too_long','invalid_router_token','voxel_desktop.destination.rejected','technicalEvents'] as $guard) if (!str_contains($platform.$repository, $guard)) throw new RuntimeException("Diagnóstico sanitizado ausente: {$guard}");
+if (str_contains($platform, 'A-Za-z0-9._-')) throw new RuntimeException('Router ID e Site ID não podem restringir o formato administrativo local.');
 foreach (['pacs_voxel_desktop_attempts','j.tenant_id = :tenant_id','configuration_secret','payload_json','storage_path'] as $guard) if (!str_contains($repository, $guard)) throw new RuntimeException("Contrato de log técnico ausente: {$guard}");
 if (str_contains($repository, 'SELECT * FROM pacs_voxel_desktop_attempts')) throw new RuntimeException('Log técnico não pode expor tentativas brutas.');
 if (!str_contains($view, 'voxel_desktop.logs_title') || !str_contains($view, 'technicalLogs')) throw new RuntimeException('Painel de log técnico ausente.');

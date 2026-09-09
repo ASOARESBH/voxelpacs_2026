@@ -81,7 +81,7 @@ final class VoxelDesktopController extends Controller
         $profile = (string)($_POST['profile'] ?? 'submission_document');
         $environment = (string)($_POST['ambiente'] ?? 'homologacao');
         if ($name === '' || $router === '' || $site === '' || ($issuer === '' && $institution === '')) throw new DomainException('destination_incomplete');
-        if (!preg_match('/^[A-Za-z0-9._-]{3,120}$/', $router) || !preg_match('/^[A-Za-z0-9._-]{3,120}$/', $site)) throw new DomainException('invalid_identifier');
+        if (mb_strlen($router) > 120 || mb_strlen($site) > 120) throw new DomainException('identifier_too_long');
         if ($profile !== 'submission_document' || $environment !== 'homologacao') throw new DomainException('unsupported_profile');
         $token = trim((string)($_POST['router_token'] ?? ''));
         $secret = '';

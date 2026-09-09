@@ -63,7 +63,7 @@ final class VoxelDesktopRepository
         foreach ($audit->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $details = json_decode((string)($row['details'] ?? ''), true);
             $code = is_array($details) ? (string)($details['reason_code'] ?? $details['result'] ?? 'recorded') : 'recorded';
-            if (!in_array($code, ['saved_disabled','destination_incomplete','invalid_identifier','unsupported_profile','invalid_router_token','technical_failure'], true)) $code = 'recorded';
+            if (!in_array($code, ['saved_disabled','destination_incomplete','invalid_identifier','identifier_too_long','unsupported_profile','invalid_router_token','technical_failure'], true)) $code = 'recorded';
             $event = match ((string)$row['action']) {
                 'voxel_desktop.destination.save' => 'configuration_saved',
                 'voxel_desktop.destination.rejected' => 'configuration_rejected',

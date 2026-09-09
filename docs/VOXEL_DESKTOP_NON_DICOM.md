@@ -22,7 +22,7 @@ Antes de ativar qualquer destino são necessários: homologação com artefatos 
 
 ## Salvamento desativado e diagnóstico técnico
 
-O formulário do control-plane aceita somente um destino em homologação, com `enabled=0`. Router ID e Site ID são identificadores administrativos com 3 a 120 caracteres e usam exclusivamente letras, números, ponto, hífen e sublinhado. O roteamento exige Issuer ou InstitutionName; quando há Issuer, ele tem precedência.
+O formulário do control-plane aceita somente um destino em homologação, com `enabled=0`. Router ID e Site ID são identificadores administrativos livres, com limite de armazenamento de 120 caracteres, e precisam corresponder literalmente aos valores configurados no Router Desktop. O roteamento exige Issuer ou InstitutionName; quando há Issuer, ele tem precedência.
 
 Em PostgreSQL, a criação do destino usa `RETURNING id`; não depende de `lastInsertId()`. Falhas de validação são registradas na auditoria por código sanitizado, sem token, segredo, caminho local, URL, payload de laudo ou identificadores clínicos.
 
