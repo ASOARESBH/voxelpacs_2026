@@ -1,4 +1,5 @@
 <!-- VOXEL PACS — Página de Instalação do App (PWA) -->
+<!-- Materialização de runtime do catálogo Downloads para publicação restrita. -->
 <style>
 .pwa-install-wrap {
     max-width: 640px;

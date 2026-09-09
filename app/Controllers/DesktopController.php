@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 /**
  * DesktopController — VOXEL Desktop
  *

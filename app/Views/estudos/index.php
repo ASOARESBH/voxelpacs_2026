@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 /**
  * VOXEL PACS — Worklist de Estudos (v4)
  * Layout reformulado: compacto, ícones de sexo coloridos, SLA semafórico, Ações espaçosas e menu de visualizadores efetivo.

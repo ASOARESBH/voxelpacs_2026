@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 namespace App\Repositories;
 
 use App\Core\Database;

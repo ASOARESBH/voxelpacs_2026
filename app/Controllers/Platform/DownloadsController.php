@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 namespace App\Controllers\Platform;
 
 use App\Core\Audit\AuditLogger;

@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Materialização de runtime do catálogo Downloads para publicação restrita. -->
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
