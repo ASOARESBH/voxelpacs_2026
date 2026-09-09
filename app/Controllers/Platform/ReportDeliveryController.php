@@ -13,6 +13,7 @@ use App\Services\InstitutionResolverService;
 use App\Services\DicomIssuerService;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\ReportDeliveryManualQueueService;
+use App\Services\PhilipsFolderDeliveryService;
 use DomainException;
 use Throwable;
 
@@ -29,7 +30,7 @@ class ReportDeliveryController extends Controller
     private Tenant $tenantModel;
 
     /** @var array<int, string> */
-    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp'];
+    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp', 'philips_folder'];
 
     public function __construct()
     {
@@ -103,6 +104,10 @@ class ReportDeliveryController extends Controller
                 $issuerNormalized,
                 $institutionName
             );
+            $eligible = array_values(array_filter($eligible, static fn(array $destination): bool =>
+                (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                || PhilipsFolderDeliveryService::enabled()
+            ));
             $manualEligible = array_filter($eligible, static fn(array $destination): bool =>
                 (string) ($destination['ambiente'] ?? '') === 'homologacao'
             );
@@ -377,6 +382,11 @@ class ReportDeliveryController extends Controller
         if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
             throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
         }
+        if ($transport === PhilipsFolderDeliveryService::TRANSPORT && !PhilipsFolderDeliveryService::enabled()) {
+            if ($enabled || !empty($_POST['disparar_na_liberacao'])) {
+                throw new DomainException(t('philips_folder.feature_desativada'));
+            }
+        }
         if ($configuration === '') {
             $configuration = '{}';
         }
@@ -462,6 +472,14 @@ class ReportDeliveryController extends Controller
             $username = trim((string) ($configuration['username'] ?? ''));
             if (!in_array($protocol, ['sftp', 'ftps'], true) || $directory === '' || $directory[0] !== '/' || $username === '') {
                 throw new DomainException('Informe protocolo seguro, pasta remota iniciando com / e usuário do destino.');
+            }
+            return;
+        }
+
+        if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
+            if (($configuration['delivery_profile'] ?? '') !== 'pdf_only'
+                || !filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                throw new DomainException(t('philips_folder.configuracao_invalida'));
             }
         }
     }

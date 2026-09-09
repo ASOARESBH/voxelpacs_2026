@@ -28,15 +28,15 @@ final class ReportDeliveryArtifactService
         $this->workerRepository = new ReportDeliveryWorkerRepository($this->pdo);
     }
 
-    /** @return array{content:string,sha256:string,size:int,filename:string,report_id:int,study_instance_uid:string} */
+    /** @return array{content:string,sha256:string,size:int,filename:string,storage_path:string,report_id:int,study_instance_uid:string} */
     public function buildPdfForLeasedJob(int $jobId, string $workerId): array
     {
         $job = $this->workerRepository->findLeasedJobContext($jobId, $workerId);
         if (!$job) {
             throw new RuntimeException('Job não está reservado para este worker.');
         }
-        if (($job['transport'] ?? '') !== 'dicom_pdf') {
-            throw new RuntimeException('Artefato PDF DICOM solicitado para um transporte incompatível.');
+        if (!in_array((string) ($job['transport'] ?? ''), ['dicom_pdf', PhilipsFolderDeliveryService::TRANSPORT], true)) {
+            throw new RuntimeException('Artefato PDF solicitado para um transporte incompatível.');
         }
 
         $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
@@ -66,6 +66,7 @@ final class ReportDeliveryArtifactService
             'sha256' => $sha256,
             'size' => strlen($binary),
             'filename' => $filename,
+            'storage_path' => $storagePath,
             'report_id' => (int) $job['report_id'],
             'study_instance_uid' => (string) ($estudo->study_instance_uid ?? ''),
         ];

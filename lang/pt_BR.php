@@ -18,6 +18,15 @@ return [
     'comum.acoes.voltar' => 'Voltar',
     'comum.acoes.titulo' => 'Ações',
     'comum.acoes.excluir' => 'Excluir',
+    'philips_folder.nome_transporte' => 'Philips Folder PDF (VPN privada)',
+    'philips_folder.configuracao_titulo' => 'Entrega Philips Folder — PDF somente',
+    'philips_folder.configuracao_ajuda' => 'A pasta remota, o método SMB/SFTP e as credenciais não são informados neste painel. Eles pertencem exclusivamente à bridge privada configurada fora da aplicação.',
+    'philips_folder.pdf_only' => 'Usa somente o PDF imutável gerado pelo mecanismo oficial do VOXEL.',
+    'philips_folder.sem_endpoint_publico' => 'O PACS não acessa a pasta Windows nem SMB/SFTP diretamente.',
+    'philips_folder.flag_desativada' => 'A feature está desativada: o destino pode ser registrado, mas não pode ser habilitado ou disparado.',
+    'philips_folder.guia' => 'Este transporte usa uma bridge privada pela VPN existente. A ativação e o disparo permanecem bloqueados até a homologação operacional.',
+    'philips_folder.feature_desativada' => 'A entrega Philips Folder está desativada. Salve o destino sem habilitar ou disparar na liberação.',
+    'philips_folder.configuracao_invalida' => 'A configuração Philips Folder deve usar somente o perfil PDF e a bridge privada aprovada.',
 
     // Autenticação — login e seletor de idioma
     'auth.login.titulo'                    => 'Acesse sua conta',

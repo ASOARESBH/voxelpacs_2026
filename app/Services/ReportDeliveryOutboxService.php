@@ -110,6 +110,8 @@ class ReportDeliveryOutboxService
             $destinations = array_values(array_filter(
                 $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName),
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
+                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                        || PhilipsFolderDeliveryService::enabled())
             ));
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
@@ -118,19 +120,23 @@ class ReportDeliveryOutboxService
 
             if ($jobs > 0) {
                 $repository->markOutboxQueued($outboxId);
+                if (array_filter($destinations, static fn(array $destination): bool => (string) ($destination['transport'] ?? '') === PhilipsFolderDeliveryService::TRANSPORT)) {
+                    Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_QUEUED', [
+                        'tenant_id' => $tenantId,
+                        'outbox_id' => $outboxId,
+                        'job_count' => $jobs,
+                    ]);
+                }
             }
 
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
                 Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado à origem de devolução do estudo', [
                     'tenant_id' => $tenantId,
-                    'estudo_id' => $estudoId,
-                    'institution_name_received' => $rawInstitutionName,
-                    'institution_name_canonical' => $institutionName,
-                'issuer_of_patient_id_normalized' => $issuerNormalized,
-                'routing_basis' => $routingBasis,
-                'dispatch_mode' => $dispatchMode,
-            ]);
+                    'outbox_id' => $outboxId,
+                    'routing_basis' => $routingBasis,
+                    'dispatch_mode' => $dispatchMode,
+                ]);
             }
 
             return [

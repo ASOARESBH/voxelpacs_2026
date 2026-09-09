@@ -5,6 +5,8 @@ use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryGatewayBridgeClient;
+use App\Services\PhilipsFolderDeliveryException;
+use App\Services\PhilipsFolderDeliveryService;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
@@ -28,6 +30,17 @@ final class LocalDicomDeliveryWorker
         'association_rejected',
         'tls_required',
         'command_failed',
+    ];
+    private const PHILIPS_FOLDER_REASON_CATEGORIES = [
+        'feature_disabled',
+        'invalid_configuration',
+        'invalid_artifact',
+        'artifact_unreadable',
+        'gateway_policy_rejected',
+        'credentials_unavailable',
+        'gateway_unavailable',
+        'gateway_delivery_failed',
+        'remote_integrity_unconfirmed',
     ];
     private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
 
@@ -58,7 +71,7 @@ final class LocalDicomDeliveryWorker
 
     public function runOne(int $jobId): int
     {
-        $job = $this->repository->claimJobById($jobId, $this->workerId, self::SUPPORTED_TRANSPORTS, date('Y-m-d'));
+        $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
         if ($job === null) {
             fwrite(STDERR, "controlled_job_not_eligible\n");
             return 3;
@@ -77,7 +90,7 @@ final class LocalDicomDeliveryWorker
                 if ($expired > 0) {
                     Logger::warning('[ReportDeliveryWorker] Pendências automáticas expiradas', ['count' => $expired]);
                 }
-                $job = $this->repository->claimNextJob($this->workerId, self::SUPPORTED_TRANSPORTS, $clinicalDate);
+                $job = $this->repository->claimNextJob($this->workerId, $this->supportedTransports(), $clinicalDate);
                 if ($job === null) {
                     sleep($this->idleSeconds);
                     continue;
@@ -86,7 +99,7 @@ final class LocalDicomDeliveryWorker
             } catch (Throwable $error) {
                 Logger::error('[ReportDeliveryWorker] Ciclo local interrompido', [
                     'worker_id' => $this->workerId,
-                    'error' => $error->getMessage(),
+                    'error_class' => get_class($error),
                 ]);
                 sleep($this->idleSeconds);
             }
@@ -98,36 +111,71 @@ final class LocalDicomDeliveryWorker
     {
         $jobId = (int) ($job['id'] ?? 0);
         try {
-            if ($jobId <= 0 || !in_array((string) ($job['transport'] ?? ''), self::SUPPORTED_TRANSPORTS, true)) {
+            $transport = (string) ($job['transport'] ?? '');
+            if ($jobId <= 0 || !in_array($transport, $this->supportedTransports(), true)) {
                 throw new DeliveryWorkerFailure('invalid_job');
             }
 
             $configuration = $this->decodeMap($job['configuration_json'] ?? null, 'invalid_configuration');
             $payload = $this->decodeMap($job['payload_json'] ?? null, 'invalid_payload');
-            $this->validateDestination($configuration, $payload);
+            if ($transport === 'dicom_pdf') {
+                $this->validateDestination($configuration, $payload);
+            }
 
             $artifact = $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId);
-            $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
+            if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
+                Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_PROCESSING', ['job_id' => $jobId]);
+                $result = (new PhilipsFolderDeliveryService())->deliver($job, $configuration, $payload, $artifact);
+                $this->repository->recordArtifact(
+                    (int) $job['outbox_id'],
+                    (int) $job['tenant_id'],
+                    isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                    'philips_folder_pdf',
+                    (string) ($artifact['storage_path'] ?? ''),
+                    $result['sha256'],
+                    $result['size']
+                );
+            } else {
+                $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
+            }
             $this->repository->completeJob($jobId, $this->workerId, $result['reference'], [
-                'transport' => 'dicom_pdf',
+                'transport' => $transport,
                 'environment' => (string) ($job['ambiente'] ?? ''),
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
             ]);
-            Logger::info('[ReportDeliveryWorker] Entrega DICOM concluída', [
+            Logger::info(
+                $transport === PhilipsFolderDeliveryService::TRANSPORT
+                    ? '[PhilipsFolderDelivery] PHILIPS_EXPORT_SUCCESS'
+                    : '[ReportDeliveryWorker] Entrega DICOM concluída',
+                ['job_id' => $jobId, 'transport' => $transport, 'environment' => (string) ($job['ambiente'] ?? '')]
+            );
+        } catch (PhilipsFolderDeliveryException $error) {
+            Logger::warning('[PhilipsFolderDelivery] PHILIPS_EXPORT_FAILED', [
                 'job_id' => $jobId,
-                'transport' => 'dicom_pdf',
-                'environment' => (string) ($job['ambiente'] ?? ''),
+                'stage' => $error->stage,
+                'reason_category' => $error->reasonCategory,
             ]);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
         } catch (DeliveryWorkerFailure $error) {
             $this->failSafely($jobId, $error->stage, $error->reasonCategory);
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
-                'error' => $error->getMessage(),
+                'error_class' => get_class($error),
             ]);
             $this->failSafely($jobId, 'unexpected_error');
         }
+    }
+
+    /** @return list<string> */
+    private function supportedTransports(): array
+    {
+        $transports = self::SUPPORTED_TRANSPORTS;
+        if (PhilipsFolderDeliveryService::enabled()) {
+            $transports[] = PhilipsFolderDeliveryService::TRANSPORT;
+        }
+        return $transports;
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact @return array{reference:string,sha256:string,size:int} */
@@ -443,14 +491,14 @@ final class LocalDicomDeliveryWorker
         }
         try {
             $metadata = ['stage' => $stage];
-            if (in_array($reasonCategory, self::CSTORE_REASON_CATEGORIES, true)) {
+            if (in_array($reasonCategory, array_merge(self::CSTORE_REASON_CATEGORIES, self::PHILIPS_FOLDER_REASON_CATEGORIES), true)) {
                 $metadata['reason_category'] = $reasonCategory;
             }
             $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,
-                'error' => $failure->getMessage(),
+                'error_class' => get_class($failure),
             ]);
         }
     }

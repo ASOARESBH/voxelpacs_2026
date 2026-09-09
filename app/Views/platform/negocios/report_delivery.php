@@ -17,6 +17,7 @@ $transportLabels = [
     'hl7_oru' => 'HL7 ORU^R01',
     'https_webhook' => 'HTTPS Webhook/API',
     'sftp' => 'SFTP/FTPS',
+    'philips_folder' => t('philips_folder.nome_transporte'),
 ];
 ?>
 
@@ -175,6 +176,19 @@ $transportLabels = [
                                 <div class="col-12"><label class="form-label" for="sftp-password">Senha ou chave privada</label><div class="input-group"><input class="form-control" id="sftp-password" data-secret-field="password" type="password" autocomplete="new-password" placeholder="Informe somente a credencial fornecida pelo cliente"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="sftp-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text">A credencial é cifrada. O conteúdo nunca é mostrado novamente.</div></div>
                             </div>
                         </div>
+                        <div class="destination-fields mt-3 d-none" data-transport-group="philips_folder">
+                            <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_folder.configuracao_titulo')) ?></h3>
+                            <div class="alert alert-info small mb-0" role="status">
+                                <p class="mb-2"><?= $escape(t('philips_folder.configuracao_ajuda')) ?></p>
+                                <ul class="mb-0 ps-3">
+                                    <li><?= $escape(t('philips_folder.pdf_only')) ?></li>
+                                    <li><?= $escape(t('philips_folder.sem_endpoint_publico')) ?></li>
+                                    <li><?= $escape(t('philips_folder.flag_desativada')) ?></li>
+                                </ul>
+                            </div>
+                            <input type="hidden" data-field="delivery_profile" value="pdf_only">
+                            <input type="hidden" data-field="gateway_bridge" value="1">
+                        </div>
                         <div class="row g-3 mt-0">
                             <div class="col-md-6"><label class="form-label" for="destination-timeout">Timeout (segundos)</label><input class="form-control" id="destination-timeout" type="number" name="timeout_seconds" min="5" max="120" value="30"></div>
                             <div class="col-md-6"><label class="form-label" for="destination-attempts">Tentativas máximas</label><input class="form-control" id="destination-attempts" type="number" name="max_attempts" min="1" max="10" value="5"></div>
@@ -315,13 +329,15 @@ $transportLabels = [
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const issuerSelectors = Array.from(form.querySelectorAll('.issuer-selector'));
     const baseAction = form.action;
-    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
+    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge'];
+    const philipsFolderFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::enabled() ? 'true' : 'false' ?>;
     const guideText = {
         dicom_pdf: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
         dicom_sr: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
         hl7_oru: 'Informe os dados da interface HL7/MLLP fornecidos pelo HIS ou RIS do cliente.',
         https_webhook: 'Informe a URL HTTPS fornecida pela equipe de integração do cliente.',
         sftp: 'Informe a pasta segura e as credenciais fornecidas pelo cliente. FTP simples não é aceito.',
+        philips_folder: <?= json_encode(t('philips_folder.guia'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
     };
     let currentConfig = {};
 
@@ -345,6 +361,16 @@ $transportLabels = [
             group.querySelectorAll('[data-required]').forEach((input) => { input.required = active; });
         });
         guide.innerHTML = '<i class="fa fa-circle-info me-1"></i>' + (guideText[transport.value] || 'Preencha os dados fornecidos pelo cliente.');
+        const philipsFolderInactive = transport.value === 'philips_folder' && !philipsFolderFeatureEnabled;
+        if (philipsFolderInactive) {
+            enabled.checked = false;
+            enabled.disabled = true;
+            document.getElementById('destination-release').checked = false;
+            document.getElementById('destination-release').disabled = true;
+        } else {
+            enabled.disabled = false;
+            document.getElementById('destination-release').disabled = false;
+        }
         populateActiveFields();
     }
 

@@ -1,0 +1,23 @@
+[Unit]
+Description=VOXEL Philips Folder Private Delivery Bridge
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+ConditionPathExists=/etc/voxelpacs/philips-folder-bridge.env
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/voxelpacs/philips-folder-bridge.env
+ExecStart=/usr/bin/python3 /opt/voxelpacs/report-delivery-gateway/philips_folder_bridge.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/voxelpacs/philips-folder-bridge /var/lib/voxelpacs/philips-folder-target
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
