@@ -39,7 +39,7 @@ final class VoxelDesktopRepository
         if (!$destination) throw new DomainException('destination_not_found');
         if ($enabled && trim((string)$destination['configuration_secret']) === '') throw new DomainException('destination_token_missing');
         if ($enabled) {
-            $conflict=$this->pdo->prepare('SELECT 1 FROM pacs_voxel_desktop_destinations WHERE router_id=:router_id AND site_id=:site_id AND enabled=1 AND id<>:id LIMIT 1');
+            $conflict=$this->pdo->prepare('SELECT 1 FROM pacs_voxel_desktop_destinations WHERE router_id=:router_id AND site_id=:site_id AND enabled=TRUE AND id<>:id LIMIT 1');
             $conflict->execute([':router_id'=>(string)$destination['router_id'], ':site_id'=>(string)$destination['site_id'], ':id'=>$destinationId]);
             if ($conflict->fetchColumn()) throw new DomainException('destination_pair_conflict');
         }
@@ -178,7 +178,7 @@ final class VoxelDesktopRepository
             ? 'd.issuer_of_patient_id_normalized = :source'
             : 'd.institution_name = :source';
         $value = $issuerNormalized !== null && $issuerNormalized !== '' ? $issuerNormalized : $institutionName;
-        $stmt = $this->pdo->prepare("SELECT * FROM pacs_voxel_desktop_destinations d WHERE d.tenant_id=:tenant_id AND d.enabled=1 AND d.disparar_na_liberacao=1 AND {$source} AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id=:estabelecimento_id)");
+        $stmt = $this->pdo->prepare("SELECT * FROM pacs_voxel_desktop_destinations d WHERE d.tenant_id=:tenant_id AND d.enabled=TRUE AND d.disparar_na_liberacao=TRUE AND {$source} AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id=:estabelecimento_id)");
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
         $stmt->bindValue(':source', $value, PDO::PARAM_STR);
         $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, $estabelecimentoId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
