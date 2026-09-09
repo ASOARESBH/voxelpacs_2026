@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime da assinatura PDO de introspecção usada pelo control-plane Voxel Desktop.
 namespace App\Core;
 
 use PDO;
