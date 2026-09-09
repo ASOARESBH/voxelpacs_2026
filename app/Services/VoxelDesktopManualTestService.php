@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime do serviço de preparo manual isolado e expirável.
 declare(strict_types=1);
 
 namespace App\Services;

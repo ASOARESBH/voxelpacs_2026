@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime do control-plane: edição, ambiente e teste manual sem fila.
 // Materialização de runtime para publicação restrita do Voxel Desktop com identificadores administrativos livres.
 declare(strict_types=1);
 

@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime das mensagens do control-plane e teste manual Voxel Desktop.
 // Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.
 // Sincronização visual do seletor explícito de produto.
 // Materialização de runtime: mensagens de diagnóstico seguro e IDs livres do Voxel Desktop.

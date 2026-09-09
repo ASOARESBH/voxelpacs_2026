@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime das rotas autenticadas de busca manual de uso único do Router.
 // Materialização de runtime para publicação restrita do Voxel Desktop.
 use App\Core\Router;
 

@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime da preparação de artefato de teste manual sem outbox.
 // Materialização de runtime para publicação restrita do Voxel Desktop.
 declare(strict_types=1);
 

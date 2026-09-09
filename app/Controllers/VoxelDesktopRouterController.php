@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime dos endpoints de teste manual de uso único, sem claim de jobs.
 // Materialização de runtime para publicação restrita do Voxel Desktop com status autenticado de leitura.
 declare(strict_types=1);
 
