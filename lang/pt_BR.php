@@ -1,5 +1,6 @@
 <?php
 // Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.
+// Sincronização visual do seletor explícito de produto.
 // Materialização de runtime: mensagens de diagnóstico seguro e IDs livres do Voxel Desktop.
 // Materialização de runtime para publicação restrita do Voxel Desktop.
 // Materialização de runtime do catálogo Downloads para publicação restrita.

@@ -1,5 +1,6 @@
 <!-- Catálogo Downloads: escolha explícita de produto antes do armazenamento privado; o upload continua como rascunho. -->
 <!-- Materialização de runtime para publicação restrita da escolha explícita de produto. -->
+<!-- Sincronização visual do seletor explícito de produto. -->
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div><h1 class="h3 mb-1"><?= htmlspecialchars(t('downloads.new')) ?></h1><p class="text-muted mb-0"><?= htmlspecialchars(t('downloads.upload_help')) ?></p></div>

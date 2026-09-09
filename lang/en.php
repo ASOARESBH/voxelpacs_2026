@@ -1,5 +1,6 @@
 <?php
 // Runtime materialization for restricted publication of Downloads product separation.
+// Visual synchronization for the explicit product selector.
 // Runtime materialization: Voxel Desktop safe diagnostics and flexible local IDs.
 // Runtime publication materialization for Voxel Desktop.
 // Runtime materialization for restricted Downloads catalog publication.
