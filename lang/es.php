@@ -1,4 +1,5 @@
 <?php
+// Materialización de runtime Philips Folder: mensajes de control inerte.
 // Sincronización de runtime de mensajes de control y prueba manual de Voxel Desktop.
 // Materialización de runtime para publicación restringida de la separación de productos de Downloads.
 // Sincronización visual del selector explícito de producto.

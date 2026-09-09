@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime Philips Folder: não cria jobs enquanto a flag estiver desligada.
 
 namespace App\Services;
 

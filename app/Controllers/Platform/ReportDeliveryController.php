@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime Philips Folder: control-plane permanece inerte por feature flag.
 
 namespace App\Controllers\Platform;
 

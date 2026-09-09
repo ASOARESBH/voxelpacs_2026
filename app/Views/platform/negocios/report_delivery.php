@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime Philips Folder: formulário sem endpoint ou segredo remoto.
 /** @var array<string,mixed> $tenant */
 /** @var array<int,array<string,mixed>> $destinations */
 /** @var array<int,array<string,mixed>> $jobs */

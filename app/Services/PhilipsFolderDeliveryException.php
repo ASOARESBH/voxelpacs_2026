@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// Materialização de runtime Philips Folder: categorias sanitizadas de falha.
+
 namespace App\Services;
 
 use RuntimeException;

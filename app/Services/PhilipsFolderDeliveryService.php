@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// Materialização de runtime Philips Folder: transporte desativado por padrão.
+
 namespace App\Services;
 
 /**

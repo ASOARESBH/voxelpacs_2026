@@ -1,4 +1,5 @@
 <?php
+// Philips Folder runtime materialization: inert control messages.
 // Runtime synchronization for Voxel Desktop control-plane and manual test messages.
 // Runtime materialization for restricted publication of Downloads product separation.
 // Visual synchronization for the explicit product selector.

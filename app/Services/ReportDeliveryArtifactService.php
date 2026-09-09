@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+// Materialização de runtime Philips Folder: PDF oficial permanece privado.
+
 namespace App\Services;
 
 use App\Core\Database;
