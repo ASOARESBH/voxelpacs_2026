@@ -1,15 +1,22 @@
 <?php
-// Materialização de runtime do catálogo Downloads para publicação restrita.
+// Catálogo Downloads: ZIP privado por produto; View/Desktop é o único produto distribuído pela Worklist.
 namespace App\Services;
 
 use App\Repositories\DesktopDownloadRepository;
 
 final class DesktopDownloadService
 {
+    public const PRODUCT_VIEW_DESKTOP = 'voxel_view_desktop';
+    public const PRODUCT_ROUTER_DESKTOP = 'voxel_router_desktop';
+
     private const MAX_BYTES = 1024 * 1024 * 1024;
     private const MAX_FILES = 256;
     private const MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
-    private const STORAGE_ROOT = BASE_PATH . '/storage/downloads/voxel-desktop';
+    private const STORAGE_ROOT = BASE_PATH . '/storage/downloads';
+    private const PRODUCT_DIRECTORIES = [
+        self::PRODUCT_VIEW_DESKTOP => 'voxel-view-desktop',
+        self::PRODUCT_ROUTER_DESKTOP => 'voxel-router-desktop',
+    ];
 
     public function __construct(private ?DesktopDownloadRepository $repository = null)
     {
@@ -23,6 +30,8 @@ final class DesktopDownloadService
     {
         if (!$this->repository->available()) throw new \DomainException('catalog_unavailable');
         $validated = $this->validateZip($file);
+        $productKey = strtolower(trim((string) ($input['product_key'] ?? '')));
+        $this->assertCurrentProduct($productKey);
         $version = trim((string) ($input['version_name'] ?? ''));
         if (!preg_match('/^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][A-Za-z0-9.-]+)?$/', $version)) throw new \DomainException('invalid_version');
         $platform = strtolower(trim((string) ($input['platform'] ?? 'windows')));
@@ -31,14 +40,17 @@ final class DesktopDownloadService
         $notes = trim(strip_tags((string) ($input['notes'] ?? '')));
         if (mb_strlen($notes) > 6000) throw new \DomainException('notes_too_long');
 
-        if (!is_dir(self::STORAGE_ROOT) && !mkdir(self::STORAGE_ROOT, 0700, true) && !is_dir(self::STORAGE_ROOT)) throw new \RuntimeException('storage_unavailable');
-        $storageKey = 'voxel-desktop/' . bin2hex(random_bytes(20)) . '.zip';
-        $target = BASE_PATH . '/storage/downloads/' . $storageKey;
+        $directory = self::PRODUCT_DIRECTORIES[$productKey];
+        $targetDirectory = self::STORAGE_ROOT . '/' . $directory;
+        if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0700, true) && !is_dir($targetDirectory)) throw new \RuntimeException('storage_unavailable');
+        $storageKey = $directory . '/' . bin2hex(random_bytes(20)) . '.zip';
+        $target = self::STORAGE_ROOT . '/' . $storageKey;
         if (!move_uploaded_file($validated['tmp_name'], $target)) throw new \RuntimeException('storage_write_failed');
         @chmod($target, 0600);
 
         try {
             return $this->repository->create([
+                ':product_key' => $productKey,
                 ':version_name' => $version,
                 ':platform' => $platform,
                 ':channel' => $channel,
@@ -98,9 +110,10 @@ final class DesktopDownloadService
     }
 
     /** @return array<string,mixed>|null */
-    public function resolvePublished(string $platform, string $channel): ?array
+    public function resolvePublished(string $platform, string $channel, string $productKey = self::PRODUCT_VIEW_DESKTOP): ?array
     {
-        return $this->repository->latestPublished($platform, $channel);
+        $this->assertCurrentProduct($productKey);
+        return $this->repository->latestPublished($productKey, $platform, $channel);
     }
 
     /** @return array<string,mixed> */
@@ -109,6 +122,7 @@ final class DesktopDownloadService
         if (!$this->repository->available()) throw new \DomainException('catalog_unavailable');
         $package = $this->repository->find($packageId);
         if (!$package) throw new \DomainException('not_found');
+        $this->assertCurrentProduct((string) ($package['product_key'] ?? ''));
         if (!$this->pathFor($package)) throw new \DomainException('package_file_missing');
         $this->repository->publish($packageId, $userId);
         return $this->repository->find($packageId) ?? $package;
@@ -124,20 +138,49 @@ final class DesktopDownloadService
         return $this->repository->find($packageId) ?? $package;
     }
 
+    /** @return array<string,mixed> */
+    public function deleteDraft(int $packageId): array
+    {
+        if (!$this->repository->available()) throw new \DomainException('catalog_unavailable');
+        $package = $this->repository->find($packageId);
+        if (!$package) throw new \DomainException('not_found');
+        if (($package['status'] ?? '') !== 'draft') throw new \DomainException('package_not_deletable');
+        $path = $this->pathFor($package);
+        $quarantinePath = null;
+        if ($path !== null) {
+            $quarantinePath = $path . '.deleting-' . bin2hex(random_bytes(8));
+            if (!@rename($path, $quarantinePath)) throw new \RuntimeException('storage_delete_failed');
+        }
+        if (!$this->repository->deleteDraftWithoutDownloads($packageId)) {
+            if ($path !== null && $quarantinePath !== null) @rename($quarantinePath, $path);
+            throw new \DomainException('package_not_deletable');
+        }
+        if ($quarantinePath !== null && !@unlink($quarantinePath)) throw new \RuntimeException('storage_delete_failed');
+        return $package;
+    }
+
     /** @return resource|null */
     public function openPrivatePackage(array $package)
     {
-        $key = (string) ($package['storage_key'] ?? '');
-        if (!preg_match('#^voxel-desktop/[a-f0-9]{40}\.zip$#', $key)) return null;
-        $path = BASE_PATH . '/storage/downloads/' . $key;
-        return is_file($path) ? @fopen($path, 'rb') : null;
+        $path = $this->pathFor($package);
+        return $path !== null ? @fopen($path, 'rb') : null;
     }
 
     public function pathFor(array $package): ?string
     {
         $key = (string) ($package['storage_key'] ?? '');
-        if (!preg_match('#^voxel-desktop/[a-f0-9]{40}\.zip$#', $key)) return null;
-        $path = BASE_PATH . '/storage/downloads/' . $key;
+        if (!$this->isSafeStorageKey($key)) return null;
+        $path = self::STORAGE_ROOT . '/' . $key;
         return is_file($path) ? $path : null;
+    }
+
+    private function assertCurrentProduct(string $productKey): void
+    {
+        if (!array_key_exists($productKey, self::PRODUCT_DIRECTORIES)) throw new \DomainException('invalid_product');
+    }
+
+    private function isSafeStorageKey(string $key): bool
+    {
+        return (bool) preg_match('#^(?:voxel-desktop|voxel-view-desktop|voxel-router-desktop)/[a-f0-9]{40}\.zip$#', $key);
     }
 }

@@ -1,5 +1,5 @@
 <?php
-// Materialização de runtime do catálogo Downloads para publicação restrita.
+// Catálogo Downloads: administração global, produtos separados e exclusão auditada apenas de rascunhos.
 namespace App\Controllers\Platform;
 
 use App\Core\Audit\AuditLogger;
@@ -64,6 +64,22 @@ final class DownloadsController extends Controller
         $this->redirect('/platform/downloads');
     }
 
+    public function delete(int $id): void
+    {
+        if (!$this->authorize() || !$this->csrf()) return;
+        try {
+            $package = $this->service->deleteDraft($id);
+            $this->auditPackage('downloads.package_deleted', $id, $package);
+            $_SESSION['success'] = t('downloads.deleted');
+        } catch (DomainException $e) {
+            $_SESSION['error'] = $this->messageFor($e->getMessage());
+        } catch (Throwable $e) {
+            Logger::warning('[DownloadsController::delete] refused', ['package_id' => $id]);
+            $_SESSION['error'] = t('downloads.action_error');
+        }
+        $this->redirect('/platform/downloads');
+    }
+
     public function stats(int $id): void
     {
         if (!$this->authorize()) return;
@@ -92,11 +108,13 @@ final class DownloadsController extends Controller
         return t('downloads.error.' . $code);
     }
 
-    private function auditPackage(string $action, int $id): void
+    /** @param array<string,mixed>|null $package */
+    private function auditPackage(string $action, int $id, ?array $package = null): void
     {
-        $package = $this->service->repository()->find($id);
+        $package ??= $this->service->repository()->find($id);
         if (!$package) return;
         AuditLogger::log($action, 'bi_desktop_release_packages', $id, [
+            'product_key' => (string) ($package['product_key'] ?? ''),
             'version' => (string) ($package['version_name'] ?? ''),
             'platform' => (string) ($package['platform'] ?? ''),
             'channel' => (string) ($package['channel'] ?? ''),

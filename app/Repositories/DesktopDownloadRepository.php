@@ -1,5 +1,5 @@
 <?php
-// Materialização de runtime do catálogo Downloads para publicação restrita.
+// Catálogo Downloads: separa produtos e mantém exclusão restrita a rascunhos sem telemetria.
 namespace App\Repositories;
 
 use App\Core\Database;
@@ -44,14 +44,15 @@ final class DesktopDownloadRepository
     }
 
     /** @return array<string,mixed>|null */
-    public function latestPublished(string $platform, string $channel = 'stable'): ?array
+    public function latestPublished(string $productKey, string $platform, string $channel = 'stable'): ?array
     {
         if (!$this->available()) return null;
-        $stmt = $this->pdo->prepare("SELECT * FROM bi_desktop_release_packages WHERE product_key = 'voxel_desktop' AND platform = ? AND channel = ? AND status = 'published' ORDER BY published_at DESC NULLS LAST, id DESC LIMIT 1");
+        $sql = "SELECT * FROM bi_desktop_release_packages WHERE product_key = ? AND platform = ? AND channel = ? AND status = 'published' ORDER BY published_at DESC NULLS LAST, id DESC LIMIT 1";
         if (!SqlHelper::isPostgres()) {
-            $stmt = $this->pdo->prepare("SELECT * FROM bi_desktop_release_packages WHERE product_key = 'voxel_desktop' AND platform = ? AND channel = ? AND status = 'published' ORDER BY published_at DESC, id DESC LIMIT 1");
+            $sql = "SELECT * FROM bi_desktop_release_packages WHERE product_key = ? AND platform = ? AND channel = ? AND status = 'published' ORDER BY published_at DESC, id DESC LIMIT 1";
         }
-        $stmt->execute([$platform, $channel]);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$productKey, $platform, $channel]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     }
@@ -59,7 +60,7 @@ final class DesktopDownloadRepository
     /** @param array<string,mixed> $data */
     public function create(array $data): int
     {
-        $sql = 'INSERT INTO bi_desktop_release_packages (product_key, version_name, platform, channel, original_filename, storage_key, mime_type, size_bytes, checksum_sha256, notes, status, created_by) VALUES (\'voxel_desktop\', :version_name, :platform, :channel, :original_filename, :storage_key, :mime_type, :size_bytes, :checksum_sha256, :notes, \'draft\', :created_by)';
+        $sql = 'INSERT INTO bi_desktop_release_packages (product_key, version_name, platform, channel, original_filename, storage_key, mime_type, size_bytes, checksum_sha256, notes, status, created_by) VALUES (:product_key, :version_name, :platform, :channel, :original_filename, :storage_key, :mime_type, :size_bytes, :checksum_sha256, :notes, \'draft\', :created_by)';
         if (SqlHelper::isPostgres()) {
             $stmt = $this->pdo->prepare($sql . ' RETURNING id');
             $stmt->execute($data);
@@ -76,8 +77,8 @@ final class DesktopDownloadRepository
         if (!$target || ($target['status'] ?? '') === 'archived') throw new \DomainException('release_not_found');
         $this->pdo->beginTransaction();
         try {
-            $archive = $this->pdo->prepare("UPDATE bi_desktop_release_packages SET status = 'archived', archived_at = NOW(), archived_by = ? WHERE product_key = 'voxel_desktop' AND platform = ? AND channel = ? AND status = 'published' AND id <> ?");
-            $archive->execute([$userId, $target['platform'], $target['channel'], $id]);
+            $archive = $this->pdo->prepare("UPDATE bi_desktop_release_packages SET status = 'archived', archived_at = NOW(), archived_by = ? WHERE product_key = ? AND platform = ? AND channel = ? AND status = 'published' AND id <> ?");
+            $archive->execute([$userId, $target['product_key'], $target['platform'], $target['channel'], $id]);
             $publish = $this->pdo->prepare("UPDATE bi_desktop_release_packages SET status = 'published', published_at = NOW(), archived_at = NULL, archived_by = NULL WHERE id = ?");
             $publish->execute([$id]);
             $this->pdo->commit();
@@ -91,6 +92,21 @@ final class DesktopDownloadRepository
     {
         $stmt = $this->pdo->prepare("UPDATE bi_desktop_release_packages SET status = 'archived', archived_at = NOW(), archived_by = ? WHERE id = ? AND status <> 'archived'");
         $stmt->execute([$userId, $id]);
+    }
+
+    public function deleteDraftWithoutDownloads(int $id): bool
+    {
+        if (!$this->available() || $id < 1) return false;
+        $sql = "DELETE FROM bi_desktop_release_packages p WHERE p.id = ? AND p.status = 'draft' AND NOT EXISTS (SELECT 1 FROM bi_desktop_download_events e WHERE e.package_id = p.id)";
+        if (!SqlHelper::isPostgres()) {
+            $sql = "DELETE FROM bi_desktop_release_packages WHERE id = ? AND status = 'draft' AND NOT EXISTS (SELECT 1 FROM bi_desktop_download_events WHERE package_id = ?)";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([$id, $id]);
+            return $stmt->rowCount() === 1;
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$id]);
+        return $stmt->rowCount() === 1;
     }
 
     public function recordDownload(int $packageId, ?int $userId, ?int $tenantId, string $source, ?string $ipHash, ?string $agentHash): void

@@ -33,6 +33,7 @@ Router::get('/platform/downloads/new',                        'Platform\Download
 Router::post('/platform/downloads',                           'Platform\DownloadsController@store');
 Router::post('/platform/downloads/{id}/publish',              'Platform\DownloadsController@publish');
 Router::post('/platform/downloads/{id}/archive',              'Platform\DownloadsController@archive');
+Router::post('/platform/downloads/{id}/delete',               'Platform\DownloadsController@delete');
 Router::get('/platform/downloads/{id}/statistics',            'Platform\DownloadsController@stats');
 
 // ============================================================
