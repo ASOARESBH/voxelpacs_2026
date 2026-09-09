@@ -44,7 +44,7 @@ final class VoxelDesktopRepository
             $conflict->execute([':router_id'=>(string)$destination['router_id'], ':site_id'=>(string)$destination['site_id'], ':id'=>$destinationId]);
             if ($conflict->fetchColumn()) throw new DomainException('destination_pair_conflict');
         }
-        $stmt=$this->pdo->prepare('UPDATE pacs_voxel_desktop_destinations SET enabled=:enabled, disparar_na_liberacao=0, updated_at=NOW() WHERE id=:id AND tenant_id=:tenant_id');
+        $stmt=$this->pdo->prepare('UPDATE pacs_voxel_desktop_destinations SET enabled=:enabled, disparar_na_liberacao=FALSE, updated_at=NOW() WHERE id=:id AND tenant_id=:tenant_id');
         $stmt->execute([':enabled'=>$enabled?1:0, ':id'=>$destinationId, ':tenant_id'=>$tenantId]);
         return $stmt->rowCount()===1;
     }

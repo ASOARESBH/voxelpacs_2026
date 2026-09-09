@@ -37,7 +37,7 @@ if (!str_contains($service,"'reason'=>'feature_disabled'")) throw new RuntimeExc
 if (!str_contains($platform,"'enabled'=>0")) throw new RuntimeException('Piloto não pode habilitar destino pelo formulário.');
 foreach (['activate(', 'deactivate(', 'prepareManualTest(', 'activation_confirmation_required', 'production_confirmation_required', 'manual_test_confirmation_required'] as $guard) if (!str_contains($platform, $guard)) throw new RuntimeException("Control-plane de ativação ausente: {$guard}");
 if (str_contains($platform, "'error'=>\$e->getMessage()")) throw new RuntimeException('Control-plane não pode registrar mensagens brutas de exceção.');
-if (!str_contains($repository, 'disparar_na_liberacao=0')) throw new RuntimeException('Ativação não pode ligar disparo automático.');
+if (!str_contains($repository, 'disparar_na_liberacao=FALSE')) throw new RuntimeException('Ativação não pode ligar disparo automático.');
 if (!str_contains($repository, 'destination_pair_conflict') || !str_contains($repository, 'router_id=:router_id AND site_id=:site_id AND enabled=TRUE')) throw new RuntimeException('Ativação deve bloquear destino duplicado para o mesmo Router/Site.');
 if (!str_contains($repository, 'd.enabled=TRUE AND d.disparar_na_liberacao=TRUE')) throw new RuntimeException('Consulta de elegibilidade deve usar booleanos portáveis.');
 foreach (['prepareManualTest', 'claimManualTest', 'findLeasedManualTest', 'manualTestMetadata', 'recordManualTestArtifact', 'markManualTestStatus'] as $guard) if (!str_contains($repository, $guard)) throw new RuntimeException("Ciclo do teste manual ausente: {$guard}");
