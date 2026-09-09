@@ -1,5 +1,5 @@
 <?php
-// Materialização de runtime para publicação restrita do Voxel Desktop com eventos sanitizados.
+// Materialização de runtime para publicação restrita do Voxel Desktop com eventos sanitizados e IDs livres.
 declare(strict_types=1);
 
 namespace App\Repositories;

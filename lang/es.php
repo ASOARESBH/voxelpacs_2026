@@ -1,5 +1,5 @@
 <?php
-// Materialización de runtime: mensajes de diagnóstico seguro de Voxel Desktop.
+// Materialización de runtime: diagnóstico seguro e IDs locales flexibles de Voxel Desktop.
 // Materialización de runtime para publicación restringida de Voxel Desktop.
 // Materialización de runtime del catálogo Downloads para publicación restringida.
 // Materialización controlada del runtime de notificaciones.
