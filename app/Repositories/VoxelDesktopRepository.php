@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime do bloqueio booleano de automação na ativação PostgreSQL.
 // Sincronização de runtime da correção de booleanos de ativação PostgreSQL.
 // Sincronização de runtime da correção de introspecção tenant-scoped de testes manuais.
 // Sincronização de runtime da persistência tenant-scoped de testes manuais isolados.
