@@ -59,7 +59,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE voxelpacs_mysql_source.bi_desktop_
 GRANT USAGE, SELECT ON SEQUENCE voxelpacs_mysql_source.bi_desktop_release_packages_id_seq, voxelpacs_mysql_source.bi_desktop_download_events_id_seq TO :"app_role";
 SQL
 
-result="$(sudo -u postgres psql -X -v ON_ERROR_STOP=1 -v app_role="$app_role" -At -d "$db_name" -c "SELECT CASE WHEN has_schema_privilege(:'app_role', '${EXPECTED_SCHEMA}', 'USAGE') AND has_table_privilege(:'app_role', '${EXPECTED_SCHEMA}.bi_desktop_release_packages', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege(:'app_role', '${EXPECTED_SCHEMA}.bi_desktop_download_events', 'SELECT,INSERT,UPDATE,DELETE') AND has_sequence_privilege(:'app_role', '${EXPECTED_SCHEMA}.bi_desktop_release_packages_id_seq', 'USAGE,SELECT') AND has_sequence_privilege(:'app_role', '${EXPECTED_SCHEMA}.bi_desktop_download_events_id_seq', 'USAGE,SELECT') THEN 'DOWNLOADS_CATALOG_PRIVILEGES_OK' ELSE 'DOWNLOADS_CATALOG_PRIVILEGES_FAILED' END;")"
+# app_role foi validado contra identificador PostgreSQL antes de interpolação.
+result="$(sudo -u postgres psql -X -v ON_ERROR_STOP=1 -At -d "$db_name" -c "SELECT CASE WHEN has_schema_privilege('${app_role}', '${EXPECTED_SCHEMA}', 'USAGE') AND has_table_privilege('${app_role}', '${EXPECTED_SCHEMA}.bi_desktop_release_packages', 'SELECT, INSERT, UPDATE, DELETE') AND has_table_privilege('${app_role}', '${EXPECTED_SCHEMA}.bi_desktop_download_events', 'SELECT, INSERT, UPDATE, DELETE') AND has_sequence_privilege('${app_role}', '${EXPECTED_SCHEMA}.bi_desktop_release_packages_id_seq', 'USAGE, SELECT') AND has_sequence_privilege('${app_role}', '${EXPECTED_SCHEMA}.bi_desktop_download_events_id_seq', 'USAGE, SELECT') THEN 'DOWNLOADS_CATALOG_PRIVILEGES_OK' ELSE 'DOWNLOADS_CATALOG_PRIVILEGES_FAILED' END;")"
 test "$result" = 'DOWNLOADS_CATALOG_PRIVILEGES_OK'
 printf '%s\n' "$result"
 RUNNER_EOF
