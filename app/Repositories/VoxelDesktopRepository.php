@@ -41,9 +41,45 @@ final class VoxelDesktopRepository
             $stmt->execute([':nome'=>$data['nome'], ':router_id'=>$data['router_id'], ':site_id'=>$data['site_id'], ':profile'=>$data['profile'], ':ambiente'=>$data['ambiente'], ':enabled'=>(int)$data['enabled'], ':disparar'=>(int)$data['disparar_na_liberacao'], ':issuer'=>$data['issuer_of_patient_id_normalized'] ?: null, ':institution'=>$data['institution_name'] ?: null, ':config'=>$data['configuration_json'], ':secret_check'=>$data['configuration_secret'], ':secret_value'=>$data['configuration_secret'], ':timeout'=>(int)$data['timeout_seconds'], ':attempts'=>(int)$data['max_attempts'], ':id'=>$destinationId, ':tenant_id'=>$tenantId]);
             return $destinationId;
         }
-        $stmt = $this->pdo->prepare('INSERT INTO pacs_voxel_desktop_destinations (tenant_id, estabelecimento_id, nome, router_id, site_id, profile, ambiente, enabled, disparar_na_liberacao, issuer_of_patient_id_normalized, institution_name, configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by) VALUES (:tenant_id, :estabelecimento_id, :nome, :router_id, :site_id, :profile, :ambiente, :enabled, :disparar, :issuer, :institution, :config, :secret, :timeout, :attempts, :created_by)');
-        $stmt->execute([':tenant_id'=>$tenantId, ':estabelecimento_id'=>$data['estabelecimento_id'] ?: null, ':nome'=>$data['nome'], ':router_id'=>$data['router_id'], ':site_id'=>$data['site_id'], ':profile'=>$data['profile'], ':ambiente'=>$data['ambiente'], ':enabled'=>(int)$data['enabled'], ':disparar'=>(int)$data['disparar_na_liberacao'], ':issuer'=>$data['issuer_of_patient_id_normalized'] ?: null, ':institution'=>$data['institution_name'] ?: null, ':config'=>$data['configuration_json'], ':secret'=>$data['configuration_secret'], ':timeout'=>(int)$data['timeout_seconds'], ':attempts'=>(int)$data['max_attempts'], ':created_by'=>$userId]);
+        $sql = 'INSERT INTO pacs_voxel_desktop_destinations (tenant_id, estabelecimento_id, nome, router_id, site_id, profile, ambiente, enabled, disparar_na_liberacao, issuer_of_patient_id_normalized, institution_name, configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by) VALUES (:tenant_id, :estabelecimento_id, :nome, :router_id, :site_id, :profile, :ambiente, :enabled, :disparar, :issuer, :institution, :config, :secret, :timeout, :attempts, :created_by)';
+        $params = [':tenant_id'=>$tenantId, ':estabelecimento_id'=>$data['estabelecimento_id'] ?: null, ':nome'=>$data['nome'], ':router_id'=>$data['router_id'], ':site_id'=>$data['site_id'], ':profile'=>$data['profile'], ':ambiente'=>$data['ambiente'], ':enabled'=>(int)$data['enabled'], ':disparar'=>(int)$data['disparar_na_liberacao'], ':issuer'=>$data['issuer_of_patient_id_normalized'] ?: null, ':institution'=>$data['institution_name'] ?: null, ':config'=>$data['configuration_json'], ':secret'=>$data['configuration_secret'], ':timeout'=>(int)$data['timeout_seconds'], ':attempts'=>(int)$data['max_attempts'], ':created_by'=>$userId];
+        if (SqlHelper::isPostgres()) {
+            $stmt = $this->pdo->prepare($sql . ' RETURNING id');
+            $stmt->execute($params);
+            return (int)$stmt->fetchColumn();
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         return (int)$this->pdo->lastInsertId();
+    }
+
+    /** @return array<int,array{occurred_at:string,event:string,source:string,status:string}> */
+    public function technicalEvents(int $tenantId, int $limit = 30): array
+    {
+        $limit = max(1, min($limit, 50));
+        $events = [];
+        $audit = $this->pdo->prepare("SELECT created_at, action, details FROM bi_audit_logs WHERE tenant_id = :tenant_id AND entity = 'pacs_voxel_desktop_destinations' AND action IN ('voxel_desktop.destination.save','voxel_desktop.destination.rejected','voxel_desktop.destination.failed') ORDER BY created_at DESC LIMIT {$limit}");
+        $audit->execute([':tenant_id' => $tenantId]);
+        foreach ($audit->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $details = json_decode((string)($row['details'] ?? ''), true);
+            $code = is_array($details) ? (string)($details['reason_code'] ?? $details['result'] ?? 'recorded') : 'recorded';
+            if (!in_array($code, ['saved_disabled','destination_incomplete','invalid_identifier','unsupported_profile','invalid_router_token','technical_failure'], true)) $code = 'recorded';
+            $event = match ((string)$row['action']) {
+                'voxel_desktop.destination.save' => 'configuration_saved',
+                'voxel_desktop.destination.rejected' => 'configuration_rejected',
+                default => 'configuration_failed',
+            };
+            $events[] = ['occurred_at' => (string)$row['created_at'], 'event' => $event, 'source' => 'pacs', 'status' => $code];
+        }
+        $attempts = $this->pdo->prepare("SELECT a.started_at, a.outcome FROM pacs_voxel_desktop_attempts a INNER JOIN pacs_voxel_desktop_jobs j ON j.id = a.job_id WHERE j.tenant_id = :tenant_id ORDER BY a.started_at DESC LIMIT {$limit}");
+        $attempts->execute([':tenant_id' => $tenantId]);
+        foreach ($attempts->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $status = (string)($row['outcome'] ?? 'recorded');
+            if (!in_array($status, ['leased','artifact_ready','package_submitted','receiver_completed','receiver_failed'], true)) $status = 'recorded';
+            $events[] = ['occurred_at' => (string)$row['started_at'], 'event' => 'router_attempt', 'source' => 'router', 'status' => $status];
+        }
+        usort($events, static fn(array $a, array $b): int => strcmp($b['occurred_at'], $a['occurred_at']));
+        return array_slice($events, 0, $limit);
     }
 
     /** @return array<int,array<string,mixed>> */

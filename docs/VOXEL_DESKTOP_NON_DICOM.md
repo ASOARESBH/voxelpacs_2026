@@ -19,3 +19,11 @@ Cada versão liberada cria uma chave de idempotência baseada em tenant, laudo, 
 ## Operação
 
 Antes de ativar qualquer destino são necessários: homologação com artefatos sintéticos, validação do XML no VUE PACS, conferência de permissão dos diretórios locais no Router e autorização específica para ativar a transmissão. A instalação de serviço, configuração de token e diretórios ocorre somente no Router Desktop do receptor.
+
+## Salvamento desativado e diagnóstico técnico
+
+O formulário do control-plane aceita somente um destino em homologação, com `enabled=0`. Router ID e Site ID são identificadores administrativos com 3 a 120 caracteres e usam exclusivamente letras, números, ponto, hífen e sublinhado. O roteamento exige Issuer ou InstitutionName; quando há Issuer, ele tem precedência.
+
+Em PostgreSQL, a criação do destino usa `RETURNING id`; não depende de `lastInsertId()`. Falhas de validação são registradas na auditoria por código sanitizado, sem token, segredo, caminho local, URL, payload de laudo ou identificadores clínicos.
+
+A tela tenant-scoped apresenta, abaixo dos destinos, um log técnico para superadmin. Ele combina apenas eventos de auditoria do próprio destino e estados allowlisted do Router. O painel não lê artefatos, payloads, caminhos, tokens, referências remotas ou dados de pacientes. Salvar um destino ou consultar esse log não ativa o Router, não cria job e não transmite conteúdo.

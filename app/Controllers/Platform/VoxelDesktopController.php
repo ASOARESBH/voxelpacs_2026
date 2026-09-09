@@ -26,6 +26,7 @@ final class VoxelDesktopController extends Controller
             'title' => t('voxel_desktop.title'),
             'tenant' => $tenant,
             'destinations' => $repo->listDestinations($id),
+            'technicalLogs' => $repo->technicalEvents($id),
             'csrfToken' => $this->csrfToken(),
         ], 'platform');
     }
@@ -43,13 +44,27 @@ final class VoxelDesktopController extends Controller
             $saved = (new VoxelDesktopRepository(Database::getInstance()))->saveDestination($id, $destinationId, $data, (int)Auth::userId());
             AuditLogger::log('voxel_desktop.destination.save', 'pacs_voxel_desktop_destinations', $saved, [
                 'tenant_id' => $id,
+                'result' => 'saved_disabled',
                 'enabled' => false,
                 'profile' => $data['profile'],
                 'ambiente' => $data['ambiente'],
             ]);
             $_SESSION['success'] = t('voxel_desktop.saved_disabled');
+        } catch (DomainException $e) {
+            $code = $e->getMessage();
+            AuditLogger::log('voxel_desktop.destination.rejected', 'pacs_voxel_desktop_destinations', $destinationId, [
+                'tenant_id' => $id,
+                'reason_code' => $code,
+                'enabled' => false,
+            ], $id, 'platform');
+            $_SESSION['error'] = $this->messageFor($code);
         } catch (\Throwable $e) {
             Logger::warning('[VoxelDesktopController::save] Configuração recusada', ['tenant_id'=>$id, 'error'=>$e->getMessage()]);
+            AuditLogger::log('voxel_desktop.destination.failed', 'pacs_voxel_desktop_destinations', $destinationId, [
+                'tenant_id' => $id,
+                'reason_code' => 'technical_failure',
+                'enabled' => false,
+            ], $id, 'platform');
             $_SESSION['error'] = t('voxel_desktop.save_error');
         }
         $this->redirect('/platform/negocios/'.$id.'/voxel-desktop');
@@ -65,13 +80,13 @@ final class VoxelDesktopController extends Controller
         $institution = trim((string)($_POST['institution_name'] ?? ''));
         $profile = (string)($_POST['profile'] ?? 'submission_document');
         $environment = (string)($_POST['ambiente'] ?? 'homologacao');
-        if ($name === '' || $router === '' || $site === '' || ($issuer === '' && $institution === '')) throw new DomainException('Configuração de destino incompleta.');
-        if (!preg_match('/^[A-Za-z0-9._-]{3,120}$/', $router) || !preg_match('/^[A-Za-z0-9._-]{3,120}$/', $site)) throw new DomainException('Identificador do Router ou site inválido.');
-        if ($profile !== 'submission_document' || $environment !== 'homologacao') throw new DomainException('O piloto aceita somente perfil submission/document em homologação.');
+        if ($name === '' || $router === '' || $site === '' || ($issuer === '' && $institution === '')) throw new DomainException('destination_incomplete');
+        if (!preg_match('/^[A-Za-z0-9._-]{3,120}$/', $router) || !preg_match('/^[A-Za-z0-9._-]{3,120}$/', $site)) throw new DomainException('invalid_identifier');
+        if ($profile !== 'submission_document' || $environment !== 'homologacao') throw new DomainException('unsupported_profile');
         $token = trim((string)($_POST['router_token'] ?? ''));
         $secret = '';
         if ($token !== '') {
-            if (strlen($token) < 32) throw new DomainException('Token do Router inválido.');
+            if (strlen($token) < 32) throw new DomainException('invalid_router_token');
             $secret = (new ReportDeliveryCryptoService())->encrypt(json_encode(['router_token_hash'=>hash('sha256',$token)], JSON_UNESCAPED_SLASHES));
         }
         return [
@@ -90,5 +105,6 @@ final class VoxelDesktopController extends Controller
         if (!$tenant) { http_response_code(404); exit; }
         return $tenant;
     }
+    private function messageFor(string $code): string { return t('voxel_desktop.error.' . $code); }
     private function requirePlatformAdmin(): void { if (!Auth::check() || !Auth::isPlatformAdmin()) { http_response_code(403); exit; } }
 }
