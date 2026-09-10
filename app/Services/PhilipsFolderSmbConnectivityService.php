@@ -1,5 +1,6 @@
 <?php
 // Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+// Falhas de pré-requisito local devem retornar categoria sanitizada antes de qualquer chamada à bridge.
 
 declare(strict_types=1);
 
