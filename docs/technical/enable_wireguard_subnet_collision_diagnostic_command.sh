@@ -99,6 +99,7 @@ PY
 }
 
 printf '%s\n' '=== WIREGUARD_SUBNET_COLLISION ==='
+printf '%s\n' 'DIAGNOSTIC_SCHEMA=2'
 printf 'TARGET_SUBNET=%s\n' "$TARGET_CIDR"
 
 ip -j -4 route show table all > "$TMP_DIR/routes.json" 2>/dev/null || printf '[]' > "$TMP_DIR/routes.json"
