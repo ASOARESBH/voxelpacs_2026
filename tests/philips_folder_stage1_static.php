@@ -32,6 +32,12 @@ $required = [
     [$bridge, 'TARGET_ROOT = Path("/var/lib/voxelpacs/philips-folder-target")', 'raiz privada de destino'],
     [$bridge, 'single_test_requires_job', 'uso único de homologação'],
     [$bridge, 'os.replace(temporary, final_path)', 'gravação atômica'],
+    [$bridge, 'StrictHostKeyChecking=yes', 'verificação obrigatória da host key SFTP'],
+    [$bridge, 'UserKnownHostsFile=', 'known_hosts root-only do SFTP'],
+    [$bridge, 'PHILIPS_FOLDER_TRANSPORT', 'seleção de transporte root-only'],
+    [$bridge, 'TRANSIENT_TRANSPORT_FAILURES', 'fallback somente para falha transitória'],
+    [$bridge, 'TRANSIENT_TRANSPORT_FAILURES = {"connectivity", "timeout"}', 'fallback limitado a conectividade e timeout'],
+    [$bridge, 'mount.cifs', 'fallback SMB pela bridge'],
     [$controller, "'philips_folder'", 'opção de transporte'],
     [$controller, 'PhilipsFolderDeliveryService::enabled()', 'bloqueio de ativação'],
 ];
@@ -49,6 +55,14 @@ foreach (['smb://', 'ftp://', 'file://'] as $forbidden) {
 }
 if (str_contains($worker, "'file_name' =>")) {
     fwrite(STDERR, "FORBIDDEN_TELEMETRY: file_name\n");
+    exit(1);
+}
+if (str_contains($bridge, 'StrictHostKeyChecking=no')) {
+    fwrite(STDERR, "FORBIDDEN_SFTP_HOST_KEY_BYPASS\n");
+    exit(1);
+}
+if (str_contains($bridge, '0.0.0.0/0')) {
+    fwrite(STDERR, "FORBIDDEN_VPN_DEFAULT_ROUTE\n");
     exit(1);
 }
 echo "PHILIPS_FOLDER_STAGE1_STATIC_OK\n";

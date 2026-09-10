@@ -41,6 +41,13 @@ final class LocalDicomDeliveryWorker
         'gateway_unavailable',
         'gateway_delivery_failed',
         'remote_integrity_unconfirmed',
+        'connectivity',
+        'timeout',
+        'authentication',
+        'host_key',
+        'permission',
+        'remote_io',
+        'configuration',
     ];
     private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
 

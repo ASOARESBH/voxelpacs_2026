@@ -97,7 +97,8 @@ final class PhilipsFolderGatewayBridgeClient
         }
 
         if ($errno !== 0 || !is_string($body) || $httpCode !== 201) {
-            throw new PhilipsFolderDeliveryException('gateway_delivery_failed', 'gateway_delivery_failed');
+            $reasonCategory = $this->responseReasonCategory(is_string($body) ? $body : '');
+            throw new PhilipsFolderDeliveryException('gateway_delivery_failed', $reasonCategory ?? 'gateway_delivery_failed');
         }
         $response = json_decode($body, true);
         $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
@@ -128,6 +129,23 @@ final class PhilipsFolderGatewayBridgeClient
 
     private function validFileName(string $value): bool
     {
-        return preg_match('/^VOXEL_[A-Za-z0-9._-]{1,120}_[1-9][0-9]*_V[1-9][0-9]*\.pdf$/', $value) === 1;
+        return preg_match('/^VOXEL_[A-Za-z0-9._-]{1,120}_[1-9][0-9]*_V[1-9][0-9]*\.(?:pdf|xml)$/', $value) === 1;
+    }
+
+    private function responseReasonCategory(string $body): ?string
+    {
+        $response = json_decode($body, true);
+        $reason = is_array($response) ? (string) ($response['reason_category'] ?? '') : '';
+        $allowed = [
+            'connectivity',
+            'timeout',
+            'authentication',
+            'host_key',
+            'permission',
+            'remote_io',
+            'invalid_artifact',
+            'configuration',
+        ];
+        return in_array($reason, $allowed, true) ? $reason : null;
     }
 }

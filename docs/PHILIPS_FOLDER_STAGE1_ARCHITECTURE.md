@@ -35,7 +35,7 @@ flowchart LR
 
 O novo transporte lógico será `philips_folder`. O worker continuará a gerar o PDF pelo serviço oficial a partir da versão imutável, calcular SHA-256, gravar o artefato em área privada e aplicar o mesmo lease, retry, backoff e idempotência já usados pelo Delivery Hub.
 
-O `PhilipsFolderDeliveryService` não abrirá SMB, SFTP ou portas externas diretamente a partir do runtime do PACS. Ele entregará exclusivamente a uma bridge privada autenticada por mTLS e HMAC, com URL privada allowlisted. A bridge, mantida fora do repositório e configurada por política root-only, escolherá **um único** método remoto aprovado: SMB pela rota VPN ou SFTP pela rota VPN.
+O `PhilipsFolderDeliveryService` não abrirá SMB, SFTP ou portas externas diretamente a partir do runtime do PACS. Ele entregará exclusivamente a uma bridge privada autenticada por mTLS e HMAC, com URL privada allowlisted. A bridge, mantida fora do repositório e configurada por política root-only, usa **SFTP como método preferencial** pela rota WireGuard Philips e pode usar SMB apenas como fallback de falhas transitórias, também pela mesma rota privada.
 
 ## Controles técnicos obrigatórios
 
@@ -51,6 +51,8 @@ O `PhilipsFolderDeliveryService` não abrirá SMB, SFTP ou portas externas diret
 | Integridade | SHA-256 e tamanho conferidos na API, no gateway e na confirmação de resposta. |
 | Logs | Somente categoria, ids internos, tamanho, prefixo de hash, estado e instante; sem segredo, caminho local, endpoint, paciente ou conteúdo de laudo. |
 | Retentativa | Reuso do backoff do worker; falhas de rede e transporte tornam o job `retrying` ou `dead_letter`, sem gerar novo PDF. |
+| SFTP | Autenticação por chave, `known_hosts` root-only e verificação estrita de host key; nenhuma aceitação automática de fingerprint. |
+| SMB fallback | Permitido somente após falha transitória de SFTP; credencial e share ficam em arquivo root-only na bridge. |
 
 ## Informações ainda necessárias para teste efetivo
 
@@ -58,7 +60,7 @@ O código não contém, e não deve inventar, os elementos abaixo. Eles devem se
 
 | Informação requerida | Motivo |
 | --- | --- |
-| Método permitido: SMB ou SFTP | Define o conector de saída no gateway privado. |
+| Método permitido: SFTP e, se aprovado, fallback SMB | Define o conector de saída no gateway privado. |
 | Endereço privado roteado pela VPN | Impede conexão direta a endpoint público ou exposição de SMB. |
 | Identidade de serviço e método de autenticação | Necessário para acesso mínimo à pasta remota. |
 | Política de destino da pasta remota | Permite staging, rename atômico e verificação de colisão/hash. |

@@ -1,19 +1,24 @@
-"""Bridge privada, root-owned e PDF-only para entrega Philips Folder.
+"""Bridge privada root-only para Philips Folder por SFTP com fallback SMB.
 
-O PACS nunca acessa compartilhamentos SMB/SFTP. Este listener HTTPS recebe um
-único PDF autenticado por mTLS + HMAC e o grava atomically na pasta local que
-somente o gateway conhece. O serviço permanece inerte até receber configuração
-root-owned e não inicia automaticamente por este arquivo.
+O PACS nunca acessa SFTP, SMB, WireGuard ou credenciais remotas. Este listener
+recebe um artefato autenticado por mTLS + HMAC, faz staging local e somente a
+bridge o transfere a um peer IPv4 privado definido pela política root-only.
+Nenhuma configuração neste arquivo inicia a bridge ou habilita a feature do PACS.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
 import re
+import secrets
+import shutil
 import ssl
+import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,6 +31,11 @@ MAX_BYTES = 50 * 1024 * 1024
 MAX_CLOCK_SKEW_SECONDS = 60
 STATE_ROOT = Path("/var/lib/voxelpacs/philips-folder-bridge")
 TARGET_ROOT = Path("/var/lib/voxelpacs/philips-folder-target")
+TRANSIENT_TRANSPORT_FAILURES = {"connectivity", "timeout"}
+SAFE_REMOTE_PATH = re.compile(r"^/[A-Za-z0-9._/-]{1,180}$")
+SAFE_SMB_PATH = re.compile(r"^/?[A-Za-z0-9._/-]{0,160}$")
+SAFE_USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+SAFE_SHARE = re.compile(r"^[A-Za-z0-9.$_-]{1,80}$")
 
 
 def setting(name: str) -> str:
@@ -33,6 +43,33 @@ def setting(name: str) -> str:
     if not value:
         raise RuntimeError(f"missing_required_setting:{name}")
     return value
+
+
+def private_ipv4(value: str) -> str:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as error:
+        raise RuntimeError("invalid_private_peer") from error
+    if address.version != 4 or not address.is_private:
+        raise RuntimeError("invalid_private_peer")
+    return str(address)
+
+
+def root_only_regular_file(value: str) -> Path:
+    path = Path(value)
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise RuntimeError("protected_file_unavailable") from error
+    if metadata.st_uid != 0 or not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode) or metadata.st_mode & 0o077:
+        raise RuntimeError("invalid_protected_file")
+    return path
+
+
+class BridgeTransferError(RuntimeError):
+    def __init__(self, category: str) -> None:
+        super().__init__(category)
+        self.category = category
 
 
 class Policy:
@@ -43,14 +80,21 @@ class Policy:
         self.mode = setting("PHILIPS_FOLDER_MODE")
         self.allowed_job_id = int(os.environ.get("PHILIPS_FOLDER_ALLOW_JOB_ID", "0"))
         self.target_directory = Path(setting("PHILIPS_FOLDER_TARGET_DIRECTORY"))
-        self.secret = Path(setting("PHILIPS_FOLDER_HMAC_FILE")).read_text(encoding="utf-8").strip().encode("utf-8")
-        self.ca_file = setting("PHILIPS_FOLDER_CLIENT_CA_FILE")
-        self.server_cert = setting("PHILIPS_FOLDER_SERVER_CERT_FILE")
-        self.server_key = setting("PHILIPS_FOLDER_SERVER_KEY_FILE")
+        self.secret = root_only_regular_file(setting("PHILIPS_FOLDER_HMAC_FILE")).read_text(encoding="utf-8").strip().encode("utf-8")
+        self.ca_file = str(root_only_regular_file(setting("PHILIPS_FOLDER_CLIENT_CA_FILE")))
+        self.server_cert = str(root_only_regular_file(setting("PHILIPS_FOLDER_SERVER_CERT_FILE")))
+        self.server_key = str(root_only_regular_file(setting("PHILIPS_FOLDER_SERVER_KEY_FILE")))
+        self.vpn_peer_host = private_ipv4(setting("PHILIPS_FOLDER_VPN_PEER_HOST"))
+        self.transport = setting("PHILIPS_FOLDER_TRANSPORT").lower()
+        self.fallback = os.environ.get("PHILIPS_FOLDER_FALLBACK", "").strip().lower()
         if self.mode not in {"single_test", "destination"} or self.destination_id <= 0:
             raise RuntimeError("invalid_bridge_policy")
         if self.mode == "single_test" and self.allowed_job_id <= 0:
             raise RuntimeError("single_test_requires_job")
+        if self.transport not in {"sftp", "smb"} or self.fallback not in {"", "smb"}:
+            raise RuntimeError("invalid_transport_policy")
+        if self.transport != "sftp" and self.fallback:
+            raise RuntimeError("invalid_transport_fallback")
         try:
             target_resolved = self.target_directory.resolve(strict=True)
             target_resolved.relative_to(TARGET_ROOT)
@@ -59,6 +103,38 @@ class Policy:
         self.target_directory = target_resolved
         if not self.secret or not self.target_directory.is_dir() or self.target_directory.is_symlink():
             raise RuntimeError("invalid_bridge_target")
+        self.sftp = self._sftp_settings() if self.transport == "sftp" else None
+        self.smb = self._smb_settings() if self.transport == "smb" or self.fallback == "smb" else None
+
+    def _sftp_settings(self) -> dict[str, object]:
+        host = private_ipv4(setting("PHILIPS_SFTP_HOST"))
+        port = int(setting("PHILIPS_SFTP_PORT"))
+        username = setting("PHILIPS_SFTP_USER")
+        remote_path = setting("PHILIPS_SFTP_REMOTE_PATH")
+        if host != self.vpn_peer_host or not 1 <= port <= 65535 or not SAFE_USERNAME.fullmatch(username) or not SAFE_REMOTE_PATH.fullmatch(remote_path):
+            raise RuntimeError("invalid_sftp_policy")
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "remote_path": remote_path.rstrip("/"),
+            "private_key": root_only_regular_file(setting("PHILIPS_SFTP_PRIVATE_KEY")),
+            "known_hosts": root_only_regular_file(setting("PHILIPS_SFTP_KNOWN_HOSTS")),
+        }
+
+    def _smb_settings(self) -> dict[str, object]:
+        host = private_ipv4(setting("PHILIPS_SMB_HOST"))
+        share = setting("PHILIPS_SMB_SHARE")
+        remote_path = os.environ.get("PHILIPS_SMB_REMOTE_PATH", "/").strip()
+        username = setting("PHILIPS_SMB_USER")
+        if host != self.vpn_peer_host or not SAFE_SHARE.fullmatch(share) or not SAFE_SMB_PATH.fullmatch(remote_path) or not SAFE_USERNAME.fullmatch(username):
+            raise RuntimeError("invalid_smb_policy")
+        return {
+            "host": host,
+            "share": share,
+            "remote_path": remote_path.strip("/"),
+            "credentials": root_only_regular_file(setting("PHILIPS_SMB_CREDENTIALS_FILE")),
+        }
 
 
 POLICY = Policy()
@@ -86,6 +162,31 @@ def write_state(job_id: int, value: dict[str, str]) -> None:
     temporary.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     os.chmod(temporary, 0o600)
     os.replace(temporary, target)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def classify_transport_error(output: str, timeout: bool = False) -> str:
+    if timeout:
+        return "timeout"
+    value = output.lower()
+    if "host key verification failed" in value or "host identification has changed" in value:
+        return "host_key"
+    if "publickey" in value or "authentication" in value or "login incorrect" in value:
+        return "authentication"
+    if "permission denied" in value or "access denied" in value:
+        return "permission"
+    if any(marker in value for marker in ("connection refused", "no route to host", "network is unreachable", "connection reset")):
+        return "connectivity"
+    if "timed out" in value or "timeout" in value:
+        return "timeout"
+    return "remote_io"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -128,6 +229,7 @@ class Handler(BaseHTTPRequestHandler):
             and destination_id == str(POLICY.destination_id)
             and 256 <= length <= MAX_BYTES
             and self.valid_filename(filename)
+            and re.fullmatch(r"[a-f0-9]{64}", supplied_hash) is not None
             and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
         )
         if not permitted:
@@ -148,13 +250,27 @@ class Handler(BaseHTTPRequestHandler):
         if previous:
             self.respond(HTTPStatus.CONFLICT, {"error": "job_state_conflict"})
             return
-        self.receive_atomically(job_id, filename, supplied_hash, length)
+        staged = self.receive_or_reuse_stage(filename, supplied_hash, length)
+        if staged is None:
+            return
+        try:
+            transport = self.deliver_remote(job_id, filename, staged, supplied_hash, length)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_export_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
+            return
+        reference = f"gateway-philips-folder:{supplied_hash[:16]}"
+        write_state(job_id, {"state": "delivered", "sha256": supplied_hash, "reference": reference, "transport": transport})
+        LOG.info("event=philips_export_success job_id=%s transport=%s sha256_16=%s", job_id, transport, supplied_hash[:16])
+        self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": supplied_hash})
 
-    def receive_atomically(self, job_id: int, filename: str, expected_hash: str, length: int) -> None:
+    def receive_or_reuse_stage(self, filename: str, expected_hash: str, length: int) -> Path | None:
         final_path = POLICY.target_directory / filename
         if final_path.exists() or final_path.is_symlink():
-            self.respond(HTTPStatus.CONFLICT, {"error": "remote_name_conflict"})
-            return
+            if final_path.is_file() and not final_path.is_symlink() and final_path.stat().st_size == length and hmac.compare_digest(sha256_file(final_path), expected_hash):
+                return final_path
+            self.respond(HTTPStatus.CONFLICT, {"error": "staging_conflict"})
+            return None
         received = 0
         digest = hashlib.sha256()
         temporary: Path | None = None
@@ -166,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
                     chunk = self.rfile.read(min(65536, length - received))
                     if not chunk:
                         self.respond(HTTPStatus.BAD_REQUEST, {"error": "truncated_body"})
-                        return
+                        return None
                     output.write(chunk)
                     digest.update(chunk)
                     received += len(chunk)
@@ -176,29 +292,169 @@ class Handler(BaseHTTPRequestHandler):
             actual_hash = digest.hexdigest()
             if received != length or not hmac.compare_digest(actual_hash, expected_hash):
                 self.respond(HTTPStatus.BAD_REQUEST, {"error": "integrity_check_failed"})
-                return
+                return None
             os.replace(temporary, final_path)
             temporary = None
-            with final_path.open("rb") as final_input:
-                final_hash = hashlib.file_digest(final_input, "sha256").hexdigest()
-            if not hmac.compare_digest(final_hash, expected_hash):
-                final_path.unlink(missing_ok=True)
-                self.respond(HTTPStatus.BAD_GATEWAY, {"error": "remote_integrity_failed"})
-                return
-            reference = f"gateway-philips-folder:{expected_hash[:16]}"
-            write_state(job_id, {"state": "delivered", "sha256": expected_hash, "reference": reference})
-            LOG.info("event=philips_export_success job_id=%s sha256_16=%s", job_id, expected_hash[:16])
-            self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": expected_hash})
+            return final_path
         except OSError:
-            LOG.warning("event=philips_export_failed job_id=%s stage=atomic_write", job_id)
-            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "folder_write_failed"})
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "staging_write_failed"})
+            return None
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
+    def deliver_remote(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> str:
+        try:
+            if POLICY.transport == "sftp":
+                self.transfer_sftp(job_id, filename, staged, length)
+                return "sftp"
+            self.transfer_smb(job_id, filename, staged, expected_hash, length)
+            return "smb"
+        except BridgeTransferError as primary_error:
+            if POLICY.transport == "sftp" and POLICY.fallback == "smb" and primary_error.category in TRANSIENT_TRANSPORT_FAILURES:
+                LOG.warning("event=philips_smb_fallback_attempt job_id=%s reason_category=%s", job_id, primary_error.category)
+                self.transfer_smb(job_id, filename, staged, expected_hash, length)
+                return "smb"
+            raise
+
+    @staticmethod
+    def _sftp_remote_path(filename: str) -> tuple[str, str]:
+        if not isinstance(POLICY.sftp, dict):
+            raise BridgeTransferError("configuration")
+        directory = str(POLICY.sftp["remote_path"])
+        final_path = f"{directory}/{filename}"
+        temporary_path = f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+        return final_path, temporary_path
+
+    @staticmethod
+    def _sftp_command(batch: str) -> subprocess.CompletedProcess[str]:
+        if not isinstance(POLICY.sftp, dict) or not shutil.which("sftp"):
+            raise BridgeTransferError("configuration")
+        command = [
+            "sftp",
+            "-F", "/dev/null",
+            "-oBatchMode=yes",
+            "-oStrictHostKeyChecking=yes",
+            "-oIdentitiesOnly=yes",
+            "-oUserKnownHostsFile=" + str(POLICY.sftp["known_hosts"]),
+            "-oIdentityFile=" + str(POLICY.sftp["private_key"]),
+            "-P", str(POLICY.sftp["port"]),
+            str(POLICY.sftp["username"]) + "@" + str(POLICY.sftp["host"]),
+        ]
+        try:
+            return subprocess.run(command, input=batch, capture_output=True, text=True, timeout=45, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise BridgeTransferError("timeout") from error
+        except OSError as error:
+            raise BridgeTransferError("configuration") from error
+
+    @staticmethod
+    def _sftp_missing(result: subprocess.CompletedProcess[str]) -> bool:
+        output = (result.stdout + result.stderr).lower()
+        return any(marker in output for marker in ("no such file", "couldn't stat", "not found"))
+
+    @staticmethod
+    def _sftp_size_matches(result: subprocess.CompletedProcess[str], expected_size: int) -> bool:
+        output = result.stdout + result.stderr
+        return bool(re.search(r"\s" + re.escape(str(expected_size)) + r"\s+[A-Z][a-z]{2}\s", output))
+
+    def sftp_remote_matches(self, remote_path: str, expected_hash: str, expected_size: int) -> bool:
+        descriptor, raw_path = tempfile.mkstemp(prefix="sftp-verify-", suffix=".part", dir=STATE_ROOT)
+        os.close(descriptor)
+        downloaded = Path(raw_path)
+        downloaded.unlink(missing_ok=True)
+        try:
+            result = self._sftp_command(f"get {remote_path} {downloaded}\n")
+            if result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
+            return downloaded.is_file() and downloaded.stat().st_size == expected_size and hmac.compare_digest(sha256_file(downloaded), expected_hash)
+        finally:
+            downloaded.unlink(missing_ok=True)
+
+    def transfer_sftp(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> None:
+        final_path, temporary_path = self._sftp_remote_path(filename)
+        existing = self._sftp_command(f"ls -ln {final_path}\n")
+        if existing.returncode == 0:
+            if self.sftp_remote_matches(final_path, expected_hash, length):
+                LOG.info("event=philips_sftp_success job_id=%s", job_id)
+                return
+            raise BridgeTransferError("remote_io")
+        if not self._sftp_missing(existing):
+            raise BridgeTransferError(classify_transport_error(existing.stdout + existing.stderr))
+        uploaded = self._sftp_command(f"put {staged} {temporary_path}\nls -ln {temporary_path}\n")
+        if uploaded.returncode != 0 or not self._sftp_size_matches(uploaded, length):
+            raise BridgeTransferError(classify_transport_error(uploaded.stdout + uploaded.stderr))
+        renamed = self._sftp_command(f"rename {temporary_path} {final_path}\n")
+        if renamed.returncode != 0:
+            raise BridgeTransferError(classify_transport_error(renamed.stdout + renamed.stderr))
+        if not self.sftp_remote_matches(final_path, expected_hash, length):
+            raise BridgeTransferError("remote_io")
+        LOG.info("event=philips_sftp_success job_id=%s", job_id)
+
+    def transfer_smb(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> None:
+        if not isinstance(POLICY.smb, dict) or not shutil.which("mount.cifs") or not shutil.which("umount"):
+            raise BridgeTransferError("configuration")
+        mount_directory = STATE_ROOT / ("smb-" + secrets.token_hex(12))
+        mounted = False
+        try:
+            mount_directory.mkdir(mode=0o700)
+            source = "//" + str(POLICY.smb["host"]) + "/" + str(POLICY.smb["share"])
+            options = ",".join([
+                "credentials=" + str(POLICY.smb["credentials"]),
+                "vers=3.0",
+                "seal",
+                "nosuid",
+                "nodev",
+                "noexec",
+                "dir_mode=0700",
+                "file_mode=0600",
+            ])
+            mounted_result = subprocess.run(["mount.cifs", source, str(mount_directory), "-o", options], capture_output=True, text=True, timeout=45, check=False)
+            if mounted_result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(mounted_result.stdout + mounted_result.stderr))
+            mounted = True
+            remote_directory = mount_directory / str(POLICY.smb["remote_path"])
+            if not remote_directory.is_dir() or remote_directory.is_symlink():
+                raise BridgeTransferError("configuration")
+            final_path = remote_directory / filename
+            if final_path.exists():
+                if final_path.is_file() and not final_path.is_symlink() and final_path.stat().st_size == length and hmac.compare_digest(sha256_file(final_path), expected_hash):
+                    LOG.info("event=philips_smb_success job_id=%s", job_id)
+                    return
+                raise BridgeTransferError("remote_io")
+            descriptor, raw_path = tempfile.mkstemp(prefix=".voxel-", suffix=".part", dir=remote_directory)
+            temporary = Path(raw_path)
+            try:
+                with os.fdopen(descriptor, "wb") as output, staged.open("rb") as source_file:
+                    shutil.copyfileobj(source_file, output, length=65536)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.chmod(temporary, 0o600)
+                if temporary.stat().st_size != length or not hmac.compare_digest(sha256_file(temporary), expected_hash):
+                    raise BridgeTransferError("remote_io")
+                os.replace(temporary, final_path)
+                temporary = None
+                if final_path.stat().st_size != length or not hmac.compare_digest(sha256_file(final_path), expected_hash):
+                    final_path.unlink(missing_ok=True)
+                    raise BridgeTransferError("remote_io")
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            LOG.info("event=philips_smb_success job_id=%s", job_id)
+        except subprocess.TimeoutExpired as error:
+            raise BridgeTransferError("timeout") from error
+        except OSError as error:
+            raise BridgeTransferError("remote_io") from error
+        finally:
+            if mounted:
+                unmounted = subprocess.run(["umount", str(mount_directory)], capture_output=True, text=True, timeout=20, check=False)
+                if unmounted.returncode != 0:
+                    LOG.warning("event=philips_smb_unmount_failed job_id=%s", job_id)
+            shutil.rmtree(mount_directory, ignore_errors=True)
+
     @staticmethod
     def valid_filename(value: str) -> bool:
-        return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.pdf", value) is not None
+        return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.(?:pdf|xml)", value) is not None
 
 
 def main() -> NoReturn:
@@ -210,7 +466,7 @@ def main() -> NoReturn:
     server = HTTPServer((POLICY.bind_ip, POLICY.bind_port), Handler)
     server.request_queue_size = 2
     server.socket = context.wrap_socket(server.socket, server_side=True)
-    LOG.info("event=philips_folder_bridge_started destination_id=%s mode=%s", POLICY.destination_id, POLICY.mode)
+    LOG.info("event=philips_folder_bridge_started destination_id=%s mode=%s transport=%s", POLICY.destination_id, POLICY.mode, POLICY.transport)
     server.serve_forever(poll_interval=0.5)
 
 
