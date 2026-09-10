@@ -729,6 +729,7 @@ class EstudosController extends Controller
 
         $urlWorklist          = $modoGestao ? '/gestao-exames' : '/estudos';
         $podeGerenciarPedido  = (new PedidoMedicoService())->podeGerenciar($tenantId, $bypassGlobal);
+        $canManageNonDicomDelivery = Auth::isPlatformAdmin() && !$bypassGlobal && $tenantId !== null;
         $csrfToken             = $this->csrfToken();
         $worklistAutoRefresh = ['enabled' => !$modoGestao, 'seconds' => 60];
         if (!$modoGestao) {
@@ -747,7 +748,7 @@ class EstudosController extends Controller
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
             'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
-            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
+            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','canManageNonDicomDelivery','tenantId','csrfToken',
             'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh','worklistPreference'
         );
 

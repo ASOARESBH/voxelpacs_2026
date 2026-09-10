@@ -342,6 +342,7 @@ $transportLabels = [
     const guide = document.getElementById('destination-guide');
     const configInput = document.getElementById('destination-config');
     const secretInput = document.getElementById('destination-secret');
+    const deliveryTokenFromWorklist = new URLSearchParams(window.location.search).get('report_public_token');
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const issuerSelectors = Array.from(form.querySelectorAll('.issuer-selector'));
     const baseAction = form.action;
@@ -358,6 +359,11 @@ $transportLabels = [
         philips_non_dicom: 'Configure o destino PDF/SMB de homologação. Salvar não envia laudo; teste SMB e entrega manual são ações separadas.',
     };
     let currentConfig = {};
+
+    if (deliveryTokenFromWorklist && /^[a-f0-9]{48}$/i.test(deliveryTokenFromWorklist)) {
+        const manualToken = document.getElementById('manual-report-token');
+        if (manualToken) manualToken.value = deliveryTokenFromWorklist.toLowerCase();
+    }
 
     function parseConfig(raw) {
         try {

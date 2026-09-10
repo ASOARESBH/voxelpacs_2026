@@ -520,6 +520,9 @@ $periodoLabel = [
                 && $podeGerenciarPedido
                 && in_array($reportSituacaoGestao, ['assinado', 'liberado'], true)
                 && preg_match('/^[a-f0-9]{48}$/', $reportTokenGestao) === 1;
+            $podeIniciarEntregaNonDicom = !empty($canManageNonDicomDelivery)
+                && $reportSituacaoGestao === 'liberado'
+                && preg_match('/^[a-f0-9]{48}$/', $reportTokenGestao) === 1;
 
             // Recebido há
             $recebidoHa = formatarSla($e['recebido_em'] ?? null);
@@ -723,6 +726,13 @@ $periodoLabel = [
                               title="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_laudo'), ENT_QUOTES) ?>">
                             <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
                         </span>
+                        <?php endif; ?>
+                        <?php if ($podeIniciarEntregaNonDicom): ?>
+                        <a class="wl-btn-gerenciar"
+                           href="/platform/negocios/<?= (int) $tenantId ?>/report-delivery?report_public_token=<?= rawurlencode($reportTokenGestao) ?>"
+                           title="Preparar entrega manual Philips Non-DICOM PDF-only">
+                            <i class="fa fa-paper-plane"></i> Entrega Non-DICOM
+                        </a>
                         <?php endif; ?>
                         <?php endif; ?>
                     <?php else: ?>
