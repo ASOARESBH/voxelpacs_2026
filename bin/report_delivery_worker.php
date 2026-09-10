@@ -31,6 +31,7 @@ final class LocalDicomDeliveryWorker
         'tls_required',
         'command_failed',
     ];
+    // A bridge devolve somente categorias sanitizadas; nenhum detalhe de rota, credencial ou artefato é persistido.
     private const PHILIPS_FOLDER_REASON_CATEGORIES = [
         'feature_disabled',
         'invalid_configuration',

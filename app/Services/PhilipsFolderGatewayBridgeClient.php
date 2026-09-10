@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// Materialização de runtime Philips Folder: bridge privada com mTLS e HMAC.
+// Materialização de runtime Philips Folder: bridge privada com mTLS, HMAC e categorias sanitizadas de transporte.
 
 namespace App\Services;
 
