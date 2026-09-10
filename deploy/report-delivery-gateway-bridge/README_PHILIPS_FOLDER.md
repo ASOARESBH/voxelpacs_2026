@@ -7,21 +7,19 @@ Este componente entrega **somente PDF imutável de laudo** por meio da bridge pr
 | Controle | Regra |
 |---|---|
 | Ativação no PACS | `PHILIPS_FOLDER_DELIVERY_ENABLED=false` por padrão. |
-| Conteúdo | Somente PDF oficial renderizado da versão imutável do laudo na Etapa 1; a bridge aceita extensão XML apenas como preparação estrutural, sem gerar, autorizar ou transmitir XML. |
+| Conteúdo | Somente PDF oficial renderizado da versão imutável do laudo; sem XML, DICOM encapsulado ou reprocessamento de PDF. |
 | Entrada da bridge | HTTPS privada, mTLS obrigatório, HMAC de curta duração, URL allowlisted e corpo máximo de 50 MB. |
 | Destino | A bridge conhece um único `destination_id`; o PACS não recebe a pasta remota nem credenciais. |
 | Homologação | Modo `single_test`, com um único job explícito, uso idempotente por checksum e sem automação. |
 | Gravação | Arquivo temporário no diretório final, `fsync`, SHA-256, `os.replace` e permissão 0600. |
 | Auditoria | Apenas job, ambiente, categoria e prefixo do hash; nunca nomes de paciente, conteúdo, token, host ou caminho. |
-| SFTP | Transporte preferencial com chave privada e `known_hosts` root-only; a host key nunca é aceita automaticamente. |
-| SMB | Fallback opcional e somente para falha transitória de SFTP; acesso via montagem efêmera com arquivo de credencial root-only. |
 
 ## Pré-requisitos antes de iniciar
 
-1. A interface isolada `wg-philips` e a bridge privada precisam estar aprovadas e monitoradas. Não use endereço público, `wg0`, compartilhamento SMB exposto ou credenciais no repositório.
-2. A equipe do receptor deve aprovar SFTP como método preferencial, a conta de serviço com privilégio mínimo, a host key registrada em `known_hosts` e, se necessário, o fallback SMB. Esses dados são configurados apenas no gateway.
+1. A interface WireGuard e a bridge privada precisam estar ativas e monitoradas. Não use endereço público, compartilhamento SMB exposto ou credenciais no repositório.
+2. A equipe do receptor deve aprovar o método de gravação do gateway (SMB ou SFTP), a conta de serviço com privilégio mínimo e o diretório local gerenciado abaixo da raiz privada da bridge. Esses dados são configurados apenas no gateway.
 3. Criar os arquivos de mTLS e HMAC em permissões root-only e preencher o arquivo baseado em `philips_folder_bridge.env.example` sem copiá-lo ao repositório.
-4. O serviço de exemplo depende de `wg-philips` e deve ser revisado pelo responsável de infraestrutura; ele não deve ser habilitado antes da confirmação explícita de conectividade e do job de teste.
+4. O serviço de exemplo deve ser revisado pelo responsável de infraestrutura; ele não deve ser habilitado antes da confirmação explícita de conectividade e do job de teste.
 
 ## Homologação sem fila
 
