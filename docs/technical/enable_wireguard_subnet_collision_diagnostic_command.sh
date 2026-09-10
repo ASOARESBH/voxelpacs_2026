@@ -126,15 +126,23 @@ if [[ -f "$APP_DIR/app/bootstrap.php" ]]; then
 require "/var/www/voxelpacs/app/app/bootstrap.php";
 try {
     $pdo = \App\Core\Database::getInstance();
-    $stmt = $pdo->query("SELECT COUNT(*) FROM bi_pacs_tenant_provisioning WHERE vpn_client_ip <<= CAST(\04710.200.10.0/24\047 AS cidr) OR vpn_client_ip >>= CAST(\04710.200.10.0/24\047 AS cidr)");
-    echo ((int) $stmt->fetchColumn() > 0) ? "present" : "absent";
+    $target = $pdo->quote("10.201.10.0/24");
+    $sql = "SELECT
+        CASE WHEN EXISTS (SELECT 1 FROM bi_pacs_tenant_provisioning WHERE vpn_client_ip <<= CAST($target AS cidr)) THEN \047present\047 ELSE \047absent\047 END AS client_within_target,
+        CASE WHEN EXISTS (SELECT 1 FROM bi_pacs_tenant_provisioning WHERE vpn_client_ip >>= CAST($target AS cidr)) THEN \047present\047 ELSE \047absent\047 END AS target_within_existing";
+    $row = $pdo->query($sql)->fetch(PDO::FETCH_ASSOC);
+    echo "client=" . ($row["client_within_target"] ?? "not_available") . ";supernet=" . ($row["target_within_existing"] ?? "not_available");
 } catch (Throwable) {
-    echo "not_available";
+    echo "client=not_available;supernet=not_available";
 }
-' 2>/dev/null || printf 'not_available')"
-  printf 'CONTROL_PLANE_ALLOCATION_OVERLAP=%s\n' "$db_result"
+' 2>/dev/null || printf 'client=not_available;supernet=not_available')"
+  client_overlap="$(printf '%s' "$db_result" | sed -n 's/.*client=\([^;]*\).*/\1/p')"
+  supernet_overlap="$(printf '%s' "$db_result" | sed -n 's/.*supernet=\([^;]*\).*/\1/p')"
+  printf 'CONTROL_PLANE_CLIENT_WITHIN_TARGET=%s\n' "${client_overlap:-not_available}"
+  printf 'CONTROL_PLANE_TARGET_WITHIN_EXISTING=%s\n' "${supernet_overlap:-not_available}"
 else
-  printf 'CONTROL_PLANE_ALLOCATION_OVERLAP=not_available\n'
+  printf 'CONTROL_PLANE_CLIENT_WITHIN_TARGET=not_available\n'
+  printf 'CONTROL_PLANE_TARGET_WITHIN_EXISTING=not_available\n'
 fi
 
 printf 'HETZNER_NETWORK_INVENTORY=not_available\n'
