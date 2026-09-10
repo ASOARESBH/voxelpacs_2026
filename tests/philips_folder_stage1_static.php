@@ -4,6 +4,7 @@ declare(strict_types=1);
 $base = dirname(__DIR__);
 $files = [
     'service' => $base . '/app/Services/PhilipsFolderDeliveryService.php',
+    'connectivity' => $base . '/app/Services/PhilipsFolderSmbConnectivityService.php',
     'client' => $base . '/app/Services/PhilipsFolderGatewayBridgeClient.php',
     'worker' => $base . '/bin/report_delivery_worker.php',
     'bridge' => $base . '/deploy/report-delivery-gateway-bridge/philips_folder_bridge.py',
@@ -17,7 +18,13 @@ foreach ($files as $name => $path) {
         exit(1);
     }
 }
+require_once $base . '/app/autoload.php';
+if (!class_exists('App\\Services\\PhilipsFolderSmbConnectivityService')) {
+    fwrite(STDERR, "SMB_CONNECTIVITY_SERVICE_NOT_AUTOLOADABLE\n");
+    exit(1);
+}
 $service = file_get_contents($files['service']);
+$connectivity = file_get_contents($files['connectivity']);
 $client = file_get_contents($files['client']);
 $worker = file_get_contents($files['worker']);
 $bridge = file_get_contents($files['bridge']);
@@ -28,6 +35,9 @@ $view = file_get_contents($files['view']);
 $required = [
     [$service, "getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false'", 'feature flag segura'],
     [$service, "public const TRANSPORT = 'philips_folder'", 'transporte Philips'],
+    [$connectivity, 'namespace App\\Services;', 'namespace do serviço de conectividade SMB'],
+    [$connectivity, "'gateway_unavailable'", 'falha local do envelope sanitizada'],
+    [$connectivity, 'sodium_memzero($password)', 'limpeza da senha temporária'],
     [$client, 'CURLOPT_SSL_VERIFYPEER => true', 'mTLS peer verification'],
     [$client, 'X-VOXEL-Destination-ID', 'vínculo de destino'],
     [$worker, 'PHILIPS_FOLDER_REASON_CATEGORIES', 'categorias sanitizadas'],
@@ -83,7 +93,7 @@ if (str_contains($bridge, 'mount.cifs') || str_contains($bridge, 'umount')) {
     fwrite(STDERR, "FORBIDDEN_SMB_MOUNT\n");
     exit(1);
 }
-if (str_contains($service, 'smbclient') || str_contains($client, 'smbclient')) {
+if (str_contains($service, 'smbclient') || str_contains($connectivity, 'smbclient') || str_contains($client, 'smbclient')) {
     fwrite(STDERR, "FORBIDDEN_PACS_SMB_EXECUTION\n");
     exit(1);
 }

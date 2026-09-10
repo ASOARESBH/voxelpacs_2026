@@ -15,6 +15,7 @@ use App\Services\DicomIssuerService;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\ReportDeliveryManualQueueService;
 use App\Services\PhilipsFolderDeliveryService;
+use App\Services\PhilipsFolderDeliveryException;
 use App\Services\PhilipsFolderSmbConnectivityService;
 use DomainException;
 use Throwable;

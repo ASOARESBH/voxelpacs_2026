@@ -3,6 +3,8 @@
 
 declare(strict_types=1);
 
+namespace App\Services;
+
 /** Teste de configuração SMB sem PDF, XML, outbox ou job clínico. */
 final class PhilipsFolderSmbConnectivityService
 {
@@ -13,8 +15,13 @@ final class PhilipsFolderSmbConnectivityService
             throw new PhilipsFolderDeliveryException('feature_disabled', 'feature_disabled');
         }
         $password = $this->password($encryptedSecret);
-        $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, $tenantId, $destinationId);
-        sodium_memzero($password);
+        try {
+            $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, $tenantId, $destinationId);
+        } catch (\Throwable) {
+            throw new PhilipsFolderDeliveryException('gateway_secret_envelope_unavailable', 'gateway_unavailable');
+        } finally {
+            sodium_memzero($password);
+        }
         return (new PhilipsFolderGatewayBridgeClient())->testSmbConnectivity(
             $tenantId,
             $destinationId,
