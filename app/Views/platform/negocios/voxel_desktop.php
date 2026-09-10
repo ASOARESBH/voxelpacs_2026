@@ -1,5 +1,6 @@
 <?php
 // Sincronização de runtime da interface de ambiente e teste manual sem automação.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 // Control-plane Voxel Desktop: habilitação explícita não cria fila nem dispara liberação automática.
 $escape = static fn(mixed $value): string => htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 $manualDestinations = array_filter($destinations, static fn(array $d): bool => !empty($d['enabled']) && (string)$d['ambiente'] === 'homologacao');

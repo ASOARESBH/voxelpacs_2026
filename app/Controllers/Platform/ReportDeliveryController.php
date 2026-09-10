@@ -1,6 +1,6 @@
 <?php
 // Materialização de runtime Philips Folder: control-plane permanece inerte por feature flag.
-
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 namespace App\Controllers\Platform;
 
 use App\Core\Audit\AuditLogger;

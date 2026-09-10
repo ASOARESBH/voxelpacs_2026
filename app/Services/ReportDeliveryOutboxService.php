@@ -1,6 +1,6 @@
 <?php
 // Materialização de runtime Philips Folder: não cria jobs enquanto a flag estiver desligada.
-
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 namespace App\Services;
 
 use App\Core\Logger;

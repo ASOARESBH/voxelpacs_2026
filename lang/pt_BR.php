@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 // Materialização de runtime Philips Folder: mensagens de controle inerte.
 // Sincronização de runtime das mensagens do control-plane e teste manual Voxel Desktop.
 // Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.

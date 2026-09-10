@@ -1,5 +1,6 @@
 <?php
 // Sincronização de runtime das rotas protegidas de edição, habilitação e preparo manual Voxel Desktop.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 // Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.
 // Materialização de runtime para publicação restrita do Voxel Desktop.
 // Materialização de runtime do catálogo Downloads para publicação restrita.

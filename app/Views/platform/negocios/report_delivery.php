@@ -1,5 +1,6 @@
 <?php
 // Materialização de runtime Philips Folder: formulário sem endpoint ou segredo remoto.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 /** @var array<string,mixed> $tenant */
 /** @var array<int,array<string,mixed>> $destinations */
 /** @var array<int,array<string,mixed>> $jobs */

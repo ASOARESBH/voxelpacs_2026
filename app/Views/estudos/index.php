@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 // Materialização de runtime do catálogo Downloads para publicação restrita.
 /**
  * VOXEL PACS — Worklist de Estudos (v4)
