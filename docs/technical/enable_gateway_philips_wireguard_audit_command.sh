@@ -1,25 +1,20 @@
 #!/usr/bin/env bash
-# Instala exclusivamente o subcomando SSH `gateway-philips-wireguard-audit`.
-# Execute uma única vez como root no gateway-dicom-01. O subcomando é sem
-# argumentos, somente leitura e emite somente classificações sanitizadas.
+# Materializa exclusivamente o executável local root-only
+# `voxelpacs-gateway-philips-wireguard-audit` no gateway-dicom-01.
+# Não pressupõe componentes externos de acesso ou despacho existentes.
+# O executável é sem argumentos, somente leitura e emite classificações sanitizadas.
 set -euo pipefail
 
 if [[ "${EUID}" -ne 0 ]]; then
-  printf 'Este instalador precisa ser executado como root.\n' >&2
+  printf 'Este instalador precisa ser executado como root local.\n' >&2
   exit 77
 fi
 
-readonly FORCE_COMMAND=/usr/local/sbin/voxelpacs-deploy-force
 readonly RUNNER=/usr/local/sbin/voxelpacs-gateway-philips-wireguard-audit
-readonly SUDOERS_FILE=/etc/sudoers.d/voxelpacs-gateway-philips-wireguard-audit
-readonly MARKER='# GATEWAY_PHILIPS_WIREGUARD_AUDIT_EXACT_COMMAND'
-readonly TECHNICAL_USER=voxeldeploy
-
-test -x "$FORCE_COMMAND"
 
 cat > "$RUNNER" <<'RUNNER_EOF'
 #!/usr/bin/env bash
-# Comando fechado: sem argumentos; não altera rede, firewall, serviços ou arquivos de configuração.
+# Comando fechado: sem argumentos; não altera rede, firewall, serviços, SSH ou arquivos de produção.
 set -euo pipefail
 
 if [[ "$#" -ne 0 || "${EUID}" -ne 0 ]]; then
@@ -29,7 +24,11 @@ fi
 
 readonly TARGET_CIDR='10.201.10.0/24'
 readonly TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+cleanup() {
+  find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
+  rmdir "$TMP_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 classify_json_overlap() {
   local mode="$1"
@@ -192,8 +191,32 @@ classify_wg_quick_readiness() {
   fi
 }
 
+classify_wg_handshake() {
+  local interface="$1"
+  if ! command -v wg >/dev/null 2>&1 || ! ip link show dev "$interface" >/dev/null 2>&1; then
+    printf 'not_available\n'
+    return
+  fi
+  if wg show "$interface" latest-handshakes 2>/dev/null | awk '$2 > 0 {found=1} END {exit(found ? 0 : 1)}'; then
+    printf 'observed\n'
+  else
+    printf 'not_observed\n'
+  fi
+}
+
+classify_udp_binding() {
+  local port="$1"
+  if ! command -v ss >/dev/null 2>&1; then
+    printf 'not_available\n'
+  elif ss -H -lun 2>/dev/null | awk -v port="$port" '$5 ~ (":" port "$") {found=1} END {exit(found ? 0 : 1)}'; then
+    printf 'present\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
 printf '%s\n' '=== GATEWAY_PHILIPS_WIREGUARD_AUDIT ==='
-printf '%s\n' 'GATEWAY_AUDIT_SCHEMA=1'
+printf '%s\n' 'GATEWAY_AUDIT_SCHEMA=2'
 printf 'TARGET_SUBNET=%s\n' "$TARGET_CIDR"
 printf 'CPU_HEADROOM=%s\n' "$(classify_cpu_headroom)"
 printf 'RAM_HEADROOM=%s\n' "$(classify_ram_headroom)"
@@ -204,7 +227,10 @@ printf 'HOST_ROUTE_OVERLAP=%s\n' "$(classify_json_overlap routes "$TMP_DIR/route
 
 ip -j -4 addr show > "$TMP_DIR/interfaces.json" 2>/dev/null || printf '[]' > "$TMP_DIR/interfaces.json"
 printf 'HOST_INTERFACE_OVERLAP=%s\n' "$(classify_json_overlap interfaces "$TMP_DIR/interfaces.json")"
+printf 'WG0_INTERFACE=%s\n' "$(ip link show dev wg0 >/dev/null 2>&1 && printf 'present' || printf 'absent')"
+printf 'WG0_HANDSHAKE=%s\n' "$(classify_wg_handshake wg0)"
 printf 'WG_PHILIPS_INTERFACE=%s\n' "$(ip -o link show 2>/dev/null | awk -F': ' '$2 == "wg-philips" {found=1} END {print found ? "present" : "absent"}')"
+printf 'WG_PHILIPS_HANDSHAKE=%s\n' "$(classify_wg_handshake wg-philips)"
 printf 'WIREGUARD_INTERFACE_COUNT=%s\n' "$(ip -o link show type wireguard 2>/dev/null | awk 'END {print NR+0}')"
 printf 'EXISTING_DICOM_WIREGUARD=%s\n' "$(ip -o link show type wireguard 2>/dev/null | awk -F': ' '$2 == "wg0" || $2 == "wg-dicom" {found=1} END {print found ? "present" : "absent"}')"
 
@@ -228,7 +254,8 @@ else
 fi
 
 printf 'FIREWALL_MANAGER=%s\n' "$(classify_firewall)"
-printf 'UDP_BINDING_INVENTORY=%s\n' "$(command -v ss >/dev/null 2>&1 && printf 'available' || printf 'not_available')"
+printf 'UDP_BINDING_51820=%s\n' "$(classify_udp_binding 51820)"
+printf 'UDP_BINDING_51821=%s\n' "$(classify_udp_binding 51821)"
 printf 'WG_QUICK_SEPARATE_INTERFACE=%s\n' "$(classify_wg_quick_readiness)"
 
 printf 'DICOM_GATEWAY_SERVICE=%s\n' "$(classify_service_group '(dicom|dcm4che|storescp|dicom.*gateway)')"
@@ -239,31 +266,6 @@ printf '%s\n' 'GATEWAY_PHILIPS_WIREGUARD_AUDIT_OK'
 RUNNER_EOF
 
 chown root:root "$RUNNER"
-chmod 0750 "$RUNNER"
+chmod 0700 "$RUNNER"
 bash -n "$RUNNER"
-
-if ! grep -Fqx "$MARKER" "$FORCE_COMMAND"; then
-  grep -Fqx 'set -euo pipefail' "$FORCE_COMMAND"
-  backup_force="${FORCE_COMMAND}.before-gateway-philips-wireguard-audit-$(date -u +%Y%m%dT%H%M%SZ)"
-  cp -p "$FORCE_COMMAND" "$backup_force"
-  temp_force="$(mktemp)"
-  awk -v marker="$MARKER" '
-    { print }
-    $0 == "set -euo pipefail" {
-      print marker
-      print "if [[ \"${SSH_ORIGINAL_COMMAND:-}\" == \"gateway-philips-wireguard-audit\" ]]; then"
-      print "  exec sudo /usr/local/sbin/voxelpacs-gateway-philips-wireguard-audit"
-      print "fi"
-    }
-  ' "$FORCE_COMMAND" > "$temp_force"
-  grep -Fqx "$MARKER" "$temp_force"
-  install -o root -g root -m 0755 "$temp_force" "$FORCE_COMMAND"
-  rm -f "$temp_force"
-fi
-
-printf '%s ALL=(root) NOPASSWD: %s\n' "$TECHNICAL_USER" "$RUNNER" > "$SUDOERS_FILE"
-chown root:root "$SUDOERS_FILE"
-chmod 0440 "$SUDOERS_FILE"
-visudo -cf "$SUDOERS_FILE" >/dev/null
-bash -n "$FORCE_COMMAND"
 printf 'GATEWAY_PHILIPS_WIREGUARD_AUDIT_COMMAND_READY\n'
