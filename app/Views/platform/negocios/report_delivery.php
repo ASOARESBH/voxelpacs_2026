@@ -234,7 +234,7 @@ $transportLabels = [
                             <?php foreach ($destinations as $destination): ?>
                                 <?php $json = htmlspecialchars(json_encode($destination, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>
                                 <tr>
-                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div></td>
+                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div><?php if (($destination['transport'] ?? '') === 'philips_non_dicom'): ?><div class="small mt-1"><?= !empty($destination['credential_configured']) ? '<span class="badge text-bg-success">Credencial SMB configurada</span>' : '<span class="badge text-bg-warning">Credencial SMB pendente</span>' ?></div><?php endif; ?></td>
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">

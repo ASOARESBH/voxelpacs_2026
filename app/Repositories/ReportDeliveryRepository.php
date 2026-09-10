@@ -88,6 +88,7 @@ class ReportDeliveryRepository
             "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
+                    CASE WHEN COALESCE(d.configuration_secret, '') <> '' THEN 1 ELSE 0 END AS credential_configured,
                     COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
@@ -109,7 +110,8 @@ class ReportDeliveryRepository
         $columns = $includeSecret ? 'd.*' :
             'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
-             d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
+             d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
+             CASE WHEN COALESCE(d.configuration_secret, \'\') <> \'\' THEN 1 ELSE 0 END AS credential_configured';
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(

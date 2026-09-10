@@ -8,6 +8,7 @@ $files = [
     'worker' => $base . '/bin/report_delivery_worker.php',
     'bridge' => $base . '/deploy/report-delivery-gateway-bridge/philips_folder_bridge.py',
     'controller' => $base . '/app/Controllers/Platform/ReportDeliveryController.php',
+    'repository' => $base . '/app/Repositories/ReportDeliveryRepository.php',
     'view' => $base . '/app/Views/platform/negocios/report_delivery.php',
 ];
 foreach ($files as $name => $path) {
@@ -21,6 +22,7 @@ $client = file_get_contents($files['client']);
 $worker = file_get_contents($files['worker']);
 $bridge = file_get_contents($files['bridge']);
 $controller = file_get_contents($files['controller']);
+$repository = file_get_contents($files['repository']);
 $view = file_get_contents($files['view']);
 
 $required = [
@@ -50,6 +52,8 @@ $required = [
     [$view, 'PHILIPS NON-DICOM — PDF/SMB', 'interface de destino Non-DICOM'],
     [$view, 'Testar conexão SMB', 'ação visual de teste SMB'],
     [$view, 'smb_password', 'campo de senha cifrada'],
+    [$view, 'Credencial SMB configurada', 'indicador sanitizado de credencial'],
+    [$repository, 'credential_configured', 'booleano de presença de credencial'],
 ];
 foreach ($required as [$content, $needle, $label]) {
     if (!str_contains($content, $needle)) {
