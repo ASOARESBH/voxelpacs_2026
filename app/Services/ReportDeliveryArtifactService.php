@@ -37,7 +37,7 @@ final class ReportDeliveryArtifactService
         if (!$job) {
             throw new RuntimeException('Job não está reservado para este worker.');
         }
-        if (!in_array((string) ($job['transport'] ?? ''), ['dicom_pdf', PhilipsFolderDeliveryService::TRANSPORT], true)) {
+        if (!in_array((string) ($job['transport'] ?? ''), ['dicom_pdf', PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)) {
             throw new RuntimeException('Artefato PDF solicitado para um transporte incompatível.');
         }
 

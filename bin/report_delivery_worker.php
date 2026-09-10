@@ -7,6 +7,7 @@ use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryGatewayBridgeClient;
 use App\Services\PhilipsFolderDeliveryException;
 use App\Services\PhilipsFolderDeliveryService;
+use App\Services\PdfNonDicomArtifactProducer;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
@@ -40,7 +41,8 @@ final class LocalDicomDeliveryWorker
         'gateway_policy_rejected',
         'credentials_unavailable',
         'gateway_unavailable',
-        'gateway_delivery_failed',
+            'gateway_delivery_failed',
+            'gateway_smb_test_failed',
         'remote_integrity_unconfirmed',
         'connectivity',
         'timeout',
@@ -130,7 +132,9 @@ final class LocalDicomDeliveryWorker
                 $this->validateDestination($configuration, $payload);
             }
 
-            $artifact = $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId);
+            $artifact = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                ? (new PdfNonDicomArtifactProducer($this->artifactService))->produce($jobId, $this->workerId)
+                : $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId);
             if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
                 Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_PROCESSING', ['job_id' => $jobId]);
                 $result = (new PhilipsFolderDeliveryService())->deliver($job, $configuration, $payload, $artifact);
@@ -139,6 +143,24 @@ final class LocalDicomDeliveryWorker
                     (int) $job['tenant_id'],
                     isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
                     'philips_folder_pdf',
+                    (string) ($artifact['storage_path'] ?? ''),
+                    $result['sha256'],
+                    $result['size']
+                );
+            } elseif ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
+                Logger::info('[PhilipsNonDicomDelivery] PHILIPS_NON_DICOM_PROCESSING', ['job_id' => $jobId]);
+                $result = (new PhilipsFolderDeliveryService())->deliverNonDicomPdf(
+                    $job,
+                    $configuration,
+                    $payload,
+                    $artifact,
+                    (string) ($job['configuration_secret'] ?? '')
+                );
+                $this->repository->recordArtifact(
+                    (int) $job['outbox_id'],
+                    (int) $job['tenant_id'],
+                    isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                    'philips_non_dicom_pdf',
                     (string) ($artifact['storage_path'] ?? ''),
                     $result['sha256'],
                     $result['size']
@@ -153,8 +175,8 @@ final class LocalDicomDeliveryWorker
                 'artifact_size_bytes' => $result['size'],
             ]);
             Logger::info(
-                $transport === PhilipsFolderDeliveryService::TRANSPORT
-                    ? '[PhilipsFolderDelivery] PHILIPS_EXPORT_SUCCESS'
+                in_array($transport, [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)
+                    ? '[PhilipsNonDicomDelivery] PHILIPS_EXPORT_SUCCESS'
                     : '[ReportDeliveryWorker] Entrega DICOM concluída',
                 ['job_id' => $jobId, 'transport' => $transport, 'environment' => (string) ($job['ambiente'] ?? '')]
             );
@@ -182,6 +204,9 @@ final class LocalDicomDeliveryWorker
         $transports = self::SUPPORTED_TRANSPORTS;
         if (PhilipsFolderDeliveryService::enabled()) {
             $transports[] = PhilipsFolderDeliveryService::TRANSPORT;
+        }
+        if (PhilipsFolderDeliveryService::nonDicomEnabled()) {
+            $transports[] = PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT;
         }
         return $transports;
     }

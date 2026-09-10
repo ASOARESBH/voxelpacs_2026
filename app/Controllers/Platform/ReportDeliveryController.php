@@ -15,6 +15,7 @@ use App\Services\DicomIssuerService;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\ReportDeliveryManualQueueService;
 use App\Services\PhilipsFolderDeliveryService;
+use App\Services\PhilipsFolderSmbConnectivityService;
 use DomainException;
 use Throwable;
 
@@ -31,7 +32,7 @@ class ReportDeliveryController extends Controller
     private Tenant $tenantModel;
 
     /** @var array<int, string> */
-    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp', 'philips_folder'];
+    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp', 'philips_folder', 'philips_non_dicom'];
 
     public function __construct()
     {
@@ -106,8 +107,10 @@ class ReportDeliveryController extends Controller
                 $institutionName
             );
             $eligible = array_values(array_filter($eligible, static fn(array $destination): bool =>
-                (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
-                || PhilipsFolderDeliveryService::enabled()
+                ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                    || PhilipsFolderDeliveryService::enabled())
+                && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                    || PhilipsFolderDeliveryService::nonDicomEnabled())
             ));
             $manualEligible = array_filter($eligible, static fn(array $destination): bool =>
                 (string) ($destination['ambiente'] ?? '') === 'homologacao'
@@ -292,6 +295,54 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    /** Teste técnico de conectividade SMB; não cria outbox, job, PDF ou XML. */
+    public function testSmb(int $tenantId, int $destinationId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_smb_test'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => 'Confirme o teste técnico SMB sem envio de laudo.'], 422);
+        }
+        try {
+            $destination = $this->repository->findDestination($destinationId, $tenantId, true);
+            if (!$destination || (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                || (string) ($destination['ambiente'] ?? '') !== 'homologacao') {
+                throw new DomainException('Destino Non-DICOM de homologação não encontrado.');
+            }
+            $configuration = json_decode((string) ($destination['configuration_json'] ?? '{}'), true);
+            if (!is_array($configuration)) {
+                throw new DomainException('Configuração do destino inválida.');
+            }
+            $result = (new PhilipsFolderSmbConnectivityService())->test(
+                $tenantId,
+                $destinationId,
+                $configuration,
+                (string) ($destination['configuration_secret'] ?? ''),
+                (int) ($destination['timeout_seconds'] ?? 30)
+            );
+            AuditLogger::log('report_delivery.smb_connectivity_tested', 'pacs_report_delivery_destinations', $destinationId, [
+                'tenant_id' => $tenantId,
+                'result' => $result,
+            ]);
+            $this->json(['success' => true, 'message' => 'CONEXÃO SMB OK']);
+        } catch (PhilipsFolderDeliveryException $e) {
+            AuditLogger::log('report_delivery.smb_connectivity_failed', 'pacs_report_delivery_destinations', $destinationId, [
+                'tenant_id' => $tenantId,
+                'reason_category' => $e->reasonCategory,
+            ]);
+            $this->json(['success' => false, 'message' => 'Teste SMB não concluído: ' . $this->sanitizedReason($e->reasonCategory)], 422);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::testSmb] Falha técnica sanitizada', ['tenant_id' => $tenantId, 'destination_id' => $destinationId, 'error_class' => get_class($e)]);
+            $this->json(['success' => false, 'message' => 'Teste SMB indisponível.'], 500);
+        }
+    }
+
     /**
      * Recupera um job cujo worker interrompeu antes de concluir a entrega.
      * A operação é permitida somente após dez minutos em processamento.
@@ -386,6 +437,11 @@ class ReportDeliveryController extends Controller
         if ($transport === PhilipsFolderDeliveryService::TRANSPORT && !PhilipsFolderDeliveryService::enabled()) {
             if ($enabled || !empty($_POST['disparar_na_liberacao'])) {
                 throw new DomainException(t('philips_folder.feature_desativada'));
+            }
+        }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT && !PhilipsFolderDeliveryService::nonDicomEnabled()) {
+            if ($enabled || !empty($_POST['disparar_na_liberacao'])) {
+                throw new DomainException('O canal Philips Non-DICOM permanece desativado até autorização operacional.');
             }
         }
         if ($configuration === '') {
@@ -483,6 +539,30 @@ class ReportDeliveryController extends Controller
                 throw new DomainException(t('philips_folder.configuracao_invalida'));
             }
         }
+
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
+            $share = trim((string) ($configuration['smb_share'] ?? ''));
+            $username = trim((string) ($configuration['smb_username'] ?? ''));
+            if (($configuration['delivery_profile'] ?? '') !== 'pdf_only'
+                || ($configuration['transport_protocol'] ?? '') !== 'smb'
+                || !filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                || !$validHost || $port !== 445
+                || preg_match('/^[A-Za-z0-9._-]{1,80}$/', $share) !== 1
+                || preg_match('/^(?:[A-Za-z0-9._-]{1,64}\\\\)?[A-Za-z0-9._-]{1,64}$/', $username) !== 1) {
+                throw new DomainException('Configuração SMB Non-DICOM inválida.');
+            }
+        }
+    }
+
+    private function sanitizedReason(?string $reason): string
+    {
+        return match ($reason) {
+            'authentication' => 'autenticação recusada',
+            'permission' => 'acesso ao compartilhamento recusado',
+            'connectivity', 'timeout', 'gateway_unavailable' => 'conectividade indisponível',
+            'credentials_unavailable' => 'credencial não configurada',
+            default => 'falha técnica sanitizada',
+        };
     }
 
     private function isPlatformAdmin(): bool

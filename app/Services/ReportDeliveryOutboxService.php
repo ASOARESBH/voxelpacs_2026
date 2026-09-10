@@ -113,6 +113,8 @@ class ReportDeliveryOutboxService
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
                     && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
                         || PhilipsFolderDeliveryService::enabled())
+                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                        || PhilipsFolderDeliveryService::nonDicomEnabled())
             ));
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
@@ -121,8 +123,8 @@ class ReportDeliveryOutboxService
 
             if ($jobs > 0) {
                 $repository->markOutboxQueued($outboxId);
-                if (array_filter($destinations, static fn(array $destination): bool => (string) ($destination['transport'] ?? '') === PhilipsFolderDeliveryService::TRANSPORT)) {
-                    Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_QUEUED', [
+                if (array_filter($destinations, static fn(array $destination): bool => in_array((string) ($destination['transport'] ?? ''), [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true))) {
+                    Logger::info('[PhilipsNonDicomDelivery] PHILIPS_EXPORT_QUEUED', [
                         'tenant_id' => $tenantId,
                         'outbox_id' => $outboxId,
                         'job_count' => $jobs,

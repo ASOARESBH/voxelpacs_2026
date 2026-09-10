@@ -7,6 +7,7 @@ Nenhuma configuração neste arquivo inicia a bridge ou habilita a feature do PA
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -22,10 +23,16 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import NoReturn
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 
 MAX_BYTES = 50 * 1024 * 1024
 MAX_CLOCK_SKEW_SECONDS = 60
@@ -35,6 +42,7 @@ TRANSIENT_TRANSPORT_FAILURES = {"connectivity", "timeout"}
 SAFE_REMOTE_PATH = re.compile(r"^/[A-Za-z0-9._/-]{1,180}$")
 SAFE_SMB_PATH = re.compile(r"^/?[A-Za-z0-9._/-]{0,160}$")
 SAFE_USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+SAFE_SMB_USERNAME = re.compile(r"^(?:[A-Za-z0-9._-]{1,64}\\)?[A-Za-z0-9._-]{1,64}$")
 SAFE_SHARE = re.compile(r"^[A-Za-z0-9.$_-]{1,80}$")
 
 
@@ -104,7 +112,19 @@ class Policy:
         if not self.secret or not self.target_directory.is_dir() or self.target_directory.is_symlink():
             raise RuntimeError("invalid_bridge_target")
         self.sftp = self._sftp_settings() if self.transport == "sftp" else None
+        self.envelope_private_key = self._envelope_private_key()
         self.smb = self._smb_settings() if self.transport == "smb" or self.fallback == "smb" else None
+
+    def _envelope_private_key(self) -> X25519PrivateKey | None:
+        value = os.environ.get("PHILIPS_NON_DICOM_ENVELOPE_PRIVATE_KEY_FILE", "").strip()
+        if not value:
+            return None
+        encoded = root_only_regular_file(value).read_text(encoding="utf-8").strip()
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            return X25519PrivateKey.from_private_bytes(raw)
+        except (ValueError, TypeError):
+            raise RuntimeError("invalid_envelope_private_key") from None
 
     def _sftp_settings(self) -> dict[str, object]:
         host = private_ipv4(setting("PHILIPS_SFTP_HOST"))
@@ -127,13 +147,14 @@ class Policy:
         share = setting("PHILIPS_SMB_SHARE")
         remote_path = os.environ.get("PHILIPS_SMB_REMOTE_PATH", "/").strip()
         username = setting("PHILIPS_SMB_USER")
-        if host != self.vpn_peer_host or not SAFE_SHARE.fullmatch(share) or not SAFE_SMB_PATH.fullmatch(remote_path) or not SAFE_USERNAME.fullmatch(username):
+        if host != self.vpn_peer_host or not SAFE_SHARE.fullmatch(share) or not SAFE_SMB_PATH.fullmatch(remote_path) or not SAFE_SMB_USERNAME.fullmatch(username):
             raise RuntimeError("invalid_smb_policy")
+        credentials = os.environ.get("PHILIPS_SMB_CREDENTIALS_FILE", "").strip()
         return {
             "host": host,
             "share": share,
             "remote_path": remote_path.strip("/"),
-            "credentials": root_only_regular_file(setting("PHILIPS_SMB_CREDENTIALS_FILE")),
+            "credentials": root_only_regular_file(credentials) if credentials else None,
         }
 
 
@@ -206,6 +227,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_POST(self) -> None:  # noqa: N802
+        test_prefix = "/v1/philips-folder/smb-test/"
+        if self.path.startswith(test_prefix) and self.path[len(test_prefix):].isdigit():
+            self.test_smb_connectivity(int(self.path[len(test_prefix):]))
+            return
         prefix = "/v1/philips-folder/"
         if not self.path.startswith(prefix) or not self.path[len(prefix):].isdigit():
             self.respond(HTTPStatus.NOT_FOUND, {"error": "not_found"})
@@ -238,10 +263,18 @@ class Handler(BaseHTTPRequestHandler):
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
             return
-        signature_base = "\n".join(["POST", self.path, str(job_id), destination_id, filename, supplied_hash, str(length), timestamp])
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
+        signature_parts = ["POST", self.path, str(job_id), destination_id, filename, supplied_hash, str(length), timestamp]
+        if envelope:
+            signature_parts.append(envelope_hash)
+        signature_base = "\n".join(signature_parts)
         expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        if envelope and POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         previous = read_state(job_id)
         if previous.get("sha256") == supplied_hash and previous.get("state") == "delivered":
@@ -254,7 +287,8 @@ class Handler(BaseHTTPRequestHandler):
         if staged is None:
             return
         try:
-            transport = self.deliver_remote(job_id, filename, staged, supplied_hash, length)
+            with self.temporary_smb_credentials(envelope, destination_id) as credentials:
+                transport = self.deliver_remote(job_id, filename, staged, supplied_hash, length, credentials)
         except BridgeTransferError as error:
             LOG.warning("event=philips_export_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
             self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
@@ -263,6 +297,105 @@ class Handler(BaseHTTPRequestHandler):
         write_state(job_id, {"state": "delivered", "sha256": supplied_hash, "reference": reference, "transport": transport})
         LOG.info("event=philips_export_success job_id=%s transport=%s sha256_16=%s", job_id, transport, supplied_hash[:16])
         self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": supplied_hash})
+
+    def test_smb_connectivity(self, destination_id: int) -> None:
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        supplied_configuration_hash = self.headers.get("X-VOXEL-Configuration-SHA256", "")
+        try:
+            request_time = int(timestamp)
+            tenant_value = int(tenant_id)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        expected_configuration_hash = self.smb_configuration_hash()
+        if not hmac.compare_digest(supplied_configuration_hash, expected_configuration_hash):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest()
+        signature_base = "\n".join(["POST", self.path, tenant_id, str(destination_id), supplied_configuration_hash, envelope_hash, timestamp])
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        try:
+            with self.temporary_smb_credentials(envelope, destination_id, tenant_value) as credentials:
+                self.smb_write_probe(credentials)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_smb_test_failed destination_id=%s reason_category=%s", destination_id, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_smb_test_failed", "reason_category": error.category})
+            return
+        LOG.info("event=philips_smb_test_success destination_id=%s", destination_id)
+        self.respond(HTTPStatus.OK, {"status": "ok"})
+
+    def smb_configuration_hash(self) -> str:
+        if not isinstance(POLICY.smb, dict):
+            return ""
+        value = {
+            "host": str(POLICY.smb["host"]),
+            "port": 445,
+            "share": str(POLICY.smb["share"]),
+            "username": str(POLICY.smb["username"]),
+        }
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    @contextmanager
+    def temporary_smb_credentials(self, envelope: str, destination_id: int, tenant_id: int | None = None):
+        credential_file: Path | None = None
+        password = ""
+        try:
+            if not envelope:
+                if not isinstance(POLICY.smb, dict) or not isinstance(POLICY.smb.get("credentials"), Path):
+                    raise BridgeTransferError("credentials_unavailable")
+                yield POLICY.smb["credentials"]
+                return
+            password = self.open_secret_envelope(envelope, destination_id, tenant_id)
+            username = str(POLICY.smb["username"]) if isinstance(POLICY.smb, dict) else ""
+            account, domain = (username.split("\\", 1)[::-1] if "\\" in username else (username, ""))
+            descriptor, raw_path = tempfile.mkstemp(prefix="smb-credentials-", dir=STATE_ROOT)
+            credential_file = Path(raw_path)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write("username=" + account + "\npassword=" + password + "\n")
+                if domain:
+                    output.write("domain=" + domain + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(credential_file, 0o600)
+            yield credential_file
+        finally:
+            password = ""
+            if credential_file is not None:
+                credential_file.unlink(missing_ok=True)
+
+    def open_secret_envelope(self, envelope: str, destination_id: int, tenant_id: int | None) -> str:
+        try:
+            decoded = json.loads(base64.b64decode(envelope, validate=True).decode("utf-8"))
+            if not isinstance(decoded, dict) or decoded.get("v") != 1 or int(decoded.get("destination_id", 0)) != destination_id:
+                raise ValueError
+            if tenant_id is not None and int(decoded.get("tenant_id", 0)) != tenant_id:
+                raise ValueError
+            expires_at = int(decoded.get("expires_at", 0))
+            if expires_at < int(time.time()) or expires_at > int(time.time()) + 90 or POLICY.envelope_private_key is None:
+                raise ValueError
+            ephemeral = X25519PublicKey.from_public_bytes(base64.b64decode(str(decoded["ephemeral_public"]), validate=True))
+            shared = POLICY.envelope_private_key.exchange(ephemeral)
+            context = "voxel-nondicom-smb-v1|" + str(decoded["tenant_id"]) + "|" + str(destination_id) + "|" + str(expires_at)
+            key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=context.encode("utf-8")).derive(shared)
+            plaintext = AESGCM(key).decrypt(base64.b64decode(str(decoded["iv"]), validate=True), base64.b64decode(str(decoded["ciphertext"]), validate=True) + base64.b64decode(str(decoded["tag"]), validate=True), context.encode("utf-8"))
+            password = plaintext.decode("utf-8")
+            if not password or len(password) > 512 or "\x00" in password:
+                raise ValueError
+            return password
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError):
+            raise BridgeTransferError("credentials_unavailable") from None
 
     def receive_or_reuse_stage(self, filename: str, expected_hash: str, length: int) -> Path | None:
         final_path = POLICY.target_directory / filename
@@ -303,17 +436,17 @@ class Handler(BaseHTTPRequestHandler):
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def deliver_remote(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> str:
+    def deliver_remote(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int, credentials: Path | None) -> str:
         try:
             if POLICY.transport == "sftp":
                 self.transfer_sftp(job_id, filename, staged, length)
                 return "sftp"
-            self.transfer_smb(job_id, filename, staged, expected_hash, length)
+            self.transfer_smb(job_id, filename, staged, expected_hash, length, credentials)
             return "smb"
         except BridgeTransferError as primary_error:
             if POLICY.transport == "sftp" and POLICY.fallback == "smb" and primary_error.category in TRANSIENT_TRANSPORT_FAILURES:
                 LOG.warning("event=philips_smb_fallback_attempt job_id=%s reason_category=%s", job_id, primary_error.category)
-                self.transfer_smb(job_id, filename, staged, expected_hash, length)
+                self.transfer_smb(job_id, filename, staged, expected_hash, length, credentials)
                 return "smb"
             raise
 
@@ -391,66 +524,84 @@ class Handler(BaseHTTPRequestHandler):
             raise BridgeTransferError("remote_io")
         LOG.info("event=philips_sftp_success job_id=%s", job_id)
 
-    def transfer_smb(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> None:
-        if not isinstance(POLICY.smb, dict) or not shutil.which("mount.cifs") or not shutil.which("umount"):
+    def _smb_command(self, credentials: Path, command: str) -> subprocess.CompletedProcess[str]:
+        if not isinstance(POLICY.smb, dict) or not shutil.which("smbclient"):
             raise BridgeTransferError("configuration")
-        mount_directory = STATE_ROOT / ("smb-" + secrets.token_hex(12))
-        mounted = False
+        source = "//" + str(POLICY.smb["host"]) + "/" + str(POLICY.smb["share"])
         try:
-            mount_directory.mkdir(mode=0o700)
-            source = "//" + str(POLICY.smb["host"]) + "/" + str(POLICY.smb["share"])
-            options = ",".join([
-                "credentials=" + str(POLICY.smb["credentials"]),
-                "vers=3.0",
-                "seal",
-                "nosuid",
-                "nodev",
-                "noexec",
-                "dir_mode=0700",
-                "file_mode=0600",
-            ])
-            mounted_result = subprocess.run(["mount.cifs", source, str(mount_directory), "-o", options], capture_output=True, text=True, timeout=45, check=False)
-            if mounted_result.returncode != 0:
-                raise BridgeTransferError(classify_transport_error(mounted_result.stdout + mounted_result.stderr))
-            mounted = True
-            remote_directory = mount_directory / str(POLICY.smb["remote_path"])
-            if not remote_directory.is_dir() or remote_directory.is_symlink():
-                raise BridgeTransferError("configuration")
-            final_path = remote_directory / filename
-            if final_path.exists():
-                if final_path.is_file() and not final_path.is_symlink() and final_path.stat().st_size == length and hmac.compare_digest(sha256_file(final_path), expected_hash):
-                    LOG.info("event=philips_smb_success job_id=%s", job_id)
-                    return
-                raise BridgeTransferError("remote_io")
-            descriptor, raw_path = tempfile.mkstemp(prefix=".voxel-", suffix=".part", dir=remote_directory)
-            temporary = Path(raw_path)
-            try:
-                with os.fdopen(descriptor, "wb") as output, staged.open("rb") as source_file:
-                    shutil.copyfileobj(source_file, output, length=65536)
-                    output.flush()
-                    os.fsync(output.fileno())
-                os.chmod(temporary, 0o600)
-                if temporary.stat().st_size != length or not hmac.compare_digest(sha256_file(temporary), expected_hash):
-                    raise BridgeTransferError("remote_io")
-                os.replace(temporary, final_path)
-                temporary = None
-                if final_path.stat().st_size != length or not hmac.compare_digest(sha256_file(final_path), expected_hash):
-                    final_path.unlink(missing_ok=True)
-                    raise BridgeTransferError("remote_io")
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
-            LOG.info("event=philips_smb_success job_id=%s", job_id)
+            return subprocess.run([
+                "smbclient", source, "-A", str(credentials), "-m", "SMB3",
+                "--option=client min protocol=SMB3", "--option=client max protocol=SMB3",
+                "-c", command,
+            ], capture_output=True, text=True, timeout=45, check=False)
         except subprocess.TimeoutExpired as error:
             raise BridgeTransferError("timeout") from error
         except OSError as error:
-            raise BridgeTransferError("remote_io") from error
+            raise BridgeTransferError("configuration") from error
+
+    @staticmethod
+    def _smb_missing(result: subprocess.CompletedProcess[str]) -> bool:
+        output = (result.stdout + result.stderr).lower()
+        return any(marker in output for marker in ("nt_status_no_such_file", "not found", "no such file"))
+
+    def _smb_remote_path(self, filename: str) -> tuple[str, str]:
+        if not isinstance(POLICY.smb, dict):
+            raise BridgeTransferError("configuration")
+        directory = str(POLICY.smb["remote_path"])
+        return f"{directory}/{filename}", f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+
+    def smb_remote_matches(self, credentials: Path, remote_path: str, expected_hash: str, expected_size: int) -> bool:
+        descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
+        os.close(descriptor)
+        downloaded = Path(raw_path)
+        downloaded.unlink(missing_ok=True)
+        try:
+            result = self._smb_command(credentials, f"get {remote_path} {downloaded}")
+            if result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
+            return downloaded.is_file() and downloaded.stat().st_size == expected_size and hmac.compare_digest(sha256_file(downloaded), expected_hash)
         finally:
-            if mounted:
-                unmounted = subprocess.run(["umount", str(mount_directory)], capture_output=True, text=True, timeout=20, check=False)
-                if unmounted.returncode != 0:
-                    LOG.warning("event=philips_smb_unmount_failed job_id=%s", job_id)
-            shutil.rmtree(mount_directory, ignore_errors=True)
+            downloaded.unlink(missing_ok=True)
+
+    def smb_write_probe(self, credentials: Path) -> None:
+        descriptor, raw_path = tempfile.mkstemp(prefix="smb-probe-", suffix=".tmp", dir=STATE_ROOT)
+        probe = Path(raw_path)
+        remote = ""
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(b"VOXEL_SMB_CONNECTIVITY_PROBE\n")
+                output.flush()
+                os.fsync(output.fileno())
+            remote = str(POLICY.smb["remote_path"]) + "/.voxel-probe-" + secrets.token_hex(12) + ".tmp"
+            result = self._smb_command(credentials, f"put {probe} {remote}; del {remote}")
+            if result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
+        finally:
+            if remote:
+                try:
+                    self._smb_command(credentials, f"del {remote}")
+                except BridgeTransferError:
+                    pass
+            probe.unlink(missing_ok=True)
+
+    def transfer_smb(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int, credentials: Path | None) -> None:
+        if credentials is None:
+            raise BridgeTransferError("credentials_unavailable")
+        final_path, temporary_path = self._smb_remote_path(filename)
+        existing = self._smb_command(credentials, f"ls {final_path}")
+        if existing.returncode == 0:
+            if self.smb_remote_matches(credentials, final_path, expected_hash, length):
+                LOG.info("event=philips_smb_success job_id=%s", job_id)
+                return
+            raise BridgeTransferError("remote_io")
+        if not self._smb_missing(existing):
+            raise BridgeTransferError(classify_transport_error(existing.stdout + existing.stderr))
+        uploaded = self._smb_command(credentials, f"put {staged} {temporary_path}; rename {temporary_path} {final_path}")
+        if uploaded.returncode != 0:
+            raise BridgeTransferError(classify_transport_error(uploaded.stdout + uploaded.stderr))
+        if not self.smb_remote_matches(credentials, final_path, expected_hash, length):
+            raise BridgeTransferError("remote_io")
+        LOG.info("event=philips_smb_success job_id=%s", job_id)
 
     @staticmethod
     def valid_filename(value: str) -> bool:

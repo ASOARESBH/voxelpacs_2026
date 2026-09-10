@@ -37,9 +37,14 @@ $required = [
     [$bridge, 'PHILIPS_FOLDER_TRANSPORT', 'seleção de transporte root-only'],
     [$bridge, 'TRANSIENT_TRANSPORT_FAILURES', 'fallback somente para falha transitória'],
     [$bridge, 'TRANSIENT_TRANSPORT_FAILURES = {"connectivity", "timeout"}', 'fallback limitado a conectividade e timeout'],
-    [$bridge, 'mount.cifs', 'fallback SMB pela bridge'],
+    [$bridge, 'smbclient', 'SMB pela bridge root-only'],
+    [$bridge, 'temporary_smb_credentials', 'credencial SMB efêmera no gateway'],
+    [$bridge, 'smb_write_probe', 'teste SMB sem artefato clínico'],
     [$controller, "'philips_folder'", 'opção de transporte'],
+    [$controller, "'philips_non_dicom'", 'opção Non-DICOM PDF-only'],
+    [$controller, 'testSmb', 'ação separada de teste SMB'],
     [$controller, 'PhilipsFolderDeliveryService::enabled()', 'bloqueio de ativação'],
+    [$controller, 'PhilipsFolderDeliveryService::nonDicomEnabled()', 'bloqueio Non-DICOM por feature flag'],
 ];
 foreach ($required as [$content, $needle, $label]) {
     if (!str_contains($content, $needle)) {
@@ -63,6 +68,14 @@ if (str_contains($bridge, 'StrictHostKeyChecking=no')) {
 }
 if (str_contains($bridge, '0.0.0.0/0')) {
     fwrite(STDERR, "FORBIDDEN_VPN_DEFAULT_ROUTE\n");
+    exit(1);
+}
+if (str_contains($bridge, 'mount.cifs') || str_contains($bridge, 'umount')) {
+    fwrite(STDERR, "FORBIDDEN_SMB_MOUNT\n");
+    exit(1);
+}
+if (str_contains($service, 'smbclient') || str_contains($client, 'smbclient')) {
+    fwrite(STDERR, "FORBIDDEN_PACS_SMB_EXECUTION\n");
     exit(1);
 }
 echo "PHILIPS_FOLDER_STAGE1_STATIC_OK\n";
