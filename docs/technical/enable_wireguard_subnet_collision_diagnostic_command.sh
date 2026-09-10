@@ -25,7 +25,7 @@ if [[ "$#" -ne 0 || "${EUID}" -ne 0 ]]; then
   exit 64
 fi
 
-readonly TARGET_CIDR='10.200.10.0/24'
+readonly TARGET_CIDR='10.200.20.0/24'
 readonly APP_DIR='/var/www/voxelpacs/app'
 readonly TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
