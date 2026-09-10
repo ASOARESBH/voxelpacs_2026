@@ -19,7 +19,7 @@ $transportLabels = [
     'https_webhook' => 'HTTPS Webhook/API',
     'sftp' => 'SFTP/FTPS',
     'philips_folder' => t('philips_folder.nome_transporte'),
-    'philips_non_dicom' => 'PHILIPS NON-DICOM — PDF/SMB',
+    'philips_non_dicom' => t('philips_non_dicom.nome_transporte'),
 ];
 ?>
 
@@ -192,17 +192,17 @@ $transportLabels = [
                             <input type="hidden" data-field="gateway_bridge" value="1">
                         </div>
                         <div class="destination-fields mt-3 d-none" data-transport-group="philips_non_dicom">
-                            <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i>PHILIPS NON-DICOM — PDF/SMB</h3>
-                            <div class="alert alert-info small">Homologação PDF-only. A senha é cifrada, não é exibida novamente e somente o gateway pode executar SMB. XML permanece indisponível nesta fase.</div>
+                            <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_non_dicom.configuracao_titulo')) ?></h3>
+                            <div class="alert alert-info small"><?= $escape(t('philips_non_dicom.configuracao_ajuda')) ?></div>
                             <input type="hidden" data-field="delivery_profile" value="pdf_only">
                             <input type="hidden" data-field="gateway_bridge" value="1">
                             <input type="hidden" data-field="transport_protocol" value="smb">
                             <div class="row g-3">
-                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-host">Servidor/IP</label><input class="form-control" id="nondicom-smb-host" data-field="host" data-required placeholder="IP privado do peer SMB"></div>
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-host"><?= $escape(t('philips_non_dicom.host_label')) ?></label><input class="form-control" id="nondicom-smb-host" data-field="host" data-required placeholder="IP privado do peer SMB"></div>
                                 <div class="col-md-3"><label class="form-label" for="nondicom-smb-port">Porta</label><input class="form-control" id="nondicom-smb-port" data-field="port" type="number" value="445" min="1" max="65535" data-required></div>
-                                <div class="col-md-3"><label class="form-label" for="nondicom-smb-share">Compartilhamento</label><input class="form-control" id="nondicom-smb-share" data-field="smb_share" data-required></div>
-                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-user">Usuário</label><input class="form-control" id="nondicom-smb-user" data-field="smb_username" data-required autocomplete="off"></div>
-                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-password">Senha SMB</label><div class="input-group"><input class="form-control" id="nondicom-smb-password" data-secret-field="smb_password" type="password" autocomplete="new-password" placeholder="Informe para salvar ou substituir"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="nondicom-smb-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text">Depois de salva, a senha não será exibida. O teste SMB não cria PDF, XML ou job clínico.</div></div>
+                                <div class="col-md-3"><label class="form-label" for="nondicom-smb-share"><?= $escape(t('philips_non_dicom.share_label')) ?></label><input class="form-control" id="nondicom-smb-share" data-field="smb_share" data-required></div>
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-user"><?= $escape(t('philips_non_dicom.usuario_label')) ?></label><input class="form-control" id="nondicom-smb-user" data-field="smb_username" data-required autocomplete="off"></div>
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-password"><?= $escape(t('philips_non_dicom.senha_label')) ?></label><div class="input-group"><input class="form-control" id="nondicom-smb-password" data-secret-field="smb_password" type="password" autocomplete="new-password" placeholder="Informe para salvar ou substituir"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="nondicom-smb-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text"><?= $escape(t('philips_non_dicom.senha_ajuda')) ?></div></div>
                             </div>
                         </div>
                         <div class="row g-3 mt-0">
@@ -234,7 +234,7 @@ $transportLabels = [
                             <?php foreach ($destinations as $destination): ?>
                                 <?php $json = htmlspecialchars(json_encode($destination, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>
                                 <tr>
-                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div><?php if (($destination['transport'] ?? '') === 'philips_non_dicom'): ?><div class="small mt-1"><?= !empty($destination['credential_configured']) ? '<span class="badge text-bg-success">Credencial SMB configurada</span>' : '<span class="badge text-bg-warning">Credencial SMB pendente</span>' ?></div><?php endif; ?></td>
+                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div><?php if (($destination['transport'] ?? '') === 'philips_non_dicom'): ?><div class="small mt-1"><?= !empty($destination['credential_configured']) ? '<span class="badge text-bg-success">' . $escape(t('philips_non_dicom.credencial_configurada')) . '</span>' : '<span class="badge text-bg-warning">' . $escape(t('philips_non_dicom.credencial_pendente')) . '</span>' ?></div><?php endif; ?></td>
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
@@ -245,7 +245,7 @@ $transportLabels = [
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
-                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1">Testar conexão SMB</button></form><?php endif; ?></td>
+                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -356,7 +356,7 @@ $transportLabels = [
         https_webhook: 'Informe a URL HTTPS fornecida pela equipe de integração do cliente.',
         sftp: 'Informe a pasta segura e as credenciais fornecidas pelo cliente. FTP simples não é aceito.',
         philips_folder: <?= json_encode(t('philips_folder.guia'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
-        philips_non_dicom: 'Configure o destino PDF/SMB de homologação. Salvar não envia laudo; teste SMB e entrega manual são ações separadas.',
+        philips_non_dicom: <?= json_encode(t('philips_non_dicom.guia'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
     };
     let currentConfig = {};
 

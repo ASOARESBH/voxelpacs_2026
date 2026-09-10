@@ -49,10 +49,10 @@ $required = [
     [$controller, 'testSmb', 'ação separada de teste SMB'],
     [$controller, 'PhilipsFolderDeliveryService::enabled()', 'bloqueio de ativação'],
     [$controller, 'PhilipsFolderDeliveryService::nonDicomEnabled()', 'bloqueio Non-DICOM por feature flag'],
-    [$view, 'PHILIPS NON-DICOM — PDF/SMB', 'interface de destino Non-DICOM'],
-    [$view, 'Testar conexão SMB', 'ação visual de teste SMB'],
+    [$view, "t('philips_non_dicom.nome_transporte')", 'interface de destino Non-DICOM localizada'],
+    [$view, "t('philips_non_dicom.testar_smb')", 'ação visual de teste SMB localizada'],
     [$view, 'smb_password', 'campo de senha cifrada'],
-    [$view, 'Credencial SMB configurada', 'indicador sanitizado de credencial'],
+    [$view, "t('philips_non_dicom.credencial_configurada')", 'indicador sanitizado de credencial localizado'],
     [$repository, 'credential_configured', 'booleano de presença de credencial'],
 ];
 foreach ($required as [$content, $needle, $label]) {

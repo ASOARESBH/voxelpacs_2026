@@ -12,7 +12,7 @@ $manualDestinations = array_filter($destinations, static fn(array $d): bool => !
 <?php if (!empty($_SESSION['error'])): ?><div class="alert alert-danger"><?= $escape($_SESSION['error']); unset($_SESSION['error']); ?></div><?php endif; ?>
 <div class="alert alert-warning"><strong><?= $escape(t('voxel_desktop.safety_title')) ?></strong> <?= $escape(t('voxel_desktop.safety_help')) ?></div>
 
-<div class="card border-info shadow-sm mb-4"><div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3"><div><h2 class="h5 mb-1"><i class="fa fa-folder-tree me-1"></i>PHILIPS NON-DICOM — PDF/SMB</h2><p class="small text-muted mb-0">Configure o destino de homologação, salve a senha cifrada e execute <strong>Testar conexão SMB</strong> no Delivery Hub. O teste técnico não cria job clínico; a entrega PDF continua manual, unitária e sem XML.</p></div><a class="btn btn-outline-info" href="/platform/negocios/<?= (int)$tenant['id'] ?>/report-delivery">Configurar e testar SMB</a></div></div>
+<div class="card border-info shadow-sm mb-4"><div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3"><div><h2 class="h5 mb-1"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_non_dicom.configuracao_titulo')) ?></h2><p class="small text-muted mb-0"><?= $escape(t('philips_non_dicom.configuracao_ajuda')) ?></p></div><a class="btn btn-outline-info" href="/platform/negocios/<?= (int)$tenant['id'] ?>/report-delivery"><?= $escape(t('philips_non_dicom.voxel_desktop_cta')) ?></a></div></div>
 
 <div class="card shadow-sm mb-4"><div class="card-body">
     <h2 class="h5 mb-3" id="destination-form-title"><?= $escape(t('voxel_desktop.destination_new')) ?></h2>

@@ -731,7 +731,7 @@ $periodoLabel = [
                         <a class="wl-btn-gerenciar"
                            href="/platform/negocios/<?= (int) $tenantId ?>/report-delivery?report_public_token=<?= rawurlencode($reportTokenGestao) ?>"
                            title="Preparar entrega manual Philips Non-DICOM PDF-only">
-                            <i class="fa fa-paper-plane"></i> Entrega Non-DICOM
+                            <i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('philips_non_dicom.atalho_entrega'), ENT_QUOTES) ?>
                         </a>
                         <?php endif; ?>
                         <?php endif; ?>
