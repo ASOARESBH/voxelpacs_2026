@@ -36,6 +36,27 @@ No PACS/API, atualizar somente a cópia da CA e o certificado do cliente pelo pa
 
 Depois de validação criptográfica local, substituir atomica e coordenadamente a CA/certificados no gateway e a CA/certificado no PACS/API. Um reinício controlado apenas da unit da bridge será necessário para o listener recarregar o certificado do servidor; isso requer autorização específica futura. O PACS/API não requer reinício para substituição de arquivos de certificado, pois o cliente cURL os abre a cada chamada, mas nenhuma chamada será feita nesta etapa.
 
+## Artefatos de rotação preparados em modo seco
+
+Os scripts de rotação têm comandos separados para inspeção, staging, aplicação e rollback. Nenhum deles é executado nesta proposta. O comando `--dry-run` valida os pré-requisitos atuais e declara o inventário de mudança sem criar, substituir ou recarregar qualquer componente.
+
+| Host | Script | Operação futura controlada | Arquivos substituídos | Arquivos preservados |
+|---|---|---|---|---|
+| Gateway | `rotate_philips_bridge_pki_gateway.sh` | `--stage` gera e valida certificados em staging root-only; `--apply` substitui apenas certificados após autorização; `--rollback` restaura somente certificados. | `ca.crt`, `server.crt`, `client.crt`. | `ca.key`, `server.key`, `client.key`, HMAC, envelope privado/público, policy, unit e estado da bridge. |
+| PACS/API | `rotate_philips_bridge_pki_pacs_client.sh` | `--dry-run` mostra escopo; `--apply` consome pacote administrativo validado; `--rollback` restaura certificados. | `ca.crt`, `client.crt`. | `client.key`, HMAC, chave pública do envelope, configuração de cliente e aplicação. |
+
+O pacote administrativo futuro contém apenas a nova CA e o novo certificado de cliente. Ele não contém senha SMB, HMAC, chave privada do envelope, chave privada da CA, chave do servidor ou chave do cliente.
+
+## Perfil X.509 reprodutível
+
+| Papel | Basic Constraints | Key Usage | Extended Key Usage | SAN |
+|---|---|---|---|---|
+| CA | `critical, CA:TRUE, pathlen:0` | `critical, keyCertSign, cRLSign` | Não aplicável. | Não aplicável. |
+| Servidor da bridge | `critical, CA:FALSE` | `critical, digitalSignature` | `serverAuth` | Somente o IP privado autorizado da bridge. |
+| Cliente PACS/API | `critical, CA:FALSE` | `critical, digitalSignature` | `clientAuth` | Não aplicável. |
+
+Antes de uma futura troca, os scripts exigirão: correspondência de cada certificado com sua chave já existente; validade mínima de 24 horas; CA e certificados parseáveis; e aprovação de `openssl verify -x509_strict` com propósito `sslserver` e `sslclient`. O script não reduz nem desativa verificação estrita de certificados.
+
 ## Validações e rollback futuros
 
 Antes de qualquer alteração, criar backup root-only dos três certificados atuais, sem copiar as chaves privadas, HMAC ou envelope para fora dos hosts. Após a atualização, repetir somente `openssl verify -x509_strict` para os propósitos de servidor e cliente, conferir SAN, EKU, Key Usage, correspondência certificado/chave e permissões. Um handshake mTLS, chamada de bridge ou teste SMB não faz parte dessa validação e exigirá autorização distinta.

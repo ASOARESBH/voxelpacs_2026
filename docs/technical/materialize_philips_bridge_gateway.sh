@@ -62,14 +62,18 @@ install -o root -g root -m 0700 "$workdir/philips_folder_bridge.py" "$RUNTIME_DI
 install -o root -g root -m 0700 "$workdir/generate_envelope_keypair.py" "$RUNTIME_DIR/generate_envelope_keypair.py"
 
 openssl genpkey -algorithm ED25519 -out "$CONFIG_DIR/ca.key" >/dev/null 2>&1
-openssl req -x509 -new -key "$CONFIG_DIR/ca.key" -days 3650 -subj '/CN=VOXEL Philips Folder CA' -out "$CONFIG_DIR/ca.crt" >/dev/null 2>&1
+openssl req -x509 -new -key "$CONFIG_DIR/ca.key" -days 3650 -subj '/CN=VOXEL Philips Folder CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -addext 'subjectKeyIdentifier=hash' \
+  -out "$CONFIG_DIR/ca.crt" >/dev/null 2>&1
 openssl genpkey -algorithm ED25519 -out "$CONFIG_DIR/server.key" >/dev/null 2>&1
 openssl req -new -key "$CONFIG_DIR/server.key" -subj '/CN=VOXEL Philips Folder Gateway' -out "$workdir/server.csr" >/dev/null 2>&1
-printf 'subjectAltName=IP:%s\nextendedKeyUsage=serverAuth\n' "$EXPECTED_PRIVATE_IP" > "$workdir/server.ext"
+printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:%s\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n' "$EXPECTED_PRIVATE_IP" > "$workdir/server.ext"
 openssl x509 -req -in "$workdir/server.csr" -CA "$CONFIG_DIR/ca.crt" -CAkey "$CONFIG_DIR/ca.key" -CAcreateserial -days 825 -extfile "$workdir/server.ext" -out "$CONFIG_DIR/server.crt" >/dev/null 2>&1
 openssl genpkey -algorithm ED25519 -out "$CONFIG_DIR/client.key" >/dev/null 2>&1
 openssl req -new -key "$CONFIG_DIR/client.key" -subj '/CN=VOXEL Philips Folder Client' -out "$workdir/client.csr" >/dev/null 2>&1
-printf 'extendedKeyUsage=clientAuth\n' > "$workdir/client.ext"
+printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n' > "$workdir/client.ext"
 openssl x509 -req -in "$workdir/client.csr" -CA "$CONFIG_DIR/ca.crt" -CAkey "$CONFIG_DIR/ca.key" -CAcreateserial -days 825 -extfile "$workdir/client.ext" -out "$CONFIG_DIR/client.crt" >/dev/null 2>&1
 openssl rand -hex 32 > "$CONFIG_DIR/hmac"
 python3 "$RUNTIME_DIR/generate_envelope_keypair.py" "$CONFIG_DIR/envelope-private.b64" "$CONFIG_DIR/envelope-public.b64"
