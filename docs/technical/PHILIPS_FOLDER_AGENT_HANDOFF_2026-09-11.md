@@ -20,20 +20,20 @@ Não alterar, reenviar ou processar os jobs DICOM existentes e explicitamente ex
 | Roteamento manual | Corrigido no PACS/API para não exigir o gatilho automático de liberação. | Runtime publicado no commit de materialização abaixo. |
 | Entrega manual única | Criada; job técnico interno `272` está inicialmente `queued`, sem referência remota e sem erro registrado. | O número é um identificador operacional interno, não clínico. |
 | Worker contínuo | Unit ativa, mas o processo em execução não carregou a flag Non-DICOM e sua configuração é mais nova que o processo. | Não reiniciar o loop global sem reavaliar jobs elegíveis. |
-| Política da bridge | Bloqueia a entrega por design: está em `single_test` sem job autorizado. | O handler aceita entrega apenas no modo de destino ou para o job explicitamente allowlisted. |
+| Política da bridge | Policy `single_test` atualizada para permitir exclusivamente o job interno autorizado; backup root-only registrado. | A unit ainda não foi recarregada, portanto o processo em memória não carregou a policy nova. |
 
 ## Causa atual do bloqueio
 
-A entrega manual foi criada corretamente depois do ajuste de roteamento, mas não pode ser processada ainda por dois controles de privilégio mínimo que precisam ser tratados coordenadamente:
+A entrega manual foi criada corretamente depois do ajuste de roteamento, mas ainda não pode ser processada por um controle de runtime que precisa ser tratado de forma coordenada:
 
-1. A bridge está no modo de preflight `single_test` e não possui job autorizado. Qualquer tentativa de entrega do job `272` será recusada pela policy antes do SMB.
-2. O worker persistente não carregou a flag que habilita o transporte Philips. Reiniciar o worker global é inseguro porque seu loop pode reclamar outros jobs elegíveis, inclusive fluxos fora do escopo.
+1. O worker persistente não carregou a flag que habilita o transporte Philips. Reiniciar o worker global é inseguro porque seu loop pode reclamar outros jobs elegíveis, inclusive fluxos fora do escopo.
+2. A policy root-only da bridge foi aplicada com allowlist exclusiva para o job interno autorizado, mas requer uma recarga isolada da unit da bridge para ser carregada em memória. Essa recarga ainda não foi autorizada nem executada.
 
-Esses bloqueios são **intencionais e corretos**; não os contorne, não reduza a policy para destino amplo e não use o job DICOM excluído como substituto.
+Esses controles são **intencionais e corretos**; não os contorne, não reduza a policy para destino amplo e não use o job DICOM excluído como substituto.
 
 ## Próximo passo seguro — ainda não executado
 
-O próximo agente deve obter uma autorização explícita do operador para executar somente o **preview** da policy de job único no gateway. O procedimento versionado é:
+O próximo agente deve obter uma autorização explícita do operador para recarregar somente a **unit da bridge Philips** no gateway. A policy de job único já foi aplicada com backup e o procedimento versionado é:
 
 ```text
 docs/technical/enable_philips_folder_controlled_job_272.sh
@@ -41,11 +41,11 @@ commit: c36f0f4fa6dea6fbdd518c7acb22e5ac2e9e549b
 sha256: 40bb86eb170019b7513ddd88d4549a09d27738a12eea752dceea9b6a4b26bac6
 ```
 
-O modo `--preview` não altera arquivo, não recarrega a bridge, não executa o worker e não chama SMB. Se o preview estiver íntegro, as autorizações seguintes continuam separadas:
+O modo `--preview` já foi concluído e o `--apply` retornou `ready_for_separate_reload` com backup registrado. As autorizações seguintes continuam separadas:
 
 | Etapa futura | Requer nova autorização? | Limite obrigatório |
 |---|---:|---|
-| Aplicar policy `PHILIPS_FOLDER_ALLOW_JOB_ID` para o job interno 272 | Sim | Alterar somente a policy root-only; criar backup e manter rollback. |
+| Aplicar policy `PHILIPS_FOLDER_ALLOW_JOB_ID` para o job interno 272 | Concluída | Alterou somente a policy root-only; backup e rollback permanecem disponíveis. |
 | Recarregar exclusivamente a unit da bridge Philips | Sim | Não reiniciar worker, PHP-FPM, Nginx ou qualquer outro serviço. |
 | Preparar e validar um runner unitário para o job 272 | Sim, para preparar; outra para executar | Não usar o loop global do worker; não reclamar outros jobs. |
 | Executar uma única vez o job 272 | Sim | Apenas PDF-only, destino homologado e policy do mesmo job; não retentar. |
@@ -99,6 +99,6 @@ Não gere nem compartilhe credencial SSH, senha root, chave privada, token de ac
 
 > Você está assumindo o piloto VOXEL Philips Folder Non-DICOM Fase 1. Leia primeiro as habilidades `voxel-pacs`, `philips-folder-delivery`, `integracao-philips` e `report-delivery-worker`, depois este handoff. Trabalhe em português. Mantenha PDF-only, homologação e automação por liberação desligada; XML é proibido até XSD/contrato oficial. Não exponha PHI, URLs públicas, hosts, portas, certificados, HMAC, senhas, tokens ou chaves. O PACS/API nunca executa SMB; a bridge já materializada no gateway é a única borda.
 >
-> Existe exatamente um job Philips Non-DICOM manual já criado, identificado internamente como 272. Ele está em fila e não possui evidência remota nem erro registrado. Não o recrie, não reenvie, não reprocese e não toque no job DICOM legado excluído. O worker contínuo está ativo mas não carregou a flag Non-DICOM; não reinicie o loop global, pois ele pode reclamar outros jobs. A bridge está em `single_test` sem job autorizado e por isso bloqueia corretamente qualquer entrega. O próximo passo ainda não executado é somente executar o preview do script versionado `docs/technical/enable_philips_folder_controlled_job_272.sh` no gateway, após autorização explícita. Esse preview não altera dados nem inicia bridge, worker ou SMB.
+> Existe exatamente um job Philips Non-DICOM manual já criado, identificado internamente como 272. Ele está em fila e não possui evidência remota nem erro registrado. Não o recrie, não reenvie, não reprocese e não toque no job DICOM legado excluído. O worker contínuo está ativo mas não carregou a flag Non-DICOM; não reinicie o loop global, pois ele pode reclamar outros jobs. A bridge permanece em `single_test`, mas sua policy root-only já foi atualizada com allowlist exclusiva para o job 272 e backup registrado. O próximo passo ainda não executado é solicitar autorização explícita para recarregar somente a unit da bridge; não iniciar worker ou SMB nessa recarga.
 >
-> Se o preview passar, peça autorizações independentes e nesta ordem: aplicar a allowlist exclusivamente ao job 272 com backup/rollback; recarregar exclusivamente a unit Philips Folder Bridge; preparar/validar um runner de job unitário sem loop global; executar o job 272 uma única vez; e monitorar até o primeiro estado terminal sem retentativa. Pare na primeira falha e retorne somente estados/categorias sanitizadas. Não use nem peça credenciais SSH novas; o operador executa comandos root locais nos hosts corretos ou fornece uma integração de privilégio mínimo própria.
+> Peça autorizações independentes e nesta ordem: recarregar exclusivamente a unit Philips Folder Bridge; preparar/validar um runner de job unitário sem loop global; executar o job 272 uma única vez; e monitorar até o primeiro estado terminal sem retentativa. Pare na primeira falha e retorne somente estados/categorias sanitizadas. Não use nem peça credenciais SSH novas; o operador executa comandos root locais nos hosts corretos ou fornece uma integração de privilégio mínimo própria.
