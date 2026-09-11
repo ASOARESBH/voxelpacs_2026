@@ -70,7 +70,8 @@ SELECT CASE
            WHEN 'no_destination' THEN 'no_destination'
            ELSE 'other'
          END
-  END;
+  END
+UNION ALL
 SELECT CASE
     WHEN NOT EXISTS (SELECT 1 FROM latest_job) THEN 'PHILIPS_MANUAL_JOB=absent'
     ELSE 'PHILIPS_MANUAL_JOB=present;PHILIPS_MANUAL_JOB_ID=' || (SELECT id::text FROM latest_job) ||
