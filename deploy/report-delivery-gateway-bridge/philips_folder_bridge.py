@@ -8,6 +8,7 @@ Nenhuma configuração neste arquivo inicia a bridge ou habilita a feature do PA
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import ipaddress
@@ -31,6 +32,7 @@ from typing import NoReturn
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 
@@ -44,6 +46,22 @@ SAFE_SMB_PATH = re.compile(r"^/?[A-Za-z0-9._/-]{0,160}$")
 SAFE_USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 SAFE_SMB_USERNAME = re.compile(r"^(?:[A-Za-z0-9._-]{1,64}\\)?[A-Za-z0-9._-]{1,64}$")
 SAFE_SHARE = re.compile(r"^[A-Za-z0-9.$_-]{1,80}$")
+ENVELOPE_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_ENVELOPE_DIAGNOSTICS"
+ENVELOPE_DIAGNOSTIC_STAGES = (
+    "ENVELOPE_PRESENT",
+    "ENVELOPE_BASE64_DECODE",
+    "ENVELOPE_JSON_PARSE",
+    "REQUIRED_FIELDS_PRESENT",
+    "TENANT_MATCH",
+    "DESTINATION_MATCH",
+    "EXPIRY_VALID",
+    "EPHEMERAL_PUBLIC_KEY_VALID",
+    "X25519_DERIVATION",
+    "HKDF_DERIVATION",
+    "AES_GCM_DECRYPT",
+    "PLAINTEXT_FORMAT",
+    "PASSWORD_VALIDATION",
+)
 
 
 def setting(name: str) -> str:
@@ -78,6 +96,18 @@ class BridgeTransferError(RuntimeError):
     def __init__(self, category: str) -> None:
         super().__init__(category)
         self.category = category
+
+
+class EnvelopeValidationError(ValueError):
+    def __init__(self, stage: str, error_code: str) -> None:
+        super().__init__(error_code)
+        self.stage = stage
+        self.error_code = error_code
+
+
+def envelope_diagnostics_enabled() -> bool:
+    """Diagnostics are opt-in; the safe default is disabled (value 0)."""
+    return os.environ.get(ENVELOPE_DIAGNOSTICS_ENV, "0").strip() == "1"
 
 
 class Policy:
@@ -227,6 +257,38 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def log_envelope_diagnostics(
+        self,
+        job_id: int,
+        tenant_id: int | None,
+        destination_id: object,
+        envelope: str,
+        states: dict[str, str],
+        envelope_version: object = "unknown",
+        failure_stage: str = "none",
+        sanitized_error_code: str = "none",
+    ) -> None:
+        if not envelope_diagnostics_enabled():
+            return
+        safe_destination = str(destination_id) if re.fullmatch(r"[0-9]{1,20}", str(destination_id)) else "invalid"
+        safe_tenant = str(tenant_id) if isinstance(tenant_id, int) and tenant_id > 0 else "unknown"
+        safe_version = str(envelope_version) if envelope_version in {1, "1"} else "unknown"
+        safe_stage = failure_stage if failure_stage in ENVELOPE_DIAGNOSTIC_STAGES else "none"
+        safe_error = sanitized_error_code if re.fullmatch(r"[a-z0-9_]{1,64}", sanitized_error_code) else "internal_sanitized_error"
+        fields = {
+            "event": "philips_envelope_diagnostic",
+            "job_id": str(job_id),
+            "tenant_id": safe_tenant,
+            "destination_id": safe_destination,
+            "algorithm": "x25519+hkdf-sha256+aes-256-gcm",
+            "envelope_version": safe_version,
+            "envelope_size": str(len(envelope.encode("utf-8"))),
+            "failure_stage": safe_stage,
+            "sanitized_error_code": safe_error,
+        }
+        fields.update({stage: states.get(stage, "NOT_REACHED") for stage in ENVELOPE_DIAGNOSTIC_STAGES})
+        LOG.info("%s", " ".join(f"{key}={value}" for key, value in fields.items()))
+
     def do_POST(self) -> None:  # noqa: N802
         test_prefix = "/v1/philips-folder/smb-test/"
         if self.path.startswith(test_prefix) and self.path[len(test_prefix):].isdigit():
@@ -288,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
         if staged is None:
             return
         try:
-            with self.temporary_smb_credentials(envelope, destination_id) as credentials:
+            with self.temporary_smb_credentials(envelope, destination_id, job_id=job_id) as credentials:
                 transport = self.deliver_remote(job_id, filename, staged, supplied_hash, length, credentials)
         except BridgeTransferError as error:
             LOG.warning("event=philips_export_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
@@ -349,7 +411,13 @@ class Handler(BaseHTTPRequestHandler):
         return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
     @contextmanager
-    def temporary_smb_credentials(self, envelope: str, destination_id: int, tenant_id: int | None = None):
+    def temporary_smb_credentials(
+        self,
+        envelope: str,
+        destination_id: int,
+        tenant_id: int | None = None,
+        job_id: int | None = None,
+    ):
         credential_file: Path | None = None
         password = ""
         try:
@@ -358,7 +426,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise BridgeTransferError("credentials_unavailable")
                 yield POLICY.smb["credentials"]
                 return
-            password = self.open_secret_envelope(envelope, destination_id, tenant_id)
+            password = self.open_secret_envelope(envelope, destination_id, tenant_id, job_id)
             username = str(POLICY.smb["username"]) if isinstance(POLICY.smb, dict) else ""
             account, domain = (username.split("\\", 1)[::-1] if "\\" in username else (username, ""))
             descriptor, raw_path = tempfile.mkstemp(prefix="smb-credentials-", dir=STATE_ROOT)
@@ -376,26 +444,124 @@ class Handler(BaseHTTPRequestHandler):
             if credential_file is not None:
                 credential_file.unlink(missing_ok=True)
 
-    def open_secret_envelope(self, envelope: str, destination_id: int, tenant_id: int | None) -> str:
+    def open_secret_envelope(
+        self,
+        envelope: str,
+        destination_id: int,
+        tenant_id: int | None,
+        job_id: int | None = None,
+    ) -> str:
+        states = {stage: "NOT_REACHED" for stage in ENVELOPE_DIAGNOSTIC_STAGES}
+        version: object = "unknown"
+        diagnostic_tenant = tenant_id if isinstance(tenant_id, int) and tenant_id > 0 else None
+        diagnostic_job = job_id if isinstance(job_id, int) and job_id > 0 else 0
+
+        def fail(stage: str, error_code: str) -> NoReturn:
+            states[stage] = "FAIL"
+            raise EnvelopeValidationError(stage, error_code)
+
+        states["ENVELOPE_PRESENT"] = "OK" if envelope else "FAIL"
+        if not envelope:
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, "ENVELOPE_PRESENT", "envelope_missing",
+            )
+            raise BridgeTransferError("credentials_unavailable")
+
         try:
-            decoded = json.loads(base64.b64decode(envelope, validate=True).decode("utf-8"))
-            if not isinstance(decoded, dict) or decoded.get("v") != 1 or int(decoded.get("destination_id", 0)) != destination_id:
-                raise ValueError
-            if tenant_id is not None and int(decoded.get("tenant_id", 0)) != tenant_id:
-                raise ValueError
-            expires_at = int(decoded.get("expires_at", 0))
-            if expires_at < int(time.time()) or expires_at > int(time.time()) + 90 or POLICY.envelope_private_key is None:
-                raise ValueError
-            ephemeral = X25519PublicKey.from_public_bytes(base64.b64decode(str(decoded["ephemeral_public"]), validate=True))
-            shared = POLICY.envelope_private_key.exchange(ephemeral)
+            try:
+                outer = base64.b64decode(envelope, validate=True)
+                states["ENVELOPE_BASE64_DECODE"] = "OK"
+            except (binascii.Error, ValueError):
+                fail("ENVELOPE_BASE64_DECODE", "envelope_base64_invalid")
+
+            try:
+                decoded = json.loads(outer.decode("utf-8"))
+                states["ENVELOPE_JSON_PARSE"] = "OK"
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                fail("ENVELOPE_JSON_PARSE", "envelope_json_invalid")
+
+            required_fields = {
+                "v", "tenant_id", "destination_id", "expires_at",
+                "ephemeral_public", "iv", "tag", "ciphertext",
+            }
+            if not isinstance(decoded, dict) or not required_fields.issubset(decoded):
+                fail("REQUIRED_FIELDS_PRESENT", "required_fields_missing")
+            states["REQUIRED_FIELDS_PRESENT"] = "OK"
+            version = decoded.get("v", "unknown")
+            decoded_tenant = decoded.get("tenant_id")
+            diagnostic_tenant = decoded_tenant if type(decoded_tenant) is int and decoded_tenant > 0 else diagnostic_tenant
+
+            if type(decoded_tenant) is not int or (tenant_id is not None and decoded_tenant != tenant_id):
+                if tenant_id is None:
+                    states["TENANT_MATCH"] = "NOT_REACHED"
+                else:
+                    fail("TENANT_MATCH", "tenant_mismatch")
+            else:
+                states["TENANT_MATCH"] = "OK"
+
+            if decoded.get("destination_id") != destination_id:
+                fail("DESTINATION_MATCH", "destination_mismatch")
+            states["DESTINATION_MATCH"] = "OK"
+
+            if type(decoded.get("expires_at")) is not int:
+                fail("EXPIRY_VALID", "expiry_invalid")
+            expires_at = decoded["expires_at"]
+            if expires_at < int(time.time()) or expires_at > int(time.time()) + 90:
+                fail("EXPIRY_VALID", "expiry_invalid")
+            if POLICY.envelope_private_key is None:
+                fail("EXPIRY_VALID", "envelope_private_key_unavailable")
+            states["EXPIRY_VALID"] = "OK"
+
+            try:
+                ephemeral_raw = base64.b64decode(str(decoded["ephemeral_public"]), validate=True)
+                ephemeral = X25519PublicKey.from_public_bytes(ephemeral_raw)
+                states["EPHEMERAL_PUBLIC_KEY_VALID"] = "OK"
+            except (binascii.Error, ValueError, TypeError):
+                fail("EPHEMERAL_PUBLIC_KEY_VALID", "ephemeral_public_invalid")
+
+            try:
+                shared = POLICY.envelope_private_key.exchange(ephemeral)
+                states["X25519_DERIVATION"] = "OK"
+            except (ValueError, TypeError):
+                fail("X25519_DERIVATION", "x25519_failed")
+
             context = "voxel-nondicom-smb-v1|" + str(decoded["tenant_id"]) + "|" + str(destination_id) + "|" + str(expires_at)
-            key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=context.encode("utf-8")).derive(shared)
-            plaintext = AESGCM(key).decrypt(base64.b64decode(str(decoded["iv"]), validate=True), base64.b64decode(str(decoded["ciphertext"]), validate=True) + base64.b64decode(str(decoded["tag"]), validate=True), context.encode("utf-8"))
-            password = plaintext.decode("utf-8")
+            try:
+                key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=context.encode("utf-8")).derive(shared)
+                states["HKDF_DERIVATION"] = "OK"
+            except (ValueError, TypeError):
+                fail("HKDF_DERIVATION", "hkdf_failed")
+
+            try:
+                nonce = base64.b64decode(str(decoded["iv"]), validate=True)
+                ciphertext = base64.b64decode(str(decoded["ciphertext"]), validate=True)
+                tag = base64.b64decode(str(decoded["tag"]), validate=True)
+                plaintext = AESGCM(key).decrypt(nonce, ciphertext + tag, context.encode("utf-8"))
+                states["AES_GCM_DECRYPT"] = "OK"
+            except InvalidTag:
+                fail("AES_GCM_DECRYPT", "aes_gcm_failed")
+            except (binascii.Error, ValueError, TypeError):
+                fail("AES_GCM_DECRYPT", "aes_gcm_input_invalid")
+
+            try:
+                password = plaintext.decode("utf-8")
+                states["PLAINTEXT_FORMAT"] = "OK"
+            except UnicodeDecodeError:
+                fail("PLAINTEXT_FORMAT", "plaintext_invalid")
             if not password or len(password) > 512 or "\x00" in password:
-                raise ValueError
+                fail("PASSWORD_VALIDATION", "password_invalid")
+            states["PASSWORD_VALIDATION"] = "OK"
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, "none", "none",
+            )
             return password
-        except (KeyError, TypeError, ValueError, UnicodeDecodeError):
+        except EnvelopeValidationError as error:
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, error.stage, error.error_code,
+            )
             raise BridgeTransferError("credentials_unavailable") from None
 
     def receive_or_reuse_stage(self, filename: str, expected_hash: str, length: int) -> Path | None:
