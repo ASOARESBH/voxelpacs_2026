@@ -189,16 +189,24 @@ apply_rotation() {
   install -d -o root -g root -m 0700 "$backup"
   for name in ca.crt server.crt client.crt; do
     install -o root -g root -m 0600 "$CONFIG_DIR/$name" "$backup/$name"
-    install -o root -g root -m 0600 "$stage/$name" "$CONFIG_DIR/$name.next"
-    mv -f "$CONFIG_DIR/$name.next" "$CONFIG_DIR/$name"
   done
   ln -s "$backup" "$APPLIED_LINK"
+  for name in ca.crt server.crt client.crt; do
+    install -o root -g root -m 0600 "$stage/$name" "$CONFIG_DIR/$name.next"
+    mv -f "$CONFIG_DIR/$name.next" "$CONFIG_DIR/$name"
+    [[ "$(sha256sum "$stage/$name" | awk '{print $1}')" == "$(sha256sum "$CONFIG_DIR/$name" | awk '{print $1}')" ]] || { printf 'GATEWAY_APPLY=HASH_DIVERGENTE\n' >&2; exit 75; }
+  done
+  openssl verify -x509_strict -purpose sslserver -CAfile "$CA_CERT" "$SERVER_CERT" >/dev/null
+  openssl verify -x509_strict -purpose sslclient -CAfile "$CA_CERT" "$CLIENT_CERT" >/dev/null
+  certificate_matches_key "$SERVER_CERT" "$SERVER_KEY" || { printf 'GATEWAY_APPLY=PAR_SERVIDOR_INVALIDO\n' >&2; exit 75; }
+  certificate_matches_key "$CLIENT_CERT" "$CLIENT_KEY" || { printf 'GATEWAY_APPLY=PAR_CLIENTE_INVALIDO\n' >&2; exit 75; }
   printf 'PKI_GATEWAY_CERTIFICATES_REPLACED=ready\n'
   printf 'GATEWAY_BACKUP=ready\n'
   printf 'GATEWAY_ROLLBACK=ready\n'
   printf 'GATEWAY_APPLIED_CA_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/ca.crt" | awk '{print $1}')"
   printf 'GATEWAY_APPLIED_SERVER_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/server.crt" | awk '{print $1}')"
   printf 'GATEWAY_APPLIED_CLIENT_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/client.crt" | awk '{print $1}')"
+  printf 'PACS_CLIENT_UPDATE_BUNDLE_SHA256=%s\n' "$(sha256sum "$stage/pacs-client-pki-update.tar" | awk '{print $1}')"
   printf 'GATEWAY_APPLIED_SERVER_CHAIN_STRICT=valid\n'
   printf 'GATEWAY_APPLIED_CLIENT_CHAIN_STRICT=valid\n'
   printf 'BRIDGE_RELOAD=not_performed\n'
@@ -214,6 +222,10 @@ rollback_rotation() {
     install -o root -g root -m 0600 "$backup/$name" "$CONFIG_DIR/$name.restore"
     mv -f "$CONFIG_DIR/$name.restore" "$CONFIG_DIR/$name"
   done
+  openssl verify -x509_strict -purpose sslserver -CAfile "$CA_CERT" "$SERVER_CERT" >/dev/null
+  openssl verify -x509_strict -purpose sslclient -CAfile "$CA_CERT" "$CLIENT_CERT" >/dev/null
+  certificate_matches_key "$SERVER_CERT" "$SERVER_KEY" || { printf 'GATEWAY_ROLLBACK=PAR_SERVIDOR_INVALIDO\n' >&2; exit 75; }
+  certificate_matches_key "$CLIENT_CERT" "$CLIENT_KEY" || { printf 'GATEWAY_ROLLBACK=PAR_CLIENTE_INVALIDO\n' >&2; exit 75; }
   rm -f "$APPLIED_LINK"
   printf 'PKI_GATEWAY_CERTIFICATES_ROLLED_BACK=ready\n'
   printf 'BRIDGE_RELOAD=not_performed\n'

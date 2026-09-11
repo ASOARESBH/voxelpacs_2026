@@ -102,10 +102,15 @@ apply_rotation() {
   install -d -o root -g root -m 0700 "$backup"
   for name in ca.crt client.crt; do
     install -o root -g root -m 0640 "$CLIENT_DIR/$name" "$backup/$name"
-    install -o root -g "$PROCESS_GROUP" -m 0640 "$workdir/$name" "$CLIENT_DIR/$name.next"
-    mv -f "$CLIENT_DIR/$name.next" "$CLIENT_DIR/$name"
   done
   ln -s "$backup" "$APPLIED_LINK"
+  for name in ca.crt client.crt; do
+    install -o root -g "$PROCESS_GROUP" -m 0640 "$workdir/$name" "$CLIENT_DIR/$name.next"
+    mv -f "$CLIENT_DIR/$name.next" "$CLIENT_DIR/$name"
+    [[ "$(sha256sum "$workdir/$name" | awk '{print $1}')" == "$(sha256sum "$CLIENT_DIR/$name" | awk '{print $1}')" ]] || { printf 'PACS_APPLY=HASH_DIVERGENTE\n' >&2; exit 75; }
+  done
+  openssl verify -x509_strict -purpose sslclient -CAfile "$CLIENT_DIR/ca.crt" "$CLIENT_DIR/client.crt" >/dev/null
+  keypair_matches "$CLIENT_DIR/client.crt" "$CLIENT_DIR/client.key" || { printf 'PACS_APPLY=PAR_CLIENTE_INVALIDO\n' >&2; exit 75; }
   printf 'PACS_PKI_CERTIFICATES_REPLACED=ready\n'
   printf 'PACS_BACKUP=ready\n'
   printf 'PACS_ROLLBACK=ready\n'
@@ -126,6 +131,8 @@ rollback_rotation() {
     install -o root -g "$PROCESS_GROUP" -m 0640 "$backup/$name" "$CLIENT_DIR/$name.restore"
     mv -f "$CLIENT_DIR/$name.restore" "$CLIENT_DIR/$name"
   done
+  openssl verify -x509_strict -purpose sslclient -CAfile "$CLIENT_DIR/ca.crt" "$CLIENT_DIR/client.crt" >/dev/null
+  keypair_matches "$CLIENT_DIR/client.crt" "$CLIENT_DIR/client.key" || { printf 'PACS_ROLLBACK=PAR_CLIENTE_INVALIDO\n' >&2; exit 75; }
   rm -f "$APPLIED_LINK"
   printf 'PACS_PKI_CERTIFICATES_ROLLED_BACK=ready\n'
   printf 'PHP_FPM_RELOAD=not_performed\n'
