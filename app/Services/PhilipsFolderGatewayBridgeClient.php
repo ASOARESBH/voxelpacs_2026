@@ -17,6 +17,8 @@ namespace App\Services;
 final class PhilipsFolderGatewayBridgeClient
 {
     private const MAX_BYTES = 50 * 1024 * 1024;
+    private const CURL_DIAGNOSTICS_ENV = 'PHILIPS_FOLDER_CURL_DIAGNOSTICS';
+
 
     /** @return array{reference:string,sha256:string,size:int} */
     public function send(int $jobId, int $destinationId, string $fileName, string $pdfPath, int $timeout, ?array $secretEnvelope = null): array
@@ -91,9 +93,21 @@ final class PhilipsFolderGatewayBridgeClient
                     ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
                 ],
             ]);
+            $startedAt = microtime(true);
             $body = curl_exec($curl);
             $errno = curl_errno($curl);
-            $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            $curlError = curl_error($curl);
+            $curlInfo = curl_getinfo($curl);
+            $httpCode = (int) ($curlInfo[CURLINFO_RESPONSE_CODE] ?? 0);
+            $this->logCurlDiagnostics(
+                $jobId,
+                $destinationId,
+                $body,
+                $errno,
+                $curlError,
+                $curlInfo,
+                (int) round((microtime(true) - $startedAt) * 1000)
+            );
         } finally {
             curl_close($curl);
             fclose($input);
@@ -185,6 +199,112 @@ final class PhilipsFolderGatewayBridgeClient
             throw new PhilipsFolderDeliveryException('gateway_smb_test_failed', 'remote_integrity_unconfirmed');
         }
         return 'smb_connection_ok';
+    }
+
+    private function logCurlDiagnostics(
+        int $jobId,
+        int $destinationId,
+        mixed $body,
+        int $errno,
+        string $curlError,
+        array $curlInfo,
+        int $durationMs
+    ): void {
+        if (getenv(self::CURL_DIAGNOSTICS_ENV) !== '1') {
+            return;
+        }
+
+        $isResponse = is_string($body);
+        $httpCode = (int) ($curlInfo[CURLINFO_RESPONSE_CODE] ?? 0);
+        $category = $isResponse ? $this->httpStatusCategory($httpCode) : $this->curlFailureCategory($errno, $curlError);
+        \App\Core\Logger::info('[PhilipsFolderGatewayBridgeClient] CURL_DIAGNOSTIC_TEMP', [
+            'job_id' => $jobId,
+            'destination_id' => $destinationId,
+            'duration_ms' => max(0, $durationMs),
+            'curl_result' => $isResponse ? 'RESPONSE' : 'ERROR',
+            'curl_errno' => $errno,
+            'curl_error_category' => $isResponse ? 'none' : $category,
+            'curl_error_detail_sanitized' => $isResponse ? 'none' : $this->sanitizedCurlError($curlError),
+            'http_status' => $httpCode,
+            'http_status_category' => $isResponse ? $category : 'none',
+            'primary_ip' => $this->safeInfoValue($curlInfo, CURLINFO_PRIMARY_IP),
+            'local_ip' => $this->safeInfoValue($curlInfo, CURLINFO_LOCAL_IP),
+            'connect_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_CONNECT_TIME),
+            'appconnect_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_APPCONNECT_TIME),
+            'starttransfer_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_STARTTRANSFER_TIME),
+            'total_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_TOTAL_TIME),
+            'response_size_bytes' => $isResponse ? strlen($body) : 0,
+        ]);
+    }
+
+    private function curlFailureCategory(int $errno, string $curlError): string
+    {
+        if (in_array($errno, [CURLE_COULDNT_RESOLVE_HOST, CURLE_COULDNT_RESOLVE_PROXY], true)) {
+            return 'DNS_OR_ROUTE_FAILURE';
+        }
+        if ($errno === CURLE_OPERATION_TIMEDOUT) {
+            return 'TIMEOUT';
+        }
+        if (in_array($errno, [CURLE_SSL_CONNECT_ERROR, CURLE_SSL_CACERT, CURLE_SSL_CERTPROBLEM, CURLE_SSL_CIPHER], true)) {
+            return 'TLS_MTLS_FAILURE';
+        }
+        if ($errno === CURLE_COULDNT_CONNECT) {
+            return 'TCP_CONNECT_FAILURE';
+        }
+        if (in_array($errno, [CURLE_GOT_NOTHING, CURLE_RECV_ERROR, CURLE_SEND_ERROR], true)) {
+            return 'CONNECTION_CLOSED';
+        }
+        $message = strtolower($curlError);
+        if (str_contains($message, 'certificate') || str_contains($message, 'ssl') || str_contains($message, 'tls')) {
+            return 'TLS_MTLS_FAILURE';
+        }
+        return 'OTHER_CURL_FAILURE';
+    }
+
+    private function sanitizedCurlError(string $curlError): string
+    {
+        $message = strtolower(trim($curlError));
+        if ($message === '') {
+            return 'NO_ERROR_MESSAGE';
+        }
+        if (str_contains($message, 'certificate') || str_contains($message, 'ssl') || str_contains($message, 'tls')) {
+            return 'TLS_ERROR_DETAIL';
+        }
+        if (str_contains($message, 'timed out') || str_contains($message, 'timeout')) {
+            return 'TIMEOUT_DETAIL';
+        }
+        if (str_contains($message, 'resolve') || str_contains($message, 'route')) {
+            return 'DNS_OR_ROUTE_DETAIL';
+        }
+        if (str_contains($message, 'connect')) {
+            return 'TCP_CONNECT_DETAIL';
+        }
+        if (str_contains($message, 'empty reply') || str_contains($message, 'reset')) {
+            return 'CONNECTION_CLOSED_DETAIL';
+        }
+        return 'OTHER_CURL_DETAIL';
+    }
+
+    private function httpStatusCategory(int $httpCode): string
+    {
+        return match (true) {
+            $httpCode >= 200 && $httpCode < 300 => 'HTTP_2XX',
+            $httpCode >= 300 && $httpCode < 400 => 'HTTP_3XX',
+            $httpCode >= 400 && $httpCode < 500 => 'HTTP_4XX',
+            $httpCode >= 500 && $httpCode < 600 => 'HTTP_5XX',
+            default => 'HTTP_OTHER',
+        };
+    }
+
+    private function infoMilliseconds(array $curlInfo, int $key): int
+    {
+        return max(0, (int) round(((float) ($curlInfo[$key] ?? 0)) * 1000));
+    }
+
+    private function safeInfoValue(array $curlInfo, int $key): string
+    {
+        $value = trim((string) ($curlInfo[$key] ?? ''));
+        return $value === '' ? 'absent' : $value;
     }
 
     private function allowedBridgeUrl(string $baseUrl, string $url, int $jobId): bool
