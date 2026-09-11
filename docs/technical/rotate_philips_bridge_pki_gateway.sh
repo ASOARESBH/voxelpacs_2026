@@ -6,7 +6,7 @@ set -euo pipefail
 umask 077
 
 if [[ "${EUID}" -ne 0 || "$#" -ne 1 ]]; then
-  printf 'Uso permitido: root com um argumento: --dry-run, --stage, --apply ou --rollback.\n' >&2
+  printf 'Uso permitido: root com um argumento: --dry-run, --stage, --preview-apply, --apply ou --rollback.\n' >&2
   exit 64
 fi
 
@@ -23,7 +23,7 @@ readonly SERVER_KEY="$CONFIG_DIR/server.key"
 readonly CLIENT_CERT="$CONFIG_DIR/client.crt"
 readonly CLIENT_KEY="$CONFIG_DIR/client.key"
 
-case "$ACTION" in --dry-run|--stage|--apply|--rollback) ;; *) printf 'ACAO_NAO_PERMITIDA\n' >&2; exit 64 ;; esac
+case "$ACTION" in --dry-run|--stage|--preview-apply|--apply|--rollback) ;; *) printf 'ACAO_NAO_PERMITIDA\n' >&2; exit 64 ;; esac
 for command in openssl stat install sha256sum tar date readlink find cp mv ln mktemp; do
   command -v "$command" >/dev/null 2>&1 || { printf 'DEPENDENCIA_AUSENTE=%s\n' "$command" >&2; exit 69; }
 done
@@ -153,6 +153,31 @@ stage_rotation() {
   printf 'BRIDGE_RELOAD=not_performed\n'
 }
 
+preview_apply() {
+  assert_current_material
+  [[ -L "$STAGED_LINK" ]] || { printf 'STAGE=AUSENTE\n' >&2; exit 66; }
+  local stage
+  stage="$(readlink -f "$STAGED_LINK")"
+  assert_staged_material "$stage"
+  printf '%s\n' '=== PHILIPS_BRIDGE_PKI_GATEWAY_APPLY_PREVIEW ==='
+  printf 'PREVIEW_SCHEMA=1\n'
+  printf 'GATEWAY_FILES_TO_REPLACE=ca_crt,server_crt,client_crt\n'
+  printf 'GATEWAY_KEYS_TO_PRESERVE=ca_key,server_key,client_key\n'
+  printf 'HMAC=preserve\n'
+  printf 'ENVELOPE_KEYS=preserve\n'
+  printf 'GATEWAY_BACKUP=will_create_root_only\n'
+  printf 'GATEWAY_ROLLBACK=available_after_apply\n'
+  printf 'STAGED_CA_SHA256=%s\n' "$(sha256sum "$stage/ca.crt" | awk '{print $1}')"
+  printf 'STAGED_SERVER_SHA256=%s\n' "$(sha256sum "$stage/server.crt" | awk '{print $1}')"
+  printf 'STAGED_CLIENT_SHA256=%s\n' "$(sha256sum "$stage/client.crt" | awk '{print $1}')"
+  printf 'PACS_CLIENT_UPDATE_BUNDLE_SHA256=%s\n' "$(sha256sum "$stage/pacs-client-pki-update.tar" | awk '{print $1}')"
+  printf 'STAGED_SERVER_CHAIN_STRICT=valid\n'
+  printf 'STAGED_CLIENT_CHAIN_STRICT=valid\n'
+  printf 'GATEWAY_APPLY=not_performed\n'
+  printf 'BRIDGE_RELOAD=not_performed\n'
+  printf '%s\n' 'PHILIPS_BRIDGE_PKI_GATEWAY_APPLY_PREVIEW_OK'
+}
+
 apply_rotation() {
   [[ -L "$STAGED_LINK" ]] || { printf 'STAGE=AUSENTE\n' >&2; exit 66; }
   local stage backup timestamp
@@ -169,6 +194,13 @@ apply_rotation() {
   done
   ln -s "$backup" "$APPLIED_LINK"
   printf 'PKI_GATEWAY_CERTIFICATES_REPLACED=ready\n'
+  printf 'GATEWAY_BACKUP=ready\n'
+  printf 'GATEWAY_ROLLBACK=ready\n'
+  printf 'GATEWAY_APPLIED_CA_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/ca.crt" | awk '{print $1}')"
+  printf 'GATEWAY_APPLIED_SERVER_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/server.crt" | awk '{print $1}')"
+  printf 'GATEWAY_APPLIED_CLIENT_SHA256=%s\n' "$(sha256sum "$CONFIG_DIR/client.crt" | awk '{print $1}')"
+  printf 'GATEWAY_APPLIED_SERVER_CHAIN_STRICT=valid\n'
+  printf 'GATEWAY_APPLIED_CLIENT_CHAIN_STRICT=valid\n'
   printf 'BRIDGE_RELOAD=not_performed\n'
 }
 
@@ -190,6 +222,7 @@ rollback_rotation() {
 case "$ACTION" in
   --dry-run) dry_run ;;
   --stage) stage_rotation ;;
+  --preview-apply) preview_apply ;;
   --apply) apply_rotation ;;
   --rollback) rollback_rotation ;;
 esac

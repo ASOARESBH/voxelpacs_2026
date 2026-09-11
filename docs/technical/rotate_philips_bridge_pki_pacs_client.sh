@@ -5,7 +5,7 @@ set -euo pipefail
 umask 077
 
 if [[ "${EUID}" -ne 0 || "$#" -ne 1 ]]; then
-  printf 'Uso permitido: root com um argumento: --dry-run, --apply ou --rollback.\n' >&2
+  printf 'Uso permitido: root com um argumento: --dry-run, --preview-apply, --apply ou --rollback.\n' >&2
   exit 64
 fi
 
@@ -16,7 +16,7 @@ readonly APPLIED_LINK="$ROTATION_ROOT/applied"
 readonly BUNDLE='/root/philips-folder-pki-client-update.tar'
 readonly PROCESS_GROUP='voxel'
 
-case "$ACTION" in --dry-run|--apply|--rollback) ;; *) printf 'ACAO_NAO_PERMITIDA\n' >&2; exit 64 ;; esac
+case "$ACTION" in --dry-run|--preview-apply|--apply|--rollback) ;; *) printf 'ACAO_NAO_PERMITIDA\n' >&2; exit 64 ;; esac
 for command in openssl stat install tar date readlink find cp mv ln mktemp getent; do
   command -v "$command" >/dev/null 2>&1 || { printf 'DEPENDENCIA_AUSENTE=%s\n' "$command" >&2; exit 69; }
 done
@@ -55,6 +55,33 @@ dry_run() {
   printf '%s\n' 'PHILIPS_BRIDGE_PACS_PKI_ROTATION_DRY_RUN_OK'
 }
 
+preview_apply() {
+  assert_current || { printf 'PACS_PKI_ATUAL=NAO_CONFORME\n' >&2; exit 65; }
+  [[ -f "$BUNDLE" && ! -L "$BUNDLE" ]] || { printf 'PACOTE_PKI=AUSENTE\n' >&2; exit 66; }
+  local workdir
+  workdir="$(mktemp -d)"
+  trap 'rm -rf "$workdir"' EXIT
+  tar --extract --file "$BUNDLE" --directory "$workdir" --no-same-owner --no-same-permissions
+  [[ "$(find "$workdir" -maxdepth 1 -type f | wc -l)" -eq 2 && -f "$workdir/ca.crt" && -f "$workdir/client.crt" ]] || { printf 'PACOTE_PKI=INVALIDO\n' >&2; exit 68; }
+  openssl x509 -in "$workdir/ca.crt" -noout >/dev/null 2>&1
+  openssl x509 -in "$workdir/client.crt" -noout >/dev/null 2>&1
+  keypair_matches "$workdir/client.crt" "$CLIENT_DIR/client.key" || { printf 'PACOTE_PKI=PAR_CLIENTE_INVALIDO\n' >&2; exit 68; }
+  openssl verify -x509_strict -purpose sslclient -CAfile "$workdir/ca.crt" "$workdir/client.crt" >/dev/null
+  printf '%s\n' '=== PHILIPS_BRIDGE_PACS_PKI_APPLY_PREVIEW ==='
+  printf 'PREVIEW_SCHEMA=1\n'
+  printf 'PACS_FILES_TO_REPLACE=ca_crt,client_crt\n'
+  printf 'PACS_FILES_TO_PRESERVE=client_key,hmac,envelope_public\n'
+  printf 'PACS_BACKUP=will_create_root_only\n'
+  printf 'PACS_ROLLBACK=available_after_apply\n'
+  printf 'PACS_STAGED_CA_SHA256=%s\n' "$(sha256sum "$workdir/ca.crt" | awk '{print $1}')"
+  printf 'PACS_STAGED_CLIENT_SHA256=%s\n' "$(sha256sum "$workdir/client.crt" | awk '{print $1}')"
+  printf 'PACS_STAGED_CLIENT_CHAIN_STRICT=valid\n'
+  printf 'PACS_STAGED_CLIENT_KEYPAIR=match\n'
+  printf 'PACS_APPLY=not_performed\n'
+  printf 'PHP_FPM_RELOAD=not_performed\n'
+  printf '%s\n' 'PHILIPS_BRIDGE_PACS_PKI_APPLY_PREVIEW_OK'
+}
+
 apply_rotation() {
   assert_current || { printf 'PACS_PKI_ATUAL=NAO_CONFORME\n' >&2; exit 65; }
   [[ -f "$BUNDLE" && ! -L "$BUNDLE" && ! -e "$APPLIED_LINK" ]] || { printf 'PACS_ROTACAO=NAO_DISPONIVEL\n' >&2; exit 66; }
@@ -80,6 +107,12 @@ apply_rotation() {
   done
   ln -s "$backup" "$APPLIED_LINK"
   printf 'PACS_PKI_CERTIFICATES_REPLACED=ready\n'
+  printf 'PACS_BACKUP=ready\n'
+  printf 'PACS_ROLLBACK=ready\n'
+  printf 'PACS_APPLIED_CA_SHA256=%s\n' "$(sha256sum "$CLIENT_DIR/ca.crt" | awk '{print $1}')"
+  printf 'PACS_APPLIED_CLIENT_SHA256=%s\n' "$(sha256sum "$CLIENT_DIR/client.crt" | awk '{print $1}')"
+  printf 'PACS_APPLIED_CLIENT_CHAIN_STRICT=valid\n'
+  printf 'PACS_APPLIED_CLIENT_KEYPAIR=match\n'
   printf 'PHP_FPM_RELOAD=not_performed\n'
 }
 
@@ -100,6 +133,7 @@ rollback_rotation() {
 
 case "$ACTION" in
   --dry-run) dry_run ;;
+  --preview-apply) preview_apply ;;
   --apply) apply_rotation ;;
   --rollback) rollback_rotation ;;
 esac

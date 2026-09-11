@@ -26,6 +26,7 @@ $required = [
     [$files['gateway_installer'], 'basicConstraints=critical,CA:FALSE', 'leaf basic constraints'],
     [$files['gateway_installer'], 'keyUsage=critical,digitalSignature', 'leaf key usage'],
     [$files['gateway_rotation'], '--dry-run', 'gateway dry run'],
+    [$files['gateway_rotation'], '--preview-apply', 'gateway application preview'],
     [$files['gateway_rotation'], 'openssl verify -x509_strict -purpose sslserver', 'gateway strict server validation'],
     [$files['gateway_rotation'], 'openssl verify -x509_strict -purpose sslclient', 'gateway strict client validation'],
     [$files['gateway_rotation'], 'CA_KEY=preserve', 'CA key preserved'],
@@ -36,7 +37,14 @@ $required = [
     [$files['gateway_rotation'], 'STAGED_SERVER_CHAIN_STRICT=valid', 'staged server strict chain evidence'],
     [$files['gateway_rotation'], 'STAGED_CLIENT_CHAIN_STRICT=valid', 'staged client strict chain evidence'],
     [$files['gateway_rotation'], 'RUNTIME_CERTIFICATES_REPLACED=no', 'staging preserves runtime certificates'],
+    [$files['gateway_rotation'], 'GATEWAY_FILES_TO_REPLACE=ca_crt,server_crt,client_crt', 'gateway application inventory'],
+    [$files['gateway_rotation'], 'GATEWAY_BACKUP=will_create_root_only', 'gateway backup preview'],
+    [$files['gateway_rotation'], 'GATEWAY_APPLY=not_performed', 'gateway preview does not apply'],
     [$files['pacs_rotation'], 'PACS_PRESERVED_FILES=client_key,hmac,envelope_public', 'PACS protected material preserved'],
+    [$files['pacs_rotation'], '--preview-apply', 'PACS application preview'],
+    [$files['pacs_rotation'], 'PACS_FILES_TO_REPLACE=ca_crt,client_crt', 'PACS application inventory'],
+    [$files['pacs_rotation'], 'PACS_BACKUP=will_create_root_only', 'PACS backup preview'],
+    [$files['pacs_rotation'], 'PACS_APPLY=not_performed', 'PACS preview does not apply'],
     [$files['pacs_rotation'], 'PHP_FPM_RELOAD=not_performed', 'no PHP-FPM reload'],
 ];
 foreach ($required as [$content, $needle, $label]) {

@@ -47,6 +47,19 @@ Os scripts de rotação têm comandos separados para inspeção, staging, aplica
 
 O pacote administrativo futuro contém apenas a nova CA e o novo certificado de cliente. Ele não contém senha SMB, HMAC, chave privada do envelope, chave privada da CA, chave do servidor ou chave do cliente.
 
+## Prévia coordenada de aplicação
+
+A prévia é uma operação local, somente leitura, disponível como `--preview-apply` nos dois scripts. No gateway, ela exige o staging previamente validado, verifica a CA e ambos os certificados de staging, compara os pares com as chaves atuais e mostra os hashes previstos. No PACS/API, ela exige que o pacote de atualização tenha sido copiado por canal administrativo protegido, verifica o conteúdo e confirma a cadeia do novo certificado de cliente contra a nova CA. Nenhuma prévia substitui arquivos, cria backup, recarrega processo ou abre conexão.
+
+| Ordem futura | Host | Ação após autorização própria | Marcadores esperados |
+|---|---|---|---|
+| 1 | Gateway | Conferir prévia e aplicar somente CA, certificado do servidor e certificado do cliente, com backup root-only. | `PKI_GATEWAY_CERTIFICATES_REPLACED=ready`, `GATEWAY_BACKUP=ready`, `GATEWAY_ROLLBACK=ready`, hashes aplicados e cadeias estritas válidas. |
+| 2 | PACS/API | Copiar o pacote de CA/certificado de cliente, conferir prévia e aplicar apenas esses dois certificados, com backup root-only. | `PACS_PKI_CERTIFICATES_REPLACED=ready`, `PACS_BACKUP=ready`, `PACS_ROLLBACK=ready`, hashes aplicados, cadeia estrita e par de cliente válidos. |
+| 3 | Gateway | Recarga exclusiva da unit da bridge, somente após autorização separada. | Não faz parte de `--apply`; exige decisão explícita posterior. |
+| 4 | PACS/API e Gateway | Handshake mTLS e teste SMB, ambos com autorizações próprias e separadas. | Fora do escopo da rotação PKI. |
+
+Durante as etapas 1 e 2, nenhuma chamada à bridge é permitida. Isso evita que uma troca parcialmente aplicada seja confundida com uma indisponibilidade do receptor. O listener mantém a configuração anterior até a recarga isolada autorizada da unit da bridge.
+
 ## Perfil X.509 reprodutível
 
 | Papel | Basic Constraints | Key Usage | Extended Key Usage | SAN |
