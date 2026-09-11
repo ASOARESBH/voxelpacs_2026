@@ -1,5 +1,6 @@
 <?php
 // Philips Folder runtime materialization: inert control messages.
+// Runtime materialization for the local SMB test result message.
 // Inert runtime materialization for Philips Non-DICOM Phase 1; does not activate SMB, bridge, XML, or automation.
 // Runtime synchronization for Voxel Desktop control-plane and manual test messages.
 // Runtime materialization for restricted publication of Downloads product separation.

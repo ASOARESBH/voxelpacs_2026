@@ -1,5 +1,6 @@
 <?php
 // Materialización de runtime Philips Folder: mensajes de control inerte.
+// Materialización del mensaje local del resultado de la prueba SMB.
 // Materialización de runtime inerte de la Fase 1 Philips Non-DICOM; no activa SMB, bridge, XML ni automatización.
 // Sincronización de runtime de mensajes de control y prueba manual de Voxel Desktop.
 // Materialización de runtime para publicación restringida de la separación de productos de Downloads.
