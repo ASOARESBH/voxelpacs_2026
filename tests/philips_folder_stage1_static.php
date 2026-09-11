@@ -6,6 +6,7 @@ $files = [
     'service' => $base . '/app/Services/PhilipsFolderDeliveryService.php',
     'connectivity' => $base . '/app/Services/PhilipsFolderSmbConnectivityService.php',
     'client' => $base . '/app/Services/PhilipsFolderGatewayBridgeClient.php',
+    'outbox' => $base . '/app/Services/ReportDeliveryOutboxService.php',
     'worker' => $base . '/bin/report_delivery_worker.php',
     'bridge' => $base . '/deploy/report-delivery-gateway-bridge/philips_folder_bridge.py',
     'controller' => $base . '/app/Controllers/Platform/ReportDeliveryController.php',
@@ -27,6 +28,7 @@ if (!class_exists('App\\Services\\PhilipsFolderSmbConnectivityService')) {
 $service = file_get_contents($files['service']);
 $connectivity = file_get_contents($files['connectivity']);
 $client = file_get_contents($files['client']);
+$outbox = file_get_contents($files['outbox']);
 $worker = file_get_contents($files['worker']);
 $bridge = file_get_contents($files['bridge']);
 $controller = file_get_contents($files['controller']);
@@ -84,6 +86,10 @@ $required = [
     [$view, 'smb_password', 'campo de senha cifrada'],
     [$view, "t('philips_non_dicom.credencial_configurada')", 'indicador sanitizado de credencial localizado'],
     [$repository, 'credential_configured', 'booleano de presença de credencial'],
+    [$repository, 'findManualHomologationDestinations', 'seleção manual de homologação sem automação'],
+    [$repository, 'bool $requireReleaseTrigger = true', 'automação de liberação preservada como padrão'],
+    [$outbox, "\$dispatchMode === 'manual_homologation'", 'roteamento manual separado do automático'],
+    [$outbox, 'findManualHomologationDestinations', 'destino manual habilitado sem gatilho automático'],
     [$bootstrap, "loadEnv('/etc/voxelpacs/philips-folder-client.conf')", 'referências privadas da bridge fora do repositório'],
 ];
 foreach ($required as [$content, $needle, $label]) {

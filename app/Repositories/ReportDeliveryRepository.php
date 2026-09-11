@@ -26,6 +26,18 @@ class ReportDeliveryRepository
         return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
     }
 
+    /**
+     * Retorna somente destinos habilitados de homologação para uma solicitação
+     * manual explícita. A automação por liberação continua sendo requisito
+     * exclusivo do fluxo automático de produção.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    {
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function findConfiguredDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
     {
@@ -33,7 +45,14 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function findDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, bool $onlyEligible): array
+    private function findDestinations(
+        int $tenantId,
+        ?int $estabelecimentoId,
+        ?string $issuerNormalized,
+        ?string $institutionName,
+        bool $onlyEligible,
+        bool $requireReleaseTrigger = true
+    ): array
     {
         $issuerNormalized = trim((string) $issuerNormalized);
         $institutionName = trim((string) $institutionName);
@@ -53,9 +72,9 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
-        $eligibilityWhere = $onlyEligible
+        $eligibilityWhere = $onlyEligible && $requireReleaseTrigger
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
-            : '';
+            : ($onlyEligible ? 'AND d.enabled = 1' : '');
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,

@@ -108,8 +108,11 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
+            $eligibleDestinations = $dispatchMode === 'manual_homologation'
+                ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName)
+                : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName);
             $destinations = array_values(array_filter(
-                $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName),
+                $eligibleDestinations,
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
                     && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
                         || PhilipsFolderDeliveryService::enabled())
