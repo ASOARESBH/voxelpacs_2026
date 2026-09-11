@@ -11,6 +11,7 @@ $files = [
     'controller' => $base . '/app/Controllers/Platform/ReportDeliveryController.php',
     'repository' => $base . '/app/Repositories/ReportDeliveryRepository.php',
     'view' => $base . '/app/Views/platform/negocios/report_delivery.php',
+    'bootstrap' => $base . '/app/bootstrap.php',
 ];
 foreach ($files as $name => $path) {
     if (!is_file($path)) {
@@ -31,6 +32,7 @@ $bridge = file_get_contents($files['bridge']);
 $controller = file_get_contents($files['controller']);
 $repository = file_get_contents($files['repository']);
 $view = file_get_contents($files['view']);
+$bootstrap = file_get_contents($files['bootstrap']);
 $requiredI18n = [
     'philips_non_dicom.confirmar_teste_smb',
     'philips_non_dicom.resposta_invalida',
@@ -58,7 +60,8 @@ $required = [
     [$worker, 'PhilipsFolderDeliveryService::enabled()', 'claim condicionado à feature flag'],
     [$bridge, 'PHILIPS_FOLDER_MODE', 'modo de política root-only'],
     [$bridge, 'TARGET_ROOT = Path("/var/lib/voxelpacs/philips-folder-target")', 'raiz privada de destino'],
-    [$bridge, 'single_test_requires_job', 'uso único de homologação'],
+    [$bridge, 'single_test sem job autorizado', 'preflight single_test sem job'],
+    [$bridge, 'POLICY.mode == "destination" or job_id == POLICY.allowed_job_id', 'rejeição de entrega sem job autorizado'],
     [$bridge, 'os.replace(temporary, final_path)', 'gravação atômica'],
     [$bridge, 'StrictHostKeyChecking=yes', 'verificação obrigatória da host key SFTP'],
     [$bridge, 'UserKnownHostsFile=', 'known_hosts root-only do SFTP'],
@@ -81,6 +84,7 @@ $required = [
     [$view, 'smb_password', 'campo de senha cifrada'],
     [$view, "t('philips_non_dicom.credencial_configurada')", 'indicador sanitizado de credencial localizado'],
     [$repository, 'credential_configured', 'booleano de presença de credencial'],
+    [$bootstrap, "loadEnv('/etc/voxelpacs/philips-folder-client.conf')", 'referências privadas da bridge fora do repositório'],
 ];
 foreach ($required as [$content, $needle, $label]) {
     if (!str_contains($content, $needle)) {
@@ -100,6 +104,10 @@ if (str_contains($worker, "'file_name' =>")) {
 }
 if (str_contains($bridge, 'StrictHostKeyChecking=no')) {
     fwrite(STDERR, "FORBIDDEN_SFTP_HOST_KEY_BYPASS\n");
+    exit(1);
+}
+if (str_contains($bridge, 'single_test_requires_job')) {
+    fwrite(STDERR, "FORBIDDEN_SINGLE_TEST_JOB_REQUIREMENT\n");
     exit(1);
 }
 if (str_contains($bridge, '0.0.0.0/0')) {

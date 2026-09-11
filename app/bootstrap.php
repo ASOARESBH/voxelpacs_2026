@@ -129,6 +129,10 @@ if (!function_exists('loadEnv')) {
 // do projeto, evitando que credenciais SMTP sejam versionadas acidentalmente.
 loadEnv('/etc/voxelpacs/mail-credentials.conf');
 
+// Referências privadas da bridge Philips, fora do repositório. Este arquivo
+// contém somente URL privada e material de cliente; nunca credencial SMB.
+loadEnv('/etc/voxelpacs/philips-folder-client.conf');
+
 // Carrega as variáveis não sensíveis e a configuração legada do projeto.
 loadEnv(BASE_PATH . '/.env');
 

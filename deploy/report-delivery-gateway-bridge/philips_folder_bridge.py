@@ -97,8 +97,9 @@ class Policy:
         self.fallback = os.environ.get("PHILIPS_FOLDER_FALLBACK", "").strip().lower()
         if self.mode not in {"single_test", "destination"} or self.destination_id <= 0:
             raise RuntimeError("invalid_bridge_policy")
-        if self.mode == "single_test" and self.allowed_job_id <= 0:
-            raise RuntimeError("single_test_requires_job")
+        # Em single_test sem job autorizado, a bridge pode iniciar somente para o
+        # preflight técnico. O roteamento de entrega continua recusando qualquer
+        # job porque nenhum ID positivo pode corresponder ao valor zero.
         if self.transport not in {"sftp", "smb"} or self.fallback not in {"", "smb"}:
             raise RuntimeError("invalid_transport_policy")
         if self.transport != "sftp" and self.fallback:
