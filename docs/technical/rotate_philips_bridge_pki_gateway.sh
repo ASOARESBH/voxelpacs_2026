@@ -131,8 +131,26 @@ stage_rotation() {
   chmod 0600 "$stage/manifest"
   ln -s "$stage" "$STAGED_LINK"
   printf 'PKI_STAGE=ready\n'
-  printf 'PKI_STAGED_VALIDATION=strict_chain_passed\n'
+  printf 'STAGED_CA_BASIC_CONSTRAINTS=CA_TRUE\n'
+  printf 'STAGED_CA_KEY_USAGE=keyCertSign_cRLSign\n'
+  printf 'STAGED_SERVER_BASIC_CONSTRAINTS=CA_FALSE\n'
+  printf 'STAGED_SERVER_KEY_USAGE=digitalSignature\n'
+  printf 'STAGED_SERVER_EKU=serverAuth\n'
+  printf 'STAGED_SERVER_SAN=approved_private_ip\n'
+  printf 'STAGED_SERVER_CHAIN_STRICT=valid\n'
+  printf 'STAGED_SERVER_KEYPAIR=match\n'
+  printf 'STAGED_CLIENT_BASIC_CONSTRAINTS=CA_FALSE\n'
+  printf 'STAGED_CLIENT_KEY_USAGE=digitalSignature\n'
+  printf 'STAGED_CLIENT_EKU=clientAuth\n'
+  printf 'STAGED_CLIENT_CHAIN_STRICT=valid\n'
+  printf 'STAGED_CLIENT_KEYPAIR=match\n'
+  printf 'STAGED_CA_SHA256=%s\n' "$(sha256sum "$stage/ca.crt" | awk '{print $1}')"
+  printf 'STAGED_SERVER_SHA256=%s\n' "$(sha256sum "$stage/server.crt" | awk '{print $1}')"
+  printf 'STAGED_CLIENT_SHA256=%s\n' "$(sha256sum "$stage/client.crt" | awk '{print $1}')"
   printf 'PACS_CLIENT_UPDATE_BUNDLE=ready\n'
+  printf 'PACS_CLIENT_UPDATE_BUNDLE_SHA256=%s\n' "$(sha256sum "$stage/pacs-client-pki-update.tar" | awk '{print $1}')"
+  printf 'RUNTIME_CERTIFICATES_REPLACED=no\n'
+  printf 'BRIDGE_RELOAD=not_performed\n'
 }
 
 apply_rotation() {

@@ -32,6 +32,10 @@ $required = [
     [$files['gateway_rotation'], 'HMAC=preserve', 'HMAC preserved'],
     [$files['gateway_rotation'], 'ENVELOPE_KEYS=preserve', 'envelope keys preserved'],
     [$files['gateway_rotation'], 'BRIDGE_RELOAD=not_performed', 'no bridge reload'],
+    [$files['gateway_rotation'], 'STAGED_CA_KEY_USAGE=keyCertSign_cRLSign', 'staged CA key usage evidence'],
+    [$files['gateway_rotation'], 'STAGED_SERVER_CHAIN_STRICT=valid', 'staged server strict chain evidence'],
+    [$files['gateway_rotation'], 'STAGED_CLIENT_CHAIN_STRICT=valid', 'staged client strict chain evidence'],
+    [$files['gateway_rotation'], 'RUNTIME_CERTIFICATES_REPLACED=no', 'staging preserves runtime certificates'],
     [$files['pacs_rotation'], 'PACS_PRESERVED_FILES=client_key,hmac,envelope_public', 'PACS protected material preserved'],
     [$files['pacs_rotation'], 'PHP_FPM_RELOAD=not_performed', 'no PHP-FPM reload'],
 ];
