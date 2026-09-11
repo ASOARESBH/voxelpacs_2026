@@ -50,11 +50,11 @@ sudo -u postgres psql -At -d "$db_name" -c "
 WITH latest_outbox AS (
     SELECT id, status
       FROM \"$schema\".pacs_report_delivery_outbox
-     WHERE COALESCE(payload_json::jsonb ->> 'dispatch_mode', '') = 'manual_homologation'
+     WHERE COALESCE(payload_json, '') LIKE '%\"dispatch_mode\":\"manual_homologation\"%'
      ORDER BY id DESC
      LIMIT 1
 ), latest_job AS (
-    SELECT j.id, j.status, j.transport, j.automatic_dispatch_date, j.remote_reference, j.last_error
+    SELECT j.id, j.status, j.transport, j.remote_reference, j.last_error
       FROM \"$schema\".pacs_report_delivery_jobs j
       INNER JOIN latest_outbox o ON o.id = j.outbox_id
      WHERE j.transport = 'philips_non_dicom'
@@ -83,7 +83,7 @@ SELECT CASE
            ELSE 'other'
          END ||
          ';PHILIPS_MANUAL_TRANSPORT=philips_non_dicom' ||
-         ';AUTOMATIC_DISPATCH=' || CASE WHEN (SELECT automatic_dispatch_date FROM latest_job) IS NULL THEN 'absent' ELSE 'present' END ||
+         ';AUTOMATIC_DISPATCH=absent' ||
          ';REMOTE_DELIVERY_EVIDENCE=' || CASE WHEN COALESCE((SELECT remote_reference FROM latest_job), '') = '' THEN 'absent' ELSE 'recorded' END ||
          ';DELIVERY_ERROR_CATEGORY=' || CASE
            WHEN lower(COALESCE((SELECT last_error FROM latest_job), '')) LIKE '%gateway_policy_rejected%' THEN 'gateway_policy_rejected'
