@@ -47,19 +47,19 @@ echo 'DELIVERY_DB=ready'
 echo 'DELIVERY_SCHEMA=ready'
 
 sudo -u postgres psql -At -d "$db_name" -c "
-WITH latest_outbox AS (
-    SELECT id, status
-      FROM \"$schema\".pacs_report_delivery_outbox
-     WHERE COALESCE(payload_json, '') LIKE '%\"dispatch_mode\":\"manual_homologation\"%'
-     ORDER BY id DESC
-     LIMIT 1
-), latest_job AS (
-    SELECT j.id, j.status, j.transport, j.remote_reference, j.last_error
+WITH latest_job AS (
+    SELECT j.id, j.outbox_id, j.status, j.transport, j.remote_reference, j.last_error
       FROM \"$schema\".pacs_report_delivery_jobs j
-      INNER JOIN latest_outbox o ON o.id = j.outbox_id
+      INNER JOIN \"$schema\".pacs_report_delivery_destinations d ON d.id = j.destination_id
      WHERE j.transport = 'philips_non_dicom'
+       AND d.transport = 'philips_non_dicom'
+       AND d.ambiente = 'homologacao'
      ORDER BY j.id DESC
      LIMIT 1
+), latest_outbox AS (
+    SELECT o.id, o.status
+      FROM \"$schema\".pacs_report_delivery_outbox o
+      INNER JOIN latest_job j ON j.outbox_id = o.id
 )
 SELECT CASE
     WHEN NOT EXISTS (SELECT 1 FROM latest_outbox) THEN 'MANUAL_OUTBOX=absent'
