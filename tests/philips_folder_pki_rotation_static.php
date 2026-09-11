@@ -40,11 +40,14 @@ $required = [
     [$files['gateway_rotation'], 'GATEWAY_FILES_TO_REPLACE=ca_crt,server_crt,client_crt', 'gateway application inventory'],
     [$files['gateway_rotation'], 'GATEWAY_BACKUP=will_create_root_only', 'gateway backup preview'],
     [$files['gateway_rotation'], 'GATEWAY_APPLY=not_performed', 'gateway preview does not apply'],
+    [$files['gateway_rotation'], 'GATEWAY_APPLY=HASH_DIVERGENTE', 'gateway copy hash guard'],
+    [$files['gateway_rotation'], 'PACS_CLIENT_UPDATE_BUNDLE_SHA256=', 'gateway PACS bundle hash'],
     [$files['pacs_rotation'], 'PACS_PRESERVED_FILES=client_key,hmac,envelope_public', 'PACS protected material preserved'],
     [$files['pacs_rotation'], '--preview-apply', 'PACS application preview'],
     [$files['pacs_rotation'], 'PACS_FILES_TO_REPLACE=ca_crt,client_crt', 'PACS application inventory'],
     [$files['pacs_rotation'], 'PACS_BACKUP=will_create_root_only', 'PACS backup preview'],
     [$files['pacs_rotation'], 'PACS_APPLY=not_performed', 'PACS preview does not apply'],
+    [$files['pacs_rotation'], 'PACS_APPLY=HASH_DIVERGENTE', 'PACS copy hash guard'],
     [$files['pacs_rotation'], 'PHP_FPM_RELOAD=not_performed', 'no PHP-FPM reload'],
 ];
 foreach ($required as [$content, $needle, $label]) {
