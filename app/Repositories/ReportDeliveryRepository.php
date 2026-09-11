@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime do roteamento manual de homologação; não cria job nem ativa SMB, bridge, XML ou automação.
 // Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 
 namespace App\Repositories;
