@@ -225,6 +225,7 @@ $transportLabels = [
         <div class="col-xl-7">
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-white d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Destinos configurados</h2><span class="badge text-bg-secondary"><?= count($destinations) ?></span></div>
+                <div id="smb-test-feedback" class="d-none alert m-3 mb-0" role="alert" aria-live="polite"></div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead><tr><th>Nome</th><th>Origem e prioridade</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
@@ -246,7 +247,7 @@ $transportLabels = [
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
-                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
+                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -332,6 +333,7 @@ $transportLabels = [
     const manualForm = document.getElementById('manual-delivery-form');
     const manualFeedback = document.getElementById('manual-delivery-feedback');
     const resendFeedback = document.getElementById('delivery-resend-feedback');
+    const smbTestFeedback = document.getElementById('smb-test-feedback');
     const title = document.getElementById('destination-form-title');
     const cancel = document.getElementById('destination-cancel');
     const feedback = document.getElementById('delivery-feedback');
@@ -500,6 +502,30 @@ $transportLabels = [
                 resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
                 resendFeedback.textContent = '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
                 resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.smb-test-form').forEach((smbTestForm) => {
+        smbTestForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('philips_non_dicom.confirmar_teste_smb'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = smbTestForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(smbTestForm.action, { method: 'POST', body: new FormData(smbTestForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('philips_non_dicom.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                smbTestFeedback.className = 'alert m-3 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                smbTestFeedback.textContent = result.message || <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (_) {
+                smbTestFeedback.className = 'alert m-3 mb-0 alert-danger';
+                smbTestFeedback.textContent = <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } finally {
                 if (submitButton) submitButton.disabled = false;
             }

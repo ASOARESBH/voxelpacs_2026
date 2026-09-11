@@ -31,6 +31,20 @@ $bridge = file_get_contents($files['bridge']);
 $controller = file_get_contents($files['controller']);
 $repository = file_get_contents($files['repository']);
 $view = file_get_contents($files['view']);
+$requiredI18n = [
+    'philips_non_dicom.confirmar_teste_smb',
+    'philips_non_dicom.resposta_invalida',
+    'philips_non_dicom.teste_indisponivel',
+];
+foreach (['pt_BR', 'en', 'es'] as $locale) {
+    $catalog = require $base . '/lang/' . $locale . '.php';
+    foreach ($requiredI18n as $key) {
+        if (!isset($catalog[$key]) || !is_string($catalog[$key]) || $catalog[$key] === '') {
+            fwrite(STDERR, "MISSING_I18N: {$locale}:{$key}\n");
+            exit(1);
+        }
+    }
+}
 
 $required = [
     [$service, "getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false'", 'feature flag segura'],
@@ -61,6 +75,9 @@ $required = [
     [$controller, 'PhilipsFolderDeliveryService::nonDicomEnabled()', 'bloqueio Non-DICOM por feature flag'],
     [$view, "t('philips_non_dicom.nome_transporte')", 'interface de destino Non-DICOM localizada'],
     [$view, "t('philips_non_dicom.testar_smb')", 'ação visual de teste SMB localizada'],
+    [$view, 'smb-test-form', 'formulário SMB assíncrono'],
+    [$view, 'smb-test-feedback', 'alerta local do teste SMB'],
+    [$view, 'fetch(smbTestForm.action', 'requisição SMB sem navegação de página'],
     [$view, 'smb_password', 'campo de senha cifrada'],
     [$view, "t('philips_non_dicom.credencial_configurada')", 'indicador sanitizado de credencial localizado'],
     [$repository, 'credential_configured', 'booleano de presença de credencial'],
