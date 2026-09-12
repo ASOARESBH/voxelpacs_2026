@@ -96,18 +96,27 @@ final class PhilipsFolderGatewayBridgeClient
             $startedAt = microtime(true);
             $body = curl_exec($curl);
             $errno = curl_errno($curl);
-            $curlError = curl_error($curl);
-            $curlInfo = curl_getinfo($curl);
-            $httpCode = (int) ($curlInfo[CURLINFO_RESPONSE_CODE] ?? 0);
-            $this->logCurlDiagnostics(
-                $jobId,
-                $destinationId,
-                $body,
-                $errno,
-                $curlError,
-                $curlInfo,
-                (int) round((microtime(true) - $startedAt) * 1000)
-            );
+            $curlError = '';
+            try {
+                $curlError = curl_error($curl);
+            } catch (\Throwable) {
+                // Diagnóstico é best-effort e nunca pode alterar o resultado da entrega.
+            }
+            $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            try {
+                $curlInfo = curl_getinfo($curl);
+                $this->logCurlDiagnostics(
+                    $jobId,
+                    $destinationId,
+                    $body,
+                    $errno,
+                    $curlError,
+                    is_array($curlInfo) ? $curlInfo : [],
+                    (int) round((microtime(true) - $startedAt) * 1000)
+                );
+            } catch (\Throwable) {
+                // Diagnóstico é best-effort e nunca pode alterar o resultado da entrega.
+            }
         } finally {
             curl_close($curl);
             fclose($input);
@@ -215,7 +224,7 @@ final class PhilipsFolderGatewayBridgeClient
         }
 
         $isResponse = is_string($body);
-        $httpCode = (int) ($curlInfo[CURLINFO_RESPONSE_CODE] ?? 0);
+        $httpCode = (int) ($curlInfo['http_code'] ?? 0);
         $category = $isResponse ? $this->httpStatusCategory($httpCode) : $this->curlFailureCategory($errno, $curlError);
         \App\Core\Logger::info('[PhilipsFolderGatewayBridgeClient] CURL_DIAGNOSTIC_TEMP', [
             'job_id' => $jobId,
@@ -227,12 +236,12 @@ final class PhilipsFolderGatewayBridgeClient
             'curl_error_detail_sanitized' => $isResponse ? 'none' : $this->sanitizedCurlError($curlError),
             'http_status' => $httpCode,
             'http_status_category' => $isResponse ? $category : 'none',
-            'primary_ip' => $this->safeInfoValue($curlInfo, CURLINFO_PRIMARY_IP),
-            'local_ip' => $this->safeInfoValue($curlInfo, CURLINFO_LOCAL_IP),
-            'connect_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_CONNECT_TIME),
-            'appconnect_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_APPCONNECT_TIME),
-            'starttransfer_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_STARTTRANSFER_TIME),
-            'total_time_ms' => $this->infoMilliseconds($curlInfo, CURLINFO_TOTAL_TIME),
+            'primary_ip' => $this->safeInfoValue($curlInfo, 'primary_ip'),
+            'local_ip' => $this->safeInfoValue($curlInfo, 'local_ip'),
+            'connect_time_ms' => $this->infoMilliseconds($curlInfo, 'connect_time'),
+            'appconnect_time_ms' => $this->infoMilliseconds($curlInfo, 'appconnect_time'),
+            'starttransfer_time_ms' => $this->infoMilliseconds($curlInfo, 'starttransfer_time'),
+            'total_time_ms' => $this->infoMilliseconds($curlInfo, 'total_time'),
             'response_size_bytes' => $isResponse ? strlen($body) : 0,
         ]);
     }
@@ -296,12 +305,12 @@ final class PhilipsFolderGatewayBridgeClient
         };
     }
 
-    private function infoMilliseconds(array $curlInfo, int $key): int
+    private function infoMilliseconds(array $curlInfo, string $key): int
     {
         return max(0, (int) round(((float) ($curlInfo[$key] ?? 0)) * 1000));
     }
 
-    private function safeInfoValue(array $curlInfo, int $key): string
+    private function safeInfoValue(array $curlInfo, string $key): string
     {
         $value = trim((string) ($curlInfo[$key] ?? ''));
         return $value === '' ? 'absent' : $value;
