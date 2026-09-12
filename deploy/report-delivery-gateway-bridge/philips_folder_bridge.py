@@ -184,6 +184,7 @@ class Policy:
         return {
             "host": host,
             "share": share,
+            "username": username,
             "remote_path": remote_path.strip("/"),
             "credentials": root_only_regular_file(credentials) if credentials else None,
         }
