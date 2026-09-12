@@ -300,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         job_id = int(self.path[len(prefix):])
         supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
-        destination_id = self.headers.get("X-VOXEL-Destination-ID", "")
+        destination_id_header = self.headers.get("X-VOXEL-Destination-ID", "")
         filename = self.headers.get("X-VOXEL-Filename", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
         supplied_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
@@ -314,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         permitted = (
             supplied_job_id == str(job_id)
-            and destination_id == str(POLICY.destination_id)
+            and destination_id_header == str(POLICY.destination_id)
             and 256 <= length <= MAX_BYTES
             and self.valid_filename(filename)
             and re.fullmatch(r"[a-f0-9]{64}", supplied_hash) is not None
@@ -323,12 +323,13 @@ class Handler(BaseHTTPRequestHandler):
         if not permitted:
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
+        destination_id = POLICY.destination_id
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
             return
         envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
         envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
-        signature_parts = ["POST", self.path, str(job_id), destination_id, filename, supplied_hash, str(length), timestamp]
+        signature_parts = ["POST", self.path, str(job_id), destination_id_header, filename, supplied_hash, str(length), timestamp]
         if envelope:
             signature_parts.append(envelope_hash)
         signature_base = "\n".join(signature_parts)
