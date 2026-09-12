@@ -242,7 +242,7 @@ def classify_transport_error(output: str, timeout: bool = False) -> str:
     value = output.lower()
     if "host key verification failed" in value or "host identification has changed" in value:
         return "host_key"
-    if "publickey" in value or "authentication" in value or "login incorrect" in value:
+    if "publickey" in value or "authentication" in value or "login incorrect" in value or "nt_status_logon_failure" in value:
         return "authentication"
     if "permission denied" in value or "access denied" in value:
         return "permission"
