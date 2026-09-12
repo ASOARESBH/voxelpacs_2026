@@ -765,6 +765,47 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     @staticmethod
+    def _diagnose_smb_list_result(
+        job_id: int,
+        filename: str,
+        result: subprocess.CompletedProcess[str],
+        classification: str,
+    ) -> None:
+        """Persist bounded LIST diagnostics without changing transport behavior."""
+        if os.environ.get("PHILIPS_SMB_LIST_DIAGNOSTICS", "0").strip() != "1":
+            return
+        try:
+            stdout = result.stdout.encode("utf-8", "replace")
+            stderr = result.stderr.encode("utf-8", "replace")
+            safe_classification = (
+                classification if classification in SMB_DIAGNOSTIC_CLASSIFICATIONS else "unknown"
+            )
+            LOG.info(
+                "event=philips_smb_list_diagnostic job_id=%s destination_id=%s "
+                "SMB_STAGE=LIST SMB_RETURN_CODE=%s SMB_STDOUT_PRESENT=%s "
+                "SMB_STDOUT_SIZE=%s SMB_STDOUT_SHA256=%s SMB_STDOUT_PREVIEW_HEX=%s "
+                "SMB_STDERR_PRESENT=%s SMB_STDERR_SIZE=%s SMB_STDERR_SHA256=%s "
+                "SMB_STDERR_PREVIEW_HEX=%s SMB_LIST_LOGICAL_COMMAND=ls_<final_path> "
+                "filename=%s SMB_CLASSIFICATION=%s",
+                job_id,
+                POLICY.destination_id,
+                result.returncode,
+                "YES" if stdout else "NO",
+                len(stdout),
+                hashlib.sha256(stdout).hexdigest() if stdout else "none",
+                stdout[:64].hex() if stdout else "none",
+                "YES" if stderr else "NO",
+                len(stderr),
+                hashlib.sha256(stderr).hexdigest() if stderr else "none",
+                stderr[:64].hex() if stderr else "none",
+                filename,
+                safe_classification,
+            )
+        except Exception:
+            # LIST diagnostics are best-effort and must never affect delivery.
+            pass
+
+    @staticmethod
     def _smb_missing(result: subprocess.CompletedProcess[str]) -> bool:
         output = (result.stdout + result.stderr).lower()
         return any(marker in output for marker in ("nt_status_no_such_file", "not found", "no such file"))
@@ -840,6 +881,7 @@ class Handler(BaseHTTPRequestHandler):
             raise
         if existing.returncode == 0:
             self._log_smb_stage(job_id, "LIST", existing, "none")
+            self._diagnose_smb_list_result(job_id, filename, existing, "none")
             if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, length):
                 LOG.info("event=philips_smb_success job_id=%s", job_id)
                 return
@@ -847,8 +889,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._smb_missing(existing):
             classification = classify_transport_error(existing.stdout + existing.stderr)
             self._log_smb_stage(job_id, "LIST", existing, classification)
+            self._diagnose_smb_list_result(job_id, filename, existing, classification)
             raise BridgeTransferError(classification)
         self._log_smb_stage(job_id, "LIST", existing, "not_found")
+        self._diagnose_smb_list_result(job_id, filename, existing, "not_found")
 
         try:
             uploaded = self._smb_command(credentials, f"put {staged} {temporary_path}")
