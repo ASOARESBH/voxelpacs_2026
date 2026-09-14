@@ -288,6 +288,8 @@ $transportLabels = [
                                     elseif ($routingState === 'manual_eligible') { $statusKey = 'delivery_hub.released.status_pronto_reenviar'; $statusClass = 'info'; }
                                     elseif ($routingState === 'automatic_only') { $statusKey = 'delivery_hub.released.status_automatico_liberacao'; $statusClass = 'info'; }
                                     else { $statusKey = 'delivery_hub.released.status_sem_destino'; $statusClass = 'secondary'; }
+                                    $manualRetryJobId = (int) ($delivery['manual_retry_job_id'] ?? 0);
+                                    $canManualHomologationRetry = $manualRetryJobId > 0;
                                     $canResend = $failed > 0 && in_array($routingState, ['manual_eligible', 'automatic_only'], true);
                                     $routingDestinations = trim((string) ($delivery['routing_destinations'] ?? ''));
                                     $destinationName = (string) ($delivery['destination_name'] ?? '');
@@ -301,7 +303,12 @@ $transportLabels = [
                                     <td><?= $escape($displayDestination !== '' ? $displayDestination : '—') ?><div class="small text-muted"><?= $escape($transportLabels[$delivery['transport'] ?? ''] ?? ($delivery['transport'] ?? '')) ?></div></td>
                                     <td><span class="badge text-bg-<?= $statusClass ?>"><?= $escape(t($statusKey)) ?></span><div class="small text-muted mt-1"><?= $escape(sprintf(t('delivery_hub.released.contagem_entregue'), $delivered, $total)) ?></div></td>
                                     <td class="text-end">
-                                        <?php if ($canResend): ?>
+                                        <?php if ($canManualHomologationRetry): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $manualRetryJobId ?>/retry-homologation" class="d-inline manual-homologation-retry-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_manual_homologation_retry" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar_teste')) ?></button>
+                                            </form>
+                                        <?php elseif ($canResend): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/<?= (int) $delivery['report_id'] ?>/resend" class="d-inline delivery-resend-form">
                                                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_resend" value="1">
                                                 <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar_falha')) ?></button>
@@ -502,6 +509,29 @@ $transportLabels = [
             } catch (_) {
                 resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
                 resendFeedback.textContent = '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.manual-homologation-retry-form').forEach((retryForm) => {
+        retryForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('delivery_hub.released.confirmar_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = retryForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(retryForm.action, { method: 'POST', body: new FormData(retryForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.released.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || <?= json_encode(t('delivery_hub.released.erro_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = <?= json_encode(t('delivery_hub.released.erro_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
                 resendFeedback.classList.remove('d-none');
             } finally {
                 if (submitButton) submitButton.disabled = false;

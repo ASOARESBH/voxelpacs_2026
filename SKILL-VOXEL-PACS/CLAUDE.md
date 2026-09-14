@@ -26,6 +26,7 @@ Sistema PACS multi-tenant (SaaS — "Negócios" = tenants/clientes) com armazena
 | Negócios | CRUD de tenants, InstitutionNames DICOM, Unidades DICOM (schema novo, CRUD de API pronto, UI pendente) | `modules/negocios.md` |
 | Worklist Estudos | Tela `/estudos` — worklist principal do usuário final, filtros, abertura no OHIF | `modules/worklist-estudos.md` |
 | Regras de SLA | Cadastros > Regras de SLA + robô que remaneja automaticamente o médico responsável quando o SLA estoura | `modules/sla-regras.md` |
+| Report Delivery Hub | Destinos, outbox, jobs, artifacts e retry manual homologatório de entregas Non-DICOM | `modules/report-delivery.md` |
 
 ## Convenções que todo agente deve saber antes de tocar em código
 

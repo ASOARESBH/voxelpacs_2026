@@ -75,6 +75,7 @@ Router::post('/platform/negocios/{id}/report-delivery/destinations',  'Platform\
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}', 'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}/test-smb', 'Platform\ReportDeliveryController@testSmb');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
+Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry-homologation', 'Platform\ReportDeliveryController@retryManualHomologation');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');

@@ -268,6 +268,54 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    public function retryManualHomologation(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if (!$this->tenantModel->find($tenantId)) {
+            $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
+        }
+        if ((string) ($_POST['confirm_manual_homologation_retry'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_reenvio_homologacao')], 422);
+        }
+
+        try {
+            $result = $this->repository->retryManualHomologationJob($jobId, $tenantId);
+            AuditLogger::log('report_delivery.manual_homologation_retry', 'pacs_report_delivery_jobs', $result['job_id'], [
+                'tenant_id' => $tenantId,
+                'delivery_id' => $result['delivery_id'],
+                'destination_id' => $result['destination_id'],
+                'actor' => (int) Auth::userId(),
+                'action' => 'manual_homologation_retry',
+                'previous_status' => $result['previous_status'],
+                'new_status' => $result['new_status'],
+                'attempt_number' => $result['attempt_number'],
+            ], $tenantId);
+            $this->json([
+                'success' => true,
+                'message' => t('delivery_hub.released.reenvio_homologacao_aceito'),
+                'job_id' => $result['job_id'],
+                'delivery_id' => $result['delivery_id'],
+            ]);
+        } catch (DomainException $e) {
+            $message = $e->getMessage();
+            $errorCode = (int) $e->getCode();
+            $status = in_array($errorCode, [404, 409], true) ? $errorCode : 422;
+            $this->json(['success' => false, 'message' => $message], $status);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::retryManualHomologation] Falha no reenvio manual', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_reenvio_homologacao')], 500);
+        }
+    }
+
     public function resendReleasedReport(int $tenantId, int $reportId): void
     {
         if (!$this->isPlatformAdmin()) {

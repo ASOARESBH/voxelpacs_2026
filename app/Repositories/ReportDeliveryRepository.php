@@ -600,7 +600,21 @@ class ReportDeliveryRepository
                     (SELECT j.transport FROM pacs_report_delivery_jobs j
                        INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                      WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
-                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport
+                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport,
+                    COALESCE((SELECT j.id FROM pacs_report_delivery_jobs j
+                       INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                       INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                       INNER JOIN pacs_report_delivery_artifacts a ON a.outbox_id = j.outbox_id
+                                                                      AND a.tenant_id = j.tenant_id
+                                                                      AND a.artifact_type = 'pdf'
+                      WHERE o.report_id = r.id
+                        AND j.tenant_id = r.tenant_id
+                        AND j.status IN ('failed', 'dead_letter')
+                        AND j.transport = 'philips_non_dicom'
+                        AND d.transport = 'philips_non_dicom'
+                        AND d.ambiente = 'homologacao'
+                        AND d.enabled = 1
+                      ORDER BY j.created_at DESC, j.id DESC LIMIT 1), 0) AS manual_retry_job_id
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
              WHERE r.tenant_id = :tenant_id
@@ -723,6 +737,117 @@ class ReportDeliveryRepository
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Reenfileira uma única entrega terminal de homologação Non-DICOM.
+     * Não depende de disparar_na_liberacao e não cria job ou tentativa.
+     *
+     * @return array{job_id:int,delivery_id:int,destination_id:int,previous_status:string,new_status:string,attempt_number:int}
+     */
+    public function retryManualHomologationJob(int $jobId, int $tenantId): array
+    {
+        if ($jobId <= 0 || $tenantId <= 0) {
+            throw new DomainException('Job de entrega inválido.', 422);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT j.id, j.outbox_id, j.destination_id, j.tenant_id, j.transport,
+                        j.status, j.attempt_count, j.locked_at, j.locked_by,
+                        d.enabled, d.ambiente, d.transport AS destination_transport
+                 FROM pacs_report_delivery_jobs j
+                 INNER JOIN pacs_report_delivery_outbox o
+                         ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_destinations d
+                         ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 WHERE j.id = :job_id
+                   AND j.tenant_id = :tenant_id
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $stmt->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$job) {
+                $this->pdo->rollBack();
+                throw new DomainException('Job de entrega não encontrado para este negócio.', 404);
+            }
+
+            $status = (string) ($job['status'] ?? '');
+            if (in_array($status, ['queued', 'retrying', 'processing'], true)) {
+                $this->pdo->rollBack();
+                throw new DomainException('Conflito: o job já está na fila ou em processamento.', 409);
+            }
+            if (!in_array($status, ['failed', 'dead_letter'], true)) {
+                $this->pdo->rollBack();
+                throw new DomainException('Job não está em falha terminal para reenvio manual.', 422);
+            }
+            if ((int) ($job['enabled'] ?? 0) !== 1
+                || (string) ($job['ambiente'] ?? '') !== 'homologacao'
+                || (string) ($job['transport'] ?? '') !== 'philips_non_dicom'
+                || (string) ($job['destination_transport'] ?? '') !== 'philips_non_dicom') {
+                $this->pdo->rollBack();
+                throw new DomainException('Job não é uma entrega Non-DICOM de homologação elegível.', 422);
+            }
+
+            $artifactStmt = $this->pdo->prepare(
+                "SELECT id, storage_path, sha256, file_size_bytes
+                 FROM pacs_report_delivery_artifacts
+                 WHERE outbox_id = :outbox_id
+                   AND tenant_id = :tenant_id
+                   AND artifact_type = 'pdf'
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $artifactStmt->execute([':outbox_id' => (int) $job['outbox_id'], ':tenant_id' => $tenantId]);
+            $artifact = $artifactStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $storagePath = trim((string) ($artifact['storage_path'] ?? ''));
+            $storedHash = strtolower(trim((string) ($artifact['sha256'] ?? '')));
+            $storedSize = (int) ($artifact['file_size_bytes'] ?? 0);
+            $actualSize = $storagePath !== '' && is_file($storagePath) ? @filesize($storagePath) : false;
+            $actualHash = $storagePath !== '' && is_file($storagePath) ? @hash_file('sha256', $storagePath) : false;
+            if ((int) ($artifact['id'] ?? 0) <= 0
+                || !is_readable($storagePath)
+                || !is_int($actualSize)
+                || $storedSize <= 0
+                || $actualSize !== $storedSize
+                || !is_string($actualHash)
+                || !preg_match('/^[a-f0-9]{64}$/', $storedHash)
+                || !hash_equals($storedHash, strtolower($actualHash))) {
+                $this->pdo->rollBack();
+                throw new DomainException('Artefato PDF do job não está disponível ou íntegro.', 422);
+            }
+
+            $update = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'queued', next_attempt_at = NOW(), worker_eligible_at = NOW(),
+                     locked_at = NULL, locked_by = NULL
+                 WHERE id = :job_id
+                   AND tenant_id = :tenant_id
+                   AND status IN ('failed', 'dead_letter')"
+            );
+            $update->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            if ($update->rowCount() !== 1) {
+                $this->pdo->rollBack();
+                throw new DomainException('Conflito: o job mudou de estado durante o reenvio.', 409);
+            }
+
+            $this->pdo->commit();
+            return [
+                'job_id' => (int) $job['id'],
+                'delivery_id' => (int) $job['outbox_id'],
+                'destination_id' => (int) $job['destination_id'],
+                'previous_status' => $status,
+                'new_status' => 'queued',
+                'attempt_number' => (int) $job['attempt_count'] + 1,
+            ];
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**

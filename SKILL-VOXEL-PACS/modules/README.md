@@ -10,6 +10,7 @@ Cada módulo/feature relevante do VOXEL PACS deve ter um arquivo aqui, no format
 - `tenants` — multi-tenancy (TenantContext vs Auth::tenantId()), impersonação, o que NÃO existe ainda (médico↔unidade) → `modules/tenants.md`
 - `i18n` — tradução pt_BR/en/es por Negócio, o que já foi migrado (piloto) e a lista do que falta → `modules/i18n.md`
 - `sla-regras` — Cadastros > Regras de SLA + robô de remanejamento automático de médico (Fase 2 do SLA) → `modules/sla-regras.md`
+- `report-delivery` — Report Delivery Hub, jobs/outbox/artifacts e retry manual homologatório → `modules/report-delivery.md`
 
 ## Template para um módulo novo (`modules/<nome-do-modulo>.md`)
 
