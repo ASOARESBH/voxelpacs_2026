@@ -48,6 +48,8 @@ $second = $generator->generate($input);
 
 expect_true($first->filename === 'VOXEL_SYNTHETIC_001.xml', 'XML filename must derive from PDF filename');
 expect_true($first->pdfFilename === $input['pdf_filename'], 'PDF filename must be preserved exactly');
+expect_true($first->taskFilePath === $input['task_file_path'], 'Logical task file path must be preserved exactly');
+expect_true($first->documentTypeApplicable === true, 'Document type applicability must be preserved');
 expect_true($first->deleteFile === true, 'Explicit delete-file setting must be preserved');
 expect_true($first->documentType === '11502-2', 'Explicit document type must be preserved');
 expect_true($first->size === strlen($first->content), 'XML size must match encoded bytes');

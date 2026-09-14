@@ -474,7 +474,10 @@ class ReportDeliveryRepository
         ?int $estabelecimentoId,
         string $eventKey,
         array $destinations,
-        ?string $automaticDispatchDate = null
+        ?string $automaticDispatchDate = null,
+        int $reportId = 0,
+        int $reportVersion = 0,
+        string $artifactSignature = ''
     ): int
     {
         $created = 0;
@@ -491,14 +494,22 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
-            $jobKey = hash('sha256', $eventKey . '|destination|' . (int) $destination['id']);
+            $profile = $this->deliveryProfileForDestination($destination);
+            $jobKey = self::profileAwareJobIdempotencyKey(
+                $tenantId,
+                $reportId,
+                $reportVersion,
+                $artifactSignature !== '' ? $artifactSignature : $eventKey,
+                (int) $destination['id'],
+                $profile
+            );
             $stmt->execute([
                 ':outbox_id' => $outboxId,
                 ':destination_id' => (int) $destination['id'],
                 ':tenant_id' => $tenantId,
                 ':estabelecimento_id' => $estabelecimentoId,
                 ':transport' => (string) $destination['transport'],
-                ':delivery_profile' => $this->deliveryProfileForDestination($destination),
+                ':delivery_profile' => $profile,
                 ':idempotency_key' => $jobKey,
                 ':automatic_dispatch_date' => $automaticDispatchDate,
             ]);
@@ -506,6 +517,30 @@ class ReportDeliveryRepository
         }
 
         return $created;
+    }
+
+    public static function profileAwareJobIdempotencyKey(
+        int $tenantId,
+        int $reportId,
+        int $reportVersion,
+        string $artifactSignature,
+        int $destinationId,
+        string $deliveryProfile
+    ): string {
+        if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0 || $destinationId <= 0
+            || trim($artifactSignature) === ''
+            || !in_array($deliveryProfile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Identidade de idempotência inválida.');
+        }
+        return hash('sha256', implode('|', [
+            'report-delivery-job-v2',
+            $tenantId,
+            $reportId,
+            $reportVersion,
+            $artifactSignature,
+            $destinationId,
+            $deliveryProfile,
+        ]));
     }
 
     /** @param array<string,mixed> $destination */

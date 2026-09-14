@@ -132,7 +132,17 @@ class ReportDeliveryOutboxService
                     count($profiles) === 1 ? $profiles[0] : 'mixed'
                 );
             }
-            $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);
+            $jobs = $repository->createJobs(
+                $outboxId,
+                $tenantId,
+                $estabelecimentoId,
+                $eventKey,
+                $destinations,
+                $automaticDispatchDate,
+                $reportId,
+                $reportVersion,
+                $reportHash
+            );
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
                 $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);
             }

@@ -68,6 +68,8 @@ A validação ocorre tanto no navegador quanto no servidor. Destinos já existen
 
 O transporte `philips_non_dicom` aceita o profile compatível `pdf_only` e o profile opt-in `submission_document`. O segundo compõe o PDF imutável com um XML de submission e exige o objeto explícito `philips_submission` no destino. O Controller valida os campos configuráveis, o gerador resolve somente fontes estruturadas do snapshot e qualquer campo clínico ou de autoria sem origem explícita falha fechado. O profile `pdf_only` e os jobs históricos permanecem inalterados; o contrato detalhado está em `PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
 
+Para `submission_document`, a Bridge só responde sucesso quando o PDF e o XML do mesmo package passam por hash, tamanho, XML bem-formado/ISO-8859-1, campos mínimos e linkage exato `task_file_name` → PDF. A resposta inclui `package_identity` e `package_verified=PASS`; o worker não marca o job como entregue sem esses indicadores. O cleanup remoto remove somente temporários `.part`, preservando os arquivos finais para Auto Ingestion.
+
 ## Serviço local do worker
 
 O processo local é instalado como `voxelpacs-report-delivery-worker.service`, supervisionado pelo `systemd`. Ele é a alternativa recomendada ao cron externo porque mantém o loop, o lease exclusivo, a recuperação automática e as credenciais no próprio servidor, sem publicar token de execução para terceiros.

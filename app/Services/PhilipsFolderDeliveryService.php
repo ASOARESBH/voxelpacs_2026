@@ -143,7 +143,9 @@ final class PhilipsFolderDeliveryService
                 $xmlFileName,
                 $package->xmlStoragePath,
                 $timeout,
-                $envelope
+                $envelope,
+                $package->xmlDocument->taskFilePath,
+                $package->xmlDocument->documentTypeApplicable
             );
             return $result + [
                 'xml_filename' => $xmlFileName,

@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -66,7 +67,7 @@ SMB_DIAGNOSTIC_STAGES = ("LIST", "WRITE", "RENAME", "VERIFY")
 SMB_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_SMB_DIAGNOSTICS"
 SMB_DIAGNOSTIC_CLASSIFICATIONS = (
     "none", "not_found", "authentication", "permission", "connectivity",
-    "timeout", "remote_io", "configuration", "host_key", "unknown",
+    "timeout", "remote_io", "invalid_artifact", "configuration", "host_key", "unknown",
 )
 
 
@@ -392,6 +393,8 @@ class Handler(BaseHTTPRequestHandler):
         pdf_hash = self.headers.get("X-VOXEL-PDF-SHA256", "").lower()
         xml_filename = self.headers.get("X-VOXEL-XML-Filename", "")
         xml_hash = self.headers.get("X-VOXEL-XML-SHA256", "").lower()
+        xml_task_file_path_hash = self.headers.get("X-VOXEL-XML-TASK-FILE-PATH-SHA256", "").lower()
+        xml_document_type_applicable = self.headers.get("X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
         signature = self.headers.get("X-VOXEL-Signature", "")
         try:
@@ -416,6 +419,8 @@ class Handler(BaseHTTPRequestHandler):
             and re.fullmatch(r"[a-f0-9]{64}", package_hash) is not None
             and re.fullmatch(r"[a-f0-9]{64}", pdf_hash) is not None
             and re.fullmatch(r"[a-f0-9]{64}", xml_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", xml_task_file_path_hash) is not None
+            and xml_document_type_applicable in {"0", "1"}
             and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
         )
         if not permitted:
@@ -426,7 +431,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
         envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
-        signature_parts = ["POST", self.path, str(job_id), tenant_id_header, destination_id_header, package_filename, package_hash, str(length), timestamp]
+        signature_parts = [
+            "POST", self.path, str(job_id), tenant_id_header, destination_id_header,
+            package_filename, package_hash, str(length), pdf_filename, pdf_hash,
+            str(pdf_length), xml_filename, xml_hash, str(xml_length),
+            xml_task_file_path_hash, xml_document_type_applicable, timestamp,
+        ]
         if envelope:
             signature_parts.append(envelope_hash)
         expected = hmac.new(POLICY.secret, "\n".join(signature_parts).encode("utf-8"), hashlib.sha256).hexdigest()
@@ -437,8 +447,18 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         previous = read_state(job_id)
-        if previous.get("sha256") == package_hash and previous.get("state") == "delivered":
-            self.respond(HTTPStatus.CREATED, {"reference": previous["reference"], "sha256": package_hash})
+        if (previous.get("sha256") == package_hash
+                and previous.get("state") == "delivered"
+                and previous.get("package_verified") == "PASS"
+                and previous.get("package_identity") == package_hash
+                and previous.get("task_file_path_sha256") == xml_task_file_path_hash
+                and previous.get("document_type_applicable") == xml_document_type_applicable):
+            self.respond(HTTPStatus.CREATED, {
+                "reference": previous["reference"],
+                "sha256": package_hash,
+                "package_identity": package_hash,
+                "package_verified": "PASS",
+            })
             return
         if previous:
             self.respond(HTTPStatus.CONFLICT, {"error": "job_state_conflict"})
@@ -447,17 +467,50 @@ class Handler(BaseHTTPRequestHandler):
         if staged is None:
             return
         try:
-            with self.extracted_submission_package(staged, pdf_filename, pdf_hash, pdf_length, xml_filename, xml_hash, xml_length) as files:
+            with self.extracted_submission_package(
+                staged,
+                pdf_filename,
+                pdf_hash,
+                pdf_length,
+                xml_filename,
+                xml_hash,
+                xml_length,
+                xml_task_file_path_hash,
+                xml_document_type_applicable == "1",
+            ) as files:
                 with self.temporary_smb_credentials(envelope, POLICY.destination_id, tenant_id, job_id=job_id) as credentials:
-                    transport = self.deliver_submission_package_remote(job_id, pdf_filename, files[0], xml_filename, files[1], credentials)
+                    transport = self.deliver_submission_package_remote(
+                        job_id,
+                        pdf_filename,
+                        files[0],
+                        xml_filename,
+                        files[1],
+                        xml_task_file_path_hash,
+                        xml_document_type_applicable == "1",
+                        credentials,
+                    )
         except BridgeTransferError as error:
             LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
             self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
             return
         reference = f"gateway-philips-folder:{package_hash[:16]}"
-        write_state(job_id, {"state": "delivered", "sha256": package_hash, "reference": reference, "transport": transport})
-        LOG.info("event=philips_package_success job_id=%s transport=%s sha256_16=%s", job_id, transport, package_hash[:16])
-        self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": package_hash})
+        write_state(job_id, {
+            "state": "delivered",
+            "sha256": package_hash,
+            "package_identity": package_hash,
+            "package_verified": "PASS",
+            "task_file_path_sha256": xml_task_file_path_hash,
+            "document_type_applicable": xml_document_type_applicable,
+            "reference": reference,
+            "transport": transport,
+        })
+        LOG.info("event=philips_package_success job_id=%s transport=%s sha256_16=%s", job_id, POLICY.transport, package_hash[:16])
+        self.respond(HTTPStatus.CREATED, {
+            "reference": reference,
+            "sha256": package_hash,
+            "package_identity": package_hash,
+            "package_verified": "PASS",
+        })
 
     @contextmanager
     def extracted_submission_package(
@@ -469,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
         xml_filename: str,
         xml_hash: str,
         xml_length: int,
+        xml_task_file_path_hash: str,
+        xml_document_type_applicable: bool,
     ):
         pdf_path: Path | None = None
         xml_path: Path | None = None
@@ -497,6 +552,12 @@ class Handler(BaseHTTPRequestHandler):
                 xml_path = self._extract_package_entry(source, xml_filename, xml_hash, xml_length, b"<?xml")
                 if source.read(1) != b"":
                     raise BridgeTransferError("remote_io")
+            self._validate_submission_xml(
+                xml_path,
+                pdf_filename,
+                xml_task_file_path_hash,
+                xml_document_type_applicable,
+            )
             yield pdf_path, xml_path
         finally:
             if pdf_path is not None:
@@ -530,13 +591,21 @@ class Handler(BaseHTTPRequestHandler):
             path.unlink(missing_ok=True)
             raise
 
-    def deliver_submission_package_remote(self, job_id: int, pdf_filename: str, pdf_path: Path, xml_filename: str, xml_path: Path, credentials: Path | None) -> str:
+    def deliver_submission_package_remote(
+        self,
+        job_id: int,
+        pdf_filename: str,
+        pdf_path: Path,
+        xml_filename: str,
+        xml_path: Path,
+        xml_task_file_path_hash: str,
+        xml_document_type_applicable: bool,
+        credentials: Path | None,
+    ) -> str:
         if credentials is None or not isinstance(POLICY.smb, dict):
             raise BridgeTransferError("credentials_unavailable")
         pdf_final, pdf_temporary = self._smb_remote_path(pdf_filename)
         xml_final, xml_temporary = self._smb_remote_path(xml_filename)
-        pdf_renamed = False
-        xml_renamed = False
         entries = [
             ("pdf", pdf_final, pdf_temporary, pdf_path, sha256_file(pdf_path), pdf_path.stat().st_size),
             ("xml", xml_final, xml_temporary, xml_path, sha256_file(xml_path), xml_path.stat().st_size),
@@ -585,29 +654,31 @@ class Handler(BaseHTTPRequestHandler):
                     self._log_smb_stage(job_id, "RENAME", renamed, classification)
                     raise BridgeTransferError(classification)
                 self._log_smb_stage(job_id, "RENAME", renamed, "none")
-                if label == "pdf":
-                    pdf_renamed = True
-                else:
-                    xml_renamed = True
 
             pdf_ok = self.smb_remote_matches(job_id, credentials, pdf_final, entries[0][4], entries[0][5])
-            xml_ok = self.smb_remote_matches(job_id, credentials, xml_final, entries[1][4], entries[1][5])
+            xml_ok = self.smb_remote_matches(
+                job_id,
+                credentials,
+                xml_final,
+                entries[1][4],
+                entries[1][5],
+                pdf_filename,
+                xml_task_file_path_hash,
+                xml_document_type_applicable,
+            )
             if not pdf_ok or not xml_ok:
                 raise BridgeTransferError("remote_io")
             LOG.info("event=philips_smb_package_success job_id=%s", job_id)
             return "smb"
         finally:
+            # Somente os nomes .part são temporários e podem ser removidos.
+            # Os arquivos finais são a entrega Philips e devem permanecer disponíveis
+            # para o Auto Ingestion; em caso de falha, preservá-los é fail-closed.
             for path in [pdf_temporary, xml_temporary]:
                 try:
                     self._smb_command(credentials, f"del {path}")
                 except BridgeTransferError:
                     pass
-            for path, renamed in [(pdf_final, pdf_renamed), (xml_final, xml_renamed)]:
-                if renamed:
-                    try:
-                        self._smb_command(credentials, f"del {path}")
-                    except BridgeTransferError:
-                        pass
 
     def test_smb_connectivity(self, destination_id: int) -> None:
         tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
@@ -1144,7 +1215,17 @@ class Handler(BaseHTTPRequestHandler):
         directory = str(POLICY.smb["remote_path"])
         return f"{directory}/{filename}", f"{directory}/.voxel-{secrets.token_hex(12)}.part"
 
-    def smb_remote_matches(self, job_id: int, credentials: Path, remote_path: str, expected_hash: str, expected_size: int) -> bool:
+    def smb_remote_matches(
+        self,
+        job_id: int,
+        credentials: Path,
+        remote_path: str,
+        expected_hash: str,
+        expected_size: int,
+        xml_pdf_filename: str | None = None,
+        xml_task_file_path_hash: str | None = None,
+        xml_document_type_applicable: bool | None = None,
+    ) -> bool:
         descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
         os.close(descriptor)
         downloaded = Path(raw_path)
@@ -1165,6 +1246,22 @@ class Handler(BaseHTTPRequestHandler):
                 and remote_size == expected_size
                 and hmac.compare_digest(sha256_file(downloaded), expected_hash)
             )
+            if (
+                remote_hash_match
+                and xml_pdf_filename is not None
+                and xml_task_file_path_hash is not None
+                and xml_document_type_applicable is not None
+            ):
+                try:
+                    self._validate_submission_xml(
+                        downloaded,
+                        xml_pdf_filename,
+                        xml_task_file_path_hash,
+                        xml_document_type_applicable,
+                    )
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "VERIFY", result, error.category, remote_size, False)
+                    raise
             self._log_smb_stage(
                 job_id,
                 "VERIFY",
@@ -1176,6 +1273,75 @@ class Handler(BaseHTTPRequestHandler):
             return remote_hash_match
         finally:
             downloaded.unlink(missing_ok=True)
+
+    def _validate_submission_xml(
+        self,
+        xml_path: Path,
+        pdf_filename: str,
+        task_file_path_hash: str,
+        document_type_applicable: bool | None,
+    ) -> None:
+        try:
+            raw = xml_path.read_bytes()
+            declaration = b'<?xml version="1.0" encoding="iso-8859-1"?>'
+            if not raw.startswith(declaration) or b'encoding="UTF-8"' in raw[:128] or b'encoding="utf-8"' in raw[:128]:
+                raise BridgeTransferError("invalid_artifact")
+            raw.decode("iso-8859-1")
+            root = ET.fromstring(raw)
+            if root.tag != "submission" or len(root) != 1 or root[0].tag != "document" or len(root[0]) == 0:
+                raise BridgeTransferError("invalid_artifact")
+            document = root[0]
+            values: dict[str, str] = {}
+            for element in document:
+                if len(element) != 0 or element.tag in values:
+                    raise BridgeTransferError("invalid_artifact")
+                values[element.tag] = element.text or ""
+            required = {
+                "task_patient_id",
+                "task_patient_humanname_family",
+                "task_patient_humanname_given",
+                "task_patient_humanname_middle",
+                "task_document_name",
+                "task_document_date",
+                "task_image_date",
+                "task_file_path",
+                "task_file_name",
+                "task_accession_number",
+                "task_document_mimetype",
+                "task_patient_birthday",
+                "task_patient_gender",
+                "task_site_id",
+                "task_patient_issuer",
+                "task_author_id",
+                "task_author_humanname_family",
+                "task_author_humanname_given",
+                "task_author_humanname_middle",
+                "task_modalities",
+                "task_delete_file",
+            }
+            if not required.issubset(values):
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_file_name"] != pdf_filename:
+                raise BridgeTransferError("invalid_artifact")
+            if not task_file_path_hash or not hmac.compare_digest(
+                hashlib.sha256(values["task_file_path"].encode("utf-8")).hexdigest(),
+                task_file_path_hash,
+            ):
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_document_mimetype"] != "application/pdf":
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_delete_file"] not in {"true", "false"}:
+                raise BridgeTransferError("invalid_artifact")
+            if document_type_applicable is None:
+                raise BridgeTransferError("invalid_artifact")
+            if document_type_applicable and values.get("task_document_type") != "11502-2":
+                raise BridgeTransferError("invalid_artifact")
+            if not document_type_applicable and "task_document_type" in values:
+                raise BridgeTransferError("invalid_artifact")
+            if len([name for name in values if name == "task_file_name"]) != 1:
+                raise BridgeTransferError("invalid_artifact")
+        except (OSError, UnicodeError, ET.ParseError):
+            raise BridgeTransferError("invalid_artifact") from None
 
     def smb_write_probe(self, credentials: Path) -> None:
         descriptor, raw_path = tempfile.mkstemp(prefix="smb-probe-", suffix=".tmp", dir=STATE_ROOT)

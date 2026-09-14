@@ -37,6 +37,9 @@ $checks = [
     ['client', 'X-VOXEL-PDF-SHA256', 'PDF manifest header'],
     ['client', 'X-VOXEL-XML-SHA256', 'XML manifest header'],
     ['client', 'X-VOXEL-Tenant-ID', 'tenant binding header'],
+    ['client', 'X-VOXEL-XML-TASK-FILE-PATH-SHA256', 'logical XML path binding'],
+    ['client', 'X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE', 'document type policy binding'],
+    ['client', 'package_verified', 'package verification response'],
     ['client', "['POST', " . '$path', 'package HMAC method binding'],
     ['bridge', 'package_prefix', 'package endpoint routing'],
     ['bridge', 'tenant_id_header', 'tenant binding validation'],
@@ -47,6 +50,10 @@ $checks = [
     ['bridge', 'rename {temporary_path} {final_path}', 'package SMB atomic rename'],
     ['bridge', 'pdf_ok', 'PDF verification'],
     ['bridge', 'xml_ok', 'XML verification'],
+    ['bridge', '_validate_submission_xml', 'XML semantic verification'],
+    ['bridge', 'package_verified', 'verified package state'],
+    ['bridge', 'task_file_path_sha256', 'package replay path binding'],
+    ['bridge', 'for path in [pdf_temporary, xml_temporary]', 'temporary-only cleanup'],
 ];
 
 foreach ($checks as [$key, $needle, $label]) {
@@ -70,6 +77,10 @@ if (!str_contains($contents['service'], 'sodium_memzero($password)')) {
 }
 if (substr_count($contents['bridge'], 'smb_remote_matches(job_id') < 3) {
     fwrite(STDERR, "PACKAGE_VERIFY_CONTRACT_INCOMPLETE\n");
+    exit(1);
+}
+if (str_contains($contents['bridge'], 'pdf_renamed') || str_contains($contents['bridge'], 'xml_renamed')) {
+    fwrite(STDERR, "FINAL_FILE_CLEANUP_PRESENT\n");
     exit(1);
 }
 

@@ -102,6 +102,8 @@ final class PhilipsSubmissionDocumentGenerator
             hash('sha256', $encoded),
             strlen($encoded),
             $pdfFilename,
+            $values['task_file_path'],
+            $documentTypeApplicable,
             $deleteFile,
             $documentType
         );

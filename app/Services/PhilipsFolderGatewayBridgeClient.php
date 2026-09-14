@@ -138,7 +138,7 @@ final class PhilipsFolderGatewayBridgeClient
     }
 
     /**
-     * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string}
+     * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string,package_identity:string,package_verified:string}
      */
     public function sendSubmissionPackage(
         int $jobId,
@@ -149,7 +149,9 @@ final class PhilipsFolderGatewayBridgeClient
         string $xmlFileName,
         string $xmlPath,
         int $timeout,
-        ?array $secretEnvelope = null
+        ?array $secretEnvelope = null,
+        ?string $taskFilePath = null,
+        ?bool $taskDocumentTypeApplicable = null
     ): array {
         if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !$this->validFileName($pdfFileName) || !$this->validFileName($xmlFileName)
             || !is_file($pdfPath) || !is_file($xmlPath)) {
@@ -160,7 +162,8 @@ final class PhilipsFolderGatewayBridgeClient
         $xmlSize = (int) filesize($xmlPath);
         $pdfSha256 = hash_file('sha256', $pdfPath);
         $xmlSha256 = hash_file('sha256', $xmlPath);
-        if (!is_string($pdfSha256) || !is_string($xmlSha256)
+        if (!is_string($pdfSha256) || !is_string($xmlSha256) || !is_string($taskFilePath) || trim($taskFilePath) === ''
+            || !is_bool($taskDocumentTypeApplicable)
             || $pdfSize < 100 || $pdfSize > self::MAX_BYTES
             || $xmlSize < 32 || $xmlSize > 2 * 1024 * 1024) {
             throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
@@ -225,7 +228,15 @@ final class PhilipsFolderGatewayBridgeClient
             }
             rewind($package);
             $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
-            $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId, $packageFileName, $packageSha256, (string) $packageSize, $timestamp, $envelope['sha256']]);
+            $taskFilePathSha256 = hash('sha256', $taskFilePath);
+            $taskDocumentTypeApplicableValue = $taskDocumentTypeApplicable ? '1' : '0';
+            $signatureBase = implode("\n", [
+                'POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId,
+                $packageFileName, $packageSha256, (string) $packageSize,
+                $pdfFileName, $pdfSha256, (string) $pdfSize,
+                $xmlFileName, $xmlSha256, (string) $xmlSize,
+                $taskFilePathSha256, $taskDocumentTypeApplicableValue, $timestamp, $envelope['sha256'],
+            ]);
             $signature = hash_hmac('sha256', $signatureBase, $secret);
             $curl = curl_init($url);
             if ($curl === false) {
@@ -263,6 +274,8 @@ final class PhilipsFolderGatewayBridgeClient
                         'X-VOXEL-XML-Filename: ' . $xmlFileName,
                         'X-VOXEL-XML-SHA256: ' . $xmlSha256,
                         'X-VOXEL-XML-Size: ' . $xmlSize,
+                        'X-VOXEL-XML-TASK-FILE-PATH-SHA256: ' . $taskFilePathSha256,
+                        'X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE: ' . $taskDocumentTypeApplicableValue,
                         'X-VOXEL-Timestamp: ' . $timestamp,
                         'X-VOXEL-Signature: ' . $signature,
                         ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
@@ -291,7 +304,12 @@ final class PhilipsFolderGatewayBridgeClient
             $response = json_decode($body, true);
             $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
             $remoteSha256 = is_array($response) ? (string) ($response['sha256'] ?? '') : '';
-            if (preg_match('/^gateway-philips-folder:[a-f0-9]{16}$/', $reference) !== 1 || !hash_equals($packageSha256, $remoteSha256)) {
+            $remoteIdentity = is_array($response) ? (string) ($response['package_identity'] ?? '') : '';
+            $packageVerified = is_array($response) ? (string) ($response['package_verified'] ?? '') : '';
+            if (preg_match('/^gateway-philips-folder:[a-f0-9]{16}$/', $reference) !== 1
+                || !hash_equals($packageSha256, $remoteSha256)
+                || !hash_equals($packageSha256, $remoteIdentity)
+                || $packageVerified !== 'PASS') {
                 throw new PhilipsFolderDeliveryException('gateway_invalid_response', 'remote_integrity_unconfirmed');
             }
             return [
@@ -303,6 +321,8 @@ final class PhilipsFolderGatewayBridgeClient
                 'xml_sha256' => $xmlSha256,
                 'xml_size' => $xmlSize,
                 'filename' => $packageFileName,
+                'package_identity' => $packageSha256,
+                'package_verified' => $packageVerified,
             ];
         } finally {
             fclose($package);

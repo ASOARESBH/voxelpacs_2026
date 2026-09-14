@@ -49,6 +49,10 @@ Destinos com `delivery_profile=pdf_only` seguem o caminho já validado. Jobs his
 
 A configuração do destino não ativa produção, worker global, trigger automático, DICOM ou SMB. A execução continua sujeita aos gates operacionais de homologação, allowlist de job único, staging limpo, tentativa filtrada e validação física no receptor.
 
+O package só pode retornar `PACKAGE_VERIFIED=PASS` depois de confirmar os hashes e tamanhos do PDF e do XML, XML bem-formado em bytes ISO-8859-1, estrutura `<submission><document>`, campos obrigatórios, `task_file_name` idêntico ao PDF, `task_file_path` vinculado por hash ao valor configurado, `application/pdf`, tipo documental aprovado e política explícita de `task_delete_file`. O arquivo final remoto não é removido pelo cleanup; somente arquivos `.part` temporários podem ser removidos automaticamente.
+
+Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versão, assinatura do artifact, destino e `delivery_profile`. Chaves de jobs históricos não são recalculadas nem modificadas.
+
 ## Falhas e rollback
 
 A ausência de qualquer campo obrigatório gera `PhilipsXmlFieldUnresolvedException` com o nome técnico do campo, sem incluir seu valor. A falha ocorre antes da confirmação do package e impede o transporte parcial. O rollback da funcionalidade consiste em selecionar novamente `pdf_only` ou manter o destino desabilitado; não há alteração destrutiva de dados históricos.

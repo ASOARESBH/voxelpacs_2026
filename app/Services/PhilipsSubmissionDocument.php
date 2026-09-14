@@ -13,6 +13,8 @@ final class PhilipsSubmissionDocument
         public readonly string $sha256,
         public readonly int $size,
         public readonly string $pdfFilename,
+        public readonly string $taskFilePath,
+        public readonly bool $documentTypeApplicable,
         public readonly bool $deleteFile,
         public readonly ?string $documentType
     ) {
@@ -27,6 +29,9 @@ final class PhilipsSubmissionDocument
         }
         if (!preg_match('/^VOXEL_[A-Za-z0-9._-]{1,160}\.pdf$/', $pdfFilename)) {
             throw new \InvalidArgumentException('Nome de PDF inválido.');
+        }
+        if ($taskFilePath === '') {
+            throw new \InvalidArgumentException('Caminho lógico Philips inválido.');
         }
     }
 

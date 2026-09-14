@@ -208,13 +208,18 @@ final class LocalDicomDeliveryWorker
             } else {
                 $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
             }
-            $this->repository->completeJob($jobId, $this->workerId, $result['reference'], [
+            $completionMetadata = [
                 'transport' => $transport,
                 'environment' => (string) ($job['ambiente'] ?? ''),
                 'delivery_profile' => $deliveryProfile,
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
-            ]);
+            ];
+            if ($deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                $completionMetadata['package_identity'] = (string) ($result['package_identity'] ?? '');
+                $completionMetadata['package_verified'] = (string) ($result['package_verified'] ?? 'FAIL');
+            }
+            $this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata);
             Logger::info(
                 in_array($transport, [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)
                     ? '[PhilipsNonDicomDelivery] PHILIPS_EXPORT_SUCCESS'
