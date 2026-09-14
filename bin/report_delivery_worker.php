@@ -124,8 +124,13 @@ final class LocalDicomDeliveryWorker
         $jobId = (int) ($job['id'] ?? 0);
         try {
             $transport = (string) ($job['transport'] ?? '');
+            $deliveryProfile = (string) ($job['delivery_profile'] ?? PhilipsFolderDeliveryService::PROFILE_PDF_ONLY);
             if ($jobId <= 0 || !in_array($transport, $this->supportedTransports(), true)) {
                 throw new DeliveryWorkerFailure('invalid_job');
+            }
+            if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                && !in_array($deliveryProfile, [PhilipsFolderDeliveryService::PROFILE_PDF_ONLY, PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT], true)) {
+                throw new DeliveryWorkerFailure('invalid_configuration');
             }
 
             $configuration = $this->decodeMap($job['configuration_json'] ?? null, 'invalid_configuration');
@@ -135,8 +140,11 @@ final class LocalDicomDeliveryWorker
             }
 
             $artifact = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-                ? (new PdfNonDicomArtifactProducer($this->artifactService))->produce($jobId, $this->workerId)
-                : $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId);
+                && $deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
+                ? []
+                : ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                    ? (new PdfNonDicomArtifactProducer($this->artifactService))->produce($jobId, $this->workerId)
+                    : $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId));
             if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
                 Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_PROCESSING', ['job_id' => $jobId]);
                 $result = (new PhilipsFolderDeliveryService())->deliver($job, $configuration, $payload, $artifact);
@@ -151,28 +159,59 @@ final class LocalDicomDeliveryWorker
                 );
             } elseif ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
                 Logger::info('[PhilipsNonDicomDelivery] PHILIPS_NON_DICOM_PROCESSING', ['job_id' => $jobId]);
-                $result = (new PhilipsFolderDeliveryService())->deliverNonDicomPdf(
-                    $job,
-                    $configuration,
-                    $payload,
-                    $artifact,
-                    (string) ($job['configuration_secret'] ?? '')
-                );
-                $this->repository->recordArtifact(
-                    (int) $job['outbox_id'],
-                    (int) $job['tenant_id'],
-                    isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
-                    'philips_non_dicom_pdf',
-                    (string) ($artifact['storage_path'] ?? ''),
-                    $result['sha256'],
-                    $result['size']
-                );
+                if ($deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                    $result = (new PhilipsFolderDeliveryService())->deliverNonDicomSubmissionPackage(
+                        $job,
+                        $configuration,
+                        $payload,
+                        (string) ($job['configuration_secret'] ?? ''),
+                        $this->workerId
+                    );
+                    $pdfArtifact = is_array($result['pdf_artifact'] ?? null) ? $result['pdf_artifact'] : [];
+                    $xmlArtifact = is_array($result['xml_artifact'] ?? null) ? $result['xml_artifact'] : [];
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_non_dicom_pdf',
+                        (string) ($pdfArtifact['storage_path'] ?? ''),
+                        (string) ($pdfArtifact['sha256'] ?? ''),
+                        (int) ($pdfArtifact['size'] ?? 0)
+                    );
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_submission_xml',
+                        (string) ($xmlArtifact['storage_path'] ?? ''),
+                        (string) ($xmlArtifact['sha256'] ?? ''),
+                        (int) ($xmlArtifact['size'] ?? 0)
+                    );
+                } else {
+                    $result = (new PhilipsFolderDeliveryService())->deliverNonDicomPdf(
+                        $job,
+                        $configuration,
+                        $payload,
+                        $artifact,
+                        (string) ($job['configuration_secret'] ?? '')
+                    );
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_non_dicom_pdf',
+                        (string) ($artifact['storage_path'] ?? ''),
+                        $result['sha256'],
+                        $result['size']
+                    );
+                }
             } else {
                 $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
             }
             $this->repository->completeJob($jobId, $this->workerId, $result['reference'], [
                 'transport' => $transport,
                 'environment' => (string) ($job['ambiente'] ?? ''),
+                'delivery_profile' => $deliveryProfile,
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
             ]);

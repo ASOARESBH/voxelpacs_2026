@@ -103,6 +103,64 @@ final class PhilipsFolderDeliveryService
         return $result + ['filename' => $fileName];
     }
 
+    /** @return array<string,mixed> */
+    public function deliverNonDicomSubmissionPackage(
+        array $job,
+        array $configuration,
+        array $payload,
+        string $encryptedSecret,
+        string $workerId
+    ): array {
+        if (!self::nonDicomEnabled()) {
+            throw new PhilipsFolderDeliveryException('feature_disabled', 'feature_disabled');
+        }
+        if (!filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            || (string) ($configuration['delivery_profile'] ?? '') !== self::PROFILE_SUBMISSION_DOCUMENT
+            || (string) ($configuration['transport_protocol'] ?? '') !== 'smb') {
+            throw new PhilipsFolderDeliveryException('invalid_configuration', 'invalid_configuration');
+        }
+        $jobId = (int) ($job['id'] ?? 0);
+        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $reportId = (int) ($job['report_id'] ?? 0);
+        $reportVersion = (int) ($job['report_version'] ?? 0);
+        if ($jobId <= 0 || $destinationId <= 0 || $reportId <= 0 || $reportVersion <= 0) {
+            throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+        }
+
+        $password = $this->smbPassword($encryptedSecret);
+        try {
+            $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, (int) ($job['tenant_id'] ?? 0), $destinationId);
+            $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
+            $xmlFileName = $package->xmlDocument->filename;
+            $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
+            $result = (new PhilipsFolderGatewayBridgeClient())->sendSubmissionPackage(
+                $jobId,
+                (int) ($job['tenant_id'] ?? 0),
+                $destinationId,
+                $pdfFileName,
+                (string) ($package->pdfArtifact['storage_path'] ?? ''),
+                $xmlFileName,
+                $package->xmlStoragePath,
+                $timeout,
+                $envelope
+            );
+            return $result + [
+                'xml_filename' => $xmlFileName,
+                'pdf_artifact' => $package->pdfArtifact,
+                'xml_artifact' => [
+                    'type' => 'philips_submission_xml',
+                    'filename' => $package->xmlDocument->filename,
+                    'sha256' => $package->xmlDocument->sha256,
+                    'size' => $package->xmlDocument->size,
+                    'storage_path' => $package->xmlStoragePath,
+                ],
+            ];
+        } finally {
+            sodium_memzero($password);
+        }
+    }
+
     private function smbPassword(string $encryptedSecret): string
     {
         try {

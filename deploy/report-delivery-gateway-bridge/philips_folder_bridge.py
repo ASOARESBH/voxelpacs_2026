@@ -302,6 +302,10 @@ class Handler(BaseHTTPRequestHandler):
         LOG.info("%s", " ".join(f"{key}={value}" for key, value in fields.items()))
 
     def do_POST(self) -> None:  # noqa: N802
+        package_prefix = "/v1/philips-folder/package/"
+        if self.path.startswith(package_prefix) and self.path[len(package_prefix):].isdigit():
+            self.receive_submission_package(int(self.path[len(package_prefix):]))
+            return
         auth_test_prefix = "/v1/philips-folder/smb-auth-test/"
         if self.path.startswith(auth_test_prefix) and self.path[len(auth_test_prefix):].isdigit():
             self.test_smb_authentication_readonly(int(self.path[len(auth_test_prefix):]))
@@ -377,6 +381,233 @@ class Handler(BaseHTTPRequestHandler):
         write_state(job_id, {"state": "delivered", "sha256": supplied_hash, "reference": reference, "transport": transport})
         LOG.info("event=philips_export_success job_id=%s transport=%s sha256_16=%s", job_id, transport, supplied_hash[:16])
         self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": supplied_hash})
+
+    def receive_submission_package(self, job_id: int) -> None:
+        supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        tenant_id_header = self.headers.get("X-VOXEL-Tenant-ID", "")
+        destination_id_header = self.headers.get("X-VOXEL-Destination-ID", "")
+        package_filename = self.headers.get("X-VOXEL-Filename", "")
+        package_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
+        pdf_filename = self.headers.get("X-VOXEL-PDF-Filename", "")
+        pdf_hash = self.headers.get("X-VOXEL-PDF-SHA256", "").lower()
+        xml_filename = self.headers.get("X-VOXEL-XML-Filename", "")
+        xml_hash = self.headers.get("X-VOXEL-XML-SHA256", "").lower()
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+            tenant_id = int(tenant_id_header)
+            pdf_length = int(self.headers.get("X-VOXEL-PDF-Size", ""))
+            xml_length = int(self.headers.get("X-VOXEL-XML-Size", ""))
+            request_time = int(timestamp)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        permitted = (
+            supplied_job_id == str(job_id)
+            and tenant_id > 0
+            and destination_id_header == str(POLICY.destination_id)
+            and 256 <= length <= MAX_BYTES
+            and 100 <= pdf_length <= MAX_BYTES
+            and 32 <= xml_length <= 2 * 1024 * 1024
+            and self.valid_package_filename(package_filename)
+            and self.valid_filename(pdf_filename)
+            and self.valid_filename(xml_filename)
+            and re.fullmatch(r"[a-f0-9]{64}", package_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", pdf_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", xml_hash) is not None
+            and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
+        )
+        if not permitted:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
+        signature_parts = ["POST", self.path, str(job_id), tenant_id_header, destination_id_header, package_filename, package_hash, str(length), timestamp]
+        if envelope:
+            signature_parts.append(envelope_hash)
+        expected = hmac.new(POLICY.secret, "\n".join(signature_parts).encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        if not envelope or POLICY.envelope_private_key is None or POLICY.transport != "smb":
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        previous = read_state(job_id)
+        if previous.get("sha256") == package_hash and previous.get("state") == "delivered":
+            self.respond(HTTPStatus.CREATED, {"reference": previous["reference"], "sha256": package_hash})
+            return
+        if previous:
+            self.respond(HTTPStatus.CONFLICT, {"error": "job_state_conflict"})
+            return
+        staged = self.receive_or_reuse_stage(package_filename, package_hash, length)
+        if staged is None:
+            return
+        try:
+            with self.extracted_submission_package(staged, pdf_filename, pdf_hash, pdf_length, xml_filename, xml_hash, xml_length) as files:
+                with self.temporary_smb_credentials(envelope, POLICY.destination_id, tenant_id, job_id=job_id) as credentials:
+                    transport = self.deliver_submission_package_remote(job_id, pdf_filename, files[0], xml_filename, files[1], credentials)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
+            return
+        reference = f"gateway-philips-folder:{package_hash[:16]}"
+        write_state(job_id, {"state": "delivered", "sha256": package_hash, "reference": reference, "transport": transport})
+        LOG.info("event=philips_package_success job_id=%s transport=%s sha256_16=%s", job_id, transport, package_hash[:16])
+        self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": package_hash})
+
+    @contextmanager
+    def extracted_submission_package(
+        self,
+        staged: Path,
+        pdf_filename: str,
+        pdf_hash: str,
+        pdf_length: int,
+        xml_filename: str,
+        xml_hash: str,
+        xml_length: int,
+    ):
+        pdf_path: Path | None = None
+        xml_path: Path | None = None
+        try:
+            with staged.open("rb") as source:
+                manifest_line = source.readline(16385)
+                if len(manifest_line) > 16384 or not manifest_line.endswith(b"\n"):
+                    raise BridgeTransferError("remote_io")
+                try:
+                    manifest = json.loads(manifest_line[:-1].decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise BridgeTransferError("remote_io") from None
+                if not isinstance(manifest, dict) or manifest.get("v") != 1:
+                    raise BridgeTransferError("remote_io")
+                expected_entries = {
+                    "pdf": {"filename": pdf_filename, "sha256": pdf_hash, "size": pdf_length},
+                    "xml": {"filename": xml_filename, "sha256": xml_hash, "size": xml_length},
+                }
+                for kind, expected in expected_entries.items():
+                    entry = manifest.get(kind)
+                    if not isinstance(entry, dict) or entry != expected:
+                        raise BridgeTransferError("remote_io")
+                pdf_path = self._extract_package_entry(source, pdf_filename, pdf_hash, pdf_length, b"%PDF")
+                if source.read(1) != b"\n":
+                    raise BridgeTransferError("remote_io")
+                xml_path = self._extract_package_entry(source, xml_filename, xml_hash, xml_length, b"<?xml")
+                if source.read(1) != b"":
+                    raise BridgeTransferError("remote_io")
+            yield pdf_path, xml_path
+        finally:
+            if pdf_path is not None:
+                pdf_path.unlink(missing_ok=True)
+            if xml_path is not None:
+                xml_path.unlink(missing_ok=True)
+
+    def _extract_package_entry(self, source, filename: str, expected_hash: str, expected_length: int, prefix: bytes) -> Path:
+        descriptor, raw_path = tempfile.mkstemp(prefix="package-", suffix=".part", dir=STATE_ROOT)
+        path = Path(raw_path)
+        digest = hashlib.sha256()
+        remaining = expected_length
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                while remaining > 0:
+                    chunk = source.read(min(65536, remaining))
+                    if not chunk:
+                        raise BridgeTransferError("remote_io")
+                    output.write(chunk)
+                    digest.update(chunk)
+                    remaining -= len(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(path, 0o600)
+            with path.open("rb") as check:
+                actual_prefix = check.read(len(prefix))
+            if digest.hexdigest() != expected_hash or actual_prefix != prefix:
+                raise BridgeTransferError("remote_io")
+            return path
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+
+    def deliver_submission_package_remote(self, job_id: int, pdf_filename: str, pdf_path: Path, xml_filename: str, xml_path: Path, credentials: Path | None) -> str:
+        if credentials is None or not isinstance(POLICY.smb, dict):
+            raise BridgeTransferError("credentials_unavailable")
+        pdf_final, pdf_temporary = self._smb_remote_path(pdf_filename)
+        xml_final, xml_temporary = self._smb_remote_path(xml_filename)
+        pdf_renamed = False
+        xml_renamed = False
+        entries = [
+            ("pdf", pdf_final, pdf_temporary, pdf_path, sha256_file(pdf_path), pdf_path.stat().st_size),
+            ("xml", xml_final, xml_temporary, xml_path, sha256_file(xml_path), xml_path.stat().st_size),
+        ]
+        missing = []
+        try:
+            for entry in entries:
+                _label, final_path, _temporary_path, _local_path, expected_hash, expected_size = entry
+                try:
+                    existing = self._smb_command(credentials, f"ls {final_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "LIST", classification=error.category)
+                    raise
+                if existing.returncode == 0:
+                    self._log_smb_stage(job_id, "LIST", existing, "none")
+                    if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, expected_size):
+                        continue
+                    raise BridgeTransferError("remote_io")
+                if not self._smb_missing(existing):
+                    classification = classify_transport_error(existing.stdout + existing.stderr)
+                    self._log_smb_stage(job_id, "LIST", existing, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "LIST", existing, "not_found")
+                missing.append(entry)
+
+            for label, _final_path, temporary_path, path, _expected_hash, _expected_size in missing:
+                try:
+                    uploaded = self._smb_command(credentials, f"put {path} {temporary_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "WRITE", classification=error.category)
+                    raise
+                if uploaded.returncode != 0:
+                    classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
+                    self._log_smb_stage(job_id, "WRITE", uploaded, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "WRITE", uploaded, "none")
+
+            for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:
+                try:
+                    renamed = self._smb_command(credentials, f"rename {temporary_path} {final_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "RENAME", classification=error.category)
+                    raise
+                if renamed.returncode != 0:
+                    classification = classify_transport_error(renamed.stdout + renamed.stderr)
+                    self._log_smb_stage(job_id, "RENAME", renamed, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "RENAME", renamed, "none")
+                if label == "pdf":
+                    pdf_renamed = True
+                else:
+                    xml_renamed = True
+
+            pdf_ok = self.smb_remote_matches(job_id, credentials, pdf_final, entries[0][4], entries[0][5])
+            xml_ok = self.smb_remote_matches(job_id, credentials, xml_final, entries[1][4], entries[1][5])
+            if not pdf_ok or not xml_ok:
+                raise BridgeTransferError("remote_io")
+            LOG.info("event=philips_smb_package_success job_id=%s", job_id)
+            return "smb"
+        finally:
+            for path in [pdf_temporary, xml_temporary]:
+                try:
+                    self._smb_command(credentials, f"del {path}")
+                except BridgeTransferError:
+                    pass
+            for path, renamed in [(pdf_final, pdf_renamed), (xml_final, xml_renamed)]:
+                if renamed:
+                    try:
+                        self._smb_command(credentials, f"del {path}")
+                    except BridgeTransferError:
+                        pass
 
     def test_smb_connectivity(self, destination_id: int) -> None:
         tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
@@ -1020,6 +1251,10 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def valid_filename(value: str) -> bool:
         return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.(?:pdf|xml)", value) is not None
+
+    @staticmethod
+    def valid_package_filename(value: str) -> bool:
+        return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.package", value) is not None
 
 
 def main() -> NoReturn:

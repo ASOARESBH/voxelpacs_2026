@@ -137,6 +137,180 @@ final class PhilipsFolderGatewayBridgeClient
         return ['reference' => $reference, 'sha256' => $sha256, 'size' => $size];
     }
 
+    /**
+     * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string}
+     */
+    public function sendSubmissionPackage(
+        int $jobId,
+        int $tenantId,
+        int $destinationId,
+        string $pdfFileName,
+        string $pdfPath,
+        string $xmlFileName,
+        string $xmlPath,
+        int $timeout,
+        ?array $secretEnvelope = null
+    ): array {
+        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !$this->validFileName($pdfFileName) || !$this->validFileName($xmlFileName)
+            || !is_file($pdfPath) || !is_file($xmlPath)) {
+            throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+        }
+
+        $pdfSize = (int) filesize($pdfPath);
+        $xmlSize = (int) filesize($xmlPath);
+        $pdfSha256 = hash_file('sha256', $pdfPath);
+        $xmlSha256 = hash_file('sha256', $xmlPath);
+        if (!is_string($pdfSha256) || !is_string($xmlSha256)
+            || $pdfSize < 100 || $pdfSize > self::MAX_BYTES
+            || $xmlSize < 32 || $xmlSize > 2 * 1024 * 1024) {
+            throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+        }
+
+        $packageFileName = preg_replace('/\.pdf$/', '.package', $pdfFileName);
+        if (!is_string($packageFileName) || !$this->validPackageFileName($packageFileName)) {
+            throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+        }
+        try {
+            $manifest = json_encode([
+                'v' => 1,
+                'pdf' => ['filename' => $pdfFileName, 'sha256' => $pdfSha256, 'size' => $pdfSize],
+                'xml' => ['filename' => $xmlFileName, 'sha256' => $xmlSha256, 'size' => $xmlSize],
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+        }
+
+        $baseUrl = rtrim(trim((string) getenv('PHILIPS_FOLDER_BRIDGE_BASE_URL')), '/');
+        $url = $baseUrl . '/v1/philips-folder/package/' . $jobId;
+        if (!$this->allowedPackageUrl($baseUrl, $url, $jobId)) {
+            throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
+        }
+        $secret = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_HMAC'));
+        $caFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CA_FILE'));
+        $certFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CERT_FILE'));
+        $keyFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_KEY_FILE'));
+        if ($secret === '' || !is_file($caFile) || !is_file($certFile) || !is_file($keyFile)) {
+            throw new PhilipsFolderDeliveryException('gateway_credentials_unavailable', 'credentials_unavailable');
+        }
+        $envelope = $this->secretEnvelope($secretEnvelope);
+        $timestamp = (string) time();
+        $package = tmpfile();
+        $pdfInput = fopen($pdfPath, 'rb');
+        $xmlInput = fopen($xmlPath, 'rb');
+        if (!is_resource($package) || !is_resource($pdfInput) || !is_resource($xmlInput)) {
+            if (is_resource($package)) {
+                fclose($package);
+            }
+            if (is_resource($pdfInput)) {
+                fclose($pdfInput);
+            }
+            if (is_resource($xmlInput)) {
+                fclose($xmlInput);
+            }
+            throw new PhilipsFolderDeliveryException('artifact_unreadable', 'artifact_unreadable');
+        }
+        try {
+            if (fwrite($package, $manifest . "\n") !== strlen($manifest) + 1
+                || stream_copy_to_stream($pdfInput, $package) !== $pdfSize
+                || fwrite($package, "\n") !== 1
+                || stream_copy_to_stream($xmlInput, $package) !== $xmlSize) {
+                throw new PhilipsFolderDeliveryException('artifact_unreadable', 'artifact_unreadable');
+            }
+            fflush($package);
+            $packageSize = (int) (fstat($package)['size'] ?? 0);
+            $packagePath = (string) (stream_get_meta_data($package)['uri'] ?? '');
+            $packageSha256 = hash_file('sha256', $packagePath);
+            if (!is_string($packageSha256) || $packageSize < 1 || $packageSize > self::MAX_BYTES) {
+                throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
+            }
+            rewind($package);
+            $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+            $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId, $packageFileName, $packageSha256, (string) $packageSize, $timestamp, $envelope['sha256']]);
+            $signature = hash_hmac('sha256', $signatureBase, $secret);
+            $curl = curl_init($url);
+            if ($curl === false) {
+                throw new PhilipsFolderDeliveryException('gateway_client_unavailable', 'gateway_unavailable');
+            }
+            try {
+                curl_setopt_array($curl, [
+                    CURLOPT_CUSTOMREQUEST => 'POST',
+                    CURLOPT_UPLOAD => true,
+                    CURLOPT_INFILE => $package,
+                    CURLOPT_INFILESIZE => $packageSize,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_HEADER => false,
+                    CURLOPT_CONNECTTIMEOUT => min(15, $timeout),
+                    CURLOPT_TIMEOUT => $timeout,
+                    CURLOPT_FOLLOWLOCATION => false,
+                    CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+                    CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+                    CURLOPT_SSL_VERIFYPEER => true,
+                    CURLOPT_SSL_VERIFYHOST => 2,
+                    CURLOPT_CAINFO => $caFile,
+                    CURLOPT_SSLCERT => $certFile,
+                    CURLOPT_SSLKEY => $keyFile,
+                    CURLOPT_HTTPHEADER => [
+                        'Content-Type: application/vnd.voxel.philips.package',
+                        'Content-Length: ' . $packageSize,
+                        'X-VOXEL-Job-ID: ' . $jobId,
+                        'X-VOXEL-Tenant-ID: ' . $tenantId,
+                        'X-VOXEL-Destination-ID: ' . $destinationId,
+                        'X-VOXEL-Filename: ' . $packageFileName,
+                        'X-VOXEL-SHA256: ' . $packageSha256,
+                        'X-VOXEL-PDF-Filename: ' . $pdfFileName,
+                        'X-VOXEL-PDF-SHA256: ' . $pdfSha256,
+                        'X-VOXEL-PDF-Size: ' . $pdfSize,
+                        'X-VOXEL-XML-Filename: ' . $xmlFileName,
+                        'X-VOXEL-XML-SHA256: ' . $xmlSha256,
+                        'X-VOXEL-XML-Size: ' . $xmlSize,
+                        'X-VOXEL-Timestamp: ' . $timestamp,
+                        'X-VOXEL-Signature: ' . $signature,
+                        ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
+                    ],
+                ]);
+                $startedAt = microtime(true);
+                $body = curl_exec($curl);
+                $errno = curl_errno($curl);
+                $curlError = '';
+                try {
+                    $curlError = curl_error($curl);
+                } catch (\Throwable) {
+                }
+                $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+                try {
+                    $curlInfo = curl_getinfo($curl);
+                    $this->logCurlDiagnostics($jobId, $destinationId, $body, $errno, $curlError, is_array($curlInfo) ? $curlInfo : [], (int) round((microtime(true) - $startedAt) * 1000));
+                } catch (\Throwable) {
+                }
+            } finally {
+                curl_close($curl);
+            }
+            if ($errno !== 0 || !is_string($body) || $httpCode !== 201) {
+                throw new PhilipsFolderDeliveryException('gateway_delivery_failed', $this->responseReasonCategory(is_string($body) ? $body : '') ?? 'gateway_delivery_failed');
+            }
+            $response = json_decode($body, true);
+            $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
+            $remoteSha256 = is_array($response) ? (string) ($response['sha256'] ?? '') : '';
+            if (preg_match('/^gateway-philips-folder:[a-f0-9]{16}$/', $reference) !== 1 || !hash_equals($packageSha256, $remoteSha256)) {
+                throw new PhilipsFolderDeliveryException('gateway_invalid_response', 'remote_integrity_unconfirmed');
+            }
+            return [
+                'reference' => $reference,
+                'sha256' => $packageSha256,
+                'size' => $packageSize,
+                'pdf_sha256' => $pdfSha256,
+                'pdf_size' => $pdfSize,
+                'xml_sha256' => $xmlSha256,
+                'xml_size' => $xmlSize,
+                'filename' => $packageFileName,
+            ];
+        } finally {
+            fclose($package);
+            fclose($pdfInput);
+            fclose($xmlInput);
+        }
+    }
+
     /** @param array<string,mixed> $configuration @param array{envelope:string,sha256:string} $secretEnvelope */
     public function testSmbConnectivity(int $tenantId, int $destinationId, array $configuration, array $secretEnvelope, int $timeout): string
     {
@@ -432,6 +606,20 @@ final class PhilipsFolderGatewayBridgeClient
             && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
     }
 
+    private function allowedPackageUrl(string $baseUrl, string $url, int $jobId): bool
+    {
+        $base = parse_url($baseUrl);
+        $parts = parse_url($url);
+        return is_array($base) && is_array($parts)
+            && ($base['scheme'] ?? '') === 'https'
+            && ($parts['scheme'] ?? '') === 'https'
+            && ($parts['host'] ?? '') === ($base['host'] ?? '')
+            && (int) ($parts['port'] ?? 443) === (int) ($base['port'] ?? 443)
+            && ($parts['path'] ?? '') === '/v1/philips-folder/package/' . $jobId
+            && !isset($base['query'], $base['fragment'], $base['user'], $base['pass'])
+            && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
+    }
+
     private function allowedTestUrl(string $baseUrl, string $url, int $destinationId, string $pathPrefix = '/v1/philips-folder/smb-test/'): bool
     {
         $base = parse_url($baseUrl);
@@ -463,6 +651,11 @@ final class PhilipsFolderGatewayBridgeClient
     private function validFileName(string $value): bool
     {
         return preg_match('/^VOXEL_[A-Za-z0-9._-]{1,120}_[1-9][0-9]*_V[1-9][0-9]*\.(?:pdf|xml)$/', $value) === 1;
+    }
+
+    private function validPackageFileName(string $value): bool
+    {
+        return preg_match('/^VOXEL_[A-Za-z0-9._-]{1,120}_[1-9][0-9]*_V[1-9][0-9]*\.package$/', $value) === 1;
     }
 
     private function responseReasonCategory(string $body): ?string
