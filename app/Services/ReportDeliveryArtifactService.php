@@ -184,8 +184,6 @@ final class ReportDeliveryArtifactService
             throw new RuntimeException('Não foi possível gravar o artefato XML privado.');
         }
         @chmod($path, 0600);
-        $sha256 = hash('sha256', $binary);
-        $this->workerRepository->recordArtifact($outboxId, $tenantId, isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null, 'philips_submission_xml', $path, $sha256, strlen($binary));
         return $path;
     }
 }
