@@ -36,6 +36,8 @@ return [
     'philips_non_dicom.usuario_label' => 'Usuario',
     'philips_non_dicom.senha_label' => 'Contraseña SMB',
     'philips_non_dicom.senha_ajuda' => 'Después de guardar, la contraseña no se muestra nuevamente. La prueba SMB no crea PDF, XML ni job clínico.',
+    'philips_non_dicom.senha_alterada_sucesso' => 'Contraseña SMB cambiada correctamente. La nueva contraseña fue cifrada y almacenada de forma segura.',
+    'philips_non_dicom.configuracao_salva_senha_mantida' => 'Configuración guardada. Contraseña SMB conservada.',
     'philips_non_dicom.credencial_configurada' => 'Credencial SMB configurada',
     'philips_non_dicom.credencial_pendente' => 'Credencial SMB pendiente',
     'philips_non_dicom.testar_smb' => 'Probar conexión SMB',

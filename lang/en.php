@@ -36,6 +36,8 @@ return [
     'philips_non_dicom.usuario_label' => 'Username',
     'philips_non_dicom.senha_label' => 'SMB password',
     'philips_non_dicom.senha_ajuda' => 'After saving, the password is not shown again. The SMB test does not create a PDF, XML, or clinical job.',
+    'philips_non_dicom.senha_alterada_sucesso' => 'SMB password changed successfully. The new password was encrypted and stored securely.',
+    'philips_non_dicom.configuracao_salva_senha_mantida' => 'Configuration saved. SMB password preserved.',
     'philips_non_dicom.credencial_configurada' => 'SMB credential configured',
     'philips_non_dicom.credencial_pendente' => 'SMB credential pending',
     'philips_non_dicom.testar_smb' => 'Test SMB connection',

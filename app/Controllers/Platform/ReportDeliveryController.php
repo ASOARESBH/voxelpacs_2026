@@ -150,6 +150,9 @@ class ReportDeliveryController extends Controller
         try {
             $data = $this->validatedPayload($tenantId);
             $savedId = $this->repository->saveDestination($tenantId, $destinationId, $data, (int) Auth::userId());
+            $secretUpdate = (string) ($data['configuration_secret'] ?? '') !== ''
+                ? 'YES'
+                : ($destinationId !== null ? 'PRESERVED' : 'NOT_APPLICABLE');
             AuditLogger::log('report_delivery.destination_saved', 'pacs_report_delivery_destinations', $savedId, [
                 'tenant_id' => $tenantId,
                 'transport' => $data['transport'],
@@ -158,15 +161,23 @@ class ReportDeliveryController extends Controller
                 'producao_confirmada' => $data['producao_confirmada'],
                 'institution_names' => $data['institution_names'],
                 'issuers' => array_map(static fn(array $issuer): string => $issuer['normalized'], $data['issuers']),
+                'secret_update' => $secretUpdate,
             ]);
+            $credentialMessage = null;
+            if ($data['transport'] === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT && $destinationId !== null) {
+                $credentialMessage = $secretUpdate === 'YES'
+                    ? t('philips_non_dicom.senha_alterada_sucesso')
+                    : t('philips_non_dicom.configuracao_salva_senha_mantida');
+            }
             $this->json([
                 'success' => true,
-                'message' => !empty($data['enabled'])
+                'message' => $credentialMessage ?? (!empty($data['enabled'])
                     ? ($data['ambiente'] === 'producao'
                         ? t('delivery_hub.destination.producao_ativado')
                         : t('delivery_hub.destination.homologacao_ativado'))
-                    : t('delivery_hub.destination.desativado_salvo'),
+                    : t('delivery_hub.destination.desativado_salvo')),
                 'destination_id' => $savedId,
+                'secret_update' => $secretUpdate,
             ]);
         } catch (DomainException $e) {
             $this->json(['success' => false, 'message' => $e->getMessage()], 422);
