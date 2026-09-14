@@ -401,19 +401,23 @@ class ReportDeliveryRepository
         int $reportVersion,
         string $eventType,
         string $idempotencyKey,
-        array $payload
+        array $payload,
+        ?string $deliveryProfile = null
     ): int {
+        if ($deliveryProfile !== null && !in_array($deliveryProfile, ['pdf_only', 'submission_document', 'mixed'], true)) {
+            throw new DomainException('Perfil de devolutiva inválido.');
+        }
         $sql = SqlHelper::isPostgres()
             ? "INSERT INTO pacs_report_delivery_outbox
-                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, delivery_profile, status)
                VALUES
-                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, :delivery_profile, 'queued')
                ON CONFLICT (idempotency_key) DO NOTHING
                RETURNING id"
             : "INSERT IGNORE INTO pacs_report_delivery_outbox
-                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, delivery_profile, status)
                VALUES
-                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')";
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, :delivery_profile, 'queued')";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':tenant_id' => $tenantId,
@@ -424,6 +428,7 @@ class ReportDeliveryRepository
             ':event_type' => $eventType,
             ':idempotency_key' => $idempotencyKey,
             ':payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':delivery_profile' => $deliveryProfile,
         ]);
 
         if (SqlHelper::isPostgres()) {
@@ -445,6 +450,23 @@ class ReportDeliveryRepository
         return (int) $lookup->fetchColumn();
     }
 
+    public function setOutboxDeliveryProfile(int $outboxId, int $tenantId, string $profile): void
+    {
+        if ($outboxId <= 0 || $tenantId <= 0 || !in_array($profile, ['pdf_only', 'submission_document', 'mixed'], true)) {
+            throw new DomainException('Perfil de devolutiva inválido.');
+        }
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_outbox
+             SET delivery_profile = :delivery_profile
+             WHERE id = :id AND tenant_id = :tenant_id AND delivery_profile IS NULL"
+        );
+        $stmt->execute([
+            ':delivery_profile' => $profile,
+            ':id' => $outboxId,
+            ':tenant_id' => $tenantId,
+        ]);
+    }
+
     /** @param array<int, array<string, mixed>> $destinations */
     public function createJobs(
         int $outboxId,
@@ -458,14 +480,14 @@ class ReportDeliveryRepository
         $created = 0;
         $sql = SqlHelper::isPostgres()
             ? "INSERT INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, delivery_profile, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, :delivery_profile, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)
                ON CONFLICT DO NOTHING"
             : "INSERT IGNORE INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, delivery_profile, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)";
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, :delivery_profile, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)";
         $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
@@ -476,6 +498,7 @@ class ReportDeliveryRepository
                 ':tenant_id' => $tenantId,
                 ':estabelecimento_id' => $estabelecimentoId,
                 ':transport' => (string) $destination['transport'],
+                ':delivery_profile' => $this->deliveryProfileForDestination($destination),
                 ':idempotency_key' => $jobKey,
                 ':automatic_dispatch_date' => $automaticDispatchDate,
             ]);
@@ -483,6 +506,24 @@ class ReportDeliveryRepository
         }
 
         return $created;
+    }
+
+    /** @param array<string,mixed> $destination */
+    public function deliveryProfileForDestination(array $destination): string
+    {
+        $transport = (string) ($destination['transport'] ?? '');
+        $configuration = json_decode((string) ($destination['configuration_json'] ?? ''), true);
+        $profile = is_array($configuration) ? trim((string) ($configuration['delivery_profile'] ?? '')) : '';
+        if ($profile === '') {
+            return 'pdf_only';
+        }
+        if (!in_array($profile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Perfil de devolutiva não suportado.');
+        }
+        if ($profile === 'submission_document' && $transport !== 'philips_non_dicom') {
+            throw new DomainException('Perfil de package incompatível com o transporte.');
+        }
+        return $profile;
     }
 
     /**

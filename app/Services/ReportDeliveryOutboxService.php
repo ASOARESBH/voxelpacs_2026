@@ -120,6 +120,17 @@ class ReportDeliveryOutboxService
                     && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
                         || PhilipsFolderDeliveryService::nonDicomEnabled())
             ));
+            if ($destinations !== []) {
+                $profiles = array_values(array_unique(array_map(
+                    fn(array $destination): string => $repository->deliveryProfileForDestination($destination),
+                    $destinations
+                )));
+                $repository->setOutboxDeliveryProfile(
+                    $outboxId,
+                    $tenantId,
+                    count($profiles) === 1 ? $profiles[0] : 'mixed'
+                );
+            }
             $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
                 $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);

@@ -160,4 +160,32 @@ final class ReportDeliveryArtifactService
         @chmod($path, 0600);
         return $path;
     }
+
+    /** @param array<string,mixed> $job */
+    public function storeGeneratedArtifact(array $job, string $filename, string $binary): string
+    {
+        $jobId = (int) ($job['id'] ?? 0);
+        $tenantId = (int) ($job['tenant_id'] ?? 0);
+        $outboxId = (int) ($job['outbox_id'] ?? 0);
+        if ($jobId <= 0 || $tenantId <= 0 || $outboxId <= 0 || !preg_match('/^[A-Za-z0-9._-]{1,180}\.xml$/', $filename)) {
+            throw new RuntimeException('Artefato XML inválido.');
+        }
+        if ($binary === '' || !str_starts_with($binary, '<?xml')) {
+            throw new RuntimeException('Conteúdo XML inválido.');
+        }
+
+        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
+        $directory = sprintf('%s/storage/report_delivery/%d/%d', rtrim($basePath, '/'), $tenantId, $outboxId);
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('Não foi possível criar o armazenamento privado do XML.');
+        }
+        $path = $directory . '/' . $filename;
+        if (file_put_contents($path, $binary, LOCK_EX) === false) {
+            throw new RuntimeException('Não foi possível gravar o artefato XML privado.');
+        }
+        @chmod($path, 0600);
+        $sha256 = hash('sha256', $binary);
+        $this->workerRepository->recordArtifact($outboxId, $tenantId, isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null, 'philips_submission_xml', $path, $sha256, strlen($binary));
+        return $path;
+    }
 }

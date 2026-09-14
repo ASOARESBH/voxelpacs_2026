@@ -17,6 +17,9 @@ final class PhilipsFolderDeliveryService
 {
     public const TRANSPORT = 'philips_folder';
     public const NON_DICOM_TRANSPORT = 'philips_non_dicom';
+    public const PROFILE_PDF_ONLY = 'pdf_only';
+    public const PROFILE_SUBMISSION_DOCUMENT = 'submission_document';
+    public const PROFILE_MIXED = 'mixed';
 
     public static function enabled(): bool
     {
