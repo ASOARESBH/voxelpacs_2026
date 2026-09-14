@@ -196,7 +196,9 @@ $transportLabels = [
                         <div class="destination-fields mt-3 d-none" data-transport-group="philips_non_dicom">
                             <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_non_dicom.configuracao_titulo')) ?></h3>
                             <div class="alert alert-info small"><?= $escape(t('philips_non_dicom.configuracao_ajuda')) ?></div>
-                            <input type="hidden" data-field="delivery_profile" value="pdf_only">
+                            <div class="row g-3">
+                                <div class="col-md-6"><label class="form-label" for="nondicom-delivery-profile"><?= $escape(t('philips_non_dicom.profile_label')) ?></label><select class="form-select" id="nondicom-delivery-profile" data-field="delivery_profile"><option value="pdf_only"><?= $escape(t('philips_non_dicom.profile_pdf_only')) ?></option><option value="submission_document"><?= $escape(t('philips_non_dicom.profile_submission_document')) ?></option></select><div class="form-text"><?= $escape(t('philips_non_dicom.profile_ajuda')) ?></div></div>
+                            </div>
                             <input type="hidden" data-field="gateway_bridge" value="1">
                             <input type="hidden" data-field="transport_protocol" value="smb">
                             <div class="row g-3">
@@ -205,6 +207,22 @@ $transportLabels = [
                                 <div class="col-md-3"><label class="form-label" for="nondicom-smb-share"><?= $escape(t('philips_non_dicom.share_label')) ?></label><input class="form-control" id="nondicom-smb-share" data-field="smb_share" data-required></div>
                                 <div class="col-md-6"><label class="form-label" for="nondicom-smb-user"><?= $escape(t('philips_non_dicom.usuario_label')) ?></label><input class="form-control" id="nondicom-smb-user" data-field="smb_username" data-required autocomplete="off"></div>
                                 <div class="col-md-6"><label class="form-label" for="nondicom-smb-password"><?= $escape(t('philips_non_dicom.senha_label')) ?></label><div class="input-group"><input class="form-control" id="nondicom-smb-password" data-secret-field="smb_password" type="password" autocomplete="new-password" placeholder="Informe para salvar ou substituir"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="nondicom-smb-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text"><?= $escape(t('philips_non_dicom.senha_ajuda')) ?></div></div>
+                            </div>
+                            <div id="nondicom-submission-settings" class="border rounded p-3 mt-3 d-none" data-profile="submission_document">
+                                <h4 class="h6 mb-3"><?= $escape(t('philips_non_dicom.xml_titulo')) ?></h4>
+                                <div class="alert alert-warning small"><?= $escape(t('philips_non_dicom.xml_ajuda')) ?></div>
+                                <div class="row g-3">
+                                    <div class="col-12"><label class="form-label" for="nondicom-task-file-path"><?= $escape(t('philips_non_dicom.task_file_path_label')) ?></label><input class="form-control" id="nondicom-task-file-path" data-submission-field data-field="task_file_path" data-required placeholder="<?= $escape(t('philips_non_dicom.task_file_path_placeholder')) ?>"><div class="form-text"><?= $escape(t('philips_non_dicom.task_file_path_help')) ?></div></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required></div>
+                                    <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-family"><?= $escape(t('philips_non_dicom.task_author_family_label')) ?></label><input class="form-control" id="nondicom-task-author-family" data-submission-field data-field="task_author_humanname_family" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-given"><?= $escape(t('philips_non_dicom.task_author_given_label')) ?></label><input class="form-control" id="nondicom-task-author-given" data-submission-field data-field="task_author_humanname_given" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-middle"><?= $escape(t('philips_non_dicom.task_author_middle_label')) ?></label><input class="form-control" id="nondicom-task-author-middle" data-submission-field data-field="task_author_humanname_middle"></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-type"><?= $escape(t('philips_non_dicom.task_document_type_label')) ?></label><input class="form-control" id="nondicom-task-type" data-submission-field data-field="task_document_type" value="11502-2"></div>
+                                    <div class="col-md-6"><label class="form-label" for="nondicom-task-delete-file"><?= $escape(t('philips_non_dicom.task_delete_file_label')) ?></label><select class="form-select" id="nondicom-task-delete-file" data-submission-field data-field="task_delete_file" data-required><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option></select><div class="form-text"><?= $escape(t('philips_non_dicom.task_delete_file_help')) ?></div></div>
+                                </div>
                             </div>
                         </div>
                         <div class="row g-3 mt-0">
@@ -357,7 +375,9 @@ $transportLabels = [
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const issuerSelectors = Array.from(form.querySelectorAll('.issuer-selector'));
     const baseAction = form.action;
-    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge', 'transport_protocol', 'smb_share', 'smb_username'];
+    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge', 'transport_protocol', 'smb_share', 'smb_username', 'philips_submission'];
+    const submissionSettings = document.getElementById('nondicom-submission-settings');
+    const submissionProfile = document.getElementById('nondicom-delivery-profile');
     const philipsFolderFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::enabled() ? 'true' : 'false' ?>;
     const philipsNonDicomFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::nonDicomEnabled() ? 'true' : 'false' ?>;
     const guideText = {
@@ -407,6 +427,11 @@ $transportLabels = [
             enabled.disabled = false;
             document.getElementById('destination-release').disabled = false;
         }
+        const submissionActive = transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document';
+        if (submissionSettings) {
+            submissionSettings.classList.toggle('d-none', !submissionActive);
+            submissionSettings.querySelectorAll('[data-required]').forEach((input) => { input.required = submissionActive; });
+        }
         populateActiveFields();
     }
 
@@ -414,7 +439,8 @@ $transportLabels = [
         document.querySelectorAll('.destination-fields').forEach((group) => {
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
-                const value = currentConfig[input.dataset.field];
+                const submission = currentConfig.philips_submission && typeof currentConfig.philips_submission === 'object' ? currentConfig.philips_submission : {};
+                const value = input.dataset.submissionField ? submission[input.dataset.field] : currentConfig[input.dataset.field];
                 if (value === undefined || value === null) return;
                 if (input.type === 'checkbox') input.checked = Boolean(value);
                 else input.value = value;
@@ -444,18 +470,23 @@ $transportLabels = [
         const config = { ...currentConfig };
         knownKeys.forEach((key) => delete config[key]);
         const secret = {};
+        const philipsSubmission = {};
         document.querySelectorAll('.destination-fields').forEach((group) => {
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
                 const key = input.dataset.field;
-                if (input.type === 'checkbox') config[key] = input.checked;
-                else if (input.type === 'number') config[key] = Number(input.value);
-                else if (input.value.trim() !== '') config[key] = input.value.trim();
+                const target = input.dataset.submissionField ? philipsSubmission : config;
+                if (input.type === 'checkbox') target[key] = input.checked;
+                else if (input.type === 'number') target[key] = Number(input.value);
+                else if (input.value.trim() !== '') target[key] = input.value.trim();
             });
             group.querySelectorAll('[data-secret-field]').forEach((input) => {
                 if (input.value.trim() !== '') secret[input.dataset.secretField] = input.value;
             });
         });
+        if (transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document') {
+            config.philips_submission = philipsSubmission;
+        }
         configInput.value = JSON.stringify(config);
         secretInput.value = Object.keys(secret).length ? JSON.stringify(secret) : '';
     }
@@ -564,6 +595,7 @@ $transportLabels = [
     });
 
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
+    if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
     environment.addEventListener('change', syncEnvironment);
     enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {

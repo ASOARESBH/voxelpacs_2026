@@ -13,7 +13,11 @@ O Report Delivery Hub mantém destinos, outboxes, jobs, artifacts PDF e tentativ
 | `app/Services/ReportDeliveryManualQueueService.php` | Criação manual homologatória de outbox/job |
 | `app/Controllers/Platform/ReportDeliveryController.php` | Administração, CSRF, autorização e auditoria das ações |
 | `app/Views/platform/negocios/report_delivery.php` | Configuração de destinos e ações manuais |
-| `app/Services/PhilipsFolderDeliveryService.php` | Transporte `philips_non_dicom` PDF-only |
+| `app/Services/PhilipsFolderDeliveryService.php` | Transporte `philips_non_dicom` PDF-only e `submission_document` |
+| `app/Services/PhilipsSubmissionMetadataResolver.php` | Resolução explícita e fail-closed de metadata do submission XML |
+| `app/Services/PhilipsSubmissionDocumentGenerator.php` | Geração determinística do documento XML Philips |
+| `app/Services/PhilipsSubmissionPackageProducer.php` | Composição imutável do package PDF + XML |
+| `docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md` | Contrato de campos, origens e ativação do profile XML |
 | `bin/report_delivery_worker.php` | Execução normal dos jobs elegíveis |
 | `tests/report_delivery_manual_retry_static.php` | Contratos estáticos do retry manual homologatório |
 
@@ -24,6 +28,10 @@ A rota `POST /platform/negocios/{tenantId}/report-delivery/jobs/{jobId}/retry-ho
 A operação usa `SELECT ... FOR UPDATE` e uma atualização condicional de estado para impedir reativação concorrente. Preserva `attempt_count`, histórico, erro anterior, outbox, artifact e identidade do job; não cria job, não insere attempt e não depende de `disparar_na_liberacao`. A próxima attempt só é criada pelo worker ao reivindicar o job.
 
 O método existente `retryJob()` permanece reservado ao retry condicionado ao fluxo automático e continua exigindo `disparar_na_liberacao = 1`. Não usar a operação por relatório para esse caso, pois ela pode reativar múltiplos jobs terminais.
+
+## Profile `submission_document`
+
+O profile `submission_document` é opt-in e compõe PDF + XML somente quando a configuração explícita `philips_submission` está validada. O profile `pdf_only` permanece o padrão compatível e não é convertido retroativamente. Metadata clínica ou de autoria sem fonte estruturada não é inferida; o gerador falha fechado com o campo técnico não resolvido. O contrato detalhado está em `docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
 
 ## Dependências
 
@@ -40,4 +48,4 @@ A reativação manual torna o job elegível para o worker e pode iniciar transpo
 
 ## Última análise
 
-2026-09-14 — implementado e validado estaticamente; nenhum deploy, retry, chamada Bridge ou SMB foi executado nesta fase.
+2026-09-14 — retry homologatório e profile `submission_document` implementados e validados estaticamente; nenhum deploy, retry, chamada Bridge ou SMB foi executado nesta fase.

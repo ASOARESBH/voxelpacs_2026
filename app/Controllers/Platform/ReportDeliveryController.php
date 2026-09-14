@@ -604,7 +604,8 @@ class ReportDeliveryController extends Controller
         if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
             $share = trim((string) ($configuration['smb_share'] ?? ''));
             $username = trim((string) ($configuration['smb_username'] ?? ''));
-            if (($configuration['delivery_profile'] ?? '') !== 'pdf_only'
+            $profile = (string) ($configuration['delivery_profile'] ?? '');
+            if (!in_array($profile, [PhilipsFolderDeliveryService::PROFILE_PDF_ONLY, PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT], true)
                 || ($configuration['transport_protocol'] ?? '') !== 'smb'
                 || !filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)
                 || !$validHost || $port !== 445
@@ -612,6 +613,58 @@ class ReportDeliveryController extends Controller
                 || preg_match('/^(?:[A-Za-z0-9._-]{1,64}\\\\)?[A-Za-z0-9._-]{1,64}$/', $username) !== 1) {
                 throw new DomainException('Configuração SMB Non-DICOM inválida.');
             }
+            if ($profile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null);
+            }
+        }
+    }
+
+    /** @param mixed $submission */
+    private function validatePhilipsSubmissionConfiguration(mixed $submission): void
+    {
+        if (!is_array($submission)) {
+            throw new DomainException('Configure o contrato Philips XML antes de habilitar este perfil.');
+        }
+
+        foreach ([
+            'task_file_path' => 'caminho Philips do XML',
+            'task_site_id' => 'SITE_ID Philips',
+            'task_document_name' => 'nome do documento Philips',
+            'task_author_id' => 'identificador do autor Philips',
+            'task_author_humanname_family' => 'sobrenome do autor Philips',
+            'task_author_humanname_given' => 'nome do autor Philips',
+        ] as $field => $label) {
+            $value = $submission[$field] ?? null;
+            if (!is_string($value) || trim($value) === '' || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
+                throw new DomainException("Informe {$label} para o perfil Philips XML.");
+            }
+        }
+
+        foreach (['task_author_humanname_middle'] as $field) {
+            $value = $submission[$field] ?? '';
+            if (!is_string($value) || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
+                throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
+            }
+        }
+
+        foreach (['task_delete_file', 'task_document_type_applicable'] as $field) {
+            if (!array_key_exists($field, $submission)) {
+                throw new DomainException("Configure {$field} no perfil Philips XML.");
+            }
+            $value = $submission[$field];
+            if (!is_bool($value) && !(is_int($value) && in_array($value, [0, 1], true))
+                && !(is_string($value) && in_array(strtolower(trim($value)), ['true', 'false', '1', '0'], true))) {
+                throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
+            }
+        }
+
+        $typeApplicable = filter_var($submission['task_document_type_applicable'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $documentType = trim((string) ($submission['task_document_type'] ?? ''));
+        if ($typeApplicable === true && $documentType !== '11502-2') {
+            throw new DomainException('O tipo de documento Philips deve ser 11502-2 quando aplicável.');
+        }
+        if ($typeApplicable === false && $documentType !== '') {
+            throw new DomainException('Remova o tipo de documento Philips quando ele não for aplicável.');
         }
     }
 

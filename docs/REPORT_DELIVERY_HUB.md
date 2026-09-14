@@ -64,6 +64,10 @@ A tela usa **campos guiados**, sem exigir JSON do usuário. Ao selecionar o cana
 
 A validação ocorre tanto no navegador quanto no servidor. Destinos já existentes continuam compatíveis: ao clicar em **Editar**, as configurações internas conhecidas são convertidas novamente para os campos visuais.
 
+### Profile Philips `submission_document`
+
+O transporte `philips_non_dicom` aceita o profile compatível `pdf_only` e o profile opt-in `submission_document`. O segundo compõe o PDF imutável com um XML de submission e exige o objeto explícito `philips_submission` no destino. O Controller valida os campos configuráveis, o gerador resolve somente fontes estruturadas do snapshot e qualquer campo clínico ou de autoria sem origem explícita falha fechado. O profile `pdf_only` e os jobs históricos permanecem inalterados; o contrato detalhado está em `PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
+
 ## Serviço local do worker
 
 O processo local é instalado como `voxelpacs-report-delivery-worker.service`, supervisionado pelo `systemd`. Ele é a alternativa recomendada ao cron externo porque mantém o loop, o lease exclusivo, a recuperação automática e as credenciais no próprio servidor, sem publicar token de execução para terceiros.
@@ -119,6 +123,7 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 | DICOM SR | Contrato e rastreabilidade prontos; requer mapeamento DICOM SR/TID 2000 e homologação. |
 | HL7 ORU^R01 | Contrato e rastreabilidade prontos; requer profile e interface do RIS/HIS receptor. |
 | SFTP/FTPS | Contrato e rastreabilidade prontos; requer geração de PDF, manifesto e credencial/chave por cliente. |
+| Philips Non-DICOM `submission_document` | Package PDF + XML implementado de forma opt-in; requer migration aditiva, validação do contrato externo e homologação específica da Bridge. |
 
 Nenhum destino clínico é habilitado pela implantação: a habilitação e a confirmação de produção ocorrem exclusivamente pelo painel de superadmin.
 

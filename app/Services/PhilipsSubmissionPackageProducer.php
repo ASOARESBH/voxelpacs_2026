@@ -9,7 +9,8 @@ final class PhilipsSubmissionPackageProducer
 {
     public function __construct(
         private readonly ReportDeliveryArtifactService $artifacts = new ReportDeliveryArtifactService(),
-        private readonly PhilipsSubmissionDocumentGenerator $generator = new PhilipsSubmissionDocumentGenerator()
+        private readonly PhilipsSubmissionDocumentGenerator $generator = new PhilipsSubmissionDocumentGenerator(),
+        private readonly PhilipsSubmissionMetadataResolver $metadata = new PhilipsSubmissionMetadataResolver()
     ) {
     }
 
@@ -37,12 +38,7 @@ final class PhilipsSubmissionPackageProducer
     /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @return array<string,mixed> */
     private function resolvedInput(array $payload, array $configuration): array
     {
-        $source = $payload['philips_submission'] ?? null;
-        if (!is_array($source)) {
-            throw new PhilipsXmlFieldUnresolvedException('philips_submission');
-        }
-
-        $input = $source;
+        $input = $this->metadata->resolve($payload);
         $settings = $configuration['philips_submission'] ?? null;
         if (!is_array($settings)) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_path');
@@ -50,6 +46,11 @@ final class PhilipsSubmissionPackageProducer
         foreach ([
             'task_file_path',
             'task_site_id',
+            'task_document_name',
+            'task_author_id',
+            'task_author_humanname_family',
+            'task_author_humanname_given',
+            'task_author_humanname_middle',
             'task_delete_file',
             'task_document_type_applicable',
             'task_document_type',
