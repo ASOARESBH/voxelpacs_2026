@@ -35,6 +35,12 @@ final class PhilipsFolderDeliveryService
         return filter_var(getenv('PHILIPS_NON_DICOM_SMB_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
     }
 
+    /** Diagnóstico temporário de autenticação SMB sem operação remota de escrita. */
+    public static function readOnlyTestEnabled(): bool
+    {
+        return filter_var(getenv('PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+    }
+
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact
      * @return array{reference:string,sha256:string,size:int,filename:string}
      */

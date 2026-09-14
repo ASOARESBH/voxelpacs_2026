@@ -32,6 +32,29 @@ final class PhilipsFolderSmbConnectivityService
         );
     }
 
+    /** @return array<string, string> Estados sanitizados; sem job e sem escrita remota. */
+    public function testReadOnly(int $tenantId, int $destinationId, array $configuration, string $encryptedSecret, int $timeout): array
+    {
+        if (!PhilipsFolderDeliveryService::readOnlyTestEnabled() || $tenantId <= 0 || $destinationId <= 0) {
+            throw new PhilipsFolderDeliveryException('feature_disabled', 'feature_disabled');
+        }
+        $password = $this->password($encryptedSecret);
+        try {
+            $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, $tenantId, $destinationId);
+        } catch (\Throwable) {
+            throw new PhilipsFolderDeliveryException('gateway_secret_envelope_unavailable', 'gateway_unavailable');
+        } finally {
+            sodium_memzero($password);
+        }
+        return (new PhilipsFolderGatewayBridgeClient())->testSmbAuthenticationReadOnly(
+            $tenantId,
+            $destinationId,
+            $configuration,
+            $envelope,
+            max(5, min(120, $timeout))
+        );
+    }
+
     private function password(string $encryptedSecret): string
     {
         try {

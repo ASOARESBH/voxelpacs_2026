@@ -210,6 +210,106 @@ final class PhilipsFolderGatewayBridgeClient
         return 'smb_connection_ok';
     }
 
+    /** @return array<string, string> Resultado sanitizado; não envia PDF e não executa escrita remota. */
+    public function testSmbAuthenticationReadOnly(int $tenantId, int $destinationId, array $configuration, array $secretEnvelope, int $timeout): array
+    {
+        if ($tenantId <= 0 || $destinationId <= 0 || !PhilipsFolderDeliveryService::readOnlyTestEnabled()) {
+            throw new PhilipsFolderDeliveryException('feature_disabled', 'feature_disabled');
+        }
+        $envelope = $this->secretEnvelope($secretEnvelope);
+        if ($envelope['value'] === '') {
+            throw new PhilipsFolderDeliveryException('credentials_unavailable', 'credentials_unavailable');
+        }
+        $baseUrl = rtrim(trim((string) getenv('PHILIPS_FOLDER_BRIDGE_BASE_URL')), '/');
+        $url = $baseUrl . '/v1/philips-folder/smb-auth-test/' . $destinationId;
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+        if (!$this->allowedTestUrl($baseUrl, $url, $destinationId, '/v1/philips-folder/smb-auth-test/')) {
+            throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
+        }
+        $secret = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_HMAC'));
+        $caFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CA_FILE'));
+        $certFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CERT_FILE'));
+        $keyFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_KEY_FILE'));
+        if ($secret === '' || !is_file($caFile) || !is_file($certFile) || !is_file($keyFile)) {
+            throw new PhilipsFolderDeliveryException('gateway_credentials_unavailable', 'credentials_unavailable');
+        }
+        $bridgeConfiguration = [
+            'host' => (string) ($configuration['host'] ?? ''),
+            'port' => 445,
+            'share' => (string) ($configuration['smb_share'] ?? $configuration['share'] ?? ''),
+            'username' => (string) ($configuration['smb_username'] ?? $configuration['username'] ?? ''),
+        ];
+        $configurationHash = hash('sha256', json_encode($bridgeConfiguration, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}');
+        $timestamp = (string) time();
+        $signatureBase = implode("\n", ['POST', $path, (string) $tenantId, (string) $destinationId, $configurationHash, $envelope['sha256'], $timestamp]);
+        $signature = hash_hmac('sha256', $signatureBase, $secret);
+        $curl = curl_init($url);
+        if ($curl === false) {
+            throw new PhilipsFolderDeliveryException('gateway_client_unavailable', 'gateway_unavailable');
+        }
+        try {
+            curl_setopt_array($curl, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => '{}',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => min(15, $timeout),
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_CAINFO => $caFile,
+                CURLOPT_SSLCERT => $certFile,
+                CURLOPT_SSLKEY => $keyFile,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Content-Length: 2',
+                    'X-VOXEL-Tenant-ID: ' . $tenantId,
+                    'X-VOXEL-Destination-ID: ' . $destinationId,
+                    'X-VOXEL-Configuration-SHA256: ' . $configurationHash,
+                    'X-VOXEL-Secret-Envelope: ' . $envelope['value'],
+                    'X-VOXEL-Timestamp: ' . $timestamp,
+                    'X-VOXEL-Signature: ' . $signature,
+                ],
+            ]);
+            $body = curl_exec($curl);
+            $errno = curl_errno($curl);
+            $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        } finally {
+            curl_close($curl);
+        }
+        $result = [
+            'http_status' => (string) $httpCode,
+            'curl_result' => $errno === 0 && is_string($body) ? 'RESPONSE' : 'ERROR',
+            'curl_errno' => (string) $errno,
+            'smb_return_code' => 'unknown',
+            'smb_classification' => $errno === 0 && is_string($body)
+                ? ($this->responseReasonCategory($body) ?? 'unknown')
+                : $this->curlFailureCategory($errno, ''),
+            'smb_auth' => 'FAIL',
+            'smb_pwd' => 'FAIL',
+            'nt_status_logon_failure' => 'UNKNOWN',
+        ];
+        $response = is_string($body) ? json_decode($body, true) : null;
+        if (is_array($response)) {
+            foreach (['smb_return_code', 'smb_classification', 'smb_auth', 'smb_pwd', 'nt_status_logon_failure'] as $key) {
+                if (isset($response[$key]) && is_scalar($response[$key])) {
+                    $result[$key] = (string) $response[$key];
+                }
+            }
+        }
+        $result['result'] = $errno === 0
+            && is_string($body)
+            && $httpCode === 200
+            && is_array($response)
+            && (string) ($response['status'] ?? '') === 'ok'
+            && (string) ($response['pwd'] ?? '') === 'confirmed'
+            ? 'PASS'
+            : 'FAIL';
+        return $result;
+    }
+
     private function logCurlDiagnostics(
         int $jobId,
         int $destinationId,
@@ -332,7 +432,7 @@ final class PhilipsFolderGatewayBridgeClient
             && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
     }
 
-    private function allowedTestUrl(string $baseUrl, string $url, int $destinationId): bool
+    private function allowedTestUrl(string $baseUrl, string $url, int $destinationId, string $pathPrefix = '/v1/philips-folder/smb-test/'): bool
     {
         $base = parse_url($baseUrl);
         $parts = parse_url($url);
@@ -341,7 +441,7 @@ final class PhilipsFolderGatewayBridgeClient
             && ($parts['scheme'] ?? '') === 'https'
             && ($parts['host'] ?? '') === ($base['host'] ?? '')
             && (int) ($parts['port'] ?? 443) === (int) ($base['port'] ?? 443)
-            && ($parts['path'] ?? '') === '/v1/philips-folder/smb-test/' . $destinationId
+            && ($parts['path'] ?? '') === $pathPrefix . $destinationId
             && !isset($base['query'], $base['fragment'], $base['user'], $base['pass'])
             && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
     }

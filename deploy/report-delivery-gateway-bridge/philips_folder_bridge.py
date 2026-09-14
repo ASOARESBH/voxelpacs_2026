@@ -302,6 +302,10 @@ class Handler(BaseHTTPRequestHandler):
         LOG.info("%s", " ".join(f"{key}={value}" for key, value in fields.items()))
 
     def do_POST(self) -> None:  # noqa: N802
+        auth_test_prefix = "/v1/philips-folder/smb-auth-test/"
+        if self.path.startswith(auth_test_prefix) and self.path[len(auth_test_prefix):].isdigit():
+            self.test_smb_authentication_readonly(int(self.path[len(auth_test_prefix):]))
+            return
         test_prefix = "/v1/philips-folder/smb-test/"
         if self.path.startswith(test_prefix) and self.path[len(test_prefix):].isdigit():
             self.test_smb_connectivity(int(self.path[len(test_prefix):]))
@@ -411,6 +415,99 @@ class Handler(BaseHTTPRequestHandler):
             return
         LOG.info("event=philips_smb_test_success destination_id=%s", destination_id)
         self.respond(HTTPStatus.OK, {"status": "ok"})
+
+    def test_smb_authentication_readonly(self, destination_id: int) -> None:
+        if (
+            os.environ.get("PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED", "0").strip() != "1"
+            or POLICY.mode != "single_test"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        supplied_configuration_hash = self.headers.get("X-VOXEL-Configuration-SHA256", "")
+        try:
+            request_time = int(timestamp)
+            tenant_value = int(tenant_id)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        expected_configuration_hash = self.smb_configuration_hash()
+        if not hmac.compare_digest(supplied_configuration_hash, expected_configuration_hash):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest()
+        signature_base = "\n".join(["POST", self.path, tenant_id, str(destination_id), supplied_configuration_hash, envelope_hash, timestamp])
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        try:
+            with self.temporary_smb_credentials(envelope, destination_id, tenant_value) as credentials:
+                result = self.smb_authentication_readonly(credentials, destination_id)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_smb_auth_readonly_failed destination_id=%s reason_category=%s", destination_id, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {
+                "error": "gateway_smb_test_failed",
+                "reason_category": error.category,
+                "smb_return_code": "unknown",
+                "smb_classification": error.category,
+                "smb_auth": "FAIL",
+                "smb_pwd": "FAIL",
+                "nt_status_logon_failure": "UNKNOWN",
+            })
+            return
+        if result["smb_auth"] != "PASS":
+            self.respond(HTTPStatus.BAD_GATEWAY, {
+                "error": "gateway_smb_test_failed",
+                "reason_category": result["smb_classification"],
+                **result,
+            })
+            return
+        LOG.info("event=philips_smb_auth_readonly_success destination_id=%s", destination_id)
+        self.respond(HTTPStatus.OK, {"status": "ok", "pwd": "confirmed", **result})
+
+    def smb_authentication_readonly(self, credentials: Path, destination_id: int) -> dict[str, str]:
+        try:
+            result = self._smb_command(credentials, "pwd")
+        except BridgeTransferError as error:
+            LOG.warning(
+                "event=philips_smb_auth_readonly_result destination_id=%s SMB_RETURN_CODE=unknown "
+                "SMB_CLASSIFICATION=%s SMB_AUTH=FAIL SMB_PWD=FAIL "
+                "NT_STATUS_LOGON_FAILURE=UNKNOWN",
+                destination_id,
+                error.category,
+            )
+            raise
+        output = (result.stdout + result.stderr).lower()
+        pwd_confirmed = result.returncode == 0 and "current directory is" in output
+        auth_failed = "nt_status_logon_failure" in output
+        classification = "none" if pwd_confirmed else ("authentication" if auth_failed else classify_transport_error(result.stdout + result.stderr))
+        LOG.info(
+            "event=philips_smb_auth_readonly_result destination_id=%s SMB_RETURN_CODE=%s "
+            "SMB_CLASSIFICATION=%s SMB_AUTH=%s SMB_PWD=%s NT_STATUS_LOGON_FAILURE=%s",
+            destination_id,
+            result.returncode,
+            classification,
+            "PASS" if pwd_confirmed else "FAIL",
+            "PASS" if pwd_confirmed else "FAIL",
+            "YES" if auth_failed else "NO",
+        )
+        return {
+            "smb_return_code": str(result.returncode),
+            "smb_classification": classification,
+            "smb_auth": "PASS" if pwd_confirmed else "FAIL",
+            "smb_pwd": "PASS" if pwd_confirmed else "FAIL",
+            "nt_status_logon_failure": "YES" if auth_failed else "NO",
+        }
 
     def smb_configuration_hash(self) -> str:
         if not isinstance(POLICY.smb, dict):

@@ -21,6 +21,12 @@ O gateway permanece como a única borda com capacidade SMB. O gateway recebe uma
 
 > Para reduzir o risco de ação sem destino auditável, o teste de conexão deve ocorrer **depois de salvar o destino desativado em homologação**. Salvar não habilita o destino, não ativa disparo automático e não transmite conteúdo.
 
+## Validação temporária de autenticação sem escrita
+
+Quando for necessário separar autenticação SMB de permissão de escrita, o CLI temporário `bin/philips_smb_auth_readonly.php` pode ser habilitado somente para o tenant e destino de homologação explicitamente autorizados. Ele lê o destino de forma tenant-scoped, decifra a credencial apenas em memória, sela o envelope para a Bridge e solicita exclusivamente `smbclient -c "pwd"` com SMB3. Não cria outbox, job ou PDF e não executa `put`, `del`, `rename`, `get`, `mkdir` ou `rmdir`.
+
+A operação exige `PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED=1` tanto no processo CLI quanto na Bridge, além de `PHILIPS_FOLDER_MODE=single_test`. A flag permanece desligada por padrão; o endpoint dedicado não reutiliza o teste legado que executa probe `put`/`del`. A resposta e os logs retornam somente status HTTP, código de retorno, categoria sanitizada, `SMB_AUTH`, `SMB_PWD` e marcador de `NT_STATUS_LOGON_FAILURE`, sem saída bruta, caminho, usuário, domínio, senha ou conteúdo remoto. Após a validação, a flag deve ser removida e a Bridge reiniciada isoladamente.
+
 ## Regras de configuração
 
 Os parâmetros públicos do destino são transporte `smb`, porta `445`, compartilhamento e usuário. O destino privado é aceito somente quando corresponde ao peer do túnel Philips validado pela política root-only do gateway. A interface deve exibir apenas `Credencial configurada` e, em edição, deixar o campo de senha vazio; a senha anterior permanece válida se o campo não for preenchido.
