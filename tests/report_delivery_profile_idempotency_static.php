@@ -24,6 +24,15 @@ expect_profile_idempotency(strlen($pdfOnly) === 64, 'PDF-only key must be SHA-25
 expect_profile_idempotency(strlen($submission) === 64, 'Submission key must be SHA-256');
 expect_profile_idempotency($pdfOnly !== $submission, 'Profiles must have distinct logical identities');
 expect_profile_idempotency($pdfOnly === $repeated, 'The same profile inputs must be deterministic');
+expect_profile_idempotency(ReportDeliveryRepository::deliveryProfileIdentity(null) === 'pdf_only', 'Legacy NULL must map to pdf_only identity');
+expect_profile_idempotency(ReportDeliveryRepository::deliveryProfileIdentity('') === 'pdf_only', 'Empty legacy profile must map to pdf_only identity');
+expect_profile_idempotency(ReportDeliveryRepository::deliveryProfileIdentity('submission_document') === 'submission_document', 'Submission identity must remain explicit');
+
+try {
+    ReportDeliveryRepository::deliveryProfileIdentity('unsupported');
+    expect_profile_idempotency(false, 'Unsupported profile identity must fail closed');
+} catch (DomainException) {
+}
 
 $repository = file_get_contents($root . '/app/Repositories/ReportDeliveryRepository.php');
 expect_profile_idempotency(is_string($repository), 'Repository must be readable');
@@ -37,5 +46,34 @@ expect_profile_idempotency(str_contains($worker, 'PROFILE_SUBMISSION_DOCUMENT'),
 
 $schema = file_get_contents($root . '/database/migrations/2026-09-14_report_delivery_package_profile_postgresql.sql');
 expect_profile_idempotency(is_string($schema) && str_contains($schema, 'ADD COLUMN IF NOT EXISTS delivery_profile'), 'Existing additive profile migration must remain required');
+
+$repository = file_get_contents($root . '/app/Repositories/ReportDeliveryRepository.php');
+expect_profile_idempotency(is_string($repository) && str_contains($repository, 'public static function deliveryProfileIdentity'), 'Legacy NULL profile identity rule must be explicit');
+
+$postgresMigration = file_get_contents($root . '/database/migrations/2026-09-14_report_delivery_profile_aware_job_unique_postgresql.sql');
+$mysqlMigration = file_get_contents($root . '/database/migrations/2026-09-14_report_delivery_profile_aware_job_unique_mysql.sql');
+expect_profile_idempotency(is_string($postgresMigration) && str_contains($postgresMigration, 'COALESCE(delivery_profile, \'pdf_only\')'), 'PostgreSQL NULL identity rule missing');
+expect_profile_idempotency(is_string($postgresMigration) && str_contains($postgresMigration, 'CREATE UNIQUE INDEX') && str_contains($postgresMigration, '(COALESCE(delivery_profile'), 'PostgreSQL profile-aware unique expression missing');
+expect_profile_idempotency(is_string($mysqlMigration) && str_contains($mysqlMigration, 'delivery_profile_identity'), 'MySQL generated profile identity missing');
+expect_profile_idempotency(is_string($mysqlMigration) && str_contains($mysqlMigration, 'GENERATED ALWAYS AS'), 'MySQL profile identity must be generated');
+expect_profile_idempotency(is_string($mysqlMigration) && str_contains($mysqlMigration, 'delivery_profile_identity)'), 'MySQL profile-aware unique key missing');
+expect_profile_idempotency(is_string($mysqlMigration) && str_contains($mysqlMigration, "COALESCE(delivery_profile, ''pdf_only'')"), 'MySQL NULL identity rule missing');
+
+expect_profile_idempotency(
+    is_string($repository) && str_contains($repository, 'ON CONFLICT DO NOTHING') && str_contains($repository, 'INSERT IGNORE INTO pacs_report_delivery_jobs'),
+    'Concurrent job creation must remain conflict-safe in both dialects'
+);
+expect_profile_idempotency(
+    is_string($repository) && str_contains($repository, 'deliveryProfileIdentity($this->deliveryProfileForDestination($destination))'),
+    'Job persistence must normalize the profile before deriving its key'
+);
+expect_profile_idempotency(
+    is_string($repository) && str_contains($repository, "ELSE 'mixed'") && str_contains($repository, 'setOutboxDeliveryProfile'),
+    'One event outbox must summarize distinct profiles as mixed'
+);
+
+$outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+expect_profile_idempotency(is_string($outbox) && str_contains($outbox, "'report.released'"), 'Outbox event type must remain stable');
+expect_profile_idempotency(is_string($outbox) && !str_contains($outbox, '$deliveryProfile'), 'Outbox eventKey must not be recalculated from profile');
 
 fwrite(STDOUT, "REPORT_DELIVERY_PROFILE_IDEMPOTENCY_STATIC_OK\n");

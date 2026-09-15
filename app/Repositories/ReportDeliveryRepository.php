@@ -457,11 +457,16 @@ class ReportDeliveryRepository
         }
         $stmt = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_outbox
-             SET delivery_profile = :delivery_profile
-             WHERE id = :id AND tenant_id = :tenant_id AND delivery_profile IS NULL"
+             SET delivery_profile = CASE
+                 WHEN delivery_profile IS NULL THEN :profile_new
+                 WHEN delivery_profile = :profile_same THEN delivery_profile
+                 ELSE 'mixed'
+             END
+             WHERE id = :id AND tenant_id = :tenant_id"
         );
         $stmt->execute([
-            ':delivery_profile' => $profile,
+            ':profile_new' => $profile,
+            ':profile_same' => $profile,
             ':id' => $outboxId,
             ':tenant_id' => $tenantId,
         ]);
@@ -494,7 +499,7 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
-            $profile = $this->deliveryProfileForDestination($destination);
+            $profile = self::deliveryProfileIdentity($this->deliveryProfileForDestination($destination));
             $jobKey = self::profileAwareJobIdempotencyKey(
                 $tenantId,
                 $reportId,
@@ -541,6 +546,18 @@ class ReportDeliveryRepository
             $destinationId,
             $deliveryProfile,
         ]));
+    }
+
+    public static function deliveryProfileIdentity(?string $deliveryProfile): string
+    {
+        $profile = trim((string) $deliveryProfile);
+        if ($profile === '') {
+            return 'pdf_only';
+        }
+        if (!in_array($profile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Identidade de profile inválida.');
+        }
+        return $profile;
     }
 
     /** @param array<string,mixed> $destination */

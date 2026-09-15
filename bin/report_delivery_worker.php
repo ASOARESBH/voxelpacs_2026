@@ -219,7 +219,9 @@ final class LocalDicomDeliveryWorker
                 $completionMetadata['package_identity'] = (string) ($result['package_identity'] ?? '');
                 $completionMetadata['package_verified'] = (string) ($result['package_verified'] ?? 'FAIL');
             }
-            $this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata);
+            if (!$this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata)) {
+                throw new DeliveryWorkerFailure('completion_not_confirmed');
+            }
             Logger::info(
                 in_array($transport, [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)
                     ? '[PhilipsNonDicomDelivery] PHILIPS_EXPORT_SUCCESS'

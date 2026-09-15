@@ -13,6 +13,8 @@ $files = [
     'service' => $root . '/app/Services/PhilipsFolderDeliveryService.php',
     'postgres_migration' => $root . '/database/migrations/2026-09-14_report_delivery_package_profile_postgresql.sql',
     'mysql_migration' => $root . '/database/migrations/2026-09-14_report_delivery_package_profile_mysql.sql',
+    'postgres_unique_migration' => $root . '/database/migrations/2026-09-14_report_delivery_profile_aware_job_unique_postgresql.sql',
+    'mysql_unique_migration' => $root . '/database/migrations/2026-09-14_report_delivery_profile_aware_job_unique_mysql.sql',
 ];
 foreach ($files as $name => $path) {
     if (!is_file($path)) {
@@ -33,6 +35,8 @@ $required = [
     ['service', "PROFILE_SUBMISSION_DOCUMENT", 'explicit profile'],
     ['postgres_migration', 'ADD COLUMN IF NOT EXISTS delivery_profile', 'additive PostgreSQL schema'],
     ['mysql_migration', 'delivery_profile VARCHAR(40) NULL', 'additive MySQL schema'],
+    ['postgres_unique_migration', "COALESCE(delivery_profile, 'pdf_only')", 'profile-aware PostgreSQL job identity'],
+    ['mysql_unique_migration', 'GENERATED ALWAYS AS', 'profile-aware MySQL job identity'],
 ];
 foreach ($required as [$file, $needle, $label]) {
     if (!str_contains($contents[$file], $needle)) {
@@ -52,7 +56,8 @@ if (str_contains($contents['service'], 'smb' . 'client') || str_contains($conten
     fwrite(STDERR, "PACKAGE_CODE_EXECUTES_SMB\n");
     exit(1);
 }
-if (str_contains($contents['mysql_migration'], 'DROP TABLE') || str_contains($contents['postgres_migration'], 'DROP TABLE')) {
+if (str_contains($contents['mysql_migration'], 'DROP TABLE') || str_contains($contents['postgres_migration'], 'DROP TABLE')
+    || str_contains($contents['mysql_unique_migration'], 'DROP TABLE') || str_contains($contents['postgres_unique_migration'], 'DROP TABLE')) {
     fwrite(STDERR, "DESTRUCTIVE_MIGRATION\n");
     exit(1);
 }

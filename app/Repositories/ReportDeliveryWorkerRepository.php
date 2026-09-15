@@ -208,6 +208,10 @@ class ReportDeliveryWorkerRepository
                 $this->pdo->commit();
                 return false;
             }
+            if (!self::completionMetadataAllows((string) ($job['delivery_profile'] ?? ''), $metadata)) {
+                $this->pdo->rollBack();
+                return false;
+            }
             $this->createAttempt($jobId, (int) $job['attempt_count'], $workerId, 'delivered', '200', $reference, null, $metadata);
             $update = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_jobs
@@ -225,6 +229,27 @@ class ReportDeliveryWorkerRepository
             }
             throw $e;
         }
+    }
+
+    /**
+     * Valida os invariantes de conclusão sem confiar no caller do worker.
+     * Profiles legados continuam compatíveis; package exige identidade SHA-256
+     * e confirmação explícita da verificação remota.
+     *
+     * @param array<string,mixed> $metadata
+     */
+    public static function completionMetadataAllows(string $deliveryProfile, array $metadata): bool
+    {
+        if ($deliveryProfile !== 'submission_document') {
+            return true;
+        }
+
+        $packageVerified = $metadata['package_verified'] ?? null;
+        $packageIdentity = $metadata['package_identity'] ?? null;
+
+        return $packageVerified === 'PASS'
+            && is_string($packageIdentity)
+            && preg_match('/\A[a-f0-9]{64}\z/i', $packageIdentity) === 1;
     }
 
     /** @param array<string,mixed> $metadata */
