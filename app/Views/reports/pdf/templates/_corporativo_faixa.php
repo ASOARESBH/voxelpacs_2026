@@ -29,7 +29,7 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
     <title>Laudo — <?= $paciente ?></title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Arial', sans-serif; font-size: 12px; color: #222; background: #fff; }
+        body { font-family: 'Arial', sans-serif; font-size: 12px; line-height: 1.3; color: #222; background: #fff; }
         .pdf-page { max-width: 820px; margin: 0 auto; }
         .pdf-inner { padding: 0 2rem 2rem; }
 
@@ -47,22 +47,28 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
         .pdf-box .linha span { color: #64748b; }
         .pdf-box .linha strong { color: #1e293b; }
 
-        .pdf-section { margin-bottom: 1.1rem; }
-        .pdf-section-title { font-size: .85rem; font-weight: 800; color: #0f3d63; margin-bottom: .35rem; }
-        .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; text-align: justify; }
+        .pdf-section { margin-bottom: .65rem; }
+        .pdf-section-title { font-size: .85rem; font-weight: 800; color: #0f3d63; margin-bottom: .2rem; }
+        .pdf-section-content { font-size: .85rem; line-height: 1.3; color: #222; text-align: justify; }
+        .pdf-section-content p { margin: 0 0 2px; }
+        .pdf-section-content p.ql-spacing-compact { margin-bottom: 0; }
+        .pdf-section-content p.ql-spacing-normal { margin-bottom: 6px; }
+        .pdf-section-content p.ql-spacing-medium { margin-bottom: 12px; }
+        .pdf-section-content p.ql-spacing-wide { margin-bottom: 20px; }
+        .pdf-section-content h1, .pdf-section-content h2, .pdf-section-content h3, .pdf-section-content h4, .pdf-section-content h5, .pdf-section-content h6 { margin: 8px 0 3px; line-height: 1.3; }
         .pdf-section-content .ql-align-center { text-align: center; }
         .pdf-section-content .ql-align-right { text-align: right; }
         .pdf-section-content .ql-align-justify { text-align: justify; }
         .pdf-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #aaa; font-style: italic; }
 
-        .pdf-signature { border-top: 2px solid #0f3d63; padding-top: 1rem; margin-top: 2rem; display: flex; justify-content: flex-end; }
+        .pdf-signature { border-top: 2px solid #0f3d63; padding-top: .65rem; margin-top: 1rem; display: flex; justify-content: flex-end; }
         .pdf-sig-info { font-size: .8rem; text-align: right; }
         .pdf-sig-info strong { display: block; font-size: .9rem; color: #0f3d63; }
         .pdf-sig-info span { color: #555; }
         .pdf-hash { font-size: .65rem; color: #999; word-break: break-all; margin-top: .5rem; }
 
-        .pdf-footer { background: #f1f5f9; padding: .75rem 2rem; margin-top: 1.5rem; font-size: .68rem; color: #475569; text-align: center; line-height: 1.6; }
+        .pdf-footer { background: #f1f5f9; padding: .5rem 2rem; margin-top: .8rem; font-size: .68rem; color: #475569; text-align: center; line-height: 1.35; }
 
         .pdf-actions { display: flex; gap: .5rem; padding: 1.5rem 2rem 0; }
         .pdf-actions button, .pdf-actions a {

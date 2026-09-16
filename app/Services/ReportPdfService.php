@@ -16,11 +16,10 @@ class ReportPdfService
 {
     private const MAX_INLINE_ASSET_BYTES = 5 * 1024 * 1024;
 
-    private ReportRepository $repo;
+    private ?ReportRepository $repo = null;
 
     public function __construct()
     {
-        $this->repo = new ReportRepository();
     }
 
     public function stream(object $estudo, object $report): void
@@ -33,8 +32,8 @@ class ReportPdfService
     }
 
     /**
-     * Gera o binário PDF sem produzir saída HTTP. Usado pelo Delivery Hub para
-     * encapsular exatamente a versão clínica do laudo em um objeto DICOM.
+     * Compatibilidade para consumidores legados. Novas devolutivas devem usar
+     * renderSnapshotBinary() com o contexto completo do viewer.
      */
     public function renderBinary(object $estudo, object $report): string
     {
@@ -78,7 +77,6 @@ class ReportPdfService
         $dompdf->loadHtml($html, 'UTF-8');
         $dompdf->setPaper('A4');
         $dompdf->render();
-
         return $dompdf->output();
     }
 
@@ -86,7 +84,7 @@ class ReportPdfService
     {
         $conteudo = json_decode($report->conteudo, true) ?: [];
         $secoes = $conteudo['secoes'] ?? [];
-        $signature = $this->repo->findSignatureByReportId((int) $report->id);
+        $signature = ($this->repo ??= new ReportRepository())->findSignatureByReportId((int) $report->id);
         $qrDataUri = $signature && class_exists(QRCode::class) && class_exists(QROptions::class)
             ? $this->buildQrSvgDataUri($report, $signature)
             : null;
@@ -108,11 +106,11 @@ class ReportPdfService
             'secoes' => $secoes,
             'signature' => $signature,
             'qrDataUri' => $qrDataUri,
+            'snapshotPdf' => true,
         ]);
 
         ob_start();
         require $viewPath;
-
         return (string) ob_get_clean();
     }
 
