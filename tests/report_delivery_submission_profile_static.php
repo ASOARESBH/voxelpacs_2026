@@ -57,6 +57,16 @@ foreach ([
     expect_profile(str_contains($view, $marker), "View must expose {$marker}");
 }
 
+expect_profile(
+    str_contains($view, "const value = input.hasAttribute('data-submission-field')")
+        && !str_contains($view, "const value = input.dataset.submissionField"),
+    'View must load submission fields by boolean attribute presence'
+);
+expect_profile(
+    str_contains($view, "submissionProfile.value = currentConfig.delivery_profile === 'submission_document' ? 'submission_document' : 'pdf_only';"),
+    'View must restore the persisted delivery profile when editing a destination'
+);
+
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');

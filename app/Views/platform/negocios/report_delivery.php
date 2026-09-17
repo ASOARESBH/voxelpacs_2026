@@ -440,7 +440,7 @@ $transportLabels = [
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
                 const submission = currentConfig.philips_submission && typeof currentConfig.philips_submission === 'object' ? currentConfig.philips_submission : {};
-                const value = input.dataset.submissionField ? submission[input.dataset.field] : currentConfig[input.dataset.field];
+                const value = input.hasAttribute('data-submission-field') ? submission[input.dataset.field] : currentConfig[input.dataset.field];
                 if (value === undefined || value === null) return;
                 if (input.type === 'checkbox') input.checked = Boolean(value);
                 else input.value = value;
@@ -623,6 +623,7 @@ $transportLabels = [
             document.getElementById('destination-attempts').value = item.max_attempts;
             document.getElementById('destination-release').checked = Number(item.disparar_na_liberacao) === 1;
             enabled.checked = Number(item.enabled) === 1;
+            if (submissionProfile) submissionProfile.value = currentConfig.delivery_profile === 'submission_document' ? 'submission_document' : 'pdf_only';
             setSelectedInstitutions(item.institution_names);
             setSelectedIssuers(item.issuers);
             cancel.classList.remove('d-none');
