@@ -475,7 +475,9 @@ $transportLabels = [
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
                 const key = input.dataset.field;
-                const target = input.dataset.submissionField ? philipsSubmission : config;
+                const target = input.hasAttribute('data-submission-field')
+                    ? philipsSubmission
+                    : config;
                 if (input.type === 'checkbox') target[key] = input.checked;
                 else if (input.type === 'number') target[key] = Number(input.value);
                 else if (input.value.trim() !== '') target[key] = input.value.trim();
