@@ -439,6 +439,7 @@ $transportLabels = [
         document.querySelectorAll('.destination-fields').forEach((group) => {
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
+                if (input === submissionProfile) return;
                 const submission = currentConfig.philips_submission && typeof currentConfig.philips_submission === 'object' ? currentConfig.philips_submission : {};
                 const value = input.hasAttribute('data-submission-field') ? submission[input.dataset.field] : currentConfig[input.dataset.field];
                 if (value === undefined || value === null) return;
