@@ -140,16 +140,33 @@ class ReportDeliveryController extends Controller
         if (!$this->isPlatformAdmin()) {
             $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
         }
+        $this->logSanitizedSaveDiagnostics(
+            $tenantId,
+            $destinationId,
+            'request_received',
+            $_POST['configuration_json'] ?? null
+        );
         if (!$this->validCsrf()) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                'csrf_failed',
+                $_POST['configuration_json'] ?? null,
+                'csrf_invalid'
+            );
             $this->json(['success' => false, 'message' => 'Sessão expirada. Atualize a página e tente novamente.'], 419);
         }
         if (!$this->tenantModel->find($tenantId)) {
             $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
         }
 
+        $validated = false;
         try {
             $data = $this->validatedPayload($tenantId);
+            $validated = true;
+            $this->logSanitizedSaveDiagnostics($tenantId, $destinationId, 'validation_passed', $data['configuration_json']);
             $savedId = $this->repository->saveDestination($tenantId, $destinationId, $data, (int) Auth::userId());
+            $this->logSanitizedSaveDiagnostics($tenantId, $destinationId, 'persisted', $data['configuration_json']);
             $secretUpdate = (string) ($data['configuration_secret'] ?? '') !== ''
                 ? 'YES'
                 : ($destinationId !== null ? 'PRESERVED' : 'NOT_APPLICABLE');
@@ -180,8 +197,22 @@ class ReportDeliveryController extends Controller
                 'secret_update' => $secretUpdate,
             ]);
         } catch (DomainException $e) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                $validated ? 'repository_domain_failure' : 'validation_failed',
+                $_POST['configuration_json'] ?? null,
+                $this->sanitizedSaveDiagnosticError($e->getMessage())
+            );
             $this->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                'unexpected_error',
+                $_POST['configuration_json'] ?? null,
+                'unexpected_throwable'
+            );
             Logger::error('[ReportDeliveryController::save] Falha ao salvar destino', [
                 'tenant_id' => $tenantId,
                 'destination_id' => $destinationId,
@@ -435,6 +466,138 @@ class ReportDeliveryController extends Controller
             ]);
             $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_recuperacao')], 500);
         }
+    }
+
+    private function saveDiagnosticsEnabled(): bool
+    {
+        $value = getenv('PHILIPS_DESTINATION_SAVE_DIAGNOSTICS');
+        if ($value === false) {
+            $value = $_ENV['PHILIPS_DESTINATION_SAVE_DIAGNOSTICS'] ?? $_SERVER['PHILIPS_DESTINATION_SAVE_DIAGNOSTICS'] ?? '0';
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /** @param mixed $rawConfiguration */
+    private function logSanitizedSaveDiagnostics(
+        int $tenantId,
+        ?int $destinationId,
+        string $stage,
+        mixed $rawConfiguration = null,
+        ?string $errorCode = null
+    ): void {
+        if (!$this->saveDiagnosticsEnabled()) {
+            return;
+        }
+
+        try {
+            $configuration = $this->decodeSaveDiagnosticConfiguration($rawConfiguration);
+            $allowedFields = [
+                'task_file_path',
+                'task_site_id',
+                'task_document_name',
+                'task_author_id',
+                'task_author_humanname_family',
+                'task_author_humanname_given',
+                'task_author_humanname_middle',
+                'task_document_type_applicable',
+                'task_document_type',
+                'task_modalities',
+                'task_document_mimetype',
+                'task_delete_file',
+            ];
+            $nestedSubmission = is_array($configuration['philips_submission'] ?? null)
+                ? $configuration['philips_submission']
+                : null;
+            $nestedPresence = [];
+            $rootPresence = [];
+            foreach ($allowedFields as $field) {
+                $nestedPresence[$field] = $nestedSubmission !== null && array_key_exists($field, $nestedSubmission);
+                $rootPresence[$field] = array_key_exists($field, $configuration);
+            }
+
+            $profile = is_string($configuration['delivery_profile'] ?? null)
+                ? trim($configuration['delivery_profile'])
+                : '';
+            $profileState = in_array($profile, ['pdf_only', 'submission_document'], true)
+                ? $profile
+                : ($profile === '' ? 'ABSENT' : 'INVALID');
+            $submissionKeyPresent = array_key_exists('philips_submission', $configuration);
+
+            $context = [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'stage' => $stage,
+                'post_field_presence' => [
+                    'nome' => array_key_exists('nome', $_POST),
+                    'transport' => array_key_exists('transport', $_POST),
+                    'ambiente' => array_key_exists('ambiente', $_POST),
+                    'enabled' => array_key_exists('enabled', $_POST),
+                    'disparar_na_liberacao' => array_key_exists('disparar_na_liberacao', $_POST),
+                    'configuration_json' => array_key_exists('configuration_json', $_POST),
+                    'configuration_secret' => array_key_exists('configuration_secret', $_POST),
+                    'institution_names' => array_key_exists('institution_names', $_POST),
+                    'issuer_of_patient_ids' => array_key_exists('issuer_of_patient_ids', $_POST),
+                ],
+                'configuration_json_state' => $this->saveDiagnosticJsonState($rawConfiguration, $configuration),
+                'delivery_profile' => $profileState,
+                'philips_submission' => $submissionKeyPresent
+                    ? ($nestedSubmission === null ? 'INVALID_TYPE' : 'PRESENT')
+                    : 'ABSENT',
+                'nested_field_presence' => $nestedPresence,
+                'root_field_presence' => $rootPresence,
+                'configuration_secret_present' => trim((string) ($_POST['configuration_secret'] ?? '')) !== '',
+            ];
+            if ($errorCode !== null) {
+                $context['sanitized_error_code'] = $errorCode;
+            }
+
+            Logger::info('[ReportDeliveryController::save][sanitized-diagnostics]', $context);
+        } catch (Throwable) {
+            // Diagnóstico nunca pode alterar o resultado funcional do Save.
+        }
+    }
+
+    /** @return array<string,mixed> */
+    private function decodeSaveDiagnosticConfiguration(mixed $rawConfiguration): array
+    {
+        if (is_array($rawConfiguration)) {
+            return $rawConfiguration;
+        }
+        if (!is_string($rawConfiguration) || trim($rawConfiguration) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawConfiguration, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function saveDiagnosticJsonState(mixed $rawConfiguration, array $configuration): string
+    {
+        if ($rawConfiguration === null && $configuration === []) {
+            return 'NOT_PROVIDED';
+        }
+        if (is_array($rawConfiguration)) {
+            return 'VALID_ARRAY';
+        }
+        if (!is_string($rawConfiguration) || trim($rawConfiguration) === '') {
+            return 'EMPTY';
+        }
+
+        return json_decode($rawConfiguration, true) !== null || trim($rawConfiguration) === 'null'
+            ? 'VALID_JSON'
+            : 'INVALID_JSON';
+    }
+
+    private function sanitizedSaveDiagnosticError(string $message): string
+    {
+        return match (true) {
+            str_contains($message, 'contrato Philips XML') => 'submission_object_missing',
+            str_contains($message, 'perfil Philips XML') => 'submission_field_invalid',
+            str_contains($message, 'SMB Non-DICOM') => 'transport_configuration_invalid',
+            str_contains($message, 'Issuer') || str_contains($message, 'InstitutionName') => 'source_selection_invalid',
+            default => 'domain_validation_failed',
+        };
     }
 
     /** @return array<string, mixed> */
