@@ -14,6 +14,17 @@ final class PhilipsSubmissionPackageProducer
     ) {
     }
 
+    public static function resolveTaskFilePath(string $directory, string $pdfFilename): string
+    {
+        $directory = trim($directory);
+        if ($directory === '' || preg_match('/[\x00-\x1F\x7F]/', $directory) === 1
+            || !preg_match('/^VOXEL_[A-Za-z0-9._-]{1,160}\.pdf$/', $pdfFilename)) {
+            throw new PhilipsXmlFieldUnresolvedException('task_file_path');
+        }
+        $separator = str_contains($directory, '\\') ? '\\' : '/';
+        return rtrim($directory, "\\/") . $separator . $pdfFilename;
+    }
+
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload */
     public function produce(array $job, array $configuration, array $payload, string $workerId): ReportDeliveryPackage
     {
@@ -23,7 +34,7 @@ final class PhilipsSubmissionPackageProducer
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
 
-        $input = $this->resolvedInput($payload, $configuration);
+        $input = $this->resolvedInput($payload, $configuration, $pdfFilename);
         $input['pdf_filename'] = $pdfFilename;
         $document = $this->generator->generate($input);
         $xmlStoragePath = $this->artifacts->storeGeneratedArtifact(
@@ -36,7 +47,7 @@ final class PhilipsSubmissionPackageProducer
     }
 
     /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @return array<string,mixed> */
-    private function resolvedInput(array $payload, array $configuration): array
+    private function resolvedInput(array $payload, array $configuration, string $pdfFilename): array
     {
         $input = $this->metadata->resolve($payload);
         $settings = $configuration['philips_submission'] ?? null;
@@ -59,6 +70,10 @@ final class PhilipsSubmissionPackageProducer
                 $input[$field] = $settings[$field];
             }
         }
+        if (!array_key_exists('task_file_path', $settings) || !is_string($settings['task_file_path'])) {
+            throw new PhilipsXmlFieldUnresolvedException('task_file_path');
+        }
+        $input['task_file_path'] = self::resolveTaskFilePath($settings['task_file_path'], $pdfFilename);
         return $input;
     }
 }

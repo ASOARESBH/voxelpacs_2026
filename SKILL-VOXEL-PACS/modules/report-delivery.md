@@ -31,7 +31,7 @@ O método existente `retryJob()` permanece reservado ao retry condicionado ao fl
 
 ## Profile `submission_document`
 
-O profile `submission_document` é opt-in e compõe PDF + XML somente quando a configuração explícita `philips_submission` está validada. O profile `pdf_only` permanece o padrão compatível e não é convertido retroativamente. Metadata clínica ou de autoria sem fonte estruturada não é inferida; o gerador falha fechado com o campo técnico não resolvido. A Bridge valida estrutura, campos, encoding ISO-8859-1, hash/tamanho e linkage PDF/XML antes de retornar `package_verified=PASS`, e preserva os arquivos finais remotos; apenas temporários `.part` são removidos. Novos jobs usam chave de idempotência profile-aware sem recalcular históricos. O contrato detalhado está em `docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
+O profile `submission_document` é opt-in e compõe PDF + XML somente quando a configuração explícita `philips_submission` está validada. O profile `pdf_only` permanece o padrão compatível e não é convertido retroativamente. A configuração administra uma pasta lógica; o `PhilipsSubmissionPackageProducer` anexa o basename de transporte validado do PDF antes de gerar o XML, preservando o separador Windows ou POSIX detectado. Metadata clínica ou de autoria sem fonte estruturada não é inferida; o gerador falha fechado com o campo técnico não resolvido. A Bridge valida estrutura, campos, encoding ISO-8859-1, hash/tamanho e linkage PDF/XML antes de retornar `package_verified=PASS`, e preserva os arquivos finais remotos; apenas temporários `.part` são removidos. Novos jobs usam chave de idempotência profile-aware sem recalcular históricos. O contrato detalhado está em `docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
 
 ## Dependências
 

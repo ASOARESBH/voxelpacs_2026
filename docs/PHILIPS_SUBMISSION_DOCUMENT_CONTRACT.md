@@ -19,7 +19,7 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_name` | Valor explícito configurado no destino | Obrigatório |
 | `task_document_date` | `released_at` congelado no snapshot | Obrigatório |
 | `task_image_date` | Combinação explícita de `study_date` e `study_time`; se incompleta, falha | Obrigatório |
-| `task_file_path` | Valor lógico explícito configurado e aprovado pelo receptor | Obrigatório |
+| `task_file_path` | Diretório lógico explícito configurado e aprovado pelo receptor; o producer anexa o `task_file_name` dinâmico ao gerar o XML | Obrigatório |
 | `task_file_name` | Nome de transporte VOXEL do PDF, validado pelo gerador | Obrigatório |
 | `task_accession_number` | `accession_number` do snapshot do estudo | Obrigatório |
 | `task_document_mimetype` | Constante `application/pdf` | Obrigatório |
@@ -39,7 +39,7 @@ O parser de nome de paciente só aceita componentes DICOM estruturados separados
 
 ## Configuração administrativa
 
-A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de caminho lógico, SITE_ID, nome do documento, autoria, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`.
+A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, autoria, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
 
 O Controller valida o profile, o transporte SMB, a bridge privada, os campos obrigatórios, os booleanos, o tipo documental `11502-2` e a ausência de tipo quando ele não é aplicável. A credencial continua passando pelo fluxo existente de criptografia e preservação; nenhum segredo é incluído no XML, logs, snapshot ou documentação.
 

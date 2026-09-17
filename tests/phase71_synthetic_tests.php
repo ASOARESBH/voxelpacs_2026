@@ -6,10 +6,15 @@ if ($root === '' || !is_dir($root)) {
     fwrite(STDERR, "CANDIDATE_ROOT_INVALID\n");
     exit(2);
 }
-require $root . '/vendor/autoload.php';
+if (is_file($root . '/vendor/autoload.php')) {
+    require $root . '/vendor/autoload.php';
+} else {
+    require $root . '/app/autoload.php';
+}
 
 use App\Services\PhilipsSubmissionDocument;
 use App\Services\PhilipsSubmissionDocumentGenerator;
+use App\Services\PhilipsSubmissionPackageProducer;
 use App\Services\ReportDeliveryPackage;
 use App\Repositories\ReportDeliveryRepository;
 
@@ -33,6 +38,11 @@ function expect_throw(callable $callback): bool
 }
 
 $generator = new PhilipsSubmissionDocumentGenerator();
+$resolvedWindows = PhilipsSubmissionPackageProducer::resolveTaskFilePath('C:\\AutoIngest\\PDF', 'VOXEL_SYNTHETIC_001.pdf');
+$resolvedPosix = PhilipsSubmissionPackageProducer::resolveTaskFilePath('/var/lib/auto-ingest/pdf', 'VOXEL_SYNTHETIC_001.pdf');
+check_case('TASK_FILE_PATH_WINDOWS_BASENAME', $resolvedWindows === 'C:\\AutoIngest\\PDF\\VOXEL_SYNTHETIC_001.pdf', $results, $failures);
+check_case('TASK_FILE_PATH_POSIX_BASENAME', $resolvedPosix === '/var/lib/auto-ingest/pdf/VOXEL_SYNTHETIC_001.pdf', $results, $failures);
+check_case('TASK_FILE_PATH_CONTROL_CHAR_FAIL_CLOSED', expect_throw(fn() => PhilipsSubmissionPackageProducer::resolveTaskFilePath("C:\\AutoIngest\nPDF", 'VOXEL_SYNTHETIC_001.pdf')), $results, $failures);
 $input = [
     'pdf_filename' => 'VOXEL_SYNTHETIC_001.pdf',
     'task_patient_id' => 'PATIENT-SYNTH-001',
