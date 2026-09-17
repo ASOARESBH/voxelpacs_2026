@@ -650,6 +650,43 @@ $transportLabels = [
             return;
         }
         serializeConfiguration();
+        if (new URLSearchParams(window.location.search).get('phase84') === 'capture') {
+            const capturedConfiguration = parseConfig(configInput.value);
+            const capturedSubmission = capturedConfiguration.philips_submission;
+            const allowedSubmissionFields = [
+                'task_file_path', 'task_site_id', 'task_document_name', 'task_author_id',
+                'task_author_humanname_family', 'task_author_humanname_given',
+                'task_author_humanname_middle', 'task_document_type_applicable',
+                'task_document_type', 'task_modalities', 'task_document_mimetype', 'task_delete_file',
+            ];
+            const submissionValues = {};
+            if (capturedSubmission && typeof capturedSubmission === 'object') {
+                allowedSubmissionFields.forEach((key) => {
+                    if (Object.prototype.hasOwnProperty.call(capturedSubmission, key)) {
+                        submissionValues[key] = capturedSubmission[key];
+                    }
+                });
+            }
+            const capture = {
+                capture_only: true,
+                database_write: false,
+                delivery_action: false,
+                delivery_profile: capturedConfiguration.delivery_profile ?? null,
+                philips_submission_present: !!capturedSubmission,
+                philips_submission_values: submissionValues,
+                root_task_fields: Object.keys(capturedConfiguration).filter((key) => key.indexOf('task_') === 0),
+                configuration_secret_present: secretInput.value.trim() !== '',
+                transport: transport.value,
+                environment: environment.value,
+                enabled: enabled.checked,
+                auto_trigger: document.getElementById('destination-release').checked,
+            };
+            window.__phase84SaveCapture = capture;
+            feedback.className = 'alert alert-warning';
+            feedback.textContent = 'CAPTURE_ONLY ' + JSON.stringify(capture);
+            feedback.classList.remove('d-none');
+            return;
+        }
         const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
         const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
         feedback.className = 'alert ' + (result.success ? 'alert-success' : 'alert-danger');
