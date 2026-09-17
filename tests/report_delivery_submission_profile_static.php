@@ -66,6 +66,10 @@ expect_profile(
     str_contains($view, "submissionProfile.value = currentConfig.delivery_profile === 'submission_document' ? 'submission_document' : 'pdf_only';"),
     'View must restore the persisted delivery profile when editing a destination'
 );
+expect_profile(
+    str_contains($view, "if (key.startsWith('task_')) delete config[key];"),
+    'View must remove legacy task fields from the configuration root before serialization'
+);
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');

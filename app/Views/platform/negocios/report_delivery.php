@@ -470,6 +470,9 @@ $transportLabels = [
     function serializeConfiguration() {
         const config = { ...currentConfig };
         knownKeys.forEach((key) => delete config[key]);
+        Object.keys(config).forEach((key) => {
+            if (key.startsWith('task_')) delete config[key];
+        });
         const secret = {};
         const philipsSubmission = {};
         document.querySelectorAll('.destination-fields').forEach((group) => {
