@@ -161,5 +161,4 @@ END $$;
 -- ALTER TABLE voxelpacs_mysql_source.pacs_report_delivery_requests DROP CONSTRAINT IF EXISTS fk_report_delivery_request_outbox;
 -- ALTER TABLE voxelpacs_mysql_source.pacs_report_delivery_outbox DROP CONSTRAINT IF EXISTS fk_report_delivery_outbox_request;
 -- ALTER TABLE voxelpacs_mysql_source.pacs_report_delivery_outbox DROP COLUMN IF EXISTS delivery_request_id;
--- ALTER TABLE voxelpacs_mysql_source.pacs_report_delivery_jobs DROP COLUMN IF EXISTS worker_eligible_at;
 -- DROP TABLE IF EXISTS voxelpacs_mysql_source.pacs_report_delivery_requests;
