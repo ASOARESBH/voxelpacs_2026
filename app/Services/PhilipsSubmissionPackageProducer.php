@@ -10,7 +10,8 @@ final class PhilipsSubmissionPackageProducer
     public function __construct(
         private readonly ReportDeliveryArtifactService $artifacts = new ReportDeliveryArtifactService(),
         private readonly PhilipsSubmissionDocumentGenerator $generator = new PhilipsSubmissionDocumentGenerator(),
-        private readonly PhilipsSubmissionMetadataResolver $metadata = new PhilipsSubmissionMetadataResolver()
+        private readonly PhilipsSubmissionMetadataResolver $metadata = new PhilipsSubmissionMetadataResolver(),
+        private readonly ReportDeliveryRequestSnapshotService $requestSnapshot = new ReportDeliveryRequestSnapshotService()
     ) {
     }
 
@@ -32,6 +33,7 @@ final class PhilipsSubmissionPackageProducer
         $pdf = (new PdfNonDicomArtifactProducer($this->artifacts))->produce($jobId, $workerId);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
+        $payload = $this->requestSnapshot->hydratePayload($job, $payload);
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
 
         $input = $this->resolvedInput($payload, $configuration, $pdfFilename);

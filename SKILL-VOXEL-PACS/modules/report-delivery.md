@@ -35,6 +35,12 @@ O profile `submission_document` é opt-in e compõe PDF + XML somente quando a c
 
 Ao editar um destino, o serializador da view remove da cópia de configuração todas as chaves raiz com prefixo `task_` antes de reconstruir `philips_submission`. Isso elimina duplicidades legadas de versões que persistiam esses campos fora do objeto aninhado, sem remover configurações não relacionadas, e mantém `pdf_only` sem `philips_submission`.
 
+## Delivery Request
+
+A `pacs_report_delivery_requests` representa uma autorização operacional explícita, distinta de `report_versions`, outbox, job e attempt. Na primeira versão, ela aceita somente o tenant-scoped `submission_document` do Destination 6 em homologação, referencia uma versão clínica explícita, calcula digests canônicos sem armazenar conteúdo clínico ou segredos e materializa exatamente uma nova outbox e um job `queued` com `worker_eligible_at = NULL`. O armamento é separado e exige confirmação administrativa; o worker só reclama a request em `armed` e bloqueia, antes de qualquer conector, divergência de snapshot ou configuração.
+
+Requests ligadas usam `outbox.delivery_request_id`; não existe nem deve ser presumida uma coluna correspondente em `pacs_report_delivery_jobs`. Outboxes e jobs históricos permanecem com vínculo nulo e fora desse fluxo. A feature flag `VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED` permanece `false` por padrão.
+
 ## Dependências
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.

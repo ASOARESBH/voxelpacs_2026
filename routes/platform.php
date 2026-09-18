@@ -80,6 +80,15 @@ Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
 
+// Delivery Request — control-plane aditivo; feature flag desligada por padrão.
+Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
+Router::post('/platform/negocios/{id}/report-delivery/requests/prepare', 'Platform\ReportDeliveryRequestController@prepare');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/approve', 'Platform\ReportDeliveryRequestController@approve');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/materialize', 'Platform\ReportDeliveryRequestController@materialize');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/arm', 'Platform\ReportDeliveryRequestController@arm');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/cancel', 'Platform\ReportDeliveryRequestController@cancel');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/expire', 'Platform\ReportDeliveryRequestController@expire');
+
 // Voxel Desktop — pull não-DICOM por tenant; o destino nasce desativado.
 Router::get('/platform/negocios/{id}/voxel-desktop', 'Platform\VoxelDesktopController@show');
 Router::post('/platform/negocios/{id}/voxel-desktop/destinations', 'Platform\VoxelDesktopController@save');
