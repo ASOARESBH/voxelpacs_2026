@@ -87,7 +87,7 @@ final class ReportDeliveryRequestRepository
     /** @return array<string,mixed>|null */
     public function findReportVersion(int $tenantId, int $reportId, int $reportVersion, bool $forUpdate = false): ?array
     {
-        $sql = "SELECT r.id AS report_id, r.tenant_id, r.bi_pacs_estudos_id AS estudo_id, r.situacao,
+        $sql = "SELECT r.id AS report_id, r.tenant_id, r.estudo_id AS estudo_id, r.situacao,
                        r.liberado_em, r.liberado_por, r.assinado_por,
                        e.id AS estudo_id_effective, e.tenant_id AS estudo_tenant_id,
                        e.unidade_id AS estabelecimento_id, e.study_instance_uid,
@@ -101,7 +101,7 @@ final class ReportDeliveryRequestRepository
                        rv.secao_conclusao, rv.secao_recomendacao, rv.created_at AS version_created_at
                   FROM reports r
                   INNER JOIN bi_pacs_estudos e
-                          ON e.id = r.bi_pacs_estudos_id AND e.tenant_id = r.tenant_id
+                          ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                   INNER JOIN report_versions rv
                           ON rv.report_id = r.id AND rv.versao = :report_version
                  WHERE r.tenant_id = :tenant_id

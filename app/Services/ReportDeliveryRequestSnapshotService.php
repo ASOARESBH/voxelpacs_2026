@@ -42,7 +42,7 @@ final class ReportDeliveryRequestSnapshotService
                     e.institution_name, e.issuer_of_patient_id
                FROM reports r
                INNER JOIN bi_pacs_estudos e
-                       ON e.id = r.bi_pacs_estudos_id AND e.tenant_id = r.tenant_id
+                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                INNER JOIN report_versions rv
                        ON rv.report_id = r.id AND rv.versao = :report_version
               WHERE r.tenant_id = :tenant_id

@@ -319,7 +319,7 @@ class ReportDeliveryWorkerRepository
     private function findRequestSnapshot(int $tenantId, int $reportId, int $reportVersion): ?array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT r.bi_pacs_estudos_id AS estudo_id, r.situacao, r.liberado_em,
+            "SELECT r.estudo_id AS estudo_id, r.situacao, r.liberado_em,
                     e.study_instance_uid, e.accession_number, e.modalities,
                     e.patient_id, e.patient_name, e.patient_birth_date, e.patient_sex,
                     e.study_date, e.study_time, e.institution_name, e.issuer_of_patient_id,
@@ -327,7 +327,7 @@ class ReportDeliveryWorkerRepository
                     rv.secao_achados, rv.secao_conclusao, rv.secao_recomendacao
                FROM reports r
                INNER JOIN bi_pacs_estudos e
-                       ON e.id = r.bi_pacs_estudos_id AND e.tenant_id = r.tenant_id
+                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                INNER JOIN report_versions rv
                        ON rv.report_id = r.id AND rv.versao = :report_version
               WHERE r.tenant_id = :tenant_id AND r.id = :report_id
