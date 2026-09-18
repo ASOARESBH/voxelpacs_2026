@@ -38,6 +38,7 @@ class ReportDeliveryWorkerRepository
         $requestWhere = $requestsEnabled
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
+        $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
         $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $parameters = [':automatic_today' => $currentDate];
         if ($transports !== []) {
@@ -71,7 +72,7 @@ class ReportDeliveryWorkerRepository
                    AND d.ambiente IN ('homologacao', 'producao'){$requestWhere}{$transportWhere}
                  ORDER BY j.created_at ASC
                  LIMIT 1
-                 FOR UPDATE"
+                 {$jobLockClause}"
             );
             $stmt->execute($parameters);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -140,6 +141,7 @@ class ReportDeliveryWorkerRepository
         $requestWhere = $requestsEnabled
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
+        $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
         foreach ($transports as $index => $transport) {
             $placeholder = ':transport_' . $index;
             $placeholders[] = $placeholder;
@@ -168,7 +170,7 @@ class ReportDeliveryWorkerRepository
                    AND d.enabled = 1
                    AND d.ambiente IN ('homologacao', 'producao')
                    AND j.transport IN (" . implode(', ', $placeholders) . "){$requestWhere}
-                 LIMIT 1 FOR UPDATE"
+                 LIMIT 1 {$jobLockClause}"
             );
             $stmt->execute($parameters);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -558,6 +560,7 @@ class ReportDeliveryWorkerRepository
     {
         $requestsEnabled = filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
         $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
+        $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
         $requestJoin = $requestsEnabled
             ? "LEFT JOIN pacs_report_delivery_requests dr
                         ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
@@ -569,7 +572,7 @@ class ReportDeliveryWorkerRepository
              INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
              {$requestJoin}
              WHERE j.id = :id AND j.status = 'processing' AND j.locked_by = :worker_id
-             LIMIT 1 FOR UPDATE"
+             LIMIT 1 {$jobLockClause}"
         );
         $stmt->execute([':id' => $jobId, ':worker_id' => $workerId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
