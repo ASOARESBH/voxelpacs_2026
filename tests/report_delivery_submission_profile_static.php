@@ -16,9 +16,10 @@ $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliver
 $view = file_get_contents($root . '/app/Views/platform/negocios/report_delivery.php');
 $producer = file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
 $resolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
+$snapshot = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($outbox) && is_string($contract), 'All Commit 4 sources must be readable');
+expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($snapshot) && is_string($outbox) && is_string($contract), 'All Commit 4 sources must be readable');
 
 foreach ([
     'PROFILE_PDF_ONLY',
@@ -75,7 +76,10 @@ expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'),
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
 expect_profile(str_contains($outbox, "'patient_name_dicom'"), 'Snapshot must preserve raw DICOM PatientName separately from display text');
+expect_profile(str_contains($snapshot, 'e.tags_raw') && str_contains($snapshot, "'tags_raw'"), 'Delivery Request snapshot must preserve tags_raw for structured DICOM resolution');
 expect_profile(str_contains($resolver, "patient_name_dicom"), 'Resolver must consume the raw DICOM PatientName source');
+expect_profile(str_contains($resolver, 'patientNameFromTagsRaw'), 'Resolver must inspect tags_raw before normalized name fields');
+expect_profile(str_contains($resolver, "setTimezone(new \\DateTimeZone('UTC'))"), 'Resolver must normalize release timestamps to UTC');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
 expect_profile(str_contains($resolver, "strpos(\$value, '^')"), 'Resolver must require the DICOM component separator');
 expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not split names on spaces');

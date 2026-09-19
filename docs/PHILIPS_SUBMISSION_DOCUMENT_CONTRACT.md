@@ -13,11 +13,11 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | Campo | Origem ou regra | Obrigatoriedade |
 |---|---|---|
 | `task_patient_id` | `patient_id` do snapshot do estudo | Obrigatório |
-| `task_patient_humanname_family` | Componentes estruturados configurados ou `patient_name_dicom` do snapshot com separador `^` | Obrigatório |
-| `task_patient_humanname_given` | Componentes estruturados configurados ou `patient_name_dicom` do snapshot com separador `^` | Obrigatório |
+| `task_patient_humanname_family` | Componentes estruturados configurados, `tags_raw.PatientName` do snapshot ou `patient_name_dicom`, sempre com separador `^` | Obrigatório |
+| `task_patient_humanname_given` | Componentes estruturados configurados, `tags_raw.PatientName` do snapshot ou `patient_name_dicom`, sempre com separador `^` | Obrigatório |
 | `task_patient_humanname_middle` | Terceiro componente estruturado; ausente vira vazio | Opcional |
 | `task_document_name` | Valor explícito configurado no destino | Obrigatório |
-| `task_document_date` | `released_at` congelado no snapshot | Obrigatório |
+| `task_document_date` | `released_at` congelado no snapshot, normalizado para UTC e serializado como `YYYYMMDDHHMMSS` | Obrigatório |
 | `task_image_date` | Combinação explícita de `study_date` e `study_time`; se incompleta, falha | Obrigatório |
 | `task_file_path` | Diretório lógico explícito configurado e aprovado pelo receptor; o producer anexa o `task_file_name` dinâmico ao gerar o XML | Obrigatório |
 | `task_file_name` | Nome de transporte VOXEL do PDF, validado pelo gerador | Obrigatório |
@@ -35,7 +35,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
 
-O parser de nome de paciente só aceita componentes DICOM estruturados separados por `^`. Um nome simples ou ambíguo não é dividido por espaço, vírgula ou qualquer outra heurística.
+O parser de nome de paciente só aceita componentes DICOM estruturados separados por `^`. A fonte raw `tags_raw.PatientName` tem precedência sobre campos já normalizados; um nome simples ou ambíguo não é dividido por espaço, vírgula ou qualquer outra heurística.
+
+`task_document_date` representa o instante de liberação congelado no snapshot (`reports.liberado_em`). Timestamps com fração e offset são convertidos para UTC e então normalizados para `YYYY-MM-DD HH:MM:SS` antes de o gerador serializá-los como `YYYYMMDDHHMMSS`. Nenhuma nova data é criada e `released_by` não participa da resolução.
 
 ## Configuração administrativa
 

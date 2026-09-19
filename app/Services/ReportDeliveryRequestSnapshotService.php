@@ -59,7 +59,7 @@ final class ReportDeliveryRequestSnapshotService
         $stmt = $this->pdo->prepare(
             "SELECT r.situacao, r.liberado_por, r.liberado_em,
                     e.study_instance_uid, e.accession_number, e.patient_id,
-                    e.patient_name, e.patient_birth_date, e.patient_sex,
+                    e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
                     e.study_date, e.study_time, e.modalities,
                     e.institution_name, e.issuer_of_patient_id
                FROM reports r
@@ -99,7 +99,8 @@ final class ReportDeliveryRequestSnapshotService
             'accession_number' => (string) ($snapshot['accession_number'] ?? ''),
             'patient_id' => (string) ($snapshot['patient_id'] ?? ''),
             'patient_name' => (string) ($snapshot['patient_name'] ?? ''),
-            'patient_name_dicom' => (string) ($snapshot['patient_name'] ?? ''),
+            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null)
+                ?? (string) ($snapshot['patient_name'] ?? ''),
             'patient_birth_date' => (string) ($snapshot['patient_birth_date'] ?? ''),
             'patient_sex' => (string) ($snapshot['patient_sex'] ?? ''),
             'study_date' => (string) ($snapshot['study_date'] ?? ''),

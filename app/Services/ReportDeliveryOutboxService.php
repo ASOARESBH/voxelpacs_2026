@@ -87,7 +87,8 @@ class ReportDeliveryOutboxService
             'accession_number' => (string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''),
             'patient_id' => (string) ($estudo->patient_id ?? $estudo->paciente_id_externo ?? ''),
             'patient_name' => (string) ($estudo->patient_name_display ?? $estudo->patient_name ?? ''),
-            'patient_name_dicom' => (string) ($estudo->patient_name ?? ''),
+            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($estudo->tags_raw ?? null)
+                ?? (string) ($estudo->patient_name ?? ''),
             'patient_birth_date' => (string) ($estudo->patient_birth_date ?? ''),
             'patient_sex' => (string) ($estudo->patient_sex ?? ''),
             'study_date' => (string) ($estudo->study_date ?? ''),

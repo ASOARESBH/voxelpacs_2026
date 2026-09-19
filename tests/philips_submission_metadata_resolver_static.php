@@ -36,6 +36,7 @@ expect_resolver($resolved['task_patient_id'] === 'SYNTH-001', 'Patient ID must c
 expect_resolver($resolved['task_patient_humanname_family'] === 'Silva', 'DICOM family component must be explicit');
 expect_resolver($resolved['task_patient_humanname_given'] === 'Ana', 'DICOM given component must be explicit');
 expect_resolver($resolved['task_patient_humanname_middle'] === 'Maria', 'DICOM middle component must be explicit');
+expect_resolver($resolved['task_document_date'] === '2026-09-14 17:00:01', 'Plain release timestamp must remain canonical');
 expect_resolver($resolved['task_image_date'] === '2026-09-14 17:00:01', 'Complete study date/time must be combined');
 expect_resolver($resolved['task_document_mimetype'] === 'application/pdf', 'MIME must be fixed to PDF');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
@@ -43,6 +44,18 @@ expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys
 $plainName = $resolver->resolve(['patient_name' => 'Silva Ana Maria']);
 expect_resolver($plainName['task_patient_humanname_family'] === null, 'Plain names must not be split heuristically');
 expect_resolver($plainName['task_patient_humanname_given'] === null, 'Ambiguous given name must remain unresolved');
+
+$tagsRawName = $resolver->resolve([
+    'patient_name' => 'Plain Display Name',
+    'tags_raw' => json_encode(['PatientName' => 'Structured^Given^Middle'], JSON_THROW_ON_ERROR),
+]);
+expect_resolver($tagsRawName['task_patient_humanname_family'] === 'Structured', 'Structured tags_raw family must be preferred');
+expect_resolver($tagsRawName['task_patient_humanname_given'] === 'Given', 'Structured tags_raw given must be preferred');
+expect_resolver($tagsRawName['task_patient_humanname_middle'] === 'Middle', 'Structured tags_raw middle must be preserved');
+
+$timezoneDate = $resolver->resolve(['released_at' => '2026-09-14 17:00:01.123456+03:00']);
+expect_resolver($timezoneDate['task_document_date'] === '2026-09-14 14:00:01', 'Release timestamp must normalize to UTC');
+expect_resolver($resolver->resolve(['released_at' => 'not-a-date'])['task_document_date'] === null, 'Invalid release timestamp must fail closed');
 
 $incompleteDate = $resolver->resolve(['study_date' => '2026-09-14']);
 expect_resolver($incompleteDate['task_image_date'] === null, 'Incomplete study date/time must remain unresolved');
