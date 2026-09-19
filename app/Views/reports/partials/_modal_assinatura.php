@@ -12,6 +12,8 @@
                 <p class="text-pacs-muted" style="font-size:.82rem;">
                     <?= htmlspecialchars(t('reports.assinatura.fluxo_modal')) ?>
                 </p>
+                <h6><?= htmlspecialchars(t('reports.patient_name.title'), ENT_QUOTES, 'UTF-8') ?></h6>
+                <?php $fieldPrefix = 'signature-patient-name'; include __DIR__ . '/_patient_name_fields.php'; ?>
                 <div id="assinatura-erro" class="reports-alert-erro" style="display:none;"></div>
             </div>
             <div class="modal-footer">

@@ -98,7 +98,9 @@ final class ReportDeliveryRequestRepository
                        rv.usuario_id AS report_version_user_id,
                        rv.usuario_nome AS report_version_user_name,
                        rv.acao, rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
-                       rv.secao_conclusao, rv.secao_recomendacao, rv.created_at AS version_created_at
+                       rv.secao_conclusao, rv.secao_recomendacao,
+                       rv.patient_name_family, rv.patient_name_given, rv.patient_name_middle, rv.patient_name_source,
+                       rv.created_at AS version_created_at
                   FROM reports r
                   INNER JOIN bi_pacs_estudos e
                           ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id

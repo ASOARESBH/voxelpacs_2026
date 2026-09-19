@@ -52,6 +52,36 @@ class DicomPersonName
     }
 
     /**
+     * Extrai somente o grupo alfabético de um PN DICOM, preservando as
+     * posições vazias de Family^Given^Middle^Prefix^Suffix.
+     *
+     * Nome plano ou PN sem family/given suficientes não é inferido.
+     *
+     * @return array{family:string,given:string,middle:string}|null
+     */
+    public static function components(?string $pn): ?array
+    {
+        if (!is_string($pn) || trim($pn) === '') {
+            return null;
+        }
+
+        $alphabeticGroup = trim(explode('=', trim($pn), 2)[0]);
+        if (!str_contains($alphabeticGroup, '^')) {
+            return null;
+        }
+
+        $components = array_pad(explode('^', $alphabeticGroup), 5, '');
+        $family = self::normalizeWhitespace((string) ($components[0] ?? ''));
+        $given = self::normalizeWhitespace((string) ($components[1] ?? ''));
+        $middle = self::normalizeWhitespace((string) ($components[2] ?? ''));
+        if ($family === '') {
+            return null;
+        }
+
+        return ['family' => $family, 'given' => $given, 'middle' => $middle];
+    }
+
+    /**
      * Resolve a exibição a partir de um registro de estudo já autorizado.
      * Quando disponível, tags_raw é a fonte DICOM primária e permite corrigir
      * estudos legados cujo patient_name_display tenha sido gravado antes desta

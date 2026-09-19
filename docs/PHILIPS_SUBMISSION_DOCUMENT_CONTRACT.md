@@ -13,9 +13,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | Campo | Origem ou regra | Obrigatoriedade |
 |---|---|---|
 | `task_patient_id` | `patient_id` do snapshot do estudo | Obrigatório |
-| `task_patient_humanname_family` | Componentes estruturados configurados, `tags_raw.PatientName` do snapshot ou `patient_name_dicom`, sempre com separador `^` | Obrigatório |
-| `task_patient_humanname_given` | Componentes estruturados configurados, `tags_raw.PatientName` do snapshot ou `patient_name_dicom`, sempre com separador `^` | Obrigatório |
-| `task_patient_humanname_middle` | Terceiro componente estruturado; ausente vira vazio | Opcional |
+| `task_patient_humanname_family` | Componentes congelados em `report_versions`; DICOM estruturado e confirmação manual são fontes da versão; override request-scoped aprovado somente como fallback histórico | Obrigatório |
+| `task_patient_humanname_given` | Componentes congelados em `report_versions`; DICOM estruturado e confirmação manual são fontes da versão; override request-scoped aprovado somente como fallback histórico | Obrigatório |
+| `task_patient_humanname_middle` | Terceiro componente congelado na versão; ausente vira vazio | Opcional |
 | `task_document_name` | Valor explícito configurado no destino | Obrigatório |
 | `task_document_date` | `released_at` congelado no snapshot, normalizado para UTC e serializado como `YYYYMMDDHHMMSS` | Obrigatório |
 | `task_image_date` | Combinação explícita de `study_date` e `study_time`; se incompleta, falha | Obrigatório |
@@ -35,7 +35,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
 
-O parser de nome de paciente só aceita componentes DICOM estruturados separados por `^`. A fonte raw `tags_raw.PatientName` tem precedência sobre campos já normalizados; um nome simples ou ambíguo não é dividido por espaço, vírgula ou qualquer outra heurística.
+O parser de nome de paciente só aceita componentes DICOM estruturados separados por `^`. Na criação da versão, `report_versions.patient_name_family/given/middle/source` é congelado como fonte primária; quando o DICOM fornece PN válido, a origem é `dicom_pn`, e quando o PN é plano a tela exige confirmação independente com origem `manual_confirmation`. Um nome simples ou ambíguo não é dividido por espaço, vírgula ou qualquer outra heurística.
+
+Depois de assinatura/liberação, os quatro campos estruturados são imutáveis. O snapshot tenant-scoped transporta somente esses componentes já congelados; a resolução do XML não relê nem altera o PatientName original. Versões antigas sem os campos permanecem compatíveis e continuam sujeitas à resolução DICOM/override histórica.
 
 `task_document_date` representa o instante de liberação congelado no snapshot (`reports.liberado_em`). Timestamps com fração e offset são convertidos para UTC e então normalizados para `YYYY-MM-DD HH:MM:SS` antes de o gerador serializá-los como `YYYYMMDDHHMMSS`. Nenhuma nova data é criada e `released_by` não participa da resolução.
 
@@ -43,7 +45,7 @@ O parser de nome de paciente só aceita componentes DICOM estruturados separados
 
 Quando `tags_raw.PatientName` e `patient_name_dicom` não possuem PN estruturado, `family`, `given` e o `middle` opcional podem ser fornecidos somente por um override explícito vinculado a uma `Delivery Request` individual. Na Fase 71, o override é aceito exclusivamente para `tenant_id=2`, `report_id=74`, `report_version=11`, `estudo_id=1704`, `destination_id=6`, `ambiente=homologacao` e `delivery_profile=submission_document`; qualquer divergência falha com `OVERRIDE_SCOPE_MISMATCH`. O operador fornece componentes independentes; o sistema nunca divide um nome completo.
 
-A precedência é: override aprovado e íntegro, PN estruturado em `tags_raw`, PN estruturado em `patient_name_dicom`, e então falha fechada. O override não pode alterar PatientID, AccessionNumber, datas, autoria, caminho, basename, site ou tipo documental. Os componentes ficam cifrados em tabela própria, com digest canônico, expiração máxima de 24 horas, `max_attempts=1`, aprovação explícita, trigger de imutabilidade pós-aprovação e `consumed_at` irreversível. O worker aplica esse limite à request ligada, portanto não agenda retry para o job do override; jobs históricos e requests sem override continuam usando o limite do destino. Digest inconsistente, escopo divergente, expiração, consumo anterior ou par `family/given` incompleto impede o XML e qualquer transporte. A auditoria registra somente `OVERRIDE_PRESENT`, `OVERRIDE_SCOPE_MATCH`, `OVERRIDE_PAIR_VALID`, `OVERRIDE_SOURCE`, `OVERRIDE_APPROVED`, `OVERRIDE_EXPIRES_AT` e `OVERRIDE_CONSUMED`; os componentes nunca entram em logs.
+A precedência é: componentes válidos e congelados em `report_versions`, PN estruturado do snapshot apenas para compatibilidade de versões antigas, override aprovado e íntegro somente como fallback, e então falha fechada. Uma fonte de versão válida sempre vence configuração administrativa e override. O override não pode alterar PatientID, AccessionNumber, datas, autoria, caminho, basename, site ou tipo documental. Os componentes ficam cifrados em tabela própria, com digest canônico, expiração máxima de 24 horas, `max_attempts=1`, aprovação explícita, trigger de imutabilidade pós-aprovação e `consumed_at` irreversível. O worker aplica esse limite à request ligada, portanto não agenda retry para o job do override; jobs históricos e requests sem override continuam usando o limite do destino. Digest inconsistente, escopo divergente, expiração, consumo anterior ou par `family/given` incompleto impede o XML e qualquer transporte. A auditoria registra somente `OVERRIDE_PRESENT`, `OVERRIDE_SCOPE_MATCH`, `OVERRIDE_PAIR_VALID`, `OVERRIDE_SOURCE`, `OVERRIDE_APPROVED`, `OVERRIDE_EXPIRES_AT` e `OVERRIDE_CONSUMED`; os componentes nunca entram em logs.
 
 ## Configuração administrativa
 

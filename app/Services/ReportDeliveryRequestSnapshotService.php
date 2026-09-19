@@ -60,6 +60,7 @@ final class ReportDeliveryRequestSnapshotService
 
         $stmt = $this->pdo->prepare(
             "SELECT r.situacao, r.liberado_por, r.liberado_em,
+                    rv.patient_name_family, rv.patient_name_given, rv.patient_name_middle, rv.patient_name_source,
                     e.study_instance_uid, e.accession_number, e.patient_id,
                     e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
                     e.study_date, e.study_time, e.modalities,
@@ -110,6 +111,10 @@ final class ReportDeliveryRequestSnapshotService
             'modality' => (string) ($snapshot['modalities'] ?? ''),
             'released_by' => (int) ($snapshot['liberado_por'] ?? 0),
             'released_at' => (string) ($snapshot['liberado_em'] ?? ''),
+            'patient_name_family' => $snapshot['patient_name_family'] ?? null,
+            'patient_name_given' => $snapshot['patient_name_given'] ?? null,
+            'patient_name_middle' => $snapshot['patient_name_middle'] ?? null,
+            'patient_name_source' => $snapshot['patient_name_source'] ?? null,
         ]);
         return $this->patientNameOverride->applyToPayload($tenantId, $requestId, $hydrated, $consumeOverride);
     }

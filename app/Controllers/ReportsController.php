@@ -240,7 +240,7 @@ class ReportsController extends Controller
                     }
                 }
             }
-            $resultado = $this->reportService->assinar($reportId, $modo);
+            $resultado = $this->reportService->assinar($reportId, $modo, $this->patientNameInput($input));
             if (!$resultado['ok']) {
                 $msg = match ($resultado['error'] ?? null) {
                     'report_nao_encontrado'          => 'Laudo não encontrado.',
@@ -255,6 +255,11 @@ class ReportsController extends Controller
                     'estudo_assumido_por_outro'      => 'Este estudo foi assumido por outro médico e não pode ser assinado por sua conta.',
                     'devolutiva_dados_insuficientes' => 'A assinatura não foi concluída porque a devolutiva do laudo não recebeu todos os dados obrigatórios. Tente novamente; se persistir, informe o suporte técnico.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
+                    'patient_name_confirmation_required' => 'Confirme Family e Given do paciente antes de liberar o laudo.',
+                    'patient_name_source_invalid'       => 'A origem do nome estruturado é inválida.',
+                    'patient_name_family'               => 'Informe Family do paciente.',
+                    'patient_name_given'                => 'Informe Given do paciente.',
+                    'patient_name_middle'               => 'O Middle informado é inválido.',
                     default                           => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
@@ -1128,7 +1133,7 @@ class ReportsController extends Controller
                     $save = $this->reportService->salvar($reportId, $secoes, 'rascunho');
                     if (!$save['ok']) { $this->json(['ok' => false, 'msg' => 'Não foi possível salvar o laudo antes de liberar.'], 422); return; }
                 }
-                $resultado = $this->reportService->assinar($reportId, 'fechar');
+                $resultado = $this->reportService->assinar($reportId, 'fechar', $this->patientNameInput($input));
                 if (!$resultado['ok']) {
                     $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
                     return;
@@ -1139,7 +1144,7 @@ class ReportsController extends Controller
             // Laudo já assinado: liberar não cria uma segunda assinatura. A
             // transição central registra auditoria, versão e apenas os efeitos
             // externos próprios de um laudo liberado.
-            $resultado = $this->reportService->liberarAssinado($reportId);
+            $resultado = $this->reportService->liberarAssinado($reportId, $this->patientNameInput($input));
             if (!$resultado['ok']) {
                 $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
                 return;
@@ -1159,6 +1164,32 @@ class ReportsController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     // Helpers privados
     // ══════════════════════════════════════════════════════════════════════════
+    /** @return array<string,mixed> */
+    private function patientNameInput(array $input): array
+    {
+        return [
+            'patient_name_family' => $input['patient_name_family'] ?? null,
+            'patient_name_given' => $input['patient_name_given'] ?? null,
+            'patient_name_middle' => $input['patient_name_middle'] ?? '',
+            'patient_name_source' => $input['patient_name_source'] ?? null,
+        ];
+    }
+
+    private function mensagemErroReport(string $codigo): string
+    {
+        return match ($codigo) {
+            'patient_name_confirmation_required' => 'Confirme Family e Given do paciente antes de liberar o laudo.',
+            'patient_name_source_invalid' => 'A origem do nome estruturado é inválida.',
+            'patient_name_family' => 'Informe Family do paciente.',
+            'patient_name_given' => 'Informe Given do paciente.',
+            'patient_name_middle' => 'O Middle informado é inválido.',
+            'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',
+            'report_nao_assinado' => 'O laudo ainda não foi assinado.',
+            'report_nao_encontrado' => 'Laudo não encontrado.',
+            default => 'Não foi possível liberar o laudo.',
+        };
+    }
+
     private function normalizarTemplate(array $row): array
     {
         $secoesJson = [];

@@ -340,7 +340,10 @@ class ReportService {
      * reautenticação por senha neste fluxo, ver diagnostics/pendencias-conhecidas.md).
      * $modo: 'somente' → situação vai só até 'assinado'; 'fechar' → avança até 'liberado'.
      */
-    public function assinar(int $reportId, string $modo): array {
+    /**
+     * @param array<string,mixed>|null $patientNameInput
+     */
+    public function assinar(int $reportId, string $modo, ?array $patientNameInput = null): array {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
@@ -444,6 +447,19 @@ class ReportService {
         }
         $user = Auth::user();
         $assinadoEm = date('Y-m-d H:i:s');
+        $patientName = null;
+        if ($modo === 'fechar') {
+            try {
+                $patientName = (new ReportVersionPatientNameService())->resolve($patientNameInput ?? [], (array) $estudo);
+            } catch (\InvalidArgumentException $e) {
+                Logger::warning('[ReportService::assinar] PatientName estruturado não resolvido', [
+                    'report_id' => $reportId,
+                    'tenant_id' => $tenantId,
+                    'error' => $e->getMessage(),
+                ]);
+                return ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
 
         $payload = json_encode([
             'report_id' => $reportId,
@@ -485,7 +501,7 @@ class ReportService {
             }
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
-            $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+            $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero, $patientName);
 
             // A outbox é gravada no mesmo commit clínico. A rotina não abre
             // conexões externas e permanece inativa enquanto a feature flag
@@ -607,7 +623,10 @@ class ReportService {
      * assinatura. A transição é atômica e dispara somente os efeitos que
      * pertencem à liberação pública/operacional do documento.
      */
-    public function liberarAssinado(int $reportId): array
+    /**
+     * @param array<string,mixed>|null $patientNameInput
+     */
+    public function liberarAssinado(int $reportId, ?array $patientNameInput = null): array
     {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
@@ -635,6 +654,16 @@ class ReportService {
         }
 
         $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
+        try {
+            $patientName = (new ReportVersionPatientNameService())->resolve($patientNameInput ?? [], (array) $estudo);
+        } catch (\InvalidArgumentException $e) {
+            Logger::warning('[ReportService::liberarAssinado] PatientName estruturado não resolvido', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
         $pdo = Database::getInstance();
         try {
             $pdo->beginTransaction();
@@ -642,7 +671,7 @@ class ReportService {
             $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
-            $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero);
+            $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero, $patientName);
             (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                 $tenantId,
                 $reportId,

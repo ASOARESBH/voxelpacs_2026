@@ -1182,37 +1182,9 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
 
     // Bind botão Liberar
     function bindBtnLiberar(btn) {
-        if (!btn) return;
-        btn.addEventListener('click', function() {
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Liberando...';
-            var payload = {
-                report_id: REPORT_ID_CICLO,
-                corpo_laudo: getEditorContent('corpo')
-            };
-            fetch('/api/reports/liberar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.ok) {
-                    _laudoLiberado = true;
-                    showToast('Laudo liberado! Fechando...', 'success');
-                    setTimeout(function() { window.close(); }, 1500);
-                } else {
-                    showToast('Erro: ' + (data.msg || 'Tente novamente.'), 'danger');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
-                }
-            })
-            .catch(function() {
-                showToast('Erro de conexão.', 'danger');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
-            });
-        });
+        // O fluxo canônico é ligado por reports-main.js, que abre a confirmação
+        // estruturada e faz uma única submissão tenant-scoped.
+        return btn;
     }
 
     document.addEventListener('DOMContentLoaded', function() {

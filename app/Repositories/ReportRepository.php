@@ -372,8 +372,44 @@ class ReportRepository {
         }
     }
 
-    public function createVersion(int $reportId, array $conteudo, string $acao, int $userId, int $versaoNumero): void {
+    /**
+     * @param array{family:string,given:string,middle:string,source:string}|null $patientName
+     */
+    public function createVersion(
+        int $reportId,
+        array $conteudo,
+        string $acao,
+        int $userId,
+        int $versaoNumero,
+        ?array $patientName = null
+    ): void {
         $secoes = $conteudo['secoes'] ?? $conteudo;
+        if ($patientName !== null) {
+            $this->pdo->prepare("
+                INSERT INTO report_versions
+                    (report_id, versao, usuario_id, acao, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao,
+                     patient_name_family, patient_name_given, patient_name_middle, patient_name_source)
+                VALUES
+                    (:report_id, :versao, :user_id, :acao, :se, :st, :sa, :sc, :sr,
+                     :patient_name_family, :patient_name_given, :patient_name_middle, :patient_name_source)
+            ")->execute([
+                'report_id' => $reportId,
+                'versao' => $versaoNumero,
+                'user_id' => $userId,
+                'acao' => $acao,
+                'se' => $secoes['exame'] ?? '',
+                'st' => $secoes['tecnica'] ?? '',
+                'sa' => $secoes['achados'] ?? '',
+                'sc' => $secoes['conclusao'] ?? '',
+                'sr' => $secoes['recomendacao'] ?? '',
+                'patient_name_family' => $patientName['family'],
+                'patient_name_given' => $patientName['given'],
+                'patient_name_middle' => $patientName['middle'],
+                'patient_name_source' => $patientName['source'],
+            ]);
+            return;
+        }
+
         // Tenta inserir no schema de produção (colunas separadas)
         try {
             $this->pdo->prepare("

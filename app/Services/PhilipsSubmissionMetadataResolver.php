@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\DicomPersonName;
+
 /**
  * Resolve o snapshot de metadata do submission Philips a partir de fontes já congeladas.
  *
@@ -36,7 +38,25 @@ final class PhilipsSubmissionMetadataResolver
             'task_modalities' => $this->stringOrNull($payload['modality'] ?? null),
         ];
 
-        if (array_key_exists('patient_name_override', $payload)) {
+        $patientName = $this->versionPatientName($payload);
+        if ($patientName === null) {
+            foreach ([
+                self::patientNameFromTagsRaw($payload['tags_raw'] ?? null),
+                $this->stringOrNull($payload['patient_name_dicom'] ?? null),
+                $this->stringOrNull($payload['patient_name'] ?? null),
+            ] as $patientNameRaw) {
+                $parsed = $this->dicomPersonName($patientNameRaw);
+                if ($parsed !== null) {
+                    $patientName = $parsed;
+                    break;
+                }
+            }
+        }
+        if ($patientName !== null) {
+            $resolved['task_patient_humanname_family'] = $patientName['family'];
+            $resolved['task_patient_humanname_given'] = $patientName['given'];
+            $resolved['task_patient_humanname_middle'] = $patientName['middle'];
+        } elseif (array_key_exists('patient_name_override', $payload)) {
             $override = $payload['patient_name_override'];
             if (!is_array($override)) {
                 throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
@@ -44,22 +64,9 @@ final class PhilipsSubmissionMetadataResolver
             $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
             $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
             $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
-        } else {
-            $patientNameRaw = self::patientNameFromTagsRaw($payload['tags_raw'] ?? null)
-                ?? $this->stringOrNull($payload['patient_name_dicom'] ?? null)
-                ?? $this->stringOrNull($payload['patient_name'] ?? null);
-            $patientName = $this->dicomPersonName($patientNameRaw);
-            if ($patientName !== null) {
-                $resolved['task_patient_humanname_family'] = $patientName['family'];
-                $resolved['task_patient_humanname_given'] = $patientName['given'];
-                $resolved['task_patient_humanname_middle'] = $patientName['middle'];
-            }
         }
 
         foreach ([
-            'task_patient_humanname_family',
-            'task_patient_humanname_given',
-            'task_patient_humanname_middle',
             'task_document_name',
             'task_image_date',
             'task_author_id',
@@ -74,16 +81,6 @@ final class PhilipsSubmissionMetadataResolver
             if (array_key_exists($field, $source)) {
                 $resolved[$field] = $source[$field];
             }
-        }
-
-        if (array_key_exists('patient_name_override', $payload)) {
-            $override = $payload['patient_name_override'];
-            if (!is_array($override)) {
-                throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
-            }
-            $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
-            $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
-            $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
         }
 
         return $resolved;
@@ -120,6 +117,33 @@ final class PhilipsSubmissionMetadataResolver
     private function stringOrNull(mixed $value): ?string
     {
         return is_string($value) ? trim($value) : null;
+    }
+
+    /** @param array<string,mixed> $payload @return array{family:string,given:string,middle:string}|null */
+    private function versionPatientName(array $payload): ?array
+    {
+        $fields = ['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'];
+        $present = false;
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $payload) && $payload[$field] !== null && $payload[$field] !== '') {
+                $present = true;
+                break;
+            }
+        }
+        if (!$present) {
+            return null;
+        }
+
+        $source = $payload['patient_name_source'] ?? null;
+        if (!is_string($source) || !in_array($source, ['dicom_pn', 'manual_confirmation'], true)) {
+            throw new PhilipsXmlFieldUnresolvedException('patient_name_source');
+        }
+
+        return [
+            'family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_family'] ?? null, 'task_patient_humanname_family'),
+            'given' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_given'] ?? null, 'task_patient_humanname_given'),
+            'middle' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_middle'] ?? '', 'task_patient_humanname_middle', false),
+        ];
     }
 
     private function dateTime(mixed $date, mixed $time): ?string
@@ -169,17 +193,6 @@ final class PhilipsSubmissionMetadataResolver
     /** @return array{family:string,given:string,middle:string}|null */
     private function dicomPersonName(mixed $value): ?array
     {
-        if (!is_string($value) || strpos($value, '^') === false) {
-            return null;
-        }
-        $parts = explode('^', trim($value));
-        if (count($parts) < 2 || trim($parts[0]) === '' || trim($parts[1]) === '') {
-            return null;
-        }
-        return [
-            'family' => trim($parts[0]),
-            'given' => trim($parts[1]),
-            'middle' => trim($parts[2] ?? ''),
-        ];
+        return DicomPersonName::components(is_string($value) ? $value : null);
     }
 }
