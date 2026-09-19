@@ -52,6 +52,27 @@ final class ReportDeliveryRequestController extends Controller
         }
     }
 
+    public function recover(int $tenantId): void
+    {
+        $this->authorizePost($tenantId, 'confirm_recovery');
+        try {
+            $result = $this->service()->prepareRecovery(
+                $tenantId,
+                (int) ($_POST['report_id'] ?? 0),
+                (int) ($_POST['report_version'] ?? 0),
+                (int) ($_POST['destination_id'] ?? 0),
+                (string) ($_POST['delivery_profile'] ?? ''),
+                (int) Auth::userId()
+            );
+            $this->json(['success' => true, 'request' => $result], 201);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], $this->statusFor($e));
+        } catch (Throwable $e) {
+            $this->logFailure('recover', $tenantId, null, $e);
+            $this->json(['success' => false, 'message' => 'Não foi possível preparar o recovery da Delivery Request.'], 500);
+        }
+    }
+
     public function approve(int $tenantId, int $requestId): void
     {
         $this->authorizePost($tenantId, 'confirm_approve');

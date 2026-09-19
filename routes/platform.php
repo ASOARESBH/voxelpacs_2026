@@ -83,6 +83,7 @@ Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend'
 // Delivery Request — control-plane aditivo; feature flag desligada por padrão.
 Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
 Router::post('/platform/negocios/{id}/report-delivery/requests/prepare', 'Platform\ReportDeliveryRequestController@prepare');
+Router::post('/platform/negocios/{id}/report-delivery/requests/recover', 'Platform\ReportDeliveryRequestController@recover');
 Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/approve', 'Platform\ReportDeliveryRequestController@approve');
 Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/materialize', 'Platform\ReportDeliveryRequestController@materialize');
 Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/arm', 'Platform\ReportDeliveryRequestController@arm');

@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 require_once $root . '/app/autoload.php';
 
 use App\Services\DeliveryRequestIdentity;
+use App\Services\ReportDeliveryRequestService;
 
 function expect_request(bool $condition, string $message): void
 {
@@ -51,6 +52,18 @@ expect_request($activeA === $activeARepeat, 'active identity must ignore request
 expect_request($activeA !== $activeTenant, 'active identity must include tenant');
 expect_request($activeA !== $activeVersion, 'active identity must include explicit report version');
 
+$serviceReflection = new ReflectionClass(ReportDeliveryRequestService::class);
+$serviceWithoutConstructor = $serviceReflection->newInstanceWithoutConstructor();
+$uuidMethod = $serviceReflection->getMethod('newUuidV4');
+$uuidMethod->setAccessible(true);
+$generatedUuids = [];
+for ($i = 0; $i < 8; $i++) {
+    $generated = (string) $uuidMethod->invoke($serviceWithoutConstructor);
+    DeliveryRequestIdentity::assertUuidV4($generated);
+    $generatedUuids[$generated] = true;
+}
+expect_request(count($generatedUuids) === 8, 'Recovery UUIDs must be server-generated and non-repeating');
+
 $syntheticReport = [
     'estudo_id' => 9,
     'report_version_row_id' => 10,
@@ -93,7 +106,7 @@ foreach ([$service, $snapshotService, $repository, $controller, $worker, $migrat
     expect_request(is_string($content), 'Expected Delivery Request file must be readable');
 }
 
-foreach (['prepare', 'approve', 'materialize', 'arm', 'cancel', 'expire', 'get'] as $method) {
+foreach (['prepare', 'prepareRecovery', 'approve', 'materialize', 'arm', 'cancel', 'expire', 'get'] as $method) {
     expect_request(str_contains($service, "public function {$method}"), "Service method {$method} missing");
 }
 foreach (['prepared', 'approved', 'materialized', 'armed', 'processing', 'delivered', 'failed', 'cancelled', 'expired'] as $state) {
@@ -120,6 +133,9 @@ expect_request(!str_contains($service, "'patient_name'") && !str_contains($servi
 expect_request(str_contains($controller, "_csrf_token"), 'Request endpoints must enforce CSRF');
 expect_request(str_contains($controller, "'confirm_prepare'"), 'Prepare must require explicit confirmation');
 expect_request(str_contains($controller, "HTTP_IDEMPOTENCY_KEY"), 'Prepare must read Idempotency-Key from the header');
+expect_request(str_contains($controller, 'confirm_recovery') && str_contains($controller, 'prepareRecovery'), 'Recovery endpoint must require explicit confirmation');
+expect_request(str_contains($service, 'random_bytes(16)') && str_contains($service, 'recovery_request_prepared'), 'Recovery must generate a UUID and append an audit event');
+expect_request(str_contains($routes, 'ReportDeliveryRequestController@recover'), 'Recovery route missing');
 expect_request(!str_contains($controller, 'snapshot_digest'), 'Controller must not accept full digests for arm');
 expect_request(str_contains($controller, 'Auth::isPlatformAdmin') && str_contains($controller, 'Auth::perfilAtual()'), 'Request endpoints must enforce admin authorization');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@prepare'), 'Prepare route missing');
@@ -131,6 +147,8 @@ foreach (['latestVersion', 'nonce', 'time()', 'random_int', 'Bridge', 'smbclient
 }
 expect_request(!str_contains($repository, 'pacs_report_delivery_attempts'), 'Materialize must not create attempts');
 expect_request(!str_contains($repository, 'pacs_report_delivery_artifacts'), 'Materialize must not create artifacts');
+expect_request(str_contains($service, 'origem histórica não reutilizada'), 'Recovery reason must state historical identity is not reused');
+expect_request(!str_contains($service, 'retryManualHomologationJob'), 'Recovery service must not reuse historical jobs');
 expect_request(str_contains($repository, "j.status = 'queued'") && str_contains($repository, 'j.worker_eligible_at IS NULL'), 'Materialized cancellation must require queued and ineligible job');
 expect_request(str_contains($repository, "status IN ('prepared','approved','materialized')"), 'Expiration must allow only the approved pre-worker states');
 expect_request(!str_contains($migration, 'tenant_id = 2') && !str_contains($migration, 'report_id = 74'), 'Migration must not embed real-case identifiers');

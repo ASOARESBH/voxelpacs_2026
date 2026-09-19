@@ -41,6 +41,8 @@ A `pacs_report_delivery_requests` representa uma autorização operacional expl�
 
 Requests ligadas usam `outbox.delivery_request_id`; não existe nem deve ser presumida uma coluna correspondente em `pacs_report_delivery_jobs`. Outboxes e jobs históricos permanecem com vínculo nulo e fora desse fluxo. A feature flag `VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED` permanece `false` por padrão.
 
+O recovery administrativo usa `ReportDeliveryRequestService::prepareRecovery()`: gera um UUID v4 novo no servidor, referencia apenas `report_id`/`report_version` explícitos, registra auditoria sanitizada e termina em `prepared`. Não aceita `job_id` histórico, não chama retry, não materializa outbox/job e não inicia transporte; aprovar, materializar, armar e executar continuam sendo fases separadas.
+
 ## Dependências
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Database;
+use App\Repositories\ReportDeliveryRequestRepository;
 use PDO;
 use RuntimeException;
 
@@ -14,9 +15,30 @@ use RuntimeException;
  */
 final class ReportDeliveryRequestSnapshotService
 {
-    public function __construct(private ?PDO $pdo = null)
+    public function __construct(
+        private ?PDO $pdo = null,
+        private ?ReportDeliveryRequestRepository $repository = null
+    )
     {
         $this->pdo ??= Database::getInstance();
+        $this->repository ??= new ReportDeliveryRequestRepository($this->pdo);
+    }
+
+    /** @return array<string,mixed>|null */
+    public function resolveExplicit(int $tenantId, int $reportId, int $reportVersion, bool $forUpdate = false): ?array
+    {
+        if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0) {
+            return null;
+        }
+
+        $snapshot = $this->repository->findReportVersion($tenantId, $reportId, $reportVersion, $forUpdate);
+        if (!$snapshot || (int) ($snapshot['tenant_id'] ?? 0) !== $tenantId
+            || (int) ($snapshot['estudo_tenant_id'] ?? 0) !== $tenantId
+            || (int) ($snapshot['estudo_id'] ?? 0) !== (int) ($snapshot['estudo_id_effective'] ?? 0)) {
+            return null;
+        }
+
+        return $snapshot;
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $payload @return array<string,mixed> */

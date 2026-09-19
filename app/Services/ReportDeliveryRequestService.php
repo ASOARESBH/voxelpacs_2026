@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Audit\AuditLogger;
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryRequestRepository;
 use DomainException;
@@ -20,9 +21,11 @@ final class ReportDeliveryRequestService
 
     public function __construct(
         private PDO $pdo,
-        private ?ReportDeliveryRequestRepository $repository = null
+        private ?ReportDeliveryRequestRepository $repository = null,
+        private ?ReportDeliveryRequestSnapshotService $snapshotService = null
     ) {
         $this->repository ??= new ReportDeliveryRequestRepository($pdo);
+        $this->snapshotService ??= new ReportDeliveryRequestSnapshotService($pdo);
     }
 
     public static function isEnabled(): bool
@@ -71,6 +74,49 @@ final class ReportDeliveryRequestService
             }
             throw $e;
         }
+    }
+
+    /**
+     * Prepara uma nova solicitação de recovery sem aceitar job histórico como
+     * entrada e sem materializar outbox/job. O UUID é sempre gerado no servidor.
+     *
+     * @return array<string,mixed>
+     */
+    public function prepareRecovery(
+        int $tenantId,
+        int $reportId,
+        int $reportVersion,
+        int $destinationId,
+        string $deliveryProfile,
+        int $actorId,
+        string $reason = 'recovery administrativo; origem histórica não reutilizada'
+    ): array {
+        $reason = trim($reason);
+        if ($reason === '') {
+            $reason = 'recovery administrativo; origem histórica não reutilizada';
+        }
+        $request = $this->prepare($tenantId, [
+            'request_uuid' => $this->newUuidV4(),
+            'report_id' => $reportId,
+            'report_version' => $reportVersion,
+            'destination_id' => $destinationId,
+            'delivery_profile' => $deliveryProfile,
+            'dispatch_mode' => 'manual_homologation',
+            'request_reason' => $reason,
+        ], $actorId);
+
+        AuditLogger::log('report_delivery.recovery_request_prepared', 'pacs_report_delivery_requests', (int) $request['id'], [
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $reportVersion,
+            'destination_id' => $destinationId,
+            'delivery_profile' => $deliveryProfile,
+            'status' => (string) ($request['status'] ?? self::STATUS_PREPARED),
+            'recovery_operation' => true,
+            'historical_source_reused' => false,
+        ], $tenantId);
+
+        return $request;
     }
 
     /** @return array<string,mixed> */
@@ -259,8 +305,8 @@ final class ReportDeliveryRequestService
 
         $destination = $this->repository->findDestination($tenantId, $destinationId);
         $this->assertDestination($destination, $tenantId, false);
-        $report = $this->repository->findReportVersion($tenantId, $reportId, $reportVersion);
-        if (!$report || $this->repository->countReportVersion($tenantId, $reportId, $reportVersion) !== 1) {
+        $report = $this->snapshotService->resolveExplicit($tenantId, $reportId, $reportVersion);
+        if (!$report) {
             throw new DomainException('report_id/report_version explícitos não resolvem um snapshot único.', 422);
         }
         if ((string) ($report['situacao'] ?? '') !== 'liberado') {
@@ -355,8 +401,8 @@ final class ReportDeliveryRequestService
     {
         $destination = $this->repository->findDestination($tenantId, (int) $request['destination_id']);
         $this->assertDestination($destination, $tenantId, false);
-        $report = $this->repository->findReportVersion($tenantId, (int) $request['report_id'], (int) $request['report_version']);
-        if (!$report || $this->repository->countReportVersion($tenantId, (int) $request['report_id'], (int) $request['report_version']) !== 1) {
+        $report = $this->snapshotService->resolveExplicit($tenantId, (int) $request['report_id'], (int) $request['report_version']);
+        if (!$report) {
             throw new DomainException('Snapshot explícito não está mais disponível.', 409);
         }
         $snapshotDigest = DeliveryRequestIdentity::snapshotDigest(
@@ -404,6 +450,23 @@ final class ReportDeliveryRequestService
         if (!self::isEnabled()) {
             throw new DomainException('Delivery Requests estão desativadas pela feature flag.', 503);
         }
+    }
+
+    private function newUuidV4(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($bytes);
+
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20, 12)
+        );
     }
 
     private function positiveInt(mixed $value, string $name): int
