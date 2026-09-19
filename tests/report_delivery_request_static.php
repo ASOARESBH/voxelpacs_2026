@@ -127,6 +127,7 @@ expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'")
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::snapshotDigest'), 'Snapshot digest must use the shared canonical helper');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::destinationDigest'), 'Destination digest must use the shared canonical helper');
+expect_request(str_contains($service, '$request[\'status\'] = self::STATUS_PREPARED;'), 'Prepare must return the persisted prepared state');
 expect_request(!str_contains($service, "'authorized_snapshot_digest', 'destination_config_digest'"), 'Public request must not expose full digests');
 expect_request(str_contains($snapshotService, 'hydratePayload') && str_contains($snapshotService, 'e.tenant_id = r.tenant_id'), 'Request package must hydrate only the explicit tenant-scoped snapshot');
 expect_request(!str_contains($service, "'patient_name'") && !str_contains($service, "'patient_id'"), 'Request outbox payload must not copy clinical fields');

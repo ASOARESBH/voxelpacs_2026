@@ -60,6 +60,7 @@ final class ReportDeliveryRequestService
                 throw new DomainException('Já existe uma Delivery Request ativa para esta identidade.', 409);
             }
             $request['id'] = $this->repository->insertRequest($request);
+            $request['status'] = self::STATUS_PREPARED;
             $this->repository->commit();
             $this->logTransition('prepared', $request);
             return $this->publicRequest($request);
