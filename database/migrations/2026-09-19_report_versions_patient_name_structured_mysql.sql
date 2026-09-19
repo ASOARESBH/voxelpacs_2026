@@ -1,7 +1,8 @@
 -- VOXEL PACS — PatientName estruturado congelado por report_version (MySQL/MariaDB)
--- Fase 74.3: arquivo versionado apenas; esta migration não é executada nesta fase.
--- Rollback planejado: somente após backup e janela controlada, remover trigger e
--- colunas desta migration; nunca apagar versões nem fazer backfill destrutivo.
+-- Fase 74.3/74.4.1: migration aditiva, sem preenchimento retroativo e sem substituição silenciosa.
+-- Em MySQL 5.7, CREATE TRIGGER não possui IF NOT EXISTS nem pode ser preparado
+-- dinamicamente. Por isso, objetos preexistentes causam falha fechada antes da
+-- declaração CREATE TRIGGER, preservando o objeto para revisão manual.
 
 SET @sql = IF(
     (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
@@ -39,18 +40,36 @@ SET @sql = IF(
 );
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- MySQL 5.7 não oferece uma forma portátil de comparar a expressão de uma
+-- CHECK preexistente dentro desta migration. Se o nome já existir, falha-se
+-- fechado em vez de preservar silenciosamente uma definição desconhecida.
+SELECT COUNT(*) INTO @source_constraint_exists
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+ WHERE CONSTRAINT_SCHEMA = DATABASE()
+   AND TABLE_NAME = 'report_versions'
+   AND CONSTRAINT_NAME = 'chk_report_versions_patient_name_source';
+
 SET @sql = IF(
-    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-      WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'report_versions'
-        AND CONSTRAINT_NAME = 'chk_report_versions_patient_name_source') = 0,
+    @source_constraint_exists = 0,
     'ALTER TABLE `report_versions` ADD CONSTRAINT `chk_report_versions_patient_name_source` CHECK (`patient_name_source` IS NULL OR `patient_name_source` IN (''dicom_pn'', ''manual_confirmation''))',
-    'SELECT ''constraint patient_name_source já existe'''
+    'SELECT __voxelpacs_preexisting_patient_name_constraint_requires_review__ FROM `report_versions` LIMIT 1'
 );
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
--- Trigger de proteção: depois de assinado/liberado, os componentes congelados
--- não podem ser alterados por UPDATE. A inserção da versão continua permitida.
-DROP TRIGGER IF EXISTS `trg_report_versions_patient_name_immutable`;
+-- O trigger é criado somente na ausência do nome. A existência de qualquer
+-- trigger com esse nome interrompe a migration sem removê-lo ou substituí-lo.
+SELECT COUNT(*) INTO @trigger_exists
+  FROM INFORMATION_SCHEMA.TRIGGERS
+ WHERE TRIGGER_SCHEMA = DATABASE()
+   AND TRIGGER_NAME = 'trg_report_versions_patient_name_immutable';
+
+SET @sql = IF(
+    @trigger_exists = 0,
+    'SELECT 1',
+    'SELECT __voxelpacs_preexisting_patient_name_trigger_requires_review__ FROM `report_versions` LIMIT 1'
+);
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 DELIMITER $$
 CREATE TRIGGER `trg_report_versions_patient_name_immutable`
 BEFORE UPDATE ON `report_versions`
