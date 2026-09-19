@@ -22,10 +22,12 @@ final class ReportDeliveryRequestService
     public function __construct(
         private PDO $pdo,
         private ?ReportDeliveryRequestRepository $repository = null,
-        private ?ReportDeliveryRequestSnapshotService $snapshotService = null
+        private ?ReportDeliveryRequestSnapshotService $snapshotService = null,
+        private ?ReportDeliveryRequestPatientNameOverrideService $patientNameOverride = null
     ) {
         $this->repository ??= new ReportDeliveryRequestRepository($pdo);
-        $this->snapshotService ??= new ReportDeliveryRequestSnapshotService($pdo);
+        $this->patientNameOverride ??= new ReportDeliveryRequestPatientNameOverrideService($pdo);
+        $this->snapshotService ??= new ReportDeliveryRequestSnapshotService($pdo, null, $this->patientNameOverride);
     }
 
     public static function isEnabled(): bool
@@ -60,6 +62,9 @@ final class ReportDeliveryRequestService
                 throw new DomainException('Já existe uma Delivery Request ativa para esta identidade.', 409);
             }
             $request['id'] = $this->repository->insertRequest($request);
+            if (isset($request['patient_name_override'])) {
+                $this->patientNameOverride->insert($request, $request['patient_name_override']);
+            }
             $request['status'] = self::STATUS_PREPARED;
             $this->repository->commit();
             $this->logTransition('prepared', $request);
@@ -131,6 +136,7 @@ final class ReportDeliveryRequestService
                 throw new DomainException('Delivery Request não está em prepared.', 409);
             }
             $this->assertRequestSnapshotCurrent($tenantId, $request);
+            $this->patientNameOverride->approve($tenantId, $requestId);
             if (!$this->repository->transitionToApproved($tenantId, $requestId, $actorId)) {
                 throw new DomainException('A Delivery Request não pôde ser aprovada.', 409);
             }
@@ -317,7 +323,28 @@ final class ReportDeliveryRequestService
             throw new DomainException('Isolamento de tenant inválido.', 403);
         }
 
-        $snapshotDigest = DeliveryRequestIdentity::snapshotDigest($tenantId, $reportId, $reportVersion, $report);
+        $overrideInput = $input['patient_name_override'] ?? null;
+        if ($overrideInput !== null && !is_array($overrideInput)) {
+            throw new DomainException('patient_name_override deve ser um objeto.', 422);
+        }
+        $overrideScope = [
+            'tenant_id' => $tenantId,
+            'delivery_request_id' => 0,
+            'request_uuid' => $requestUuid,
+            'report_id' => $reportId,
+            'estudo_id' => (int) $report['estudo_id'],
+            'report_version' => $reportVersion,
+            'destination_id' => $destinationId,
+        ];
+        $override = $this->patientNameOverride->normalize($overrideInput, $overrideScope);
+        $overrideDigest = (string) ($override['payload_digest'] ?? '');
+        $snapshotDigest = DeliveryRequestIdentity::authorizedSnapshotDigest(
+            $tenantId,
+            $reportId,
+            $reportVersion,
+            $report,
+            $overrideDigest
+        );
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
         $sourceKey = 'report_version:' . (int) $report['report_version_row_id'];
         $identityInput = [
@@ -355,6 +382,7 @@ final class ReportDeliveryRequestService
             'destination_config_observed_at' => (string) $destination['updated_at'],
             'request_reason' => $reason,
             'requested_by' => $actorId,
+            'patient_name_override' => $override,
         ];
     }
 
@@ -406,11 +434,13 @@ final class ReportDeliveryRequestService
         if (!$report) {
             throw new DomainException('Snapshot explícito não está mais disponível.', 409);
         }
-        $snapshotDigest = DeliveryRequestIdentity::snapshotDigest(
+        $overrideDigest = $this->patientNameOverride->digest($tenantId, (int) $request['id']);
+        $snapshotDigest = DeliveryRequestIdentity::authorizedSnapshotDigest(
             $tenantId,
             (int) $request['report_id'],
             (int) $request['report_version'],
-            $report
+            $report,
+            $overrideDigest
         );
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
         if (!hash_equals((string) $request['authorized_snapshot_digest'], $snapshotDigest)) {
@@ -421,6 +451,13 @@ final class ReportDeliveryRequestService
         }
         if (!$this->sameTimestamp($request['destination_config_observed_at'], $destination['updated_at'] ?? null)) {
             throw new DomainException('Destination foi alterado após a autorização.', 409);
+        }
+        $overrideDigest = $this->patientNameOverride->digest($tenantId, (int) ($request['id'] ?? 0));
+        if ($overrideDigest !== '') {
+            $this->patientNameOverride->assertCurrent(
+                $request,
+                (string) ($request['status'] ?? '') !== self::STATUS_PREPARED
+            );
         }
     }
 
@@ -490,7 +527,38 @@ final class ReportDeliveryRequestService
             && (int) ($request['destination_id'] ?? 0) === (int) ($input['destination_id'] ?? 0)
             && (string) ($request['delivery_profile'] ?? '') === (string) ($input['delivery_profile'] ?? '')
             && (string) ($request['dispatch_mode'] ?? '') === (string) ($input['dispatch_mode'] ?? '')
-            && (string) ($request['request_reason'] ?? '') === $inputReason;
+            && (string) ($request['request_reason'] ?? '') === $inputReason
+            && $this->sameOverride($request, $input);
+    }
+
+    /** @param array<string,mixed> $request @param array<string,mixed> $input */
+    private function sameOverride(array $request, array $input): bool
+    {
+        if (!isset($this->patientNameOverride)) {
+            return true;
+        }
+        $inputOverride = $input['patient_name_override'] ?? null;
+        $storedDigest = $this->patientNameOverride->digest((int) ($request['tenant_id'] ?? 0), (int) ($request['id'] ?? 0));
+        if ($inputOverride === null) {
+            return $storedDigest === '';
+        }
+        if (!is_array($inputOverride) || $storedDigest === '') {
+            return false;
+        }
+        try {
+            $normalized = $this->patientNameOverride->normalize($inputOverride, [
+                'tenant_id' => (int) $request['tenant_id'],
+                'delivery_request_id' => (int) $request['id'],
+                'request_uuid' => (string) $request['request_uuid'],
+                'report_id' => (int) $request['report_id'],
+                'estudo_id' => (int) $request['estudo_id'],
+                'report_version' => (int) $request['report_version'],
+                'destination_id' => (int) $request['destination_id'],
+            ]);
+        } catch (Throwable) {
+            return false;
+        }
+        return hash_equals($storedDigest, (string) ($normalized['payload_digest'] ?? ''));
     }
 
     private function sameTimestamp(mixed $left, mixed $right): bool
@@ -508,6 +576,13 @@ final class ReportDeliveryRequestService
     /** @param array<string,mixed> $request */
     private function logTransition(string $transition, array $request): void
     {
+        $overridePresent = false;
+        if (isset($this->patientNameOverride) && (int) ($request['id'] ?? 0) > 0) {
+            $overridePresent = $this->patientNameOverride->digest(
+                (int) ($request['tenant_id'] ?? 0),
+                (int) ($request['id'] ?? 0)
+            ) !== '';
+        }
         Logger::info('[DeliveryRequest] transição', [
             'transition' => $transition,
             'request_id' => (int) ($request['id'] ?? 0),
@@ -519,6 +594,8 @@ final class ReportDeliveryRequestService
             'status' => (string) ($request['status'] ?? $transition),
             'snapshot_digest_present' => (string) ($request['authorized_snapshot_digest'] ?? '') !== '',
             'destination_config_digest_present' => (string) ($request['destination_config_digest'] ?? '') !== '',
+            'patient_name_override_present' => $overridePresent,
+            'patient_name_override_source' => $overridePresent ? ReportDeliveryRequestPatientNameOverrideService::SOURCE : null,
         ]);
     }
 

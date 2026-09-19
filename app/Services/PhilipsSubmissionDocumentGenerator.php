@@ -109,6 +109,27 @@ final class PhilipsSubmissionDocumentGenerator
         );
     }
 
+    public static function validatePatientNameComponent(mixed $value, string $field, bool $required = true): string
+    {
+        if ($value === null && !$required) {
+            return '';
+        }
+        if (!is_string($value)) {
+            throw new PhilipsXmlFieldUnresolvedException($field);
+        }
+        $value = trim($value);
+        if ($required && $value === '') {
+            throw new PhilipsXmlFieldUnresolvedException($field);
+        }
+        if ($value !== '' && preg_match('//u', $value) !== 1) {
+            throw new PhilipsXmlFieldUnresolvedException($field);
+        }
+        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) === 1 || strlen($value) > 1000) {
+            throw new PhilipsXmlFieldUnresolvedException($field);
+        }
+        return $value;
+    }
+
     /** @param array<string,mixed> $input */
     private function requiredText(array $input, string $field): string
     {
@@ -139,15 +160,7 @@ final class PhilipsSubmissionDocumentGenerator
 
     private function assertText(string $value, string $field): void
     {
-        if ($value !== '' && preg_match('//u', $value) !== 1) {
-            throw new PhilipsXmlFieldUnresolvedException($field);
-        }
-        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) === 1) {
-            throw new PhilipsXmlFieldUnresolvedException($field);
-        }
-        if (strlen($value) > 1000) {
-            throw new PhilipsXmlFieldUnresolvedException($field);
-        }
+        self::validatePatientNameComponent($value, $field, false);
     }
 
     /** @param array<string,mixed> $input */

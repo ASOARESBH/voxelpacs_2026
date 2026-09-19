@@ -17,11 +17,13 @@ final class ReportDeliveryRequestSnapshotService
 {
     public function __construct(
         private ?PDO $pdo = null,
-        private ?ReportDeliveryRequestRepository $repository = null
+        private ?ReportDeliveryRequestRepository $repository = null,
+        private ?ReportDeliveryRequestPatientNameOverrideService $patientNameOverride = null
     )
     {
         $this->pdo ??= Database::getInstance();
         $this->repository ??= new ReportDeliveryRequestRepository($this->pdo);
+        $this->patientNameOverride ??= new ReportDeliveryRequestPatientNameOverrideService($this->pdo);
     }
 
     /** @return array<string,mixed>|null */
@@ -42,7 +44,7 @@ final class ReportDeliveryRequestSnapshotService
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $payload @return array<string,mixed> */
-    public function hydratePayload(array $job, array $payload): array
+    public function hydratePayload(array $job, array $payload, bool $consumeOverride = true): array
     {
         $requestId = (int) ($job['delivery_request_id'] ?? 0);
         if ($requestId <= 0) {
@@ -87,7 +89,7 @@ final class ReportDeliveryRequestSnapshotService
             throw new RuntimeException('Snapshot da Delivery Request não está liberado.');
         }
 
-        return array_replace($payload, [
+        $hydrated = array_replace($payload, [
             'tenant_id' => $tenantId,
             'estabelecimento_id' => (int) ($job['estabelecimento_id'] ?? 0) ?: null,
             'report_id' => $reportId,
@@ -109,5 +111,6 @@ final class ReportDeliveryRequestSnapshotService
             'released_by' => (int) ($snapshot['liberado_por'] ?? 0),
             'released_at' => (string) ($snapshot['liberado_em'] ?? ''),
         ]);
+        return $this->patientNameOverride->applyToPayload($tenantId, $requestId, $hydrated, $consumeOverride);
     }
 }

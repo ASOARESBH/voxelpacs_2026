@@ -36,14 +36,24 @@ final class PhilipsSubmissionMetadataResolver
             'task_modalities' => $this->stringOrNull($payload['modality'] ?? null),
         ];
 
-        $patientNameRaw = self::patientNameFromTagsRaw($payload['tags_raw'] ?? null)
-            ?? $this->stringOrNull($payload['patient_name_dicom'] ?? null)
-            ?? $this->stringOrNull($payload['patient_name'] ?? null);
-        $patientName = $this->dicomPersonName($patientNameRaw);
-        if ($patientName !== null) {
-            $resolved['task_patient_humanname_family'] = $patientName['family'];
-            $resolved['task_patient_humanname_given'] = $patientName['given'];
-            $resolved['task_patient_humanname_middle'] = $patientName['middle'];
+        if (array_key_exists('patient_name_override', $payload)) {
+            $override = $payload['patient_name_override'];
+            if (!is_array($override)) {
+                throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
+            }
+            $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
+            $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
+            $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
+        } else {
+            $patientNameRaw = self::patientNameFromTagsRaw($payload['tags_raw'] ?? null)
+                ?? $this->stringOrNull($payload['patient_name_dicom'] ?? null)
+                ?? $this->stringOrNull($payload['patient_name'] ?? null);
+            $patientName = $this->dicomPersonName($patientNameRaw);
+            if ($patientName !== null) {
+                $resolved['task_patient_humanname_family'] = $patientName['family'];
+                $resolved['task_patient_humanname_given'] = $patientName['given'];
+                $resolved['task_patient_humanname_middle'] = $patientName['middle'];
+            }
         }
 
         foreach ([
@@ -64,6 +74,16 @@ final class PhilipsSubmissionMetadataResolver
             if (array_key_exists($field, $source)) {
                 $resolved[$field] = $source[$field];
             }
+        }
+
+        if (array_key_exists('patient_name_override', $payload)) {
+            $override = $payload['patient_name_override'];
+            if (!is_array($override)) {
+                throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
+            }
+            $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
+            $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
+            $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
         }
 
         return $resolved;

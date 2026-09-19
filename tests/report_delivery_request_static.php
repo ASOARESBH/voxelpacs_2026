@@ -120,10 +120,12 @@ $repository = file_get_contents($root . '/app/Repositories/ReportDeliveryRequest
 $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryRequestController.php');
 $worker = file_get_contents($root . '/app/Repositories/ReportDeliveryWorkerRepository.php');
 $migration = file_get_contents($root . '/database/migrations/2026-09-18_report_delivery_requests_postgresql.sql');
+$overrideMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_delivery_request_patient_name_overrides_postgresql.sql');
+$overrideService = file_get_contents($root . '/app/Services/ReportDeliveryRequestPatientNameOverrideService.php');
 $routes = file_get_contents($root . '/routes/platform.php');
 $env = file_get_contents($root . '/.env.example');
 
-foreach ([$service, $snapshotService, $repository, $controller, $worker, $migration, $routes, $env] as $content) {
+foreach ([$service, $snapshotService, $repository, $controller, $worker, $migration, $overrideMigration, $overrideService, $routes, $env] as $content) {
     expect_request(is_string($content), 'Expected Delivery Request file must be readable');
 }
 
@@ -147,7 +149,8 @@ expect_request(str_contains($repository, 'tableExists'), 'Optional selector tabl
 expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');
 expect_request(str_contains($service, "\$request['request_reason'] ?? ''") && str_contains($service, '$inputReason'), 'UUID replay must compare the normalized request reason');
-expect_request(str_contains($service, 'DeliveryRequestIdentity::snapshotDigest'), 'Snapshot digest must use the shared canonical helper');
+expect_request(str_contains($service, 'DeliveryRequestIdentity::authorizedSnapshotDigest'), 'Authorized snapshot digest must use the shared canonical helper');
+expect_request(str_contains($service, 'DeliveryRequestIdentity::authorizedSnapshotDigest'), 'Authorized digest must include request-scoped override data');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::destinationDigest'), 'Destination digest must use the shared canonical helper');
 expect_request(str_contains($service, '$request[\'status\'] = self::STATUS_PREPARED;'), 'Prepare must return the persisted prepared state');
 expect_request(!str_contains($service, "'authorized_snapshot_digest', 'destination_config_digest'"), 'Public request must not expose full digests');
@@ -175,5 +178,10 @@ expect_request(!str_contains($service, 'retryManualHomologationJob'), 'Recovery 
 expect_request(str_contains($repository, "j.status = 'queued'") && str_contains($repository, 'j.worker_eligible_at IS NULL'), 'Materialized cancellation must require queued and ineligible job');
 expect_request(str_contains($repository, "status IN ('prepared','approved','materialized')"), 'Expiration must allow only the approved pre-worker states');
 expect_request(!str_contains($migration, 'tenant_id = 2') && !str_contains($migration, 'report_id = 74'), 'Migration must not embed real-case identifiers');
+expect_request(str_contains($overrideMigration, 'encrypted_payload') && str_contains($overrideMigration, 'consumed_at'), 'Override migration must be encrypted and single-use');
+expect_request(str_contains($overrideMigration, 'prevent_approved_patient_name_override_mutation'), 'Override migration must enforce post-approval immutability');
+expect_request(str_contains($overrideService, 'operator_confirmed_homologation'), 'Override source must be explicit and homologation-only');
+expect_request(str_contains($overrideService, 'applyToPayload') && str_contains($snapshotService, 'consumeOverride'), 'Snapshot must apply the override at the package boundary');
+expect_request(!str_contains($overrideMigration, 'configuration_secret'), 'Override must not reuse destination credential storage');
 
 fwrite(STDOUT, "REPORT_DELIVERY_REQUEST_STATIC_OK\n");

@@ -91,7 +91,7 @@ final class ReportDeliveryRequestRepository
                        r.liberado_em, r.liberado_por, r.assinado_por,
                        e.id AS estudo_id_effective, e.tenant_id AS estudo_tenant_id,
                        e.unidade_id AS estabelecimento_id, e.study_instance_uid,
-                       e.accession_number, e.modalities, e.patient_id, e.patient_name,
+                       e.accession_number, e.modalities, e.patient_id, e.patient_name, e.tags_raw,
                        e.patient_birth_date, e.patient_sex, e.study_date, e.study_time,
                        e.institution_name, e.issuer_of_patient_id,
                        rv.id AS report_version_row_id, rv.versao,

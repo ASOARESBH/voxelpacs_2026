@@ -91,6 +91,7 @@ final class DeliveryRequestIdentity
                 'modalities' => (string) ($report['modalities'] ?? ''),
                 'patient_id' => (string) ($report['patient_id'] ?? ''),
                 'patient_name' => (string) ($report['patient_name'] ?? ''),
+                'tags_raw' => (string) ($report['tags_raw'] ?? ''),
                 'patient_birth_date' => (string) ($report['patient_birth_date'] ?? ''),
                 'patient_sex' => (string) ($report['patient_sex'] ?? ''),
                 'study_date' => (string) ($report['study_date'] ?? ''),
@@ -98,6 +99,25 @@ final class DeliveryRequestIdentity
                 'institution_name' => (string) ($report['institution_name'] ?? ''),
                 'issuer_of_patient_id' => (string) ($report['issuer_of_patient_id'] ?? ''),
             ],
+        ]));
+    }
+
+    /** @param array<string,mixed> $report */
+    public static function authorizedSnapshotDigest(
+        int $tenantId,
+        int $reportId,
+        int $reportVersion,
+        array $report,
+        string $patientNameOverrideDigest = ''
+    ): string {
+        $snapshotDigest = self::snapshotDigest($tenantId, $reportId, $reportVersion, $report);
+        if ($patientNameOverrideDigest === '') {
+            return $snapshotDigest;
+        }
+        return hash('sha256', self::canonicalJson([
+            'schema_version' => 2,
+            'snapshot_digest' => $snapshotDigest,
+            'patient_name_override_digest' => $patientNameOverrideDigest,
         ]));
     }
 

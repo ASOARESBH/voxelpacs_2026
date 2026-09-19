@@ -39,6 +39,12 @@ O parser de nome de paciente só aceita componentes DICOM estruturados separados
 
 `task_document_date` representa o instante de liberação congelado no snapshot (`reports.liberado_em`). Timestamps com fração e offset são convertidos para UTC e então normalizados para `YYYY-MM-DD HH:MM:SS` antes de o gerador serializá-los como `YYYYMMDDHHMMSS`. Nenhuma nova data é criada e `released_by` não participa da resolução.
 
+### Override request-scoped de PatientName
+
+Quando `tags_raw.PatientName` e `patient_name_dicom` não possuem PN estruturado, `family`, `given` e o `middle` opcional podem ser fornecidos somente por um override explícito vinculado a uma `Delivery Request` individual. O override é restrito a `tenant_id`, `request_uuid`, `report_id`, `report_version`, `estudo_id`, `destination_id=6`, `ambiente=homologacao` e `delivery_profile=submission_document`. O operador fornece componentes independentes; o sistema nunca divide um nome completo.
+
+A precedência é: override aprovado e íntegro, PN estruturado em `tags_raw`, PN estruturado em `patient_name_dicom`, e então falha fechada. O override não pode alterar PatientID, AccessionNumber, datas, autoria, caminho, basename, site ou tipo documental. Os componentes ficam cifrados em tabela própria, com digest canônico, expiração máxima de 24 horas, `max_attempts=1`, aprovação explícita, trigger de imutabilidade pós-aprovação e `consumed_at` irreversível. Digest inconsistente, escopo divergente, expiração, consumo anterior ou par `family/given` incompleto impede o XML e qualquer transporte.
+
 ## Configuração administrativa
 
 A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, autoria, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.

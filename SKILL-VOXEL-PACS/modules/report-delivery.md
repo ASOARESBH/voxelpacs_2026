@@ -39,6 +39,8 @@ Ao editar um destino, o serializador da view remove da cópia de configuração 
 
 A `pacs_report_delivery_requests` representa uma autorização operacional explícita, distinta de `report_versions`, outbox, job e attempt. Na primeira versão, ela aceita somente o tenant-scoped `submission_document` do Destination 6 em homologação, referencia uma versão clínica explícita, calcula digests canônicos sem armazenar conteúdo clínico ou segredos e materializa exatamente uma nova outbox e um job `queued` com `worker_eligible_at = NULL`. O armamento é separado e exige confirmação administrativa; o worker só reclama a request em `armed` e bloqueia, antes de qualquer conector, divergência de snapshot ou configuração.
 
+O override `patient_name` é uma extensão aditiva e request-scoped: os componentes ficam cifrados em `pacs_report_delivery_request_patient_name_overrides`, com digest incluído no `authorized_snapshot_digest`, escopo exato, expiração curta, aprovação, imutabilidade pós-aprovação e consumo único. O snapshot service aplica o override somente no package da request; replay read-only usa `consumeOverride=false`. Não há fallback para nome plano e o Destination 6 não recebe esses valores.
+
 Requests ligadas usam `outbox.delivery_request_id`; não existe nem deve ser presumida uma coluna correspondente em `pacs_report_delivery_jobs`. Outboxes e jobs históricos permanecem com vínculo nulo e fora desse fluxo. A feature flag `VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED` permanece `false` por padrão.
 
 O recovery administrativo usa `ReportDeliveryRequestService::prepareRecovery()`: gera um UUID v4 novo no servidor, referencia apenas `report_id`/`report_version` explícitos, registra auditoria sanitizada e termina em `prepared`. Não aceita `job_id` histórico, não chama retry, não materializa outbox/job e não inicia transporte; aprovar, materializar, armar e executar continuam sendo fases separadas.
@@ -58,4 +60,4 @@ A reativação manual torna o job elegível para o worker e pode iniciar transpo
 
 ## Última análise
 
-2026-09-19 — Fase 68: fonte raw `tags_raw.PatientName` e normalização UTC de `released_at` implementadas no resolver/snapshot e validadas estaticamente; para o report 74/V11, `tags_raw.PatientName` permanece plain, portanto family/given continuam bloqueados sem override autorizado. Nenhum deploy, Job, retry, chamada Bridge ou SMB foi executado nesta fase.
+2026-09-19 — Fases 68/69: fonte raw `tags_raw.PatientName`, normalização UTC de `released_at` e override request-scoped cifrado foram implementados e validados estaticamente; para o report 74/V11, ainda não existem valores operator-confirmed de family/given, portanto nenhum replay real foi liberado. A migration de override não foi aplicada no runtime; nenhum deploy, Request, Job, retry, chamada Bridge ou SMB foi executado nesta fase.
