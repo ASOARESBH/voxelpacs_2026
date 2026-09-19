@@ -183,5 +183,17 @@ expect_request(str_contains($overrideMigration, 'prevent_approved_patient_name_o
 expect_request(str_contains($overrideService, 'operator_confirmed_homologation'), 'Override source must be explicit and homologation-only');
 expect_request(str_contains($overrideService, 'applyToPayload') && str_contains($snapshotService, 'consumeOverride'), 'Snapshot must apply the override at the package boundary');
 expect_request(!str_contains($overrideMigration, 'configuration_secret'), 'Override must not reuse destination credential storage');
+$auditStart = strpos($service, 'private function logTransition');
+$auditEnd = $auditStart === false ? false : strpos($service, 'private function publicRequest', $auditStart);
+$auditBlock = $auditStart === false || $auditEnd === false ? '' : substr($service, $auditStart, $auditEnd - $auditStart);
+expect_request(str_contains($auditBlock, 'override_scope_match')
+    && str_contains($auditBlock, 'override_pair_valid')
+    && str_contains($auditBlock, 'override_approved')
+    && str_contains($auditBlock, 'override_expires_at')
+    && str_contains($auditBlock, 'override_consumed'), 'Override audit must contain only sanitized lifecycle states');
+expect_request(!str_contains($auditBlock, "'family'")
+    && !str_contains($auditBlock, "'given'")
+    && !str_contains($auditBlock, "'middle'")
+    && !str_contains($auditBlock, "'patient_name'"), 'Override audit must not log clinical components');
 
 fwrite(STDOUT, "REPORT_DELIVERY_REQUEST_STATIC_OK\n");

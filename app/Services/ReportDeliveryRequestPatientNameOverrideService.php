@@ -21,6 +21,12 @@ final class ReportDeliveryRequestPatientNameOverrideService
 {
     public const SOURCE = 'operator_confirmed_homologation';
     public const REASON = 'V11_XML_HOMOLOGATION';
+    public const SCOPE_MISMATCH = 'OVERRIDE_SCOPE_MISMATCH';
+    public const CONTROLLED_TENANT_ID = 2;
+    public const CONTROLLED_REPORT_ID = 74;
+    public const CONTROLLED_REPORT_VERSION = 11;
+    public const CONTROLLED_ESTUDO_ID = 1704;
+    public const CONTROLLED_DESTINATION_ID = 6;
 
     public function __construct(
         private PDO $pdo,
@@ -74,6 +80,29 @@ final class ReportDeliveryRequestPatientNameOverrideService
         }
 
         return ['family' => $family, 'given' => $given, 'middle' => $middle];
+    }
+
+    /** @param array<string,mixed> $scope */
+    public static function assertControlledScope(array $scope): void
+    {
+        $expected = [
+            'tenant_id' => self::CONTROLLED_TENANT_ID,
+            'report_id' => self::CONTROLLED_REPORT_ID,
+            'report_version' => self::CONTROLLED_REPORT_VERSION,
+            'estudo_id' => self::CONTROLLED_ESTUDO_ID,
+            'destination_id' => self::CONTROLLED_DESTINATION_ID,
+            'ambiente' => 'homologacao',
+            'delivery_profile' => 'submission_document',
+        ];
+        foreach ($expected as $field => $value) {
+            $actual = $scope[$field] ?? null;
+            $matches = is_int($value)
+                ? (int) $actual === $value
+                : (string) $actual === $value;
+            if (!$matches) {
+                throw new DomainException(self::SCOPE_MISMATCH, 422);
+            }
+        }
     }
 
     /** @param array<string,mixed> $input @param array<string,mixed> $scope */
@@ -330,6 +359,71 @@ final class ReportDeliveryRequestPatientNameOverrideService
         return $payload;
     }
 
+    /** @param array<string,mixed> $request @return array<string,string> */
+    public function auditState(array $request): array
+    {
+        $audit = [
+            'OVERRIDE_PRESENT' => 'NO',
+            'OVERRIDE_SCOPE_MATCH' => 'NA',
+            'OVERRIDE_PAIR_VALID' => 'NA',
+            'OVERRIDE_SOURCE' => 'NA',
+            'OVERRIDE_APPROVED' => 'NO',
+            'OVERRIDE_EXPIRES_AT' => 'NA',
+            'OVERRIDE_CONSUMED' => 'NO',
+        ];
+        $tenantId = (int) ($request['tenant_id'] ?? 0);
+        $requestId = (int) ($request['id'] ?? 0);
+        if ($tenantId <= 0 || $requestId <= 0) {
+            return $audit;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT *
+               FROM pacs_report_delivery_request_patient_name_overrides
+              WHERE tenant_id = :tenant_id AND delivery_request_id = :request_id
+              LIMIT 1'
+        );
+        $stmt->execute([':tenant_id' => $tenantId, ':request_id' => $requestId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return $audit;
+        }
+
+        $scopeMatch = true;
+        foreach (['tenant_id', 'report_id', 'estudo_id', 'report_version', 'destination_id'] as $field) {
+            if ((int) ($row[$field] ?? 0) !== (int) ($request[$field] ?? 0)) {
+                $scopeMatch = false;
+            }
+        }
+        foreach (['request_uuid', 'ambiente', 'delivery_profile'] as $field) {
+            if ((string) ($row[$field] ?? '') !== (string) ($request[$field] ?? '')) {
+                $scopeMatch = false;
+            }
+        }
+
+        $audit['OVERRIDE_PRESENT'] = 'YES';
+        $audit['OVERRIDE_SCOPE_MATCH'] = $scopeMatch ? 'YES' : 'NO';
+        $audit['OVERRIDE_SOURCE'] = (string) ($row['source'] ?? '') === self::SOURCE ? self::SOURCE : 'INVALID';
+        $audit['OVERRIDE_APPROVED'] = empty($row['approved_at']) ? 'NO' : 'YES';
+        $audit['OVERRIDE_CONSUMED'] = empty($row['consumed_at']) ? 'NO' : 'YES';
+        try {
+            $audit['OVERRIDE_EXPIRES_AT'] = $this->canonicalExpiresAt((string) ($row['expires_at'] ?? ''));
+        } catch (Throwable) {
+            $audit['OVERRIDE_EXPIRES_AT'] = 'INVALID';
+        }
+        if ($scopeMatch) {
+            try {
+                $this->assertCurrent($request, false);
+                $audit['OVERRIDE_PAIR_VALID'] = 'YES';
+            } catch (Throwable) {
+                $audit['OVERRIDE_PAIR_VALID'] = 'NO';
+            }
+        } else {
+            $audit['OVERRIDE_PAIR_VALID'] = 'NO';
+        }
+        return $audit;
+    }
+
     /** @return array<string,mixed> */
     private function requestScope(int $tenantId, int $requestId): array
     {
@@ -358,8 +452,13 @@ final class ReportDeliveryRequestPatientNameOverrideService
         if ((int) ($scope['delivery_request_id'] ?? 0) < 0) {
             throw new DomainException('ID da Delivery Request inválido.', 422);
         }
+        foreach (['ambiente' => 'homologacao', 'delivery_profile' => 'submission_document'] as $field => $expected) {
+            if (array_key_exists($field, $scope) && (string) $scope[$field] !== $expected) {
+                throw new DomainException(self::SCOPE_MISMATCH, 422);
+            }
+        }
         $requestUuid = DeliveryRequestIdentity::assertUuidV4((string) ($scope['request_uuid'] ?? ''));
-        return [
+        $validated = [
             'request_uuid' => $requestUuid,
             'tenant_id' => (int) $scope['tenant_id'],
             'delivery_request_id' => (int) $scope['delivery_request_id'],
@@ -370,6 +469,8 @@ final class ReportDeliveryRequestPatientNameOverrideService
             'ambiente' => 'homologacao',
             'delivery_profile' => 'submission_document',
         ];
+        self::assertControlledScope($validated);
+        return $validated;
     }
 
     private function expiresAt(string $value): string

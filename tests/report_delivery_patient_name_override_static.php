@@ -8,6 +8,7 @@ require_once $root . '/app/autoload.php';
 use App\Services\PhilipsSubmissionDocumentGenerator;
 use App\Services\PhilipsSubmissionMetadataResolver;
 use App\Services\PhilipsXmlFieldUnresolvedException;
+use App\Services\DeliveryRequestIdentity;
 use App\Services\ReportDeliveryRequestPatientNameOverrideService;
 
 function expect_override(bool $condition, string $message): void
@@ -28,6 +29,33 @@ expect_override($components === [
     'given' => 'SyntheticGiven',
     'middle' => 'SyntheticMiddle',
 ], 'Complete override components must normalize deterministically');
+
+$controlledScope = [
+    'tenant_id' => 2,
+    'report_id' => 74,
+    'report_version' => 11,
+    'estudo_id' => 1704,
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+];
+ReportDeliveryRequestPatientNameOverrideService::assertControlledScope($controlledScope);
+foreach ([
+    'tenant_id' => 3,
+    'report_id' => 75,
+    'report_version' => 12,
+    'estudo_id' => 1705,
+    'destination_id' => 7,
+    'ambiente' => 'production',
+    'delivery_profile' => 'pdf_only',
+] as $field => $value) {
+    try {
+        ReportDeliveryRequestPatientNameOverrideService::assertControlledScope(array_replace($controlledScope, [$field => $value]));
+        expect_override(false, "Scope mismatch must fail closed for {$field}");
+    } catch (DomainException $error) {
+        expect_override($error->getMessage() === ReportDeliveryRequestPatientNameOverrideService::SCOPE_MISMATCH, "Scope mismatch code must be stable for {$field}");
+    }
+}
 
 foreach ([
     ['family' => 'OnlyFamily'],
@@ -118,8 +146,11 @@ foreach ([
 expect_override(str_contains($overrideService, 'applyToPayload'), 'Override must have a payload application boundary');
 expect_override(str_contains($overrideService, 'hash_equals'), 'Override digest must be compared in constant time');
 expect_override(str_contains($overrideService, 'ReportDeliveryCryptoService'), 'Override values must use the official application crypto service');
+expect_override(str_contains($overrideService, 'OVERRIDE_SCOPE_MISMATCH') && str_contains($overrideService, 'assertControlledScope'), 'Override scope must be exact and fail closed');
+expect_override(str_contains($overrideService, 'auditState') && str_contains($overrideService, 'OVERRIDE_PAIR_VALID'), 'Override audit must expose only sanitized state');
 expect_override(str_contains($snapshotService, 'consumeOverride'), 'Snapshot must support read-only replay without consuming');
 expect_override(str_contains($identity, 'authorizedSnapshotDigest'), 'Authorized digest helper must include override digest');
+expect_override(str_contains($identity, 'patient_name_override_digest'), 'Authorized digest must include the override digest marker');
 expect_override(!str_contains($migration, 'configuration_secret'), 'Override migration must not reuse destination secrets');
 $logStart = strpos($overrideService, 'Logger::info');
 $logEnd = $logStart === false ? false : strpos($overrideService, ']);', $logStart);

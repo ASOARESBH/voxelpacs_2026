@@ -48,6 +48,9 @@ expect_claim(str_contains($repository, 'if ($this->linkedRequestHasDrift($job))'
 expect_claim(str_contains($repository, 'UPDATE pacs_report_delivery_jobs'), 'claim must retain conditional state transition');
 expect_claim(str_contains($repository, "SET status = 'processing'"), 'claim must retain processing transition');
 expect_claim(str_contains($repository, 'attempt_count = attempt_count + 1'), 'claim must retain one-at-a-time attempt accounting');
+expect_claim(str_contains($repository, 'request_override_max_attempts'), 'worker must load the request-scoped retry limit');
+expect_claim(str_contains($repository, 'pacs_report_delivery_request_patient_name_overrides pno'), 'worker must join the request-scoped override');
+expect_claim(str_contains($repository, '$overrideMaxAttempts > 0') && str_contains($repository, 'maxAttempts = $overrideMaxAttempts'), 'request-scoped override must disable retry at one attempt');
 expect_claim(str_contains($repository, 'beginTransaction()') && str_contains($repository, 'commit()'), 'claim must retain transaction boundary');
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 

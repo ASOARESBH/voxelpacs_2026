@@ -576,12 +576,21 @@ final class ReportDeliveryRequestService
     /** @param array<string,mixed> $request */
     private function logTransition(string $transition, array $request): void
     {
-        $overridePresent = false;
-        if (isset($this->patientNameOverride) && (int) ($request['id'] ?? 0) > 0) {
-            $overridePresent = $this->patientNameOverride->digest(
-                (int) ($request['tenant_id'] ?? 0),
-                (int) ($request['id'] ?? 0)
-            ) !== '';
+        $overrideAudit = [
+            'OVERRIDE_PRESENT' => 'UNKNOWN',
+            'OVERRIDE_SCOPE_MATCH' => 'UNKNOWN',
+            'OVERRIDE_PAIR_VALID' => 'UNKNOWN',
+            'OVERRIDE_SOURCE' => 'UNKNOWN',
+            'OVERRIDE_APPROVED' => 'UNKNOWN',
+            'OVERRIDE_EXPIRES_AT' => 'UNKNOWN',
+            'OVERRIDE_CONSUMED' => 'UNKNOWN',
+        ];
+        if (isset($this->patientNameOverride)) {
+            try {
+                $overrideAudit = $this->patientNameOverride->auditState($request);
+            } catch (Throwable) {
+                // A missing optional override table must not break a control-plane audit transition.
+            }
         }
         Logger::info('[DeliveryRequest] transição', [
             'transition' => $transition,
@@ -594,8 +603,13 @@ final class ReportDeliveryRequestService
             'status' => (string) ($request['status'] ?? $transition),
             'snapshot_digest_present' => (string) ($request['authorized_snapshot_digest'] ?? '') !== '',
             'destination_config_digest_present' => (string) ($request['destination_config_digest'] ?? '') !== '',
-            'patient_name_override_present' => $overridePresent,
-            'patient_name_override_source' => $overridePresent ? ReportDeliveryRequestPatientNameOverrideService::SOURCE : null,
+            'override_present' => $overrideAudit['OVERRIDE_PRESENT'],
+            'override_scope_match' => $overrideAudit['OVERRIDE_SCOPE_MATCH'],
+            'override_pair_valid' => $overrideAudit['OVERRIDE_PAIR_VALID'],
+            'override_source' => $overrideAudit['OVERRIDE_SOURCE'],
+            'override_approved' => $overrideAudit['OVERRIDE_APPROVED'],
+            'override_expires_at' => $overrideAudit['OVERRIDE_EXPIRES_AT'],
+            'override_consumed' => $overrideAudit['OVERRIDE_CONSUMED'],
         ]);
     }
 

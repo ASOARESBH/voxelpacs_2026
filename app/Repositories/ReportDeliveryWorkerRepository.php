@@ -455,7 +455,10 @@ class ReportDeliveryWorkerRepository
             }
 
             $attempt = (int) $job['attempt_count'];
-            $maxAttempts = max(1, (int) $job['max_attempts']);
+            $overrideMaxAttempts = (int) ($job['request_override_max_attempts'] ?? 0);
+            $maxAttempts = $overrideMaxAttempts > 0
+                ? $overrideMaxAttempts
+                : max(1, (int) $job['max_attempts']);
             $deadLetter = $attempt >= $maxAttempts;
             $status = $deadLetter ? 'dead_letter' : 'retrying';
             $delaySeconds = min(3600, 30 * (2 ** max(0, $attempt - 1)));
@@ -565,12 +568,18 @@ class ReportDeliveryWorkerRepository
             ? "LEFT JOIN pacs_report_delivery_requests dr
                         ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
             : '';
+        $overrideSelect = $requestsEnabled ? 'pno.max_attempts AS request_override_max_attempts' : 'NULL AS request_override_max_attempts';
+        $overrideJoin = $requestsEnabled
+            ? "LEFT JOIN pacs_report_delivery_request_patient_name_overrides pno
+                        ON pno.delivery_request_id = o.delivery_request_id AND pno.tenant_id = j.tenant_id"
+            : '';
         $stmt = $this->pdo->prepare(
-            "SELECT j.*, d.max_attempts, {$requestSelect}
+            "SELECT j.*, d.max_attempts, {$requestSelect}, {$overrideSelect}
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
              INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
              {$requestJoin}
+             {$overrideJoin}
              WHERE j.id = :id AND j.status = 'processing' AND j.locked_by = :worker_id
              LIMIT 1 {$jobLockClause}"
         );
