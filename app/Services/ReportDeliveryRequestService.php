@@ -482,12 +482,15 @@ final class ReportDeliveryRequestService
     /** @param array<string,mixed> $request @param array<string,mixed> $input */
     private function sameRequestParameters(array $request, array $input, string $requestUuid): bool
     {
+        $inputReason = trim((string) ($input['request_reason'] ?? ''));
+
         return (string) ($request['request_uuid'] ?? '') === $requestUuid
             && (int) ($request['report_id'] ?? 0) === (int) ($input['report_id'] ?? 0)
             && (int) ($request['report_version'] ?? 0) === (int) ($input['report_version'] ?? 0)
             && (int) ($request['destination_id'] ?? 0) === (int) ($input['destination_id'] ?? 0)
             && (string) ($request['delivery_profile'] ?? '') === (string) ($input['delivery_profile'] ?? '')
-            && (string) ($request['dispatch_mode'] ?? '') === (string) ($input['dispatch_mode'] ?? '');
+            && (string) ($request['dispatch_mode'] ?? '') === (string) ($input['dispatch_mode'] ?? '')
+            && (string) ($request['request_reason'] ?? '') === $inputReason;
     }
 
     private function sameTimestamp(mixed $left, mixed $right): bool

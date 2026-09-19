@@ -64,6 +64,27 @@ for ($i = 0; $i < 8; $i++) {
 }
 expect_request(count($generatedUuids) === 8, 'Recovery UUIDs must be server-generated and non-repeating');
 
+$sameParametersMethod = $serviceReflection->getMethod('sameRequestParameters');
+$sameParametersMethod->setAccessible(true);
+$syntheticRequest = [
+    'request_uuid' => $uuidA,
+    'report_id' => 74,
+    'report_version' => 11,
+    'destination_id' => 6,
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'manual_homologation',
+    'request_reason' => 'motivo sintético',
+];
+$syntheticInput = array_replace($syntheticRequest, ['request_reason' => '  motivo sintético  ']);
+expect_request(
+    $sameParametersMethod->invoke($serviceWithoutConstructor, $syntheticRequest, $syntheticInput, $uuidA) === true,
+    'UUID replay must accept equivalent normalized request parameters'
+);
+expect_request(
+    $sameParametersMethod->invoke($serviceWithoutConstructor, $syntheticRequest, array_replace($syntheticInput, ['request_reason' => 'outro motivo']), $uuidA) === false,
+    'UUID replay must reject a different request reason'
+);
+
 $syntheticReport = [
     'estudo_id' => 9,
     'report_version_row_id' => 10,
@@ -125,6 +146,7 @@ expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worke
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
 expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');
+expect_request(str_contains($service, "\$request['request_reason'] ?? ''") && str_contains($service, '$inputReason'), 'UUID replay must compare the normalized request reason');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::snapshotDigest'), 'Snapshot digest must use the shared canonical helper');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::destinationDigest'), 'Destination digest must use the shared canonical helper');
 expect_request(str_contains($service, '$request[\'status\'] = self::STATUS_PREPARED;'), 'Prepare must return the persisted prepared state');
