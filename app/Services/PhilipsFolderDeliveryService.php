@@ -145,10 +145,22 @@ final class PhilipsFolderDeliveryService
                 $timeout,
                 $envelope,
                 $package->xmlDocument->taskFilePath,
-                $package->xmlDocument->documentTypeApplicable
+                $package->xmlDocument->documentTypeApplicable,
+                [
+                    'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                    'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                    'report_id' => $reportId,
+                    'report_version' => $reportVersion,
+                    'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+                    'destination_id' => $destinationId,
+                    'ambiente' => (string) ($job['ambiente'] ?? ''),
+                    'delivery_profile' => (string) ($job['delivery_profile'] ?? $configuration['delivery_profile'] ?? ''),
+                    'transport' => (string) ($job['transport'] ?? ''),
+                ]
             );
             return $result + [
                 'xml_filename' => $xmlFileName,
+                'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
                 'pdf_artifact' => $package->pdfArtifact,
                 'xml_artifact' => [
                     'type' => 'philips_submission_xml',

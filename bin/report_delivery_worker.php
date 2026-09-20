@@ -218,6 +218,9 @@ final class LocalDicomDeliveryWorker
             if ($deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
                 $completionMetadata['package_identity'] = (string) ($result['package_identity'] ?? '');
                 $completionMetadata['package_verified'] = (string) ($result['package_verified'] ?? 'FAIL');
+                if (array_key_exists('patient_name_components_omitted', $result)) {
+                    $completionMetadata['patient_name_components_omitted'] = (bool) $result['patient_name_components_omitted'];
+                }
             }
             if (!$this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata)) {
                 throw new DeliveryWorkerFailure('completion_not_confirmed');

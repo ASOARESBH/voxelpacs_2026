@@ -16,7 +16,8 @@ final class PhilipsSubmissionDocument
         public readonly string $taskFilePath,
         public readonly bool $documentTypeApplicable,
         public readonly bool $deleteFile,
-        public readonly ?string $documentType
+        public readonly ?string $documentType,
+        public readonly bool $patientNameComponentsOmitted = false
     ) {
         if ($filename === '' || !str_ends_with(strtolower($filename), '.xml')) {
             throw new \InvalidArgumentException('Nome de XML inválido.');

@@ -138,6 +138,7 @@ final class PhilipsFolderGatewayBridgeClient
     }
 
     /**
+     * @param array<string,mixed>|null $homologationContext
      * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string,package_identity:string,package_verified:string}
      */
     public function sendSubmissionPackage(
@@ -151,7 +152,8 @@ final class PhilipsFolderGatewayBridgeClient
         int $timeout,
         ?array $secretEnvelope = null,
         ?string $taskFilePath = null,
-        ?bool $taskDocumentTypeApplicable = null
+        ?bool $taskDocumentTypeApplicable = null,
+        ?array $homologationContext = null
     ): array {
         if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !$this->validFileName($pdfFileName) || !$this->validFileName($xmlFileName)
             || !is_file($pdfPath) || !is_file($xmlPath)) {
@@ -230,13 +232,31 @@ final class PhilipsFolderGatewayBridgeClient
             $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
             $taskFilePathSha256 = hash('sha256', $taskFilePath);
             $taskDocumentTypeApplicableValue = $taskDocumentTypeApplicable ? '1' : '0';
-            $signatureBase = implode("\n", [
+            $patientNameException = is_array($homologationContext)
+                && (($homologationContext['patient_name_components_omitted'] ?? false) === true);
+            if ($patientNameException && !PhilipsSubmissionHomologationPolicy::allows($homologationContext)) {
+                throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
+            }
+            $signatureParts = [
                 'POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId,
                 $packageFileName, $packageSha256, (string) $packageSize,
                 $pdfFileName, $pdfSha256, (string) $pdfSize,
                 $xmlFileName, $xmlSha256, (string) $xmlSize,
-                $taskFilePathSha256, $taskDocumentTypeApplicableValue, $timestamp, $envelope['sha256'],
-            ]);
+                $taskFilePathSha256, $taskDocumentTypeApplicableValue, $timestamp,
+            ];
+            if ($patientNameException) {
+                $signatureParts = array_merge($signatureParts, [
+                    'patient_name_components_omitted',
+                    (string) ($homologationContext['report_id'] ?? 0),
+                    (string) ($homologationContext['report_version'] ?? 0),
+                    (string) ($homologationContext['estudo_id'] ?? 0),
+                    (string) ($homologationContext['ambiente'] ?? ''),
+                    (string) ($homologationContext['delivery_profile'] ?? ''),
+                    (string) ($homologationContext['transport'] ?? ''),
+                ]);
+            }
+            $signatureParts[] = $envelope['sha256'];
+            $signatureBase = implode("\n", $signatureParts);
             $signature = hash_hmac('sha256', $signatureBase, $secret);
             $curl = curl_init($url);
             if ($curl === false) {
@@ -277,6 +297,15 @@ final class PhilipsFolderGatewayBridgeClient
                         'X-VOXEL-XML-TASK-FILE-PATH-SHA256: ' . $taskFilePathSha256,
                         'X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE: ' . $taskDocumentTypeApplicableValue,
                         'X-VOXEL-Timestamp: ' . $timestamp,
+                        ...($patientNameException ? [
+                            'X-VOXEL-Patient-Name-Components-Omitted: 1',
+                            'X-VOXEL-Report-ID: ' . (int) ($homologationContext['report_id'] ?? 0),
+                            'X-VOXEL-Report-Version: ' . (int) ($homologationContext['report_version'] ?? 0),
+                            'X-VOXEL-Estudo-ID: ' . (int) ($homologationContext['estudo_id'] ?? 0),
+                            'X-VOXEL-Environment: ' . (string) ($homologationContext['ambiente'] ?? ''),
+                            'X-VOXEL-Delivery-Profile: ' . (string) ($homologationContext['delivery_profile'] ?? ''),
+                            'X-VOXEL-Transport: ' . (string) ($homologationContext['transport'] ?? ''),
+                        ] : []),
                         'X-VOXEL-Signature: ' . $signature,
                         ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
                     ],

@@ -38,7 +38,7 @@ final class PhilipsSubmissionPackageProducer
 
         $input = $this->resolvedInput($payload, $configuration, $pdfFilename);
         $input['pdf_filename'] = $pdfFilename;
-        $document = $this->generator->generate($input);
+        $document = $this->generator->generate($input, $this->deliveryContext($job, $configuration));
         $xmlStoragePath = $this->artifacts->storeGeneratedArtifact(
             $job,
             $document->filename,
@@ -46,6 +46,21 @@ final class PhilipsSubmissionPackageProducer
         );
 
         return new ReportDeliveryPackage($pdf + ['filename' => $pdfFilename], $document, $xmlStoragePath);
+    }
+
+    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array<string,mixed> */
+    private function deliveryContext(array $job, array $configuration): array
+    {
+        return [
+            'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+            'report_id' => (int) ($job['report_id'] ?? 0),
+            'report_version' => (int) ($job['report_version'] ?? 0),
+            'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+            'destination_id' => (int) ($job['destination_id'] ?? 0),
+            'ambiente' => (string) ($job['ambiente'] ?? ''),
+            'delivery_profile' => (string) ($job['delivery_profile'] ?? ($configuration['delivery_profile'] ?? '')),
+            'transport' => (string) ($job['transport'] ?? ''),
+        ];
     }
 
     /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @return array<string,mixed> */

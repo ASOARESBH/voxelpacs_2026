@@ -13,19 +13,17 @@ use DateTimeZone;
  */
 final class PhilipsSubmissionDocumentGenerator
 {
-    /** @param array<string,mixed> $input */
-    public function generate(array $input): PhilipsSubmissionDocument
+    /** @param array<string,mixed> $input @param array<string,mixed> $context */
+    public function generate(array $input, array $context = []): PhilipsSubmissionDocument
     {
         $pdfFilename = $this->requiredText($input, 'pdf_filename');
         if (!preg_match('/^VOXEL_[A-Za-z0-9._-]{1,160}\.pdf$/', $pdfFilename)) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_name');
         }
 
+        $omitPatientNameComponents = PhilipsSubmissionHomologationPolicy::shouldOmitPatientNameComponents($input, $context);
         $values = [
             'task_patient_id' => $this->requiredText($input, 'task_patient_id'),
-            'task_patient_humanname_family' => $this->requiredText($input, 'task_patient_humanname_family'),
-            'task_patient_humanname_given' => $this->requiredText($input, 'task_patient_humanname_given'),
-            'task_patient_humanname_middle' => $this->optionalText($input, 'task_patient_humanname_middle'),
             'task_document_name' => $this->requiredText($input, 'task_document_name'),
             'task_document_date' => $this->normalizeDateTime($input, 'task_document_date'),
             'task_image_date' => $this->normalizeDateTime($input, 'task_image_date'),
@@ -43,6 +41,11 @@ final class PhilipsSubmissionDocumentGenerator
             'task_author_humanname_middle' => $this->optionalText($input, 'task_author_humanname_middle'),
             'task_modalities' => $this->normalizeModalities($input, 'task_modalities'),
         ];
+        if (!$omitPatientNameComponents) {
+            $values['task_patient_humanname_family'] = $this->requiredText($input, 'task_patient_humanname_family');
+            $values['task_patient_humanname_given'] = $this->requiredText($input, 'task_patient_humanname_given');
+            $values['task_patient_humanname_middle'] = $this->optionalText($input, 'task_patient_humanname_middle');
+        }
 
         if ($values['task_document_mimetype'] !== 'application/pdf') {
             throw new PhilipsXmlFieldUnresolvedException('task_document_mimetype');
@@ -57,9 +60,6 @@ final class PhilipsSubmissionDocumentGenerator
 
         $elements = [
             'task_patient_id' => $values['task_patient_id'],
-            'task_patient_humanname_family' => $values['task_patient_humanname_family'],
-            'task_patient_humanname_given' => $values['task_patient_humanname_given'],
-            'task_patient_humanname_middle' => $values['task_patient_humanname_middle'],
             'task_document_name' => $values['task_document_name'],
             'task_document_date' => $values['task_document_date'],
             'task_image_date' => $values['task_image_date'],
@@ -78,6 +78,15 @@ final class PhilipsSubmissionDocumentGenerator
             'task_modalities' => $values['task_modalities'],
             'task_delete_file' => $deleteFile ? 'true' : 'false',
         ];
+        if (!$omitPatientNameComponents) {
+            $elements = array_slice($elements, 0, 1, true)
+                + [
+                    'task_patient_humanname_family' => $values['task_patient_humanname_family'],
+                    'task_patient_humanname_given' => $values['task_patient_humanname_given'],
+                    'task_patient_humanname_middle' => $values['task_patient_humanname_middle'],
+                ]
+                + array_slice($elements, 1, null, true);
+        }
         if ($documentTypeApplicable) {
             $elements['task_document_type'] = $documentType;
         }
@@ -105,7 +114,8 @@ final class PhilipsSubmissionDocumentGenerator
             $values['task_file_path'],
             $documentTypeApplicable,
             $deleteFile,
-            $documentType
+            $documentType,
+            $omitPatientNameComponents
         );
     }
 
