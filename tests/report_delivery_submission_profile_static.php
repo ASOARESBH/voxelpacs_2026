@@ -85,6 +85,8 @@ expect_profile(str_contains($snapshot, 'e.tags_raw') && str_contains($snapshot, 
 expect_profile(str_contains($snapshot, 'rv.patient_name_family') && str_contains($snapshot, "'patient_name_source'"), 'Delivery Request snapshot must preserve frozen version components');
 expect_profile(str_contains($resolver, "patient_name_dicom"), 'Resolver must consume the raw DICOM PatientName source');
 expect_profile(str_contains($resolver, 'patientNameFromTagsRaw'), 'Resolver must inspect tags_raw before normalized name fields');
+expect_profile(str_contains($resolver, 'allowsPatientNameAsFamily') && str_contains($resolver, 'deliveryContext'), 'Resolver must require the scoped homologation context for flat PatientName family mode');
+expect_profile(str_contains($resolver, 'patient_name_as_family'), 'Resolver must mark the scoped flat PatientName family mode');
 expect_profile(str_contains($resolver, 'versionPatientName'), 'Resolver must prioritize report_version components');
 expect_profile(str_contains($resolver, "setTimezone(new \\DateTimeZone('UTC'))"), 'Resolver must normalize release timestamps to UTC');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
@@ -93,6 +95,7 @@ expect_profile(str_contains($versionMigration, 'patient_name_family') && str_con
 expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not split names on spaces');
 expect_profile(str_contains($contract, 'pdf_only'), 'Contract must document backward compatibility');
 expect_profile(str_contains($contract, 'task_document_type'), 'Contract must document conditional document type');
+expect_profile(str_contains($contract, 'PatientName-as-family'), 'Contract must document the scoped PatientName family exception');
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = file_get_contents($root . '/lang/' . ($locale === 'pt_BR' ? 'pt_BR' : $locale) . '.php');

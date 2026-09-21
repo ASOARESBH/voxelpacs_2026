@@ -39,6 +39,8 @@ $checks = [
     ['client', 'X-VOXEL-Tenant-ID', 'tenant binding header'],
     ['client', 'X-VOXEL-XML-TASK-FILE-PATH-SHA256', 'logical XML path binding'],
     ['client', 'X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE', 'document type policy binding'],
+    ['client', 'X-VOXEL-Patient-Name-As-Family', 'PatientName family exception header'],
+    ['client', 'patient_name_as_family', 'PatientName family exception HMAC marker'],
     ['client', 'package_verified', 'package verification response'],
     ['client', "['POST', " . '$path', 'package HMAC method binding'],
     ['bridge', 'package_prefix', 'package endpoint routing'],
@@ -53,6 +55,8 @@ $checks = [
     ['bridge', '_validate_submission_xml', 'XML semantic verification'],
     ['bridge', 'package_verified', 'verified package state'],
     ['bridge', 'task_file_path_sha256', 'package replay path binding'],
+    ['bridge', 'patient_name_as_family_enabled', 'Bridge local PatientName family flag'],
+    ['bridge', 'allow_patient_name_as_family', 'Bridge PatientName family validation'],
     ['bridge', 'for path in [pdf_temporary, xml_temporary]', 'temporary-only cleanup'],
 ];
 

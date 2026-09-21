@@ -157,6 +157,7 @@ final class PhilipsFolderDeliveryService
                 $package->xmlDocument->documentTypeApplicable,
                 [
                     'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                    'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
                     'tenant_id' => (int) ($job['tenant_id'] ?? 0),
                     'report_id' => $reportId,
                     'report_version' => $reportVersion,
@@ -170,6 +171,7 @@ final class PhilipsFolderDeliveryService
             return $result + [
                 'xml_filename' => $xmlFileName,
                 'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
                 'pdf_artifact' => $package->pdfArtifact,
                 'xml_artifact' => [
                     'type' => 'philips_submission_xml',

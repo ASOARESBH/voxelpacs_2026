@@ -144,5 +144,18 @@ expect_homologation($normalDocument->patientNameComponentsOmitted === false, 'no
 expect_homologation(str_contains($normalDocument->content, '<task_patient_humanname_family>Family</task_patient_humanname_family>'), 'normal family node must remain');
 expect_homologation(str_contains($normalDocument->content, '<task_patient_humanname_given>Given</task_patient_humanname_given>'), 'normal given node must remain');
 
+putenv(PhilipsSubmissionHomologationPolicy::PATIENT_NAME_AS_FAMILY_FLAG . '=1');
+$familyMode = $input;
+$familyMode['task_patient_humanname_family'] = 'Flat Patient Name';
+$familyMode['task_patient_humanname_given'] = '';
+$familyMode['task_patient_humanname_middle'] = '';
+$familyMode['patient_name_as_family'] = true;
+$familyDocument = $generator->generate($familyMode, $context);
+expect_homologation($familyDocument->patientNameAsFamily === true, 'family mode must be marked');
+expect_homologation(str_contains($familyDocument->content, '<task_patient_humanname_family>Flat Patient Name</task_patient_humanname_family>'), 'family mode must preserve full PatientName');
+expect_homologation(str_contains($familyDocument->content, '<task_patient_humanname_given></task_patient_humanname_given>'), 'family mode must emit empty given');
+expect_homologation(str_contains($familyDocument->content, '<task_patient_humanname_middle></task_patient_humanname_middle>'), 'family mode must emit empty middle');
+putenv(PhilipsSubmissionHomologationPolicy::PATIENT_NAME_AS_FAMILY_FLAG . '=0');
+
 putenv(PhilipsSubmissionHomologationPolicy::FLAG . '=0');
 echo "PHILIPS_SUBMISSION_HOMOLOGATION_EXCEPTION_STATIC_OK\n";

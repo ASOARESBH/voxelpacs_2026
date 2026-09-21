@@ -35,10 +35,11 @@ final class PhilipsSubmissionPackageProducer
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $payload = $this->requestSnapshot->hydratePayload($job, $payload);
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
+        $deliveryContext = $this->deliveryContext($job, $configuration);
 
-        $input = $this->resolvedInput($payload, $configuration, $pdfFilename);
+        $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
         $input['pdf_filename'] = $pdfFilename;
-        $document = $this->generator->generate($input, $this->deliveryContext($job, $configuration));
+        $document = $this->generator->generate($input, $deliveryContext);
         $xmlStoragePath = $this->artifacts->storeGeneratedArtifact(
             $job,
             $document->filename,
@@ -63,10 +64,10 @@ final class PhilipsSubmissionPackageProducer
         ];
     }
 
-    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @return array<string,mixed> */
-    private function resolvedInput(array $payload, array $configuration, string $pdfFilename): array
+    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @param array<string,mixed> $deliveryContext @return array<string,mixed> */
+    private function resolvedInput(array $payload, array $configuration, string $pdfFilename, array $deliveryContext): array
     {
-        $input = $this->metadata->resolve($payload);
+        $input = $this->metadata->resolve($payload, $deliveryContext);
         $settings = $configuration['philips_submission'] ?? null;
         if (!is_array($settings)) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_path');

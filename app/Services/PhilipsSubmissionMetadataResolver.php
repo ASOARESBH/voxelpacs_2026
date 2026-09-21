@@ -16,8 +16,8 @@ use App\Helpers\DicomPersonName;
  */
 final class PhilipsSubmissionMetadataResolver
 {
-    /** @param array<string,mixed> $payload @return array<string,mixed> */
-    public function resolve(array $payload): array
+    /** @param array<string,mixed> $payload @param array<string,mixed> $deliveryContext @return array<string,mixed> */
+    public function resolve(array $payload, array $deliveryContext = []): array
     {
         $source = $payload['philips_submission'] ?? [];
         $source = is_array($source) ? $source : [];
@@ -39,15 +39,25 @@ final class PhilipsSubmissionMetadataResolver
         ];
 
         $patientName = $this->versionPatientName($payload);
+        $patientNameAsFamily = false;
         if ($patientName === null) {
             foreach ([
-                self::patientNameFromTagsRaw($payload['tags_raw'] ?? null),
-                $this->stringOrNull($payload['patient_name_dicom'] ?? null),
-                $this->stringOrNull($payload['patient_name'] ?? null),
-            ] as $patientNameRaw) {
+                [self::patientNameFromTagsRaw($payload['tags_raw'] ?? null), true],
+                [$this->stringOrNull($payload['patient_name_dicom'] ?? null), true],
+                [$this->stringOrNull($payload['patient_name'] ?? null), false],
+            ] as [$patientNameRaw, $allowFlatPatientName]) {
                 $parsed = $this->dicomPersonName($patientNameRaw);
                 if ($parsed !== null) {
                     $patientName = $parsed;
+                    break;
+                }
+                if ($allowFlatPatientName
+                    && $patientNameRaw !== null
+                    && $patientNameRaw !== ''
+                    && !str_contains($patientNameRaw, '^')
+                    && PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($deliveryContext)) {
+                    $patientName = ['family' => $patientNameRaw, 'given' => '', 'middle' => ''];
+                    $patientNameAsFamily = true;
                     break;
                 }
             }
@@ -65,6 +75,7 @@ final class PhilipsSubmissionMetadataResolver
             $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
             $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
         }
+        $resolved['patient_name_as_family'] = $patientNameAsFamily;
 
         foreach ([
             'task_document_name',

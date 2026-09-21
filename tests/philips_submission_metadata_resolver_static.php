@@ -45,6 +45,24 @@ $plainName = $resolver->resolve(['patient_name' => 'Silva Ana Maria']);
 expect_resolver($plainName['task_patient_humanname_family'] === null, 'Plain names must not be split heuristically');
 expect_resolver($plainName['task_patient_humanname_given'] === null, 'Ambiguous given name must remain unresolved');
 
+$homologationContext = [
+    'tenant_id' => 2,
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+    'transport' => 'philips_non_dicom',
+];
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
+$flatDefaultOff = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
+expect_resolver($flatDefaultOff['task_patient_humanname_family'] === null, 'PatientName-as-family must remain default-off');
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
+$flatHomologation = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
+expect_resolver($flatHomologation['task_patient_humanname_family'] === 'Flat Patient Name', 'Homologation must preserve the full flat PatientName in family');
+expect_resolver($flatHomologation['task_patient_humanname_given'] === '', 'Homologation family mode must empty given');
+expect_resolver($flatHomologation['task_patient_humanname_middle'] === '', 'Homologation family mode must empty middle');
+expect_resolver($flatHomologation['patient_name_as_family'] === true, 'Homologation family mode must be marked sanitizably');
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
+
 $tagsRawName = $resolver->resolve([
     'patient_name' => 'Plain Display Name',
     'patient_name_dicom' => 'Other^Source^Name',

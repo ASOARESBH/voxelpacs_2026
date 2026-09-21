@@ -22,6 +22,13 @@ final class PhilipsSubmissionDocumentGenerator
         }
 
         $omitPatientNameComponents = PhilipsSubmissionHomologationPolicy::shouldOmitPatientNameComponents($input, $context);
+        $patientNameAsFamily = ($input['patient_name_as_family'] ?? false) === true;
+        if ($patientNameAsFamily && !PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($context)) {
+            throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
+        }
+        if ($omitPatientNameComponents && $patientNameAsFamily) {
+            throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
+        }
         $values = [
             'task_patient_id' => $this->requiredText($input, 'task_patient_id'),
             'task_document_name' => $this->requiredText($input, 'task_document_name'),
@@ -43,8 +50,14 @@ final class PhilipsSubmissionDocumentGenerator
         ];
         if (!$omitPatientNameComponents) {
             $values['task_patient_humanname_family'] = $this->requiredText($input, 'task_patient_humanname_family');
-            $values['task_patient_humanname_given'] = $this->requiredText($input, 'task_patient_humanname_given');
+            $values['task_patient_humanname_given'] = $patientNameAsFamily
+                ? $this->optionalText($input, 'task_patient_humanname_given')
+                : $this->requiredText($input, 'task_patient_humanname_given');
             $values['task_patient_humanname_middle'] = $this->optionalText($input, 'task_patient_humanname_middle');
+            if ($patientNameAsFamily
+                && ($values['task_patient_humanname_given'] !== '' || $values['task_patient_humanname_middle'] !== '')) {
+                throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_given');
+            }
         }
 
         if ($values['task_document_mimetype'] !== 'application/pdf') {
@@ -116,7 +129,8 @@ final class PhilipsSubmissionDocumentGenerator
             $documentTypeApplicable,
             $deleteFile,
             $documentType,
-            $omitPatientNameComponents
+            $omitPatientNameComponents,
+            $patientNameAsFamily
         );
     }
 

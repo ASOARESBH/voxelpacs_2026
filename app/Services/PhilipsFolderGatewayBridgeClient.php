@@ -234,7 +234,15 @@ final class PhilipsFolderGatewayBridgeClient
             $taskDocumentTypeApplicableValue = $taskDocumentTypeApplicable ? '1' : '0';
             $patientNameException = is_array($homologationContext)
                 && (($homologationContext['patient_name_components_omitted'] ?? false) === true);
+            $patientNameAsFamily = is_array($homologationContext)
+                && (($homologationContext['patient_name_as_family'] ?? false) === true);
             if ($patientNameException && !PhilipsSubmissionHomologationPolicy::allows($homologationContext)) {
+                throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
+            }
+            if ($patientNameAsFamily && !PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($homologationContext)) {
+                throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
+            }
+            if ($patientNameException && $patientNameAsFamily) {
                 throw new PhilipsFolderDeliveryException('gateway_policy_rejected', 'gateway_policy_rejected');
             }
             $signatureParts = [
@@ -247,6 +255,17 @@ final class PhilipsFolderGatewayBridgeClient
             if ($patientNameException) {
                 $signatureParts = array_merge($signatureParts, [
                     'patient_name_components_omitted',
+                    (string) ($homologationContext['report_id'] ?? 0),
+                    (string) ($homologationContext['report_version'] ?? 0),
+                    (string) ($homologationContext['estudo_id'] ?? 0),
+                    (string) ($homologationContext['ambiente'] ?? ''),
+                    (string) ($homologationContext['delivery_profile'] ?? ''),
+                    (string) ($homologationContext['transport'] ?? ''),
+                ]);
+            }
+            if ($patientNameAsFamily) {
+                $signatureParts = array_merge($signatureParts, [
+                    'patient_name_as_family',
                     (string) ($homologationContext['report_id'] ?? 0),
                     (string) ($homologationContext['report_version'] ?? 0),
                     (string) ($homologationContext['estudo_id'] ?? 0),
@@ -299,6 +318,15 @@ final class PhilipsFolderGatewayBridgeClient
                         'X-VOXEL-Timestamp: ' . $timestamp,
                         ...($patientNameException ? [
                             'X-VOXEL-Patient-Name-Components-Omitted: 1',
+                            'X-VOXEL-Report-ID: ' . (int) ($homologationContext['report_id'] ?? 0),
+                            'X-VOXEL-Report-Version: ' . (int) ($homologationContext['report_version'] ?? 0),
+                            'X-VOXEL-Estudo-ID: ' . (int) ($homologationContext['estudo_id'] ?? 0),
+                            'X-VOXEL-Environment: ' . (string) ($homologationContext['ambiente'] ?? ''),
+                            'X-VOXEL-Delivery-Profile: ' . (string) ($homologationContext['delivery_profile'] ?? ''),
+                            'X-VOXEL-Transport: ' . (string) ($homologationContext['transport'] ?? ''),
+                        ] : []),
+                        ...($patientNameAsFamily ? [
+                            'X-VOXEL-Patient-Name-As-Family: 1',
                             'X-VOXEL-Report-ID: ' . (int) ($homologationContext['report_id'] ?? 0),
                             'X-VOXEL-Report-Version: ' . (int) ($homologationContext['report_version'] ?? 0),
                             'X-VOXEL-Estudo-ID: ' . (int) ($homologationContext['estudo_id'] ?? 0),
