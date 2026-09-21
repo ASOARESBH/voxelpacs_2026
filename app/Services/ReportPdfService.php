@@ -55,6 +55,7 @@ class ReportPdfService
         }
 
         $r = $this->prepareLocalAssets($report);
+        $r['snapshot_pdf'] = true;
         $templateCodigo = (string) ($context['template_codigo'] ?? ReportLayoutService::PADRAO);
         $customTemplate = is_array($context['custom_template'] ?? null)
             ? $context['custom_template']

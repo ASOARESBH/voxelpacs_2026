@@ -50,8 +50,11 @@ if (!is_string($corporate) || !str_contains($corporate, 'if ($logoSrc === \'\' &
 }
 
 $artifact = file_get_contents($root . '/app/Services/ReportDeliveryArtifactService.php');
-if (!is_string($artifact) || !str_contains($artifact, 'renderBinary($estudo, $report)')) {
-    throw new RuntimeException('O produtor de artifact não usa o caminho binário do ReportPdfService.');
+if (!is_string($artifact)
+    || !str_contains($artifact, 'renderSnapshotBinary($visualContext)')
+    || !str_contains($artifact, 'renderBinary($estudo, $report)')
+    || !str_contains($artifact, 'isNonDicomFolder')) {
+    throw new RuntimeException('O produtor de artifact não separa snapshot visual non-DICOM de DICOM.');
 }
 
 printf("REPORT_PDF_SNAPSHOT_STATIC_OK\n");

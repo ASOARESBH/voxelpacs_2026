@@ -42,11 +42,24 @@ final class ReportDeliveryArtifactService
             throw new RuntimeException('Artefato PDF solicitado para um transporte incompatível.');
         }
 
-        $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
-        $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
-        $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
-
-        $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        $isNonDicomFolder = in_array(
+            (string) ($job['transport'] ?? ''),
+            [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT],
+            true
+        );
+        $studyInstanceUid = '';
+        if ($isNonDicomFolder) {
+            $visualContext = (new ReportPdfDeliveryContextService($this->pdo))->build($job);
+            $visualReport = is_array($visualContext['report'] ?? null) ? $visualContext['report'] : [];
+            $studyInstanceUid = (string) ($visualReport['study_instance_uid'] ?? '');
+            $binary = (new ReportPdfService())->renderSnapshotBinary($visualContext);
+        } else {
+            $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
+            $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
+            $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
+            $studyInstanceUid = (string) ($estudo->study_instance_uid ?? '');
+            $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        }
         if (strlen($binary) < 100 || !str_starts_with($binary, '%PDF')) {
             throw new RuntimeException('Falha ao gerar PDF válido para devolutiva DICOM.');
         }
@@ -71,7 +84,7 @@ final class ReportDeliveryArtifactService
             'filename' => $filename,
             'storage_path' => $storagePath,
             'report_id' => (int) $job['report_id'],
-            'study_instance_uid' => (string) ($estudo->study_instance_uid ?? ''),
+            'study_instance_uid' => $studyInstanceUid,
         ];
     }
 

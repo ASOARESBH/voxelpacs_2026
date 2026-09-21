@@ -65,7 +65,10 @@ $solicitante = \App\Helpers\DicomPersonName::format($r['referring_physician_name
 // O conteúdo clínico configurado pelo médico é a única abertura do laudo.
 // Study Description, procedimento, região anatômica e modalidade DICOM não
 // são promovidos automaticamente a título de impressão.
-$logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+$logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? ''));
+if ($logoUnidade === '' && empty($snapshotPdf)) {
+    $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+}
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
 $crmExibicao = $crm === '' ? '' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM' . ($crmUf !== '' ? '-' . $crmUf : '') . ' ' . $crm);
@@ -250,8 +253,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         <?php endif; ?>
 
         <section class="pdf-signature" aria-label="Assinatura digital do médico">
-            <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-                <img class="pdf-signature-image" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
+            <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+            <?php if ($assinaturaSrc === '' && empty($snapshotPdf) && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+            <?php if ($assinaturaSrc !== ''): ?>
+                <img class="pdf-signature-image" src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>" alt="Assinatura de <?= htmlspecialchars((string) ($r['medico_nome'] ?? ''), ENT_QUOTES) ?>">
             <?php endif; ?>
             <div class="pdf-signer-name"><?= htmlspecialchars((string) ($r['medico_nome'] ?? '—'), ENT_QUOTES) ?></div>
             <?php if ($especialidadeMedico !== ''): ?>
