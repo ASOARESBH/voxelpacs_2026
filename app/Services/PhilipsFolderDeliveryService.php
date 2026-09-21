@@ -132,7 +132,12 @@ final class PhilipsFolderDeliveryService
             $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, (int) ($job['tenant_id'] ?? 0), $destinationId);
             try {
                 $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
-            } catch (PhilipsXmlFieldUnresolvedException) {
+            } catch (PhilipsXmlFieldUnresolvedException $error) {
+                Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
+                    'job_id' => $jobId,
+                    'stage' => 'xml_generation',
+                    'field' => $error->field,
+                ]);
                 throw new PhilipsFolderDeliveryException('xml_field_unresolved', 'xml_field_unresolved');
             }
             $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
