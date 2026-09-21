@@ -83,6 +83,7 @@ final class LocalDicomDeliveryWorker
 
     public function runOne(int $jobId): int
     {
+        $this->repository->enableOneShotForJob($jobId);
         $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
         if ($job === null) {
             fwrite(STDERR, "controlled_job_not_eligible\n");

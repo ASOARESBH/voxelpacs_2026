@@ -18,8 +18,15 @@ use Throwable;
  */
 class ReportDeliveryWorkerRepository
 {
+    private ?int $oneShotJobId = null;
+
     public function __construct(private PDO $pdo)
     {
+    }
+
+    public function enableOneShotForJob(int $jobId): void
+    {
+        $this->oneShotJobId = $jobId > 0 ? $jobId : null;
     }
 
     /** @return array<string,mixed>|null */
@@ -398,6 +405,10 @@ class ReportDeliveryWorkerRepository
                 $this->pdo->rollBack();
                 return false;
             }
+            if ($this->oneShotJobId === $jobId) {
+                $metadata['one_shot'] = true;
+                $metadata['effective_max_attempts'] = 1;
+            }
             $this->createAttempt($jobId, (int) $job['attempt_count'], $workerId, 'delivered', '200', $reference, null, $metadata);
             $update = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_jobs
@@ -455,10 +466,11 @@ class ReportDeliveryWorkerRepository
             }
 
             $attempt = (int) $job['attempt_count'];
-            $overrideMaxAttempts = (int) ($job['request_override_max_attempts'] ?? 0);
-            $maxAttempts = $overrideMaxAttempts > 0
-                ? $overrideMaxAttempts
-                : max(1, (int) $job['max_attempts']);
+            if ($this->oneShotJobId === $jobId) {
+                $metadata['one_shot'] = true;
+                $metadata['effective_max_attempts'] = 1;
+            }
+            $maxAttempts = $this->effectiveMaxAttempts($job);
             $deadLetter = $attempt >= $maxAttempts;
             $status = $deadLetter ? 'dead_letter' : 'retrying';
             $delaySeconds = min(3600, 30 * (2 ** max(0, $attempt - 1)));
@@ -495,6 +507,19 @@ class ReportDeliveryWorkerRepository
             }
             throw $e;
         }
+    }
+
+    /** @param array<string,mixed> $job */
+    private function effectiveMaxAttempts(array $job): int
+    {
+        if ($this->oneShotJobId !== null && (int) ($job['id'] ?? 0) === $this->oneShotJobId) {
+            return 1;
+        }
+
+        $overrideMaxAttempts = (int) ($job['request_override_max_attempts'] ?? 0);
+        return $overrideMaxAttempts > 0
+            ? $overrideMaxAttempts
+            : max(1, (int) $job['max_attempts']);
     }
 
     /** @return array<string,mixed>|null */
