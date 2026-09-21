@@ -65,6 +65,8 @@ Após a primeira execução real `submission_document` do fluxo controlado, o le
 
 O `task_file_path` serializado no XML não controla o diretório SMB da Bridge. Na primeira entrega real, o Destination 6 classificou o caminho lógico como pasta `PDF`, enquanto `PHILIPS_SMB_REMOTE_PATH` da Bridge estava na raiz do share (`/`). `SMB VERIFY=PASS` prova a gravação no caminho remoto efetivo da Bridge, não a presença em `C:\Autoingest\PDF`; antes de nova identidade é obrigatório confirmar read-only o mapeamento do share Windows e alinhar o subdiretório remoto.
 
+Após a confirmação administrativa do mapeamento Windows, o share `PhilipsUpload` foi apontado para a pasta PDF correta, preservando sua regra SMB `Change` e a regra NTFS `Modify` do usuário técnico. O preflight oficial `pwd-only` passou com `HTTP 200`, `SMB_AUTH=PASS` e `SMB_PWD=PASS`, sem escrita remota. A raiz do share continua sendo o caminho SMB configurado na Bridge. Para a nova entrega, a Request 8 foi materializada no Outbox 283 e Job 486, ainda `queued`, inelegível, sem lock, tentativa ou artifact; o Job 485 permanece histórico e não pode ser reutilizado.
+
 ## Última análise
 
 2026-09-19 — Fase 74.3: parser DICOM PN, campos congelados em `report_versions`, confirmação manual para nome plano, precedência do resolver, snapshot e UI de liberação foram implementados e validados somente no clone. As migrations são arquivos versionados e não foram executadas; os valores reais do report 74/V11 não foram preenchidos; nenhum banco, Request, Job, retry, deploy, chamada Bridge ou SMB foi executado nesta fase.
