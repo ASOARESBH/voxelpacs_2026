@@ -130,7 +130,11 @@ final class PhilipsFolderDeliveryService
         $password = $this->smbPassword($encryptedSecret);
         try {
             $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, (int) ($job['tenant_id'] ?? 0), $destinationId);
-            $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            try {
+                $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            } catch (PhilipsXmlFieldUnresolvedException) {
+                throw new PhilipsFolderDeliveryException('xml_field_unresolved', 'xml_field_unresolved');
+            }
             $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
             $xmlFileName = $package->xmlDocument->filename;
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
