@@ -330,7 +330,7 @@ class ReportDeliveryWorkerRepository
         $stmt = $this->pdo->prepare(
             "SELECT r.estudo_id AS estudo_id, r.situacao, r.liberado_em,
                     e.study_instance_uid, e.accession_number, e.modalities,
-                    e.patient_id, e.patient_name, e.patient_birth_date, e.patient_sex,
+                    e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
                     e.study_date, e.study_time, e.institution_name, e.issuer_of_patient_id,
                     rv.id AS report_version_row_id, rv.secao_exame, rv.secao_tecnica,
                     rv.secao_achados, rv.secao_conclusao, rv.secao_recomendacao

@@ -27,10 +27,14 @@ $claimNextStart = strpos($repository, 'public function claimNextJob(');
 $claimByIdStart = strpos($repository, 'public function claimJobById(');
 $driftStart = strpos($repository, 'private function linkedRequestHasDrift(');
 $leasedStart = strpos($repository, 'public function findLeasedJobContext(');
+$snapshotStart = strpos($repository, 'private function findRequestSnapshot(');
+$snapshotEnd = strpos($repository, 'private function sameTimestamp(');
 expect_claim($claimNextStart !== false && $claimByIdStart !== false && $driftStart !== false && $leasedStart !== false, 'claim methods must exist');
+expect_claim($snapshotStart !== false && $snapshotEnd !== false && $snapshotStart < $snapshotEnd, 'claim snapshot projection must exist');
 
 $claimNext = substr($repository, $claimNextStart, $claimByIdStart - $claimNextStart);
 $claimById = substr($repository, $claimByIdStart, $driftStart - $claimByIdStart);
+$claimSnapshot = substr($repository, $snapshotStart, $snapshotEnd - $snapshotStart);
 
 foreach (['claimNextJob' => $claimNext, 'claimJobById' => $claimById] as $method => $sql) {
     expect_claim(str_contains($sql, 'FOR UPDATE OF j'), "{$method} must lock only the job relation");
@@ -51,6 +55,7 @@ expect_claim(str_contains($claimNext, "dr.status = 'armed'"), 'claimNextJob must
 expect_claim(str_contains($claimById, "dr.status = 'armed'"), 'claimJobById must require armed linked requests');
 expect_claim(str_contains($repository, 'private function linkedRequestHasDrift(array $job)'), 'claim must retain server-side request drift validation');
 expect_claim(str_contains($repository, 'if ($this->linkedRequestHasDrift($job))'), 'claim must fail closed on request drift');
+expect_claim(str_contains($claimSnapshot, 'e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex'), 'claim snapshot digest projection must include tags_raw');
 expect_claim(str_contains($repository, 'UPDATE pacs_report_delivery_jobs'), 'claim must retain conditional state transition');
 expect_claim(str_contains($repository, "SET status = 'processing'"), 'claim must retain processing transition');
 expect_claim(str_contains($repository, 'attempt_count = attempt_count + 1'), 'claim must retain one-at-a-time attempt accounting');
