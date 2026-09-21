@@ -93,4 +93,23 @@ try {
     expect_true($error->field === 'task_modalities', 'Ambiguous modality must identify its field');
 }
 
+$multiModalities = $input;
+$multiModalities['task_modalities'] = 'ct\\mr';
+$multiDocument = $generator->generate($multiModalities);
+expect_true(
+    str_contains($multiDocument->content, '<task_modalities>CT\\MR</task_modalities>'),
+    'DICOM multi-valued modalities must preserve the backslash separator'
+);
+
+foreach (['CT;MR', 'CT|MR'] as $ambiguousSeparator) {
+    $ambiguous = $input;
+    $ambiguous['task_modalities'] = $ambiguousSeparator;
+    try {
+        $generator->generate($ambiguous);
+        expect_true(false, 'Ambiguous modality separator must fail closed');
+    } catch (PhilipsXmlFieldUnresolvedException $error) {
+        expect_true($error->field === 'task_modalities', 'Ambiguous modality must identify its field');
+    }
+}
+
 echo "PHILIPS_SUBMISSION_DOCUMENT_GENERATOR_STATIC_OK\n";

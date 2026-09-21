@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Logger;
+
 /**
  * Transporte PDF-only para a pasta Philips remota.
  *

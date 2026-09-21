@@ -261,9 +261,17 @@ final class PhilipsSubmissionDocumentGenerator
     private function normalizeModalities(array $input, string $field): string
     {
         $value = strtoupper($this->requiredText($input, $field));
-        if (preg_match('/[,;|]/', $value) === 1 || preg_match('/^[A-Z0-9._-]{1,16}(?:\\[A-Z0-9._-]{1,16})*$/', $value) !== 1) {
+        if (preg_match('/[,;|]/', $value) === 1) {
             throw new PhilipsXmlFieldUnresolvedException($field);
         }
+
+        $modalities = explode('\\', $value);
+        foreach ($modalities as $modality) {
+            if (preg_match('/^[A-Z0-9._-]{1,16}$/', $modality) !== 1) {
+                throw new PhilipsXmlFieldUnresolvedException($field);
+            }
+        }
+
         return $value;
     }
 
