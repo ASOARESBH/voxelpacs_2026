@@ -47,7 +47,7 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 ## Renderização de tela/impressão/PDF é um ponto único (2026-08-11)
 
-`ReportsController::pdf()` + `app/Views/reports/pdf.php` servem as 3 saídas ao mesmo tempo — o projeto não gera PDF binário (sem dompdf), é HTML com CSS de impressão + `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` no load. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
+`ReportsController::pdf()` + `app/Views/reports/pdf.php` mantêm a visualização HTML e a impressão do rascunho. Para versões `assinado`/`liberado`, a rota serve o PDF binário canônico privado criado uma única vez no ato da assinatura/liberação por `ReportVersionPdfSnapshotService`; `?download=1` apenas muda a disposição para download. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
 
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 

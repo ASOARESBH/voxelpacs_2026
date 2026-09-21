@@ -384,14 +384,15 @@ class ReportRepository {
         ?array $patientName = null
     ): void {
         $secoes = $conteudo['secoes'] ?? $conteudo;
+        $corpoLaudo = (string) ($secoes['corpo'] ?? '');
         if ($patientName !== null) {
             $this->pdo->prepare("
                 INSERT INTO report_versions
                     (report_id, versao, usuario_id, acao, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao,
-                     patient_name_family, patient_name_given, patient_name_middle, patient_name_source)
+                     patient_name_family, patient_name_given, patient_name_middle, patient_name_source, corpo_laudo)
                 VALUES
                     (:report_id, :versao, :user_id, :acao, :se, :st, :sa, :sc, :sr,
-                     :patient_name_family, :patient_name_given, :patient_name_middle, :patient_name_source)
+                     :patient_name_family, :patient_name_given, :patient_name_middle, :patient_name_source, :corpo_laudo)
             ")->execute([
                 'report_id' => $reportId,
                 'versao' => $versaoNumero,
@@ -406,6 +407,7 @@ class ReportRepository {
                 'patient_name_given' => $patientName['given'],
                 'patient_name_middle' => $patientName['middle'],
                 'patient_name_source' => $patientName['source'],
+                'corpo_laudo' => $corpoLaudo,
             ]);
             return;
         }
@@ -414,9 +416,9 @@ class ReportRepository {
         try {
             $this->pdo->prepare("
                 INSERT INTO report_versions
-                    (report_id, versao, usuario_id, acao, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao)
+                    (report_id, versao, usuario_id, acao, secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao, corpo_laudo)
                 VALUES
-                    (:report_id, :versao, :user_id, :acao, :se, :st, :sa, :sc, :sr)
+                    (:report_id, :versao, :user_id, :acao, :se, :st, :sa, :sc, :sr, :corpo_laudo)
             ")->execute([
                 'report_id' => $reportId,
                 'versao'    => $versaoNumero,
@@ -427,6 +429,7 @@ class ReportRepository {
                 'sa'        => $secoes['achados']      ?? '',
                 'sc'        => $secoes['conclusao']    ?? '',
                 'sr'        => $secoes['recomendacao'] ?? '',
+                'corpo_laudo' => $corpoLaudo,
             ]);
         } catch (\PDOException $e) {
             try {

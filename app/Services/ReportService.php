@@ -10,6 +10,7 @@ use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Repositories\MedicoRepository;
 use App\Repositories\ReportRepository;
+use PDO;
 
 /**
  * Regras de negócio do módulo de Laudos: assumir estudo, editar/salvar,
@@ -482,6 +483,7 @@ class ReportService {
             $pdo->beginTransaction();
 
             // Congela o layout personalizado publicado no momento da assinatura.
+            $pdfSnapshotPath = null;
             // A falha de schema pendente é registrada, mas não pode bloquear a assinatura.
             $this->congelarTemplatePersonalizadoAssinado($report, $estudo, $pdo);
 
@@ -502,6 +504,13 @@ class ReportService {
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
             $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero, $patientName);
+            $pdfSnapshotPath = $this->persistPdfSnapshotForVersion(
+                $pdo,
+                (int) $tenantId,
+                $reportId,
+                $estudoId,
+                $versaoNumero
+            );
 
             // A outbox é gravada no mesmo commit clínico. A rotina não abre
             // conexões externas e permanece inativa enquanto a feature flag
@@ -535,6 +544,9 @@ class ReportService {
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            if (is_string($pdfSnapshotPath ?? null) && is_file($pdfSnapshotPath)) {
+                @unlink($pdfSnapshotPath);
+            }
             $erro = $e->getMessage();
             Logger::error('[ReportService::assinar] Persistência atômica falhou', [
                 'report_id' => $reportId,
@@ -672,6 +684,13 @@ class ReportService {
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
             $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero, $patientName);
+            $pdfSnapshotPath = $this->persistPdfSnapshotForVersion(
+                $pdo,
+                $tenantId,
+                $reportId,
+                $estudoId,
+                $versaoNumero
+            );
             (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                 $tenantId,
                 $reportId,
@@ -690,6 +709,9 @@ class ReportService {
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            if (is_string($pdfSnapshotPath ?? null) && is_file($pdfSnapshotPath)) {
+                @unlink($pdfSnapshotPath);
+            }
             Logger::error('[ReportService::liberarAssinado] Persistência atômica falhou', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoId,
@@ -738,6 +760,24 @@ class ReportService {
             'liberado_em' => $liberadoEm,
             'pdf_url' => $this->urlPublica($report) . '/pdf',
         ];
+    }
+
+    /** Persiste o PDF visual imutável da versão recém-criada, dentro da transação. */
+    private function persistPdfSnapshotForVersion(PDO $pdo, int $tenantId, int $reportId, int $estudoId, int $version): ?string
+    {
+        $context = (new ReportPdfDeliveryContextService($pdo))->build([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'estudo_id' => $estudoId,
+            'report_version' => $version,
+        ]);
+        $snapshot = (new ReportVersionPdfSnapshotService($pdo))->createForVersion(
+            $tenantId,
+            $reportId,
+            $version,
+            $context
+        );
+        return !empty($snapshot['created_new_file']) ? (string) $snapshot['path'] : null;
     }
 
     /**

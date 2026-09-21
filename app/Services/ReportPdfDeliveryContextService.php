@@ -38,7 +38,10 @@ final class ReportPdfDeliveryContextService
         }
 
         $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
-        $report = $this->applyVersionContent($report, $reportId, $version);
+        $report = $this->applyVersionContent($report, $tenantId, $reportId, $version);
+        if (!ReportClinicalContentService::hasReportContent($report)) {
+            throw new RuntimeException('Versão visual do PDF sem conteúdo clínico válido.');
+        }
         $report = $this->applyMask($report, $tenantId);
         $report = $this->applyInstitutionalChannels($report, $tenantId);
         $report = $this->applyCompanyRegistration($report, $tenantId);
@@ -130,23 +133,27 @@ final class ReportPdfDeliveryContextService
     }
 
     /** @param array<string,mixed> $report @return array<string,mixed> */
-    private function applyVersionContent(array $report, int $reportId, int $version): array
+    private function applyVersionContent(array $report, int $tenantId, int $reportId, int $version): array
     {
         try {
             $stmt = $this->pdo->prepare(
-                'SELECT secao_exame, secao_tecnica, secao_achados, secao_conclusao, secao_recomendacao
-                   FROM report_versions
-                  WHERE report_id = :report_id AND versao = :version
+                'SELECT rv.corpo_laudo, rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
+                        rv.secao_conclusao, rv.secao_recomendacao
+                   FROM report_versions rv
+                   INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id
+                  WHERE rv.report_id = :report_id AND rv.versao = :version
                   LIMIT 1'
             );
-            $stmt->execute(['report_id' => $reportId, 'version' => $version]);
+            $stmt->execute(['tenant_id' => $tenantId, 'report_id' => $reportId, 'version' => $version]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (is_array($row)) {
+                $report['corpo_laudo'] = (string) ($row['corpo_laudo'] ?? '');
                 foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
                     $report['secao_' . $section] = (string) ($row['secao_' . $section] ?? '');
                 }
                 return $report;
             }
+            throw new RuntimeException('Versão visual do PDF não encontrada.');
         } catch (\Throwable) {
             // Schema legado: tenta o conteúdo serializado abaixo.
         }
@@ -154,22 +161,32 @@ final class ReportPdfDeliveryContextService
         try {
             $stmt = $this->pdo->prepare(
                 'SELECT conteudo FROM report_versions
-                  WHERE report_id = :report_id AND versao_numero = :version
+                  INNER JOIN reports r ON r.id = report_versions.report_id AND r.tenant_id = :tenant_id
+                  WHERE report_versions.report_id = :report_id AND report_versions.versao_numero = :version
                   LIMIT 1'
             );
-            $stmt->execute(['report_id' => $reportId, 'version' => $version]);
+            $stmt->execute(['tenant_id' => $tenantId, 'report_id' => $reportId, 'version' => $version]);
             $content = $stmt->fetchColumn();
+            if (!is_string($content) || trim($content) === '') {
+                throw new RuntimeException('Versão visual do PDF não encontrada.');
+            }
             if (is_string($content) && $content !== '') {
                 $decoded = json_decode($content, true);
                 if (is_array($decoded)) {
                     $sections = is_array($decoded['secoes'] ?? null) ? $decoded['secoes'] : $decoded;
+                    $applied = false;
                     if (isset($decoded['corpo']) && is_string($decoded['corpo'])) {
                         $report['corpo_laudo'] = $decoded['corpo'];
+                        $applied = true;
                     }
                     foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
                         if (array_key_exists($section, $sections)) {
                             $report['secao_' . $section] = (string) $sections[$section];
+                            $applied = true;
                         }
+                    }
+                    if (!$applied) {
+                        throw new RuntimeException('Versão visual do PDF sem conteúdo serializado.');
                     }
                 } else {
                     $report['corpo_laudo'] = $content;

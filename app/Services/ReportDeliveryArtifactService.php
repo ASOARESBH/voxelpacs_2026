@@ -14,11 +14,11 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Gera artefatos clínicos exclusivos de jobs já reservados ao worker.
+ * Materializa artefatos clínicos exclusivos de jobs já reservados ao worker.
  *
- * O PDF é renderizado a partir da versão imutável do laudo registrada na
- * outbox. O arquivo fica sob storage privado e nunca é exposto a usuários ou
- * destinos externos por URL.
+ * O PDF Non-DICOM é lido do snapshot binário canônico da versão imutável;
+ * somente o caminho DICOM legado ainda renderiza no worker. O arquivo fica
+ * sob storage privado e nunca é exposto a usuários ou destinos externos por URL.
  */
 final class ReportDeliveryArtifactService
 {
@@ -49,10 +49,9 @@ final class ReportDeliveryArtifactService
         );
         $studyInstanceUid = '';
         if ($isNonDicomFolder) {
-            $visualContext = (new ReportPdfDeliveryContextService($this->pdo))->build($job);
-            $visualReport = is_array($visualContext['report'] ?? null) ? $visualContext['report'] : [];
-            $studyInstanceUid = (string) ($visualReport['study_instance_uid'] ?? '');
-            $binary = (new ReportPdfService())->renderSnapshotBinary($visualContext);
+            $snapshot = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob($job);
+            $binary = $snapshot['content'];
+            $studyInstanceUid = $this->studyInstanceUidForJob($job);
         } else {
             $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
             $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
@@ -86,6 +85,28 @@ final class ReportDeliveryArtifactService
             'report_id' => (int) $job['report_id'],
             'study_instance_uid' => $studyInstanceUid,
         ];
+    }
+
+    /** @param array<string,mixed> $job */
+    private function studyInstanceUidForJob(array $job): string
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT e.study_instance_uid
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+              WHERE r.id = :report_id AND r.tenant_id = :tenant_id AND e.id = :study_id
+              LIMIT 1'
+        );
+        $stmt->execute([
+            ':report_id' => (int) ($job['report_id'] ?? 0),
+            ':tenant_id' => (int) ($job['tenant_id'] ?? 0),
+            ':study_id' => (int) ($job['estudo_id'] ?? 0),
+        ]);
+        $uid = $stmt->fetchColumn();
+        if (!is_string($uid) || trim($uid) === '') {
+            throw new RuntimeException('Estudo do snapshot PDF não encontrado para o job.');
+        }
+        return $uid;
     }
 
     private function loadReport(int $reportId, int $tenantId): object
