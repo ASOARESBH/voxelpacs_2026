@@ -45,7 +45,7 @@ final class PhilipsSubmissionPackageProducer
             $document->content
         );
 
-        return new ReportDeliveryPackage($pdf + ['filename' => $pdfFilename], $document, $xmlStoragePath);
+        return new ReportDeliveryPackage(array_replace($pdf, ['filename' => $pdfFilename]), $document, $xmlStoragePath);
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array<string,mixed> */
