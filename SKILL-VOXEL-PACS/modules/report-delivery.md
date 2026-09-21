@@ -71,6 +71,8 @@ Na execução controlada subsequente, a Request 8 foi armada oficialmente e o Jo
 
 O artifact PDF de `philips_non_dicom` usa `ReportPdfDeliveryContextService` e `ReportPdfService::renderSnapshotBinary()`. Esse caminho carrega, no tenant do job, o conteúdo da `report_version`, a máscara vinculada, o layout institucional, os canais habilitados, a identidade do médico e assets locais de logo/assinatura incorporados como data URI. O layout moderno e o personalizado não usam URL HTTP remota em snapshot; o caminho `renderBinary()` anterior permanece reservado aos jobs DICOM para evitar alteração de contrato. Jobs já entregues não são regenerados nem reutilizados.
 
+Na correção visual de 2026-09-21, o layout `moderno_lateral` prefixava `/` indiscriminadamente ao `pdf_snapshot_logo_src`. Como esse valor é uma data URI no snapshot, o resultado inválido `/data:image/...` fazia o logo desaparecer no Dompdf, embora o viewer web permanecesse correto. O layout agora preserva data URIs e só acrescenta `/` a caminhos relativos do viewer; a regressão é coberta por teste de renderização HTML. Essa correção não altera o conteúdo clínico, o XML, a Bridge ou jobs históricos.
+
 ## Última análise
 
 2026-09-19 — Fase 74.3: parser DICOM PN, campos congelados em `report_versions`, confirmação manual para nome plano, precedência do resolver, snapshot e UI de liberação foram implementados e validados somente no clone. As migrations são arquivos versionados e não foram executadas; os valores reais do report 74/V11 não foram preenchidos; nenhum banco, Request, Job, retry, deploy, chamada Bridge ou SMB foi executado nesta fase.

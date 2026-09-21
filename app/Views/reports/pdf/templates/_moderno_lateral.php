@@ -69,6 +69,11 @@ $logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? ''));
 if ($logoUnidade === '' && empty($snapshotPdf)) {
     $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
 }
+if ($logoUnidade !== ''
+    && !str_starts_with($logoUnidade, 'data:')
+    && !str_starts_with($logoUnidade, '/')) {
+    $logoUnidade = '/' . $logoUnidade;
+}
 $crm = trim((string) ($r['medico_crm'] ?? ''));
 $crmUf = strtoupper(trim((string) ($r['medico_crm_uf'] ?? '')));
 $crmExibicao = $crm === '' ? '' : (preg_match('/\bCRM\b/i', $crm) ? $crm : 'CRM' . ($crmUf !== '' ? '-' . $crmUf : '') . ' ' . $crm);
@@ -202,7 +207,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         <header class="pdf-header">
             <div class="pdf-header-left">
                 <?php if ($logoUnidade !== ''): ?>
-                    <img class="pdf-logo" src="/<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
+                    <img class="pdf-logo" src="<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
                 <?php else: ?>
                     <div class="pdf-logo-fallback"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
                 <?php endif; ?>

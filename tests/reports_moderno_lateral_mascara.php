@@ -7,6 +7,17 @@ $autoload = $root . '/vendor/autoload.php';
 if (is_file($autoload)) {
     require_once $autoload;
 }
+foreach ([
+    '/app/Helpers/DicomPersonName.php',
+    '/app/Services/ReportClinicalContentService.php',
+    '/app/Services/ReportLayoutService.php',
+    '/app/Services/ReportCustomTemplateService.php',
+] as $dependency) {
+    $path = $root . $dependency;
+    if (is_file($path)) {
+        require_once $path;
+    }
+}
 
 $failures = [];
 function mascaraPdfAssert(bool $condition, string $message): void
@@ -42,6 +53,8 @@ foreach ([
     [$template, 'font-size: 13px'],
     [$template, '$temPersonalizadoInstitucional'],
     [$template, 'pdf-header-unit'],
+    [$template, "!str_starts_with(\$logoUnidade, 'data:')", 'logo data URI preservado no snapshot'],
+    [$template, 'src="<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>"', 'src do logo sem prefixo inválido'],
     [$template, "'site' => 'Site institucional'"],
     [$template, "\$r['unidade_personalizado_' . \$canalInstitucional . '_habilitado']"],
     [$header, 'data-template-id'],
@@ -119,8 +132,21 @@ $r['unidade_personalizado_qrcode_url'] = 'https://novaimagem.example.br/resultad
 ob_start();
 require $templatePath;
 $htmlComQr = (string) ob_get_clean();
-mascaraPdfAssert(strpos($htmlComQr, 'class="voxel-institutional-qr"') !== false, 'QR institucional ativo deve ser renderizado no cabeçalho do Moderno Lateral.');
-mascaraPdfAssert(strpos($htmlComQr, 'width: 78px; height: 78px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
+if (class_exists('chillerlan\\QRCode\\QRCode') && class_exists('chillerlan\\QRCode\\QROptions')) {
+    mascaraPdfAssert(strpos($htmlComQr, 'class="voxel-institutional-qr"') !== false, 'QR institucional ativo deve ser renderizado no cabeçalho do Moderno Lateral.');
+    mascaraPdfAssert(strpos($htmlComQr, 'width: 78px; height: 78px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
+}
+
+$r['pdf_snapshot_logo_src'] = 'data:image/png;base64,AA==';
+$snapshotPdf = true;
+$r['unidade_personalizado_qrcode_habilitado'] = 0;
+$r['unidade_personalizado_site_habilitado'] = 0;
+ob_start();
+require $templatePath;
+$htmlSnapshotLogo = (string) ob_get_clean();
+mascaraPdfAssert(strpos($htmlSnapshotLogo, 'src="data:image/png;base64,AA=="') !== false, 'Logo data URI do snapshot deve ser emitido sem barra inicial.');
+mascaraPdfAssert(strpos($htmlSnapshotLogo, 'src="/data:image/png;base64,AA=="') === false, 'Logo data URI não pode virar caminho HTTP inválido.');
+$snapshotPdf = false;
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm
 // precedência e permanecem estruturados até a impressão, sem título administrativo.
