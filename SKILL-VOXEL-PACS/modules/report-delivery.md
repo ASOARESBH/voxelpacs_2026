@@ -59,6 +59,8 @@ Aplica `padrao-sql.md`, `padrao-i18n.md` e o fluxo Controller/Repository existen
 
 A reativação manual torna o job elegível para o worker e pode iniciar transporte externo quando o worker for executado. Por isso a UI não oferece a ação para produção, DICOM, jobs concluídos, jobs ativos ou destinos desabilitados. Falhas posteriores do transporte devem seguir a máquina de estados e o limite de tentativas configurado no destino.
 
+No CLI do runtime PostgreSQL, as variáveis carregadas pelo `.env` podem estar disponíveis via `getenv()`/`$_SERVER`, não apenas em `$_ENV`. `App\Core\SqlHelper::isPostgres()` deve usar a mesma precedência de fontes do `App\Core\Database`; caso contrário, o control-plane gera funções MySQL como `DATABASE()` e falha com SQLSTATE 42883 antes de criar a Delivery Request.
+
 ## Última análise
 
 2026-09-19 — Fase 74.3: parser DICOM PN, campos congelados em `report_versions`, confirmação manual para nome plano, precedência do resolver, snapshot e UI de liberação foram implementados e validados somente no clone. As migrations são arquivos versionados e não foram executadas; os valores reais do report 74/V11 não foram preenchidos; nenhum banco, Request, Job, retry, deploy, chamada Bridge ou SMB foi executado nesta fase.
