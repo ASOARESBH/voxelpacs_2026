@@ -411,7 +411,13 @@ final class PhilipsFolderGatewayBridgeClient
         if ($secret === '' || !is_file($caFile) || !is_file($certFile) || !is_file($keyFile)) {
             throw new PhilipsFolderDeliveryException('gateway_credentials_unavailable', 'credentials_unavailable');
         }
-        $configurationHash = hash('sha256', json_encode($configuration, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}');
+        $bridgeConfiguration = [
+            'host' => (string) ($configuration['host'] ?? ''),
+            'port' => 445,
+            'share' => (string) ($configuration['smb_share'] ?? $configuration['share'] ?? ''),
+            'username' => (string) ($configuration['smb_username'] ?? $configuration['username'] ?? ''),
+        ];
+        $configurationHash = hash('sha256', json_encode($bridgeConfiguration, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}');
         $timestamp = (string) time();
         $signatureBase = implode("\n", ['POST', $path, (string) $tenantId, (string) $destinationId, $configurationHash, $envelope['sha256'], $timestamp]);
         $signature = hash_hmac('sha256', $signatureBase, $secret);
