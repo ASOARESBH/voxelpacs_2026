@@ -73,6 +73,7 @@ expect_claim(str_contains($repository, 'beginTransaction()') && str_contains($re
 expect_claim(str_contains($repository, 'lastLedgerFailureStage'), 'ledger must expose only a sanitized failure stage');
 expect_claim(str_contains($worker, "'ledger_stage' => " . '$this->repository->lastLedgerFailureStage() ?? \'unknown\''), 'worker must log the sanitized ledger stage');
 expect_claim(!str_contains($worker, "'sql' =>") && !str_contains($worker, "'params' =>"), 'worker failure logging must not include SQL or parameters');
+expect_claim(str_contains($repository, "'completed_at = NOW(), updated_at = NOW()'") && str_contains($repository, "'updated_at = NOW()'"), 'request sync must avoid duplicate updated_at assignment');
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 
 fwrite(STDOUT, "REPORT_DELIVERY_WORKER_CLAIM_STATIC_OK\n");

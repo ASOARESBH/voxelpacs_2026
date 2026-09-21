@@ -686,11 +686,13 @@ class ReportDeliveryWorkerRepository
         if ($requestId <= 0 || !in_array($status, ['delivered', 'failed'], true)) {
             return;
         }
-        $timestampColumn = $status === 'delivered' ? 'completed_at' : 'updated_at';
+        $timestamps = $status === 'delivered'
+            ? 'completed_at = NOW(), updated_at = NOW()'
+            : 'updated_at = NOW()';
         $stmt = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_requests
                 SET status = :status, active_identity_key = NULL,
-                    {$timestampColumn} = NOW(), updated_at = NOW()
+                    {$timestamps}
               WHERE id = :request_id AND tenant_id = :tenant_id
                 AND status IN ('processing', 'armed', 'materialized')"
         );
