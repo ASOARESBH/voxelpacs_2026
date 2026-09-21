@@ -61,6 +61,8 @@ A reativação manual torna o job elegível para o worker e pode iniciar transpo
 
 No CLI do runtime PostgreSQL, as variáveis carregadas pelo `.env` podem estar disponíveis via `getenv()`/`$_SERVER`, não apenas em `$_ENV`. `App\Core\SqlHelper::isPostgres()` deve usar a mesma precedência de fontes do `App\Core\Database`; caso contrário, o control-plane gera funções MySQL como `DATABASE()` e falha com SQLSTATE 42883 antes de criar a Delivery Request.
 
+Após a primeira execução real `submission_document` do fluxo controlado, o ledger confirmou `delivered`, `package_verified=PASS` e tentativa única, com evidências sanitizadas de `LIST`, `WRITE`, `RENAME` e `VERIFY` para o mesmo Job. A Bridge preservou um arquivo residual não vazio no staging depois do `VERIFY`; ele não deve ser removido ou reutilizado sem correlação e autorização próprias. Portanto, staging vazio é pré-condição de entrada e também uma verificação pós-entrega independente. A confirmação de chegada física no Windows e de ingestão Philips permanece `UNKNOWN` sem canal read-only autorizado.
+
 ## Última análise
 
 2026-09-19 — Fase 74.3: parser DICOM PN, campos congelados em `report_versions`, confirmação manual para nome plano, precedência do resolver, snapshot e UI de liberação foram implementados e validados somente no clone. As migrations são arquivos versionados e não foram executadas; os valores reais do report 74/V11 não foram preenchidos; nenhum banco, Request, Job, retry, deploy, chamada Bridge ou SMB foi executado nesta fase.
