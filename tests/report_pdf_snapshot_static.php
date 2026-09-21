@@ -8,6 +8,7 @@ $templates = [
     $root . '/app/Views/reports/pdf/templates/_classico_centralizado.php',
     $root . '/app/Views/reports/pdf/templates/_corporativo_faixa.php',
     $root . '/app/Views/reports/pdf/templates/_minimalista.php',
+    $root . '/app/Views/reports/pdf/templates/_moderno_lateral.php',
 ];
 
 if (!is_string($service)) {
@@ -19,6 +20,8 @@ foreach ([
     'private function prepareLocalAssets(array $report): array',
     "'isRemoteEnabled' => false",
     '$snapshotPdf = true;',
+    "renderHtml(\$html, 'print')",
+    'setDefaultMediaType($mediaType)',
     "'pdf_snapshot_logo_src'",
     "'pdf_snapshot_signature_src'",
 ] as $marker) {
@@ -47,6 +50,21 @@ foreach ($templates as $template) {
 $corporate = file_get_contents($root . '/app/Views/reports/pdf/templates/_corporativo_faixa.php');
 if (!is_string($corporate) || !str_contains($corporate, 'if ($logoSrc === \'\' && empty($snapshotPdf))')) {
     throw new RuntimeException('Fallback remoto de logo não está protegido no layout corporativo.');
+}
+
+$personalized = file_get_contents($root . '/app/Views/reports/pdf/templates/_personalizado.php');
+if (!is_string($personalized)
+    || !str_contains($personalized, 'if (empty($snapshotPdf))')
+    || !str_contains($personalized, 'voxel-custom-actions')
+) {
+    throw new RuntimeException('Ações do layout personalizado não estão protegidas no snapshot.');
+}
+$personalizedGuard = strpos($personalized, 'if (empty($snapshotPdf))');
+$personalizedBuilder = strpos($personalized, '$acoesItens = []');
+$personalizedInjection = strpos($personalized, '$documento = $acoes ===');
+if ($personalizedGuard === false || $personalizedBuilder === false || $personalizedInjection === false
+    || $personalizedGuard > $personalizedBuilder || $personalizedBuilder > $personalizedInjection) {
+    throw new RuntimeException('A guarda do layout personalizado não envolve a injeção das ações.');
 }
 
 $artifact = file_get_contents($root . '/app/Services/ReportDeliveryArtifactService.php');

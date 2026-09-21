@@ -195,6 +195,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     </style>
 </head>
 <body>
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button type="button" class="btn-print" onclick="window.print()">Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1">Baixar PDF</a>
@@ -202,6 +203,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <main class="pdf-page">
         <header class="pdf-header">

@@ -117,6 +117,8 @@ mascaraPdfAssert(strpos($html, 'font-size: 13px') !== false, 'O corpo clínico d
 mascaraPdfAssert(strpos($html, '<strong>Laudo Médico</strong>') === false, 'O cabeçalho não pode manter o título padrão Laudo Médico.');
 mascaraPdfAssert(strpos($html, 'pdf-header-unit">NOVA IMAGEM</span>') !== false, 'Sem canal ativo, o cabeçalho deve exibir somente o Nome Fantasia.');
 mascaraPdfAssert(strpos($html, '<img class="voxel-institutional-qr"') === false, 'Sem QR habilitado, o cabeçalho não pode renderizar imagem institucional.');
+mascaraPdfAssert(strpos($html, 'Imprimir') !== false, 'O viewer deve manter a ação Imprimir.');
+mascaraPdfAssert(strpos($html, 'Baixar PDF') !== false, 'O viewer deve manter a ação Baixar PDF.');
 
 $r['unidade_personalizado_site_habilitado'] = 1;
 $r['unidade_personalizado_site_url'] = 'https://novaimagem.example.br';
@@ -146,6 +148,9 @@ require $templatePath;
 $htmlSnapshotLogo = (string) ob_get_clean();
 mascaraPdfAssert(strpos($htmlSnapshotLogo, 'src="data:image/png;base64,AA=="') !== false, 'Logo data URI do snapshot deve ser emitido sem barra inicial.');
 mascaraPdfAssert(strpos($htmlSnapshotLogo, 'src="/data:image/png;base64,AA=="') === false, 'Logo data URI não pode virar caminho HTTP inválido.');
+mascaraPdfAssert(strpos($htmlSnapshotLogo, 'Imprimir') === false, 'O snapshot não pode conter a ação Imprimir.');
+mascaraPdfAssert(strpos($htmlSnapshotLogo, 'Baixar PDF') === false, 'O snapshot não pode conter a ação Baixar PDF.');
+mascaraPdfAssert(strpos($htmlSnapshotLogo, 'Voltar ao Laudário') === false, 'O snapshot não pode conter a ação Voltar ao Laudário.');
 $snapshotPdf = false;
 
 // Executa o dispatcher real para confirmar que headings do editor livre têm

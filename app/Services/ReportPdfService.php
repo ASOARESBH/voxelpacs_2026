@@ -69,12 +69,17 @@ class ReportPdfService
         require __DIR__ . '/../Views/reports/pdf.php';
         $html = (string) ob_get_clean();
 
-        return $this->renderHtml($html);
+        return $this->renderHtml($html, 'print');
     }
 
-    private function renderHtml(string $html): string
+    private function renderHtml(string $html, string $mediaType = 'screen'): string
     {
+        if (!in_array($mediaType, ['screen', 'print'], true)) {
+            throw new \InvalidArgumentException('Media type PDF inválido.');
+        }
+
         $dompdf = new Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true]);
+        $dompdf->getOptions()->setDefaultMediaType($mediaType);
         $dompdf->loadHtml($html, 'UTF-8');
         $dompdf->setPaper('A4');
         $dompdf->render();
