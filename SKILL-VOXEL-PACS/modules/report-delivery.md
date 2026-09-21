@@ -63,6 +63,8 @@ No CLI do runtime PostgreSQL, as variáveis carregadas pelo `.env` podem estar d
 
 Após a primeira execução real `submission_document` do fluxo controlado, o ledger confirmou `delivered`, `package_verified=PASS` e tentativa única, com evidências sanitizadas de `LIST`, `WRITE`, `RENAME` e `VERIFY` para o mesmo Job. A Bridge preservou um arquivo residual não vazio no staging depois do `VERIFY`; ele não deve ser removido ou reutilizado sem correlação e autorização próprias. Portanto, staging vazio é pré-condição de entrada e também uma verificação pós-entrega independente. A confirmação de chegada física no Windows e de ingestão Philips permanece `UNKNOWN` sem canal read-only autorizado.
 
+O `task_file_path` serializado no XML não controla o diretório SMB da Bridge. Na primeira entrega real, o Destination 6 classificou o caminho lógico como pasta `PDF`, enquanto `PHILIPS_SMB_REMOTE_PATH` da Bridge estava na raiz do share (`/`). `SMB VERIFY=PASS` prova a gravação no caminho remoto efetivo da Bridge, não a presença em `C:\Autoingest\PDF`; antes de nova identidade é obrigatório confirmar read-only o mapeamento do share Windows e alinhar o subdiretório remoto.
+
 ## Última análise
 
 2026-09-19 — Fase 74.3: parser DICOM PN, campos congelados em `report_versions`, confirmação manual para nome plano, precedência do resolver, snapshot e UI de liberação foram implementados e validados somente no clone. As migrations são arquivos versionados e não foram executadas; os valores reais do report 74/V11 não foram preenchidos; nenhum banco, Request, Job, retry, deploy, chamada Bridge ou SMB foi executado nesta fase.
