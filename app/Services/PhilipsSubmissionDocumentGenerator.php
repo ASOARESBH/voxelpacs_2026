@@ -104,6 +104,7 @@ final class PhilipsSubmissionDocumentGenerator
         if (!is_string($encoded)) {
             throw new PhilipsXmlFieldUnresolvedException('encoding_iso_8859_1');
         }
+        $this->assertSerializedXml($encoded);
 
         return new PhilipsSubmissionDocument(
             $this->xmlFilename($pdfFilename),
@@ -259,6 +260,30 @@ final class PhilipsSubmissionDocumentGenerator
             throw new PhilipsXmlFieldUnresolvedException($field);
         }
         return $escaped;
+    }
+
+    private function assertSerializedXml(string $encoded): void
+    {
+        if (!str_starts_with($encoded, '<?xml version="1.0" encoding="iso-8859-1"?>')
+            || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $encoded) === 1
+            || !function_exists('simplexml_load_string')) {
+            throw new PhilipsXmlFieldUnresolvedException('xml_structure');
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $parsed = simplexml_load_string(
+                $encoded,
+                \SimpleXMLElement::class,
+                LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING
+            );
+            if ($parsed === false) {
+                throw new PhilipsXmlFieldUnresolvedException('xml_structure');
+            }
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
     }
 
     private function xmlFilename(string $pdfFilename): string

@@ -579,11 +579,18 @@ final class LocalDicomDeliveryWorker
             if (in_array($reasonCategory, array_merge(self::CSTORE_REASON_CATEGORIES, self::PHILIPS_FOLDER_REASON_CATEGORIES), true)) {
                 $metadata['reason_category'] = $reasonCategory;
             }
-            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
+            $recorded = $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
+            if (!$recorded) {
+                Logger::error('[ReportDeliveryWorker] Falha não registrada: lease ausente', [
+                    'job_id' => $jobId,
+                    'ledger_stage' => 'lock_job_not_found',
+                ]);
+            }
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,
                 'error_class' => get_class($failure),
+                'ledger_stage' => $this->repository->lastLedgerFailureStage() ?? 'unknown',
             ]);
         }
     }

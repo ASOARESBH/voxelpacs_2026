@@ -77,6 +77,8 @@ Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versã
 
 A ausência de qualquer campo obrigatório gera `PhilipsXmlFieldUnresolvedException` com o nome técnico do campo, sem incluir seu valor. A falha ocorre antes da confirmação do package e impede o transporte parcial. O rollback da funcionalidade consiste em selecionar novamente `pdf_only` ou manter o destino desabilitado; não há alteração destrutiva de dados históricos.
 
+A serialização também rejeita bytes de controle, incluindo NUL, e exige a declaração ISO-8859-1 e um XML bem-formado antes de o `PhilipsSubmissionDocument` ser entregue ao produtor de artifacts. O `ReportDeliveryPackage` repete a rejeição como defesa independente. Falhas do ledger registram somente a classe e o estágio técnico (`lock_job`, `create_attempt`, `update_job`, `refresh_outbox`, `sync_request` ou `commit`); SQL, parâmetros, payload, PHI e segredos não entram no log.
+
 A migration de profile é aditiva e deve ser aplicada pelo procedimento de migrations do projeto. O rollback de banco deve remover apenas a coluna nova depois de confirmar que nenhum destino ou job ativo depende dela; não se deve apagar artifacts, jobs, outboxes ou arquivos remotos como parte do rollback.
 
 ## Referências

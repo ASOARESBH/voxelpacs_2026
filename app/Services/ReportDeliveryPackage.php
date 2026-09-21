@@ -25,6 +25,7 @@ final class ReportDeliveryPackage
             || !hash_equals((string) ($pdfArtifact['sha256'] ?? ''), (string) hash_file('sha256', $pdfPath))
             || !hash_equals($this->xmlDocument->sha256, (string) hash_file('sha256', $xmlStoragePath))
             || $this->xmlDocument->size !== (int) filesize($xmlStoragePath)
+            || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $this->xmlDocument->content) === 1
             || !$this->isWellFormedXml($this->xmlDocument->content)) {
             throw new \InvalidArgumentException('Package de devolutiva inválido.');
         }

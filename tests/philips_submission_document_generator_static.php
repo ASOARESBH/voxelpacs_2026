@@ -56,6 +56,8 @@ expect_true($first->size === strlen($first->content), 'XML size must match encod
 expect_true(hash('sha256', $first->content) === $first->sha256, 'XML SHA-256 must match content');
 expect_true($first->sha256 === $second->sha256 && $first->content === $second->content, 'Generation must be deterministic');
 expect_true(str_starts_with($first->content, '<?xml version="1.0" encoding="iso-8859-1"?>'), 'XML declaration must use ISO-8859-1');
+expect_true(!str_contains($first->content, "\0"), 'Serialized XML must not contain NUL bytes');
+expect_true(str_contains($first->content, '<submission>') && str_contains($first->content, '<document>'), 'XML root structure must be present');
 expect_true(str_contains($first->content, 'Silva &amp; Costa'), 'XML ampersand must be escaped');
 expect_true(str_contains($first->content, 'Laudo &amp; teste'), 'XML document text must be escaped');
 expect_true(str_contains($first->content, '<task_patient_gender>F</task_patient_gender>'), 'Gender must be normalized');

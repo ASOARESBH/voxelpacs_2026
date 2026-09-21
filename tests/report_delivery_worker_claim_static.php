@@ -70,6 +70,9 @@ expect_claim(str_contains($repository, "metadata['one_shot'] = true") && str_con
 expect_claim(str_contains($worker, '$this->repository->enableOneShotForJob($jobId);'), 'runOne must activate one-shot before claim');
 expect_claim(substr_count($worker, 'enableOneShotForJob(') === 1, 'global worker must not activate one-shot implicitly');
 expect_claim(str_contains($repository, 'beginTransaction()') && str_contains($repository, 'commit()'), 'claim must retain transaction boundary');
+expect_claim(str_contains($repository, 'lastLedgerFailureStage'), 'ledger must expose only a sanitized failure stage');
+expect_claim(str_contains($worker, "'ledger_stage' => " . '$this->repository->lastLedgerFailureStage() ?? \'unknown\''), 'worker must log the sanitized ledger stage');
+expect_claim(!str_contains($worker, "'sql' =>") && !str_contains($worker, "'params' =>"), 'worker failure logging must not include SQL or parameters');
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 
 fwrite(STDOUT, "REPORT_DELIVERY_WORKER_CLAIM_STATIC_OK\n");

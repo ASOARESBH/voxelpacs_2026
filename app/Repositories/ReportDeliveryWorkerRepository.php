@@ -19,6 +19,7 @@ use Throwable;
 class ReportDeliveryWorkerRepository
 {
     private ?int $oneShotJobId = null;
+    private ?string $lastLedgerFailureStage = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -27,6 +28,11 @@ class ReportDeliveryWorkerRepository
     public function enableOneShotForJob(int $jobId): void
     {
         $this->oneShotJobId = $jobId > 0 ? $jobId : null;
+    }
+
+    public function lastLedgerFailureStage(): ?string
+    {
+        return $this->lastLedgerFailureStage;
     }
 
     /** @return array<string,mixed>|null */
@@ -457,8 +463,10 @@ class ReportDeliveryWorkerRepository
     /** @param array<string,mixed> $metadata */
     public function failJob(int $jobId, string $workerId, string $error, array $metadata = []): bool
     {
+        $this->lastLedgerFailureStage = null;
         $this->pdo->beginTransaction();
         try {
+            $this->lastLedgerFailureStage = 'lock_job';
             $job = $this->lockJob($jobId, $workerId);
             if (!$job) {
                 $this->pdo->commit();
@@ -474,6 +482,7 @@ class ReportDeliveryWorkerRepository
             $deadLetter = $attempt >= $maxAttempts;
             $status = $deadLetter ? 'dead_letter' : 'retrying';
             $delaySeconds = min(3600, 30 * (2 ** max(0, $attempt - 1)));
+            $this->lastLedgerFailureStage = 'create_attempt';
             $this->createAttempt($jobId, $attempt, $workerId, $deadLetter ? 'dead_letter' : 'retrying', null, null, $error, $metadata);
 
             $nextAttemptSql = \App\Core\SqlHelper::isPostgres()
@@ -489,17 +498,22 @@ class ReportDeliveryWorkerRepository
                        last_error = :error,
                        next_attempt_at = {$nextAttemptSql}
                    WHERE id = :id AND tenant_id = :tenant_id";
+            $this->lastLedgerFailureStage = 'update_job';
             $update = $this->pdo->prepare($sql);
             $update->execute([
                 ':error' => mb_substr($error, 0, 5000),
                 ':id' => $jobId,
                 ':tenant_id' => (int) $job['tenant_id'],
             ]);
+            $this->lastLedgerFailureStage = 'refresh_outbox';
             $this->refreshOutboxStatus((int) $job['outbox_id'], (int) $job['tenant_id']);
             if ($deadLetter) {
+                $this->lastLedgerFailureStage = 'sync_request';
                 $this->syncDeliveryRequest($job, 'failed');
             }
+            $this->lastLedgerFailureStage = 'commit';
             $this->pdo->commit();
+            $this->lastLedgerFailureStage = null;
             return true;
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
