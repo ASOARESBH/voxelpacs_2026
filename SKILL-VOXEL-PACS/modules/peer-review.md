@@ -122,13 +122,28 @@ A exceção compartilhada está implementada na Worklist, em `ReportAccessServic
 
 Esse achado explica uma falha compatível com o relato de “laudos em Peer Review que não aparecem ou não abrem” e deve ser tratado como **P1 antes de considerar o compartilhamento concluído**. A correção deve preservar o fail-closed: passar para a segunda autorização somente o indicador técnico já obtido de um report autorizado, ou centralizar a decisão em uma autorização de report que confirme tenant, unidade, ciclo aberto e vínculo do estudo. Não se deve liberar o estudo inteiro nem remover a posse normal.
 
+## Matriz efetiva de visibilidade e abertura
+
+A revisão de código e a consulta read-only do runtime foram cruzadas para os quatro cenários solicitados:
+
+| Perfil | Worklist | Link Peer Review | Abertura do Laudário | Resultado atual |
+|---|---:|---:|---:|---|
+| Médico responsável pelo estudo | Sim, se tenant/unidade forem válidos | Sim | Sim, pois a posse normal passa no segundo gate | **Operacional** |
+| Outro médico ativo da mesma unidade e tenant | Sim, pois o ciclo aberto entra na exceção compartilhada | Sim | Não: a segunda autorização não recebe `peer_review_aberta` e pode retornar `estudo_assumido_por_outro` | **P1 — parcialmente funcional** |
+| Médico ativo de outra unidade do mesmo tenant | Não, pois `MedicoAccess::allowedInstitutionNames()` limita `institution_name` | Não | Negada por unidade, mesmo com acesso direto por token | **Bloqueado corretamente** |
+| Médico de outro tenant | Não, pois a Worklist aplica `e.tenant_id = ?` | Não | Negada por `tenant_divergente` em `ReportAccessService` | **Bloqueado corretamente** |
+
+No runtime auditado, há **1 estudo** atualmente em `peer_review`; ele possui ciclo aberto, report vinculado e token público válido. Há **2 posições de médicos ativos** vinculados à mesma unidade/tenant e o responsável do estudo está entre eles. Portanto, a condição de visibilidade para todos os médicos autorizados da unidade está satisfeita no banco e na Worklist, mas o acesso efetivo ao editor ainda falha para o médico não responsável por causa do segundo gate descrito acima. Não foram encontrados estudos em `peer_review` sem ciclo aberto ou sem report.
+
+Essa matriz não autoriza concluir que “todo médico do tenant” deve ver o exame: a regra é **mesma unidade e tenant**, não tenant isoladamente. Administradores e perfis não médicos seguem outro escopo de Worklist e não devem ser usados como evidência de acesso clínico compartilhado.
+
 ## Pontos de endurecimento recomendados
 
 1. Adicionar o predicado de tenant diretamente às consultas de `ReportAccessService`, além da validação posterior, reduzindo leitura cross-tenant por identificador.
 2. Incluir tenant e vínculo do estudo nas atualizações de `openWithSnapshot`; hoje o fluxo depende da autorização anterior e do escopo por InstitutionName, mas o DDL efetivo não fornece foreign keys para compensar uma consulta futura incorreta.
 3. Tornar a imutabilidade do snapshot também uma garantia de banco/permissão, se o ambiente permitir, sem alterar snapshots históricos.
 4. Definir explicitamente se e como o estado `cancelada` será operado; até o momento ele é apenas um valor de schema, não uma capacidade de negócio localizada.
-5. Criar teste ponta a ponta de médico A abre, médico B da mesma unidade abre/edita/conclui e médico C de outra unidade/tenant recebe 404/negado, sem divulgar a existência do laudo.
+5. Criar teste ponta a ponta da matriz: médico A responsável abre; médico B da mesma unidade encontra, abre, edita e conclui; médico C de outra unidade recebe 404/negado; médico D de outro tenant recebe 404/negado, sem divulgar a existência do laudo.
 
 ## Critérios de aceite da regra
 
