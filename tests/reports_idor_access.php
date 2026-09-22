@@ -19,7 +19,7 @@ $regras = [
         && str_contains($access, '$perfil === \'medico\''),
     'médico restrito exige posse do estudo' => str_contains($access, 'MedicoAccess::isRestricted()')
         && str_contains($access, 'usuario_responsavel_id'),
-    'show protege estudo antes de criar report' => str_contains($service, '(new ReportAccessService())->isStudyAllowed($estudo)'),
+    'show protege estudo antes de criar report' => str_contains($service, 'isStudyAllowed($estudo,'),
     'salvar protege report antes de UPDATE' => str_contains($service, 'public function salvar')
         && str_contains($service, '(new ReportAccessService())->findAuthorizedReport($reportId)'),
     'assinar protege report antes do ato médico-legal' => str_contains($service, 'public function assinar')

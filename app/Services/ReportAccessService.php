@@ -115,8 +115,13 @@ final class ReportAccessService
 
     /**
      * Verifica um estudo já carregado antes da criação do report.
+     *
+     * $authorizedReport só pode ser fornecido por um chamador que já tenha
+     * passado por findAuthorizedReport*(). Ele transporta a evidência do ciclo
+     * Peer Review aberto para o segundo gate do editor, sem confiar em input
+     * vindo do navegador.
      */
-    public function isStudyAllowed(object $estudo, bool $requireOwnership = true): bool
+    public function isStudyAllowed(object $estudo, bool $requireOwnership = true, ?object $authorizedReport = null): bool
     {
         if (!Auth::check()) {
             return false;
@@ -128,6 +133,7 @@ final class ReportAccessService
         $currentTenantId = (int) (Auth::tenantId() ?? 0);
         $studyTenantId = (int) ($estudo->tenant_id ?? 0);
         $institutionName = trim((string) ($estudo->institution_name ?? ''));
+        $authorizedPeerReview = $this->authorizedPeerReviewForStudy($estudo, $authorizedReport);
 
         if ($currentTenantId <= 0 || ($studyTenantId > 0 && $studyTenantId !== $currentTenantId)) {
             Logger::warning('[ReportAccessService] acesso negado a estudo de laudo', [
@@ -142,7 +148,7 @@ final class ReportAccessService
 
         // bi_pacs_estudos pode não ter tenant_id. Nesse schema, a vinculação
         // segura ao tenant é feita por InstitutionName, como na Worklist.
-        if ($studyTenantId === 0) {
+        if ($studyTenantId === 0 && !$authorizedPeerReview) {
             $tenantInstitutions = InstitutionResolverService::getInstitutionNamesByTenant($currentTenantId);
             $found = false;
             foreach ($tenantInstitutions as $tenantInstitution) {
@@ -167,6 +173,8 @@ final class ReportAccessService
             'tenant_id' => $studyTenantId ?: $currentTenantId,
             'institution_name' => $institutionName,
             'usuario_responsavel_id' => $estudo->usuario_responsavel_id ?? null,
+            'situacao' => $estudo->situacao ?? null,
+            'peer_review_aberta' => $authorizedPeerReview ? 1 : 0,
         ];
 
         return $this->isAllowed($resource, $requireOwnership);
@@ -191,6 +199,9 @@ final class ReportAccessService
             // Falha fechada: um login médico sem cadastro ativo vinculado não
             // pode herdar o escopo integral do tenant.
             $reason = 'medico_nao_vinculado';
+        } elseif ($this->isTenantWidePeerReview($resource, $currentTenantId, $perfil, $medicoId)) {
+            // Peer Review aberto é compartilhado entre médicos ativos do mesmo
+            // tenant. A exceção não altera a posse normal de outros estados.
         } elseif (!MedicoAccess::isInstitutionAllowed((string) ($resource->institution_name ?? ''))) {
             $reason = 'unidade_nao_autorizada';
         } elseif ($requireOwnership && MedicoAccess::isRestricted()
@@ -233,5 +244,36 @@ final class ReportAccessService
     {
         return strtolower(trim((string) ($resource->situacao ?? ''))) === 'peer_review'
             && (int) ($resource->peer_review_aberta ?? 0) === 1;
+    }
+
+    /**
+     * A ampliação tenant-wide vale somente para médico ativo já resolvido pelo
+     * MedicoAccess e para o ciclo aberto do report autorizado.
+     */
+    private function isTenantWidePeerReview(object $resource, int $currentTenantId, string $perfil, ?int $medicoId): bool
+    {
+        return $perfil === 'medico'
+            && $medicoId !== null
+            && $medicoId > 0
+            && (int) ($resource->tenant_id ?? 0) === $currentTenantId
+            && $this->isOpenPeerReview($resource);
+    }
+
+    /**
+     * Não aceita um report arbitrário para liberar o segundo gate: IDs de
+     * estudo/tenant precisam corresponder ao report que já foi autorizado.
+     */
+    private function authorizedPeerReviewForStudy(object $estudo, ?object $authorizedReport): bool
+    {
+        if (!$authorizedReport) {
+            return false;
+        }
+
+        $studyTenantId = (int) ($estudo->tenant_id ?? 0);
+
+        return (int) ($authorizedReport->estudo_id ?? 0) === (int) ($estudo->id ?? 0)
+            && ($studyTenantId === 0 || (int) ($authorizedReport->tenant_id ?? 0) === $studyTenantId)
+            && strtolower(trim((string) ($authorizedReport->situacao ?? ''))) === 'peer_review'
+            && (int) ($authorizedReport->peer_review_aberta ?? 0) === 1;
     }
 }
