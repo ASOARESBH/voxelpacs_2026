@@ -111,5 +111,11 @@ document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootst
         });
 })();
 </script>
+<?php $appVersion = \App\Core\View::version(); ?>
+<?php if ($appVersion !== ''): ?>
+<div class="text-muted small text-end px-3 pb-2" aria-label="<?= htmlspecialchars(t('comum.versao_ambiente'), ENT_QUOTES, 'UTF-8') ?>">
+    <?= htmlspecialchars(t('comum.versao_ambiente'), ENT_QUOTES, 'UTF-8') ?>: <?= htmlspecialchars($appVersion, ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php endif; ?>
 </body>
 </html>
