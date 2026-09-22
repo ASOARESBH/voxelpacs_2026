@@ -2,7 +2,7 @@
 
 ## Propósito
 
-Peer Review é um ciclo clínico auditável que permite que um laudo já **assinado** ou **liberado** seja reaberto para revisão por médicos autorizados da mesma unidade e tenant. O ciclo preserva um snapshot imutável do conteúdo anterior, mantém o histórico do laudo e só termina quando uma nova assinatura é persistida.
+Peer Review é um ciclo clínico auditável que permite que um laudo já **assinado** ou **liberado** seja reaberto para revisão por médicos autorizados do mesmo tenant. O ciclo preserva um snapshot imutável do conteúdo anterior, mantém o histórico do laudo e só termina quando uma nova assinatura é persistida.
 
 A regra não é uma segunda fila de posse comum. Fora de um ciclo Peer Review aberto, o laudo continua exclusivo do médico responsável; durante um ciclo aberto, a exceção compartilhada é válida somente dentro do escopo clínico autorizado.
 
@@ -14,11 +14,11 @@ A abertura inicial do ciclo permanece, por padrão, uma ação do médico respon
 
 O escopo de **modalidades** é uma permissão independente atualmente aplicada por `GrupoModalidadeService`. A implementação segura deve manter esse gate até decisão explícita em contrário; portanto, “tenant-wide” remove a barreira de unidade para Peer Review, mas não concede automaticamente modalidades que o grupo do médico não autoriza.
 
-### Etapa 1 implementada no clone
+### Etapas 1 e 2 implementadas no clone
 
-Nesta etapa, a exceção tenant-wide foi implementada somente no `ReportAccessService` e no segundo gate do `ReportService`, com a resolução de `MedicoAccess` limitada a vínculos `ativo = 1`. O report já autorizado pelo token é passado ao segundo gate e só libera a exceção quando estudo, tenant, situação e ciclo aberto correspondem.
+Na primeira etapa, a exceção tenant-wide foi implementada no `ReportAccessService` e no segundo gate do `ReportService`, com a resolução de `MedicoAccess` limitada a vínculos `ativo = 1`. Na segunda, a Worklist passou a compor a coorte com o ramo Peer Review aberto fora do filtro de unidade, mantendo `e.tenant_id = ?` e o filtro de modalidades. O report já autorizado pelo token é passado ao segundo gate e só libera a exceção quando estudo, tenant, situação e ciclo aberto correspondem.
 
-Ainda não fazem parte desta etapa a ampliação da Worklist, o escopo institucional do CHAT, a autorização própria de Medidas ou o fluxo de histórico/restauração. Até essas etapas serem implementadas e testadas, o sistema pode permitir a abertura direta do Laudário para outro médico do tenant, mas ainda não garante que ele encontre todos os Peer Reviews na Worklist nem que todos os cards auxiliares funcionem fora da unidade original.
+Ainda não fazem parte destas etapas o escopo institucional do CHAT, a autorização própria de Medidas ou o fluxo de histórico/restauração. A Worklist continua respeitando filtros explícitos escolhidos pelo usuário; sem filtro de unidade, médicos ativos do tenant que também passem no gate de modalidade podem localizar ciclos abertos de qualquer unidade.
 
 ## Arquivos e contratos principais
 
@@ -46,9 +46,9 @@ O serviço exige:
 4. inexistência de outro ciclo aberto para o mesmo laudo;
 5. motivo com pelo menos 20 caracteres.
 
-Na Worklist, o botão de iniciar é exibido apenas quando o médico é o responsável pelo estudo e o laudo está `assinado` ou `liberado`. O botão de acesso a um ciclo já aberto é uma exceção: pode ser exibido a médicos autorizados da mesma unidade e tenant quando `situacao = peer_review`, existe ciclo `status = aberta` e há token público válido do report.
+Na Worklist, o botão de iniciar é exibido apenas quando o médico é o responsável pelo estudo e o laudo está `assinado` ou `liberado`. O botão de acesso a um ciclo já aberto é uma exceção: pode ser exibido a médicos ativos do mesmo tenant quando `situacao = peer_review`, existe ciclo `status = aberta`, a modalidade é autorizada e há token público válido do report.
 
-A autorização normal de um laudo continua exigindo a posse do estudo para médicos restritos. A exceção compartilhada não deve ser aplicada a `novo`, `aberto`, `a_laudar`, `em_laudo` ou `rascunho`, nem a outro tenant, nem a outra unidade não vinculada ao médico.
+A autorização normal de um laudo continua exigindo a posse do estudo para médicos restritos. A exceção compartilhada não deve ser aplicada a `novo`, `aberto`, `a_laudar`, `em_laudo` ou `rascunho`, nem a outro tenant. Um filtro explícito de unidade na Worklist continua restringindo o resultado como escolha de consulta do usuário.
 
 ## Abertura do ciclo
 
@@ -77,7 +77,7 @@ Se qualquer etapa falhar, a transação é revertida e o sistema retorna erro co
 
 Quando o ciclo está aberto:
 
-- a Worklist inclui o estudo na fila compartilhada somente se tenant, unidade e escopo clínico forem válidos;
+- a Worklist inclui o estudo na fila compartilhada somente se tenant e escopo clínico forem válidos; a unidade não restringe o ramo Peer Review tenant-wide;
 - o laudo vivo permanece em `peer_review`;
 - `ReportService::salvar()` preserva a situação `peer_review` e permite salvar para o ciclo aberto, sem conceder a mesma exceção a laudos fora do ciclo;
 - autosave e salvamento manual continuam sujeitos a CSRF, autorização do report e auditoria aplicável;
@@ -130,11 +130,9 @@ O tipo efetivo de `pacs_report_peer_reviews.status` é o enum PostgreSQL `pacs_r
 
 A versão efetiva do runtime está no commit `4b3ea8d`; os hashes dos cinco arquivos centrais de Peer Review foram iguais aos arquivos auditados no clone local. A branch `feat/users-email-lifecycle-20260922` não foi misturada com uma correção de Peer Review durante esta auditoria.
 
-## Achado importante — acesso compartilhado ainda não é ponta a ponta
+## Estado após as etapas tenant-wide
 
-A exceção compartilhada está implementada na Worklist, em `ReportAccessService::findAuthorizedReport()` e nas verificações de salvar/assinar. Porém, o caminho de abertura do editor faz uma segunda autorização em `ReportService::carregarParaEdicao()` usando `ReportAccessService::isStudyAllowed($estudo)`. Esse objeto de estudo não recebe o campo `peer_review_aberta` retornado na consulta do report. Consequentemente, um médico diferente do responsável pode aparecer corretamente na Worklist, mas ser bloqueado ao abrir o Laudário por `estudo_assumido_por_outro`.
-
-Esse achado explica uma falha compatível com o relato de “laudos em Peer Review que não aparecem ou não abrem” e deve ser tratado como **P1 antes de considerar o compartilhamento concluído**. A correção deve preservar o fail-closed: passar para a segunda autorização somente o indicador técnico já obtido de um report autorizado, ou centralizar a decisão em uma autorização de report que confirme tenant, unidade, ciclo aberto e vínculo do estudo. Não se deve liberar o estudo inteiro nem remover a posse normal.
+A exceção compartilhada está implementada na Worklist, em `ReportAccessService::findAuthorizedReport()` e nas verificações de salvar/assinar. O caminho de abertura do editor reutiliza o report autorizado pelo token no segundo gate de `ReportService`, sem aceitar um indicador enviado pelo navegador. A Worklist compõe unidade e posse somente no ramo normal; o ramo Peer Review exige tenant e ciclo aberto e permanece sujeito ao escopo de modalidades.
 
 ## Matriz efetiva de visibilidade e abertura
 
@@ -143,13 +141,13 @@ A revisão de código e a consulta read-only do runtime foram cruzadas para os q
 | Perfil | Worklist | Link Peer Review | Abertura do Laudário | Resultado atual |
 |---|---:|---:|---:|---|
 | Médico responsável pelo estudo | Sim, se tenant/unidade forem válidos | Sim | Sim, pois a posse normal passa no segundo gate | **Operacional** |
-| Outro médico ativo da mesma unidade e tenant | Sim, pois o ciclo aberto entra na exceção compartilhada | Sim | Não: a segunda autorização não recebe `peer_review_aberta` e pode retornar `estudo_assumido_por_outro` | **P1 — parcialmente funcional** |
-| Médico ativo de outra unidade do mesmo tenant | Não, pois `MedicoAccess::allowedInstitutionNames()` limita `institution_name` | Não | Negada por unidade, mesmo com acesso direto por token | **Bloqueado corretamente** |
+| Outro médico ativo da mesma unidade e tenant | Sim, pois o ciclo aberto entra na exceção compartilhada | Sim | Sim, se a modalidade estiver autorizada | **Operacional** |
+| Médico ativo de outra unidade do mesmo tenant | Sim, sem filtro explícito de unidade e se a modalidade estiver autorizada | Sim | Sim, se a modalidade estiver autorizada | **Operacional tenant-wide** |
 | Médico de outro tenant | Não, pois a Worklist aplica `e.tenant_id = ?` | Não | Negada por `tenant_divergente` em `ReportAccessService` | **Bloqueado corretamente** |
 
-No runtime auditado, há **1 estudo** atualmente em `peer_review`; ele possui ciclo aberto, report vinculado e token público válido. Há **2 posições de médicos ativos** vinculados à mesma unidade/tenant e o responsável do estudo está entre eles. Portanto, a condição de visibilidade para todos os médicos autorizados da unidade está satisfeita no banco e na Worklist, mas o acesso efetivo ao editor ainda falha para o médico não responsável por causa do segundo gate descrito acima. Não foram encontrados estudos em `peer_review` sem ciclo aberto ou sem report.
+No runtime auditado, há **1 estudo** atualmente em `peer_review`; ele possui ciclo aberto, report vinculado e token público válido. Há **2 médicos ativos** no tenant auditado. A consulta da Worklist agora permite a visibilidade tenant-wide sem remover o filtro de modalidades. Não foram encontrados estudos em `peer_review` sem ciclo aberto ou sem report.
 
-Essa matriz não autoriza concluir que “todo médico do tenant” deve ver o exame: a regra é **mesma unidade e tenant**, não tenant isoladamente. Administradores e perfis não médicos seguem outro escopo de Worklist e não devem ser usados como evidência de acesso clínico compartilhado.
+Essa matriz não autoriza concluir que perfis não médicos ou médicos de outro tenant devem ver o exame. Administradores e perfis não médicos seguem outro escopo de Worklist e não devem ser usados como evidência de acesso clínico compartilhado.
 
 ## Pontos de endurecimento recomendados
 
@@ -157,11 +155,11 @@ Essa matriz não autoriza concluir que “todo médico do tenant” deve ver o e
 2. Incluir tenant e vínculo do estudo nas atualizações de `openWithSnapshot`; hoje o fluxo depende da autorização anterior e do escopo por InstitutionName, mas o DDL efetivo não fornece foreign keys para compensar uma consulta futura incorreta.
 3. Tornar a imutabilidade do snapshot também uma garantia de banco/permissão, se o ambiente permitir, sem alterar snapshots históricos.
 4. Definir explicitamente se e como o estado `cancelada` será operado; até o momento ele é apenas um valor de schema, não uma capacidade de negócio localizada.
-5. Criar teste ponta a ponta da matriz: médico A responsável abre; médico B da mesma unidade encontra, abre, edita e conclui; médico C de outra unidade recebe 404/negado; médico D de outro tenant recebe 404/negado, sem divulgar a existência do laudo.
+5. Criar teste ponta a ponta da matriz: médico A responsável abre; médico B da mesma unidade e médico C de outra unidade do mesmo tenant encontram, abrem, editam e concluem conforme a modalidade autorizada; médico D de outro tenant recebe 404/negado, sem divulgar a existência do laudo.
 
 ## Critérios de aceite da regra
 
-A regra está correta quando um médico responsável consegue abrir um ciclo elegível com motivo válido; o sistema grava ciclo e snapshot em uma transação; médicos autorizados da mesma unidade conseguem encontrar e abrir o ciclo; médicos fora do escopo não conseguem inferir nem acessar o laudo; o texto original permanece recuperável; assinatura ou liberação conclui exatamente o ciclo aberto; e qualquer falha de schema, tenant, unidade, posse ou estado bloqueia a operação sem alteração parcial.
+A regra está correta quando um médico responsável consegue abrir um ciclo elegível com motivo válido; o sistema grava ciclo e snapshot em uma transação; médicos ativos autorizados do mesmo tenant conseguem encontrar e abrir o ciclo dentro do escopo de modalidades; médicos de outro tenant ou sem autorização não conseguem inferir nem acessar o laudo; o texto original permanece recuperável; assinatura ou liberação conclui exatamente o ciclo aberto; e qualquer falha de schema, tenant, modalidade, posse ou estado bloqueia a operação sem alteração parcial.
 
 ## Referências de implementação
 
@@ -175,4 +173,5 @@ A regra está correta quando um médico responsável consegue abrir um ciclo ele
 - `database/migrations/2026-08-10_reports_peer_review.sql`
 - `tests/peer_review_static.php`
 - `tests/peer_review_shared_access_static.php`
+- `tests/peer_review_worklist_tenant_wide_static.php`
 - `tests/peer_review_measurement_contract.php`

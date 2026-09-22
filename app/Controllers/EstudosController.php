@@ -79,25 +79,12 @@ class EstudosController extends Controller
             $usaInstitutionFilter = true;
         }
 
-        if ($usaInstitutionFilter) {
-            if (!empty($institutionNames)) {
-                $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
-                $where[]      = "e.institution_name IN ({$placeholders})";
-                foreach ($institutionNames as $institutionName) {
-                    $params[] = $institutionName;
-                }
-            } elseif ($isMedicoFiltro) {
-                // Médico sem Unidade vinculada não pode herdar a visão do tenant.
-                $where[] = '1=0';
-            }
-        } elseif (!$tenantId && !$bypassGlobal) {
-            $where[] = '1=0';
-        }
-
         // Posse exclusiva para o fluxo normal; ciclos Peer Review abertos são
-        // uma fila compartilhada entre médicos autorizados da mesma unidade.
-        if ($isMedicoFiltro && $usuarioLogadoId > 0) {
-            $peerReviewClause = '1=0';
+        // uma fila compartilhada entre médicos ativos do mesmo tenant. A
+        // unidade fica restrita ao ramo normal e não pode eliminar o ramo
+        // Peer Review antes que ele seja avaliado.
+        $peerReviewClause = '1=0';
+        if ($isMedicoFiltro && $usuarioLogadoId > 0 && $tenantId) {
             try {
                 if (SqlHelper::hasTable(Database::getInstance(), 'pacs_report_peer_reviews')) {
                     $peerReviewClause = "(
@@ -114,8 +101,24 @@ class EstudosController extends Controller
             } catch (\Throwable $ex) {
                 $peerReviewClause = '1=0';
             }
-            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto')
-                OR e.usuario_responsavel_id = ?
+        }
+
+        if (!$tenantId && !$bypassGlobal) {
+            // Sem tenant ativo, nenhum ramo clínico pode consultar estudos.
+            $where[] = '1=0';
+        } elseif ($usaInstitutionFilter) {
+            $normalInstitutionClause = '1=0';
+            if (!empty($institutionNames)) {
+                $placeholders = implode(',', array_fill(0, count($institutionNames), '?'));
+                $normalInstitutionClause = "e.institution_name IN ({$placeholders})";
+                foreach ($institutionNames as $institutionName) {
+                    $params[] = $institutionName;
+                }
+            }
+
+            $normalOwnershipClause = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto')
+                OR e.usuario_responsavel_id = ?)";
+            $where[] = "(({$normalInstitutionClause} AND {$normalOwnershipClause})
                 OR {$peerReviewClause})";
             $params[] = $usuarioLogadoId;
         }
@@ -706,7 +709,7 @@ class EstudosController extends Controller
             error_log('[EstudosController::index] contadores: ' . $ex->getMessage());
         }
 
-        // ── Painel de resumo (usa InstitutionNames para consistência com a tabela) ────────
+        // ── Painel de resumo (usa exatamente a coorte da tabela) ─────────────────────────
         $resumo = [
             'hoje'=>0,
             'semana'=>0,
@@ -716,37 +719,23 @@ class EstudosController extends Controller
             'total'=>0,
         ];
         try {
-            $rWhere  = ['1=1'];
-            $rBase_p = []; // params base sem data
-            if ($usaInstitutionFilter) {
-                if (!empty($institutionNames)) {
-                    $rPh      = implode(',', array_fill(0, count($institutionNames), '?'));
-                    $rWhere[] = "institution_name IN ({$rPh})";
-                    foreach ($institutionNames as $iName) { $rBase_p[] = $iName; }
-                } elseif ($isMedicoFiltro) {
-                    $rWhere[] = '1=0';
-                } else {
-                    $rWhere[]  = 'tenant_id = ?';
-                    $rBase_p[] = $tenantId;
-                }
-            } elseif (!$bypassGlobal) {
-                $rWhere[] = '1=0';
-            }
-            $rBase = implode(' AND ', $rWhere);
+            $rWhere  = $escopoWorklist['where'];
+            $rBase_p = $escopoWorklist['params'];
+            $rBase   = implode(' AND ', $rWhere);
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date = ?");
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$rBase} AND e.study_date = ?");
             $s->execute(array_merge($rBase_p, [$today]));
             $resumo['hoje'] = (int)$s->fetchColumn();
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= ?");
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$rBase} AND e.study_date >= ?");
             $s->execute(array_merge($rBase_p, [date('Y-m-d', strtotime('-6 days'))]));
             $resumo['semana'] = (int)$s->fetchColumn();
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase} AND study_date >= ?");
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$rBase} AND e.study_date >= ?");
             $s->execute(array_merge($rBase_p, [date('Y-m-d', strtotime('-29 days'))]));
             $resumo['mes'] = (int)$s->fetchColumn();
 
-            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos WHERE {$rBase}");
+            $s = $pdo->prepare("SELECT COUNT(*) FROM bi_pacs_estudos e WHERE {$rBase}");
             $s->execute($rBase_p);
             $resumo['total'] = (int)$s->fetchColumn();
         } catch (\Throwable $ex) {
