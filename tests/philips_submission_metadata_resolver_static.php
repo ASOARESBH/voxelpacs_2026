@@ -140,6 +140,16 @@ expect_resolver($versionName['task_patient_humanname_family'] === 'FrozenFamily'
 expect_resolver($versionName['task_patient_humanname_given'] === 'FrozenGiven', 'Frozen report_version given must be primary');
 expect_resolver($versionName['task_patient_humanname_middle'] === '', 'Frozen empty middle position must be preserved');
 
+$flatVersionName = $resolver->resolve([
+    'patient_name_family' => 'Flat Patient Name',
+    'patient_name_given' => '',
+    'patient_name_middle' => '',
+    'patient_name_source' => 'patient_name_fallback',
+]);
+expect_resolver($flatVersionName['task_patient_humanname_family'] === 'Flat Patient Name', 'Flat frozen PatientName must remain entirely in family');
+expect_resolver($flatVersionName['task_patient_humanname_given'] === '' && $flatVersionName['task_patient_humanname_middle'] === '', 'Flat frozen PatientName must keep given and middle empty');
+expect_resolver($flatVersionName['patient_name_as_family'] === true, 'Flat frozen PatientName must be marked as family-only');
+
 $emptyMiddle = $resolver->resolve(['patient_name_dicom' => 'SILVA^^CARLOS']);
 expect_resolver($emptyMiddle['task_patient_humanname_family'] === 'SILVA', 'PN family position must be preserved when middle is present');
 expect_resolver($emptyMiddle['task_patient_humanname_given'] === '', 'PN empty given position must be preserved for later fail-closed validation');

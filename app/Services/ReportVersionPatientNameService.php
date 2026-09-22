@@ -13,39 +13,29 @@ use InvalidArgumentException;
  */
 final class ReportVersionPatientNameService
 {
-    private const SOURCES = ['dicom_pn', 'manual_confirmation'];
+    private const SOURCES = ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'];
 
     /**
-     * @param array<string,mixed> $input
      * @param array<string,mixed>|object $study
      * @return array{family:string,given:string,middle:string,source:string}
      */
-    public function resolve(array $input, array|object $study): array
+    public function resolve(array|object $study): array
     {
-        $dicom = DicomPersonName::components($this->value($study, 'patient_name_dicom'));
-        if ($dicom === null) {
-            $dicom = DicomPersonName::components(
-                PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($this->value($study, 'tags_raw'))
-            );
-        }
-        if ($dicom === null) {
-            $dicom = DicomPersonName::components($this->value($study, 'patient_name'));
-        }
-        if ($dicom !== null) {
-            return $this->validated($dicom['family'], $dicom['given'], $dicom['middle'], 'dicom_pn');
-        }
-
-        $source = $input['patient_name_source'] ?? null;
-        if ($source !== 'manual_confirmation') {
-            throw new InvalidArgumentException('patient_name_confirmation_required');
+        foreach ([
+            $this->value($study, 'patient_name_dicom'),
+            PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($this->value($study, 'tags_raw')),
+            $this->value($study, 'patient_name'),
+        ] as $rawPatientName) {
+            $dicom = DicomPersonName::components($rawPatientName);
+            if ($dicom !== null) {
+                return $this->validated($dicom['family'], $dicom['given'], $dicom['middle'], 'dicom_pn');
+            }
+            if (is_string($rawPatientName) && trim($rawPatientName) !== '' && !str_contains($rawPatientName, '^')) {
+                return $this->validated(trim($rawPatientName), '', '', 'patient_name_fallback', false);
+            }
         }
 
-        return $this->validated(
-            $input['patient_name_family'] ?? null,
-            $input['patient_name_given'] ?? null,
-            $input['patient_name_middle'] ?? '',
-            'manual_confirmation'
-        );
+        throw new InvalidArgumentException('patient_name_unavailable');
     }
 
     /** @return array{family:string,given:string,middle:string,source:string} */
@@ -54,7 +44,7 @@ final class ReportVersionPatientNameService
         if (!is_string($source) || !in_array($source, self::SOURCES, true)) {
             throw new InvalidArgumentException('patient_name_source_invalid');
         }
-        return $this->validated($family, $given, $middle, $source);
+        return $this->validated($family, $given, $middle, $source, $source !== 'patient_name_fallback');
     }
 
     /** @param array<string,mixed>|object $value */
@@ -64,11 +54,11 @@ final class ReportVersionPatientNameService
     }
 
     /** @return array{family:string,given:string,middle:string,source:string} */
-    private function validated(mixed $family, mixed $given, mixed $middle, string $source): array
+    private function validated(mixed $family, mixed $given, mixed $middle, string $source, bool $givenRequired = true): array
     {
         return [
             'family' => $this->component($family, 'patient_name_family', true),
-            'given' => $this->component($given, 'patient_name_given', true),
+            'given' => $this->component($given, 'patient_name_given', $givenRequired),
             'middle' => $this->component($middle, 'patient_name_middle', false),
             'source' => $source,
         ];

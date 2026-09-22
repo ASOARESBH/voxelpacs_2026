@@ -90,7 +90,7 @@ expect_profile(str_contains($resolver, 'versionPatientName'), 'Resolver must pri
 expect_profile(str_contains($resolver, 'studyDocumentDate'), 'Resolver must derive document date from StudyDate/StudyTime');
 expect_profile(str_contains($resolver, 'referring_physician_name'), 'Resolver must derive author names from Referring Physician');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
-expect_profile(str_contains($versionName, 'DicomPersonName::components') && str_contains($versionName, 'patient_name_confirmation_required'), 'Version service must parse DICOM PN and require explicit confirmation for flat names');
+expect_profile(str_contains($versionName, 'DicomPersonName::components') && str_contains($versionName, 'patient_name_fallback'), 'Version service must parse DICOM PN and persist flat names automatically as the fallback source');
 expect_profile(str_contains($versionMigration, 'patient_name_family') && str_contains($versionMigration, 'report_versions_patient_name_immutable'), 'Migration must add structured fields and immutability');
 expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not split names on spaces');
 expect_profile(str_contains($contract, 'pdf_only'), 'Contract must document backward compatibility');

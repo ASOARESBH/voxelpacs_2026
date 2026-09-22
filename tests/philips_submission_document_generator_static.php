@@ -66,6 +66,24 @@ expect_true(str_contains($first->content, '<task_patient_birthday>19800102</task
 expect_true(str_contains($first->content, '<task_document_mimetype>application/pdf</task_document_mimetype>'), 'MIME must be PDF');
 expect_true(str_contains($first->content, '<task_document_type>11502-2</task_document_type>'), 'Document type must be serialized');
 
+$flatInput = $input;
+$flatInput['task_patient_humanname_family'] = 'Flat Patient Name';
+$flatInput['task_patient_humanname_given'] = '';
+$flatInput['task_patient_humanname_middle'] = '';
+$flatInput['patient_name_as_family'] = true;
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
+$flatDocument = $generator->generate($flatInput, [
+    'tenant_id' => 2,
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+    'transport' => 'philips_non_dicom',
+]);
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_family>Flat Patient Name</task_patient_humanname_family>'), 'Flat PatientName must be serialized entirely in family');
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_given></task_patient_humanname_given>'), 'Flat PatientName must serialize an empty given');
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_middle></task_patient_humanname_middle>'), 'Flat PatientName must serialize an empty middle');
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
+
 if (function_exists('simplexml_load_string')) {
     $previous = libxml_use_internal_errors(true);
     $parsed = simplexml_load_string($first->content);

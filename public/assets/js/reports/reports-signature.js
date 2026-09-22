@@ -37,16 +37,6 @@ window.VoxelReports.signature = (function () {
         return !!(window.VoxelReports.chat && window.VoxelReports.chat.hasPending());
     }
 
-    function patientNamePayload(prefix) {
-        const value = (suffix) => document.getElementById(`${prefix}-${suffix}`)?.value ?? '';
-        return {
-            patient_name_family: value('family'),
-            patient_name_given: value('given'),
-            patient_name_middle: value('middle'),
-            patient_name_source: value('source'),
-        };
-    }
-
     function open() {
         if (chatPendente()) {
             alert('Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.');
@@ -84,7 +74,6 @@ window.VoxelReports.signature = (function () {
                     body: JSON.stringify({
                         report_id: config.reportId,
                         modo,
-                        ...patientNamePayload('signature-patient-name'),
                     }),
                 });
             })

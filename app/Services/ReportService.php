@@ -341,10 +341,7 @@ class ReportService {
      * reautenticação por senha neste fluxo, ver diagnostics/pendencias-conhecidas.md).
      * $modo: 'somente' → situação vai só até 'assinado'; 'fechar' → avança até 'liberado'.
      */
-    /**
-     * @param array<string,mixed>|null $patientNameInput
-     */
-    public function assinar(int $reportId, string $modo, ?array $patientNameInput = null): array {
+    public function assinar(int $reportId, string $modo): array {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
@@ -451,7 +448,7 @@ class ReportService {
         $patientName = null;
         if ($modo === 'fechar') {
             try {
-                $patientName = (new ReportVersionPatientNameService())->resolve($patientNameInput ?? [], (array) $estudo);
+                $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
             } catch (\InvalidArgumentException $e) {
                 Logger::warning('[ReportService::assinar] PatientName estruturado não resolvido', [
                     'report_id' => $reportId,
@@ -635,10 +632,7 @@ class ReportService {
      * assinatura. A transição é atômica e dispara somente os efeitos que
      * pertencem à liberação pública/operacional do documento.
      */
-    /**
-     * @param array<string,mixed>|null $patientNameInput
-     */
-    public function liberarAssinado(int $reportId, ?array $patientNameInput = null): array
+    public function liberarAssinado(int $reportId): array
     {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
@@ -667,7 +661,7 @@ class ReportService {
 
         $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
         try {
-            $patientName = (new ReportVersionPatientNameService())->resolve($patientNameInput ?? [], (array) $estudo);
+            $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
         } catch (\InvalidArgumentException $e) {
             Logger::warning('[ReportService::liberarAssinado] PatientName estruturado não resolvido', [
                 'report_id' => $reportId,

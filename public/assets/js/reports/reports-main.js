@@ -36,16 +36,6 @@ window.VoxelReports.main = (function () {
         return String(quill?.getText?.() || '').trim() !== '';
     }
 
-    function patientNamePayload(prefix) {
-        const value = (suffix) => document.getElementById(`${prefix}-${suffix}`)?.value ?? '';
-        return {
-            patient_name_family: value('family'),
-            patient_name_given: value('given'),
-            patient_name_middle: value('middle'),
-            patient_name_source: value('source'),
-        };
-    }
-
     function updatePdfActions() {
         const hasContent = editorHasClinicalContent();
         const message = 'Digite o laudo ou aplique uma máscara antes de imprimir ou visualizar o PDF.';
@@ -115,7 +105,7 @@ window.VoxelReports.main = (function () {
                     return;
                 }
                 if (!releaseModal || !releaseConfirm) {
-                    alert('Não foi possível abrir a confirmação de nome estruturado. Recarregue o laudo.');
+                    alert(releaseModalEl?.dataset.releaseError || 'Não foi possível abrir a confirmação de liberação.');
                     return;
                 }
                 if (releaseError) releaseError.style.display = 'none';
@@ -130,7 +120,6 @@ window.VoxelReports.main = (function () {
                 const payload = {
                     report_id: config.reportId,
                     csrf: config.csrf,
-                    ...patientNamePayload('release-patient-name'),
                 };
                 fetch('/api/reports/liberar', {
                     method: 'POST',
