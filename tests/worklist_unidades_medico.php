@@ -19,10 +19,10 @@ $regras = [
     'médico usa a fonte única de Unidades' => str_contains($controller, 'MedicoAccess::allowedInstitutionNames()')
         && str_contains($controller, 'private function resolverEscopoWorklist'),
     'dropdown médico usa a mesma fonte' => str_contains($controller, '$unidades = MedicoAccess::allowedInstitutionNames();'),
-    'médico sem vínculo não recebe fallback do tenant' => str_contains(
+    'médico sem Unidade não recebe fallback da fila normal' => str_contains(
         $controller,
-        '// Médico sem Unidade vinculada não pode herdar a visão do tenant.'
-    ) && str_contains($controller, "\$where[] = '1=0';"),
+        '$normalInstitutionClause = \'1=0\';'
+    ) && str_contains($controller, 'OR {$peerReviewClause})'),
 ];
 
 $falhas = array_keys(array_filter($regras, static fn(bool $ok): bool => !$ok));

@@ -113,10 +113,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-actions button, .pdf-actions a { display: inline-flex; align-items: center; gap: 5px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 4px; color: #1e293b; background: #fff; font: 700 12px Arial, sans-serif; text-decoration: none; cursor: pointer; }
         .pdf-actions .btn-print { border-color: #075a9e; background: #075a9e; color: #fff; }
 
-        .pdf-header { display: table; width: 100%; padding-bottom: 9px; border-bottom: 1px solid #777; }
+        .pdf-header { display: table; table-layout: fixed; width: 100%; padding-bottom: 9px; border-bottom: 1px solid #777; }
         .pdf-header-left, .pdf-header-right { display: table-cell; vertical-align: middle; }
-        .pdf-header-left { width: 58%; padding-right: 12px; }
-        .pdf-header-right { width: 42%; padding-left: 22px; text-align: right; }
+        .pdf-header-left { width: 56%; padding-right: 8px; }
+        .pdf-header-right { width: 44%; min-width: 0; padding-left: 8px; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
         .pdf-logo { display: block; max-width: 196px; max-height: 78px; object-fit: contain; object-position: left center; }
         .pdf-logo-fallback { color: #075a9e; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
         .pdf-header-unit { display: block; margin-top: 4px; color: #404040; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
@@ -126,11 +126,11 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-header-custom-links { margin-top: 3px; text-align: right; }
         .pdf-header-custom-links .voxel-institutional-link { display: block; color: #404040; font-size: 8px; line-height: 1.5; font-weight: 700; text-decoration: none; }
 
-        .pdf-patient { display: table; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
+        .pdf-patient { display: table; table-layout: fixed; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
         .pdf-patient-col { display: table-cell; vertical-align: top; }
-        .pdf-patient-col:first-child { width: 60%; padding-right: 16px; }
-        .pdf-patient-col:last-child { width: 40%; padding-left: 22px; text-align: right; }
-        .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; }
+        .pdf-patient-col:first-child { width: 56%; padding-right: 8px; }
+        .pdf-patient-col:last-child { width: 44%; min-width: 0; padding-left: 8px; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
+        .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
         .pdf-patient-line strong { font-weight: 700; }
 
         .pdf-report-content { color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }

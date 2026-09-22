@@ -175,7 +175,11 @@ final class MedicoAccess
 
         try {
             $stmt = Database::getInstance()->prepare(
-                'SELECT id FROM bi_medicos WHERE tenant_id = :tenant_id AND usuario_id = :usuario_id LIMIT 1'
+                'SELECT id FROM bi_medicos
+                 WHERE tenant_id = :tenant_id
+                   AND usuario_id = :usuario_id
+                   AND ativo = 1
+                 LIMIT 1'
             );
             $stmt->execute([
                 'tenant_id' => $tenantId,

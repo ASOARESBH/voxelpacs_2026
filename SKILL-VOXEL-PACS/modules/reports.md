@@ -84,9 +84,9 @@ A Worklist projeta os campos no mesmo escopo de Unidade/tenant usado pela tabela
 
 ### Peer Review e Medidas do viewer (2026-08-14)
 
-O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `ReportPeerReviewRepository`, com persistência transacional em `pacs_report_peer_reviews` e snapshot imutável em `pacs_report_peer_review_originais`. Antes de disponibilizar o fluxo em produção, é obrigatório aplicar `database/migrations/2026-08-10_reports_peer_review.sql`; a migration foi ajustada para MySQL 5.7/HostGator, sem consultas ao catálogo de metadados, e requer conferência prévia das colunas no phpMyAdmin.
+O Peer Review usa `ReportPeerReviewController`, `ReportPeerReviewService` e `ReportPeerReviewRepository`, com persistência transacional em `pacs_report_peer_reviews` e snapshot imutável em `pacs_report_peer_review_originais`. A regra completa de negócio, incluindo a fila compartilhada por unidade/tenant, está em `modules/peer-review.md`. Antes de disponibilizar o fluxo em uma instalação, é obrigatório aplicar `database/migrations/2026-08-10_reports_peer_review.sql` de forma compatível com o schema efetivo; a migration histórica foi escrita para MySQL 5.7/HostGator e não substitui o preflight PostgreSQL.
 
-`bi_pacs_estudos` é isolada por `institution_name`, não por `tenant_id`. Por isso, `ReportPeerReviewRepository` restringe o estudo com `InstitutionResolverService::getInstitutionNamesByTenant()` tanto na leitura do contexto como na atualização da situação. Não reintroduzir `e.tenant_id` ou `WHERE ... tenant_id` nesse fluxo.
+No runtime PostgreSQL auditado, `bi_pacs_estudos` possui `tenant_id`, e as consultas de Worklist e autorização relacionam `pr.tenant_id` ao estudo/report. `InstitutionName` continua sendo uma segunda barreira de unidade e uma compatibilidade necessária em helpers históricos; não remover nem substituir uma camada pela outra sem confirmar o schema efetivo. A segunda autorização do editor deve preservar o indicador de ciclo aberto, pois a Worklist pode mostrar um Peer Review compartilhado enquanto uma revalidação sem esse indicador ainda trataria o médico como proprietário incorreto. Ver `modules/peer-review.md` antes de alterar esse fluxo.
 
 O contrato de `ReportRepository::findReportById()` usa os campos canônicos `reports.estudo_id` e `reports.situacao`. `ReportMeasurementService` e `ViewerMeasurementRepository` devem consumir exclusivamente esses nomes; o uso legado de `bi_pacs_estudos_id` e `status` gerava avisos de `stdClass` e impedia o card de Medidas de consultar seu estudo corretamente. Os botões textuais do Laudário, inclusive **Liberar Peer Review**, usam `btn-pacs-primary`, `btn-pacs-success` ou `btn-pacs-outline`; `pacs-btn` permanece apenas em controles estritamente compactos/de ícone.
 
@@ -110,5 +110,11 @@ A assinatura usa `ReportRepository::proximaVersao($reportId)` para obter o núme
 
 Em qualquer exceção de assinatura, `ReportService::assinar()` registra `report_id`, `estudo_id`, `tenant_id`, `modo`, `versao_report` e a mensagem original, sem registrar conteúdo clínico. O código `devolutiva_dados_insuficientes` é traduzido no modal para orientação operacional específica; outras exceções continuam no código genérico de persistência. Essa distinção não substitui rollback: toda falha anterior ao commit continua sem assinar nem liberar parcialmente o laudo.
 
+### PDF histórico e entrega Non-DICOM (2026-09-22)
+
+`ReportsController::pdfByToken()` resolve o token opaco e delega a renderização a `ReportsController::pdf()`. Laudos `assinado`/`liberado` com snapshot binário íntegro são servidos exclusivamente por `ReportVersionPdfSnapshotService`; o fluxo de artefato Non-DICOM usa `ReportDeliveryArtifactService` e permanece **fail-closed** quando a versão do job não possui snapshot válido.
+
+Para laudos históricos assinados/liberados que não têm nenhum metadado de snapshot, a visualização interativa usa fallback explícito do renderer legado, sem alterar a versão clínica. Metadado parcial, caminho ausente, hash inválido ou arquivo corrompido não recebe fallback silencioso e continua sendo erro operacional auditável. O layout `moderno_lateral` usa tabelas de geometria fixa e quebra segura de valores para que a coluna de identificação do exame permaneça dentro da largura útil A4 do dompdf.
+
 ## Última análise
-2026-08-14
+2026-09-22

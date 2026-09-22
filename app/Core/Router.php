@@ -19,6 +19,7 @@ class Router {
         '/api/viewer/measurements',
         '/desktop-launch/',
         '/acesso/criar-senha/',
+        '/acesso/confirmar-email/',
         '/esqueci-senha',
         '/api/sla-regras/executar',
         '/api/servidor-pacs/sync-robo',

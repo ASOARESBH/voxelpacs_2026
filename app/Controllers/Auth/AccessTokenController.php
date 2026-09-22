@@ -5,6 +5,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
 use App\Core\Mailer;
+use App\Core\PublicUrl;
 use App\Core\SqlHelper;
 use App\Core\Translator;
 
@@ -265,11 +266,6 @@ class AccessTokenController extends Controller
 
     private function publicBaseUrl(): string
     {
-        $configured = rtrim(trim((string) ($_ENV['AUTH_PUBLIC_BASE_URL'] ?? '')), '/');
-        if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_URL)
-            && strtolower((string) parse_url($configured, PHP_URL_SCHEME)) === 'https') {
-            return $configured;
-        }
-        return 'https://server.voxelpacs.com.br';
+        return PublicUrl::base();
     }
 }

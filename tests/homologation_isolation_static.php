@@ -16,7 +16,7 @@ $workflow = (string) file_get_contents($root . '/SKILL-VOXEL-PACS/workflows/homo
 
 $expect(str_contains($build, 'EXPECTED_BRANCH="versao/1.0"'), 'homolog build is branch restricted');
 $expect(str_contains($build, 'ROOT_PROJECT_MUTATION=BLOCKED'), 'build declares root mutation protection');
-$expect(str_contains($build, 'exec "$ROOT/scripts/build.sh"'), 'wrapper delegates to the official build');
+$expect(str_contains($build, 'exec bash "$ROOT/scripts/build.sh"'), 'wrapper delegates to the official build via bash');
 $expect(str_contains($workflow, '/home/ubuntu/voxelpacs_2026_versions/1.0'), 'workflow identifies isolated worktree');
 $expect(str_contains($workflow, '/var/www/voxelpacs/releases/1.0'), 'workflow identifies isolated remote release');
 $expect(str_contains($workflow, 'voxelpacs_homolog'), 'workflow identifies the homolog database');

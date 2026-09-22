@@ -605,32 +605,34 @@ class ReportsController extends Controller
             if (in_array($situacaoCanonica, ['assinado', 'liberado'], true)) {
                 $snapshotPdf = (new \App\Services\ReportVersionPdfSnapshotService($pdo))
                     ->readLatestForReport((int) ($data['tenant_id'] ?? 0), $reportId);
-                if (!is_array($snapshotPdf) || !is_file((string) ($snapshotPdf['path'] ?? ''))) {
-                    Logger::error('ReportsController::pdf snapshot canônico ausente', [
-                        'report_id' => $reportId,
-                        'tenant_id' => (int) ($data['tenant_id'] ?? 0),
-                    ]);
-                    http_response_code(503);
-                    echo 'PDF canônico indisponível.';
+                if (is_array($snapshotPdf) && is_file((string) ($snapshotPdf['path'] ?? ''))) {
+                    if (!$portalPatientPdf) {
+                        $userId = Auth::userId();
+                        $user = Auth::user();
+                        $this->reportRepo->logAction(
+                            $reportId, (int) $data['estudo_id'], (int) $data['tenant_id'],
+                            $userId, $user->name ?? $user->nome ?? '', 'pdf',
+                            $download ? 'Download PDF canônico' : 'Visualização PDF canônico'
+                        );
+                    }
+                    $filename = 'laudo-' . $reportId . '-v' . (int) ($snapshotPdf['version'] ?? 0) . '.pdf';
+                    header('Content-Type: application/pdf');
+                    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
+                    header('Content-Length: ' . (string) ($snapshotPdf['size'] ?? filesize((string) $snapshotPdf['path'])));
+                    header('Cache-Control: private, no-store, max-age=0');
+                    header('X-Content-Type-Options: nosniff');
+                    readfile((string) $snapshotPdf['path']);
                     return;
                 }
-                if (!$portalPatientPdf) {
-                    $userId = Auth::userId();
-                    $user = Auth::user();
-                    $this->reportRepo->logAction(
-                        $reportId, (int) $data['estudo_id'], (int) $data['tenant_id'],
-                        $userId, $user->name ?? $user->nome ?? '', 'pdf',
-                        $download ? 'Download PDF canônico' : 'Visualização PDF canônico'
-                    );
-                }
-                $filename = 'laudo-' . $reportId . '-v' . (int) ($snapshotPdf['version'] ?? 0) . '.pdf';
-                header('Content-Type: application/pdf');
-                header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
-                header('Content-Length: ' . (string) ($snapshotPdf['size'] ?? filesize((string) $snapshotPdf['path'])));
-                header('Cache-Control: private, no-store, max-age=0');
-                header('X-Content-Type-Options: nosniff');
-                readfile((string) $snapshotPdf['path']);
-                return;
+
+                // Compatibilidade somente para laudos históricos sem qualquer
+                // metadado de snapshot. Metadado parcial/inválido continua
+                // lançando erro no serviço para impedir renderização silenciosa
+                // de um documento cuja integridade não foi confirmada.
+                Logger::warning('ReportsController::pdf usando fallback legado sem snapshot canônico', [
+                    'report_id' => $reportId,
+                    'tenant_id' => (int) ($data['tenant_id'] ?? 0),
+                ]);
             }
 
             // Log de visualização de PDF
@@ -689,7 +691,16 @@ class ReportsController extends Controller
             // scripts do PACS na impressão ou no arquivo salvo pelo usuário.
             ], '');
         } catch (\Throwable $e) {
-            Logger::error('ReportsController::pdf error', ['msg' => $e->getMessage()]);
+            $context = [
+                'report_id' => $reportId,
+                'tenant_id' => (int) ($data['tenant_id'] ?? 0),
+                'exception' => get_class($e),
+                'message_hash' => hash('sha256', $e->getMessage()),
+            ];
+            if ($e instanceof \PDOException) {
+                $context['sqlstate'] = (string) ($e->errorInfo[0] ?? $e->getCode());
+            }
+            Logger::error('ReportsController::pdf error', $context);
             http_response_code(500);
             echo 'Erro ao gerar PDF.';
         }
