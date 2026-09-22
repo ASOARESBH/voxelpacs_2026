@@ -57,6 +57,27 @@ expect_claim(str_contains($repository, 'private function linkedRequestFailureCod
 expect_claim(str_contains($repository, 'if ($claimFailureCode !== null)'), 'claim must fail closed on request drift or disabled feature');
 expect_claim(str_contains($repository, "return 'feature_disabled';"), 'linked requests must fail closed when the feature is disabled');
 expect_claim(str_contains($claimSnapshot, 'e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex'), 'claim snapshot digest projection must include tags_raw');
+expect_claim(str_contains($claimSnapshot, 'e.study_time, e.referring_physician_name, e.institution_name'), 'claim snapshot digest projection must include referring physician');
+foreach ([
+    'r.id AS report_id',
+    'r.tenant_id',
+    'e.id AS estudo_id_effective',
+    'e.tenant_id AS estudo_tenant_id',
+    'e.unidade_id AS estabelecimento_id',
+    'r.liberado_por',
+    'r.assinado_por',
+    'rv.versao',
+    'rv.usuario_id AS report_version_user_id',
+    'rv.usuario_nome AS report_version_user_name',
+    'rv.acao',
+    'rv.patient_name_family',
+    'rv.patient_name_given',
+    'rv.patient_name_middle',
+    'rv.patient_name_source',
+    'rv.created_at AS version_created_at',
+] as $fieldProjection) {
+    expect_claim(str_contains($claimSnapshot, $fieldProjection), "claim snapshot projection must include {$fieldProjection}");
+}
 expect_claim(str_contains($repository, 'UPDATE pacs_report_delivery_jobs'), 'claim must retain conditional state transition');
 expect_claim(str_contains($repository, "SET status = 'processing'"), 'claim must retain processing transition');
 expect_claim(str_contains($repository, 'attempt_count = attempt_count + 1'), 'claim must retain one-at-a-time attempt accounting');

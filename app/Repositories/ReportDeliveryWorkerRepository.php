@@ -404,12 +404,21 @@ class ReportDeliveryWorkerRepository
     private function findRequestSnapshot(int $tenantId, int $reportId, int $reportVersion): ?array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT r.estudo_id AS estudo_id, r.situacao, r.liberado_em,
-                    e.study_instance_uid, e.accession_number, e.modalities,
-                    e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
-                    e.study_date, e.study_time, e.institution_name, e.issuer_of_patient_id,
-                    rv.id AS report_version_row_id, rv.secao_exame, rv.secao_tecnica,
-                    rv.secao_achados, rv.secao_conclusao, rv.secao_recomendacao
+            "SELECT r.id AS report_id, r.tenant_id, r.estudo_id, r.situacao,
+                    r.liberado_em, r.liberado_por, r.assinado_por,
+                    e.id AS estudo_id_effective, e.tenant_id AS estudo_tenant_id,
+                    e.unidade_id AS estabelecimento_id, e.study_instance_uid,
+                    e.accession_number, e.modalities, e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
+                    e.study_date,
+                    e.study_time, e.referring_physician_name, e.institution_name,
+                    e.issuer_of_patient_id, rv.id AS report_version_row_id, rv.versao,
+                    rv.usuario_id AS report_version_user_id,
+                    rv.usuario_nome AS report_version_user_name, rv.acao,
+                    rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
+                    rv.secao_conclusao, rv.secao_recomendacao,
+                    rv.patient_name_family, rv.patient_name_given,
+                    rv.patient_name_middle, rv.patient_name_source,
+                    rv.created_at AS version_created_at
                FROM reports r
                INNER JOIN bi_pacs_estudos e
                        ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
