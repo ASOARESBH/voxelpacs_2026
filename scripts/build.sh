@@ -29,7 +29,10 @@ zip -r "${OUTPUT_DIR}/${ZIPNAME}" . \
     --exclude "*.git*" \
     --exclude "*/.git/*" \
     --exclude "*/node_modules/*" \
+    --exclude ".env" \
     --exclude "*/.env" \
+    --exclude "storage" \
+    --exclude "storage/*" \
     --exclude "*/storage/logs/*" \
     --exclude "*/storage/sessions/*" \
     --exclude "*/storage/cache/*" \
