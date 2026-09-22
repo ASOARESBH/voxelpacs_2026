@@ -172,7 +172,7 @@ final class ReportDeliveryRequestRepository
     public function findActiveIdentity(int $tenantId, string $activeIdentityKey): ?array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT id, request_uuid, status, report_id, report_version, destination_id, delivery_profile
+            "SELECT id, request_uuid, status, report_id, report_version, pdf_revision_id, destination_id, delivery_profile
                FROM pacs_report_delivery_requests
               WHERE tenant_id = :tenant_id
                 AND active_identity_key = :active_identity_key
@@ -190,12 +190,14 @@ final class ReportDeliveryRequestRepository
             "INSERT INTO pacs_report_delivery_requests
                 (request_uuid, request_key, active_identity_key, tenant_id, estabelecimento_id,
                  report_id, estudo_id, report_version, report_version_source_key,
+                 pdf_revision_id,
                  destination_id, transport, ambiente, delivery_profile, dispatch_mode,
                  snapshot_schema_version, authorized_snapshot_digest, destination_config_digest,
                  destination_config_observed_at, status, request_reason, requested_by)
              VALUES
                 (:request_uuid, :request_key, :active_identity_key, :tenant_id, :estabelecimento_id,
                  :report_id, :estudo_id, :report_version, :report_version_source_key,
+                 :pdf_revision_id,
                  :destination_id, :transport, :ambiente, :delivery_profile, :dispatch_mode,
                  :snapshot_schema_version, :authorized_snapshot_digest, :destination_config_digest,
                  :destination_config_observed_at, 'prepared', :request_reason, :requested_by)
@@ -211,6 +213,7 @@ final class ReportDeliveryRequestRepository
             ':estudo_id' => $request['estudo_id'],
             ':report_version' => $request['report_version'],
             ':report_version_source_key' => $request['report_version_source_key'],
+            ':pdf_revision_id' => $request['pdf_revision_id'] ?? null,
             ':destination_id' => $request['destination_id'],
             ':transport' => $request['transport'],
             ':ambiente' => $request['ambiente'],

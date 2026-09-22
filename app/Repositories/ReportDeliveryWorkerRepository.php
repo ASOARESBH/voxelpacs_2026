@@ -276,10 +276,39 @@ class ReportDeliveryWorkerRepository
             }
 
             $snapshot = $this->findRequestSnapshot($tenantId, (int) $request['report_id'], (int) $request['report_version']);
+            $payload = json_decode((string) ($job['payload_json'] ?? ''), true);
+            $pdfRevisionId = is_array($payload) ? (int) ($payload['pdf_revision_id'] ?? 0) : 0;
+            if ((int) ($request['pdf_revision_id'] ?? 0) !== $pdfRevisionId) {
+                return true;
+            }
+            $overrideDigest = (new \App\Services\ReportDeliveryRequestPatientNameOverrideService($this->pdo))->digest(
+                $tenantId,
+                (int) ($request['id'] ?? 0)
+            );
+            $snapshotDigest = $snapshot === null
+                ? ''
+                : DeliveryRequestIdentity::authorizedSnapshotDigest(
+                    $tenantId,
+                    (int) $request['report_id'],
+                    (int) $request['report_version'],
+                    $snapshot,
+                    $overrideDigest,
+                    $pdfRevisionId
+                );
+            if ($pdfRevisionId > 0) {
+                if (!(new \App\Services\ReportVersionPdfRevisionService($this->pdo))->findById(
+                    $tenantId,
+                    $pdfRevisionId,
+                    (int) $request['report_id'],
+                    (int) $request['report_version']
+                )) {
+                    return true;
+                }
+            }
             return $snapshot === null
                 || !hash_equals(
                     (string) ($request['authorized_snapshot_digest'] ?? ''),
-                    DeliveryRequestIdentity::snapshotDigest($tenantId, (int) $request['report_id'], (int) $request['report_version'], $snapshot)
+                    $snapshotDigest
                 );
         } catch (Throwable) {
             return true;

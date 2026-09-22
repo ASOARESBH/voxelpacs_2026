@@ -95,7 +95,8 @@ final class ReportDeliveryRequestService
         int $destinationId,
         string $deliveryProfile,
         int $actorId,
-        string $reason = 'recovery administrativo; origem histórica não reutilizada'
+        string $reason = 'recovery administrativo; origem histórica não reutilizada',
+        int $pdfRevisionId = 0
     ): array {
         $reason = trim($reason);
         if ($reason === '') {
@@ -109,6 +110,7 @@ final class ReportDeliveryRequestService
             'delivery_profile' => $deliveryProfile,
             'dispatch_mode' => 'manual_homologation',
             'request_reason' => $reason,
+            'pdf_revision_id' => $pdfRevisionId,
         ], $actorId);
 
         AuditLogger::log('report_delivery.recovery_request_prepared', 'pacs_report_delivery_requests', (int) $request['id'], [
@@ -323,6 +325,13 @@ final class ReportDeliveryRequestService
             throw new DomainException('Isolamento de tenant inválido.', 403);
         }
 
+        $pdfRevisionId = $this->positiveIntOrZero($input['pdf_revision_id'] ?? 0, 'pdf_revision_id');
+        if ($pdfRevisionId > 0
+            && !(new ReportVersionPdfRevisionService($this->pdo))->findById($tenantId, $pdfRevisionId, $reportId, $reportVersion)
+        ) {
+            throw new DomainException('A revisão PDF não pertence ao tenant/report/version informado.', 422);
+        }
+
         $overrideInput = $input['patient_name_override'] ?? null;
         if ($overrideInput !== null && !is_array($overrideInput)) {
             throw new DomainException('patient_name_override deve ser um objeto.', 422);
@@ -343,7 +352,8 @@ final class ReportDeliveryRequestService
             $reportId,
             $reportVersion,
             $report,
-            $overrideDigest
+            $overrideDigest,
+            $pdfRevisionId
         );
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
         $sourceKey = 'report_version:' . (int) $report['report_version_row_id'];
@@ -352,6 +362,7 @@ final class ReportDeliveryRequestService
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
             'report_version' => $reportVersion,
+            'pdf_revision_id' => $pdfRevisionId,
             'destination_id' => $destinationId,
             'delivery_profile' => 'submission_document',
             'dispatch_mode' => 'manual_homologation',
@@ -371,6 +382,7 @@ final class ReportDeliveryRequestService
             'estudo_id' => (int) $report['estudo_id'],
             'report_version' => $reportVersion,
             'report_version_source_key' => $sourceKey,
+            'pdf_revision_id' => $pdfRevisionId > 0 ? $pdfRevisionId : null,
             'destination_id' => $destinationId,
             'transport' => 'philips_non_dicom',
             'ambiente' => 'homologacao',
@@ -440,8 +452,20 @@ final class ReportDeliveryRequestService
             (int) $request['report_id'],
             (int) $request['report_version'],
             $report,
-            $overrideDigest
+            $overrideDigest,
+            (int) ($request['pdf_revision_id'] ?? 0)
         );
+        $pdfRevisionId = (int) ($request['pdf_revision_id'] ?? 0);
+        if ($pdfRevisionId > 0
+            && !(new ReportVersionPdfRevisionService($this->pdo))->findById(
+                $tenantId,
+                $pdfRevisionId,
+                (int) $request['report_id'],
+                (int) $request['report_version']
+            )
+        ) {
+            throw new DomainException('A revisão PDF autorizada não está mais disponível.', 409);
+        }
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
         if (!hash_equals((string) $request['authorized_snapshot_digest'], $snapshotDigest)) {
             throw new DomainException('Configuration/snapshot drift detectado.', 409);
@@ -472,6 +496,7 @@ final class ReportDeliveryRequestService
             'tenant_id' => (int) $request['tenant_id'],
             'report_id' => (int) $request['report_id'],
             'report_version' => (int) $request['report_version'],
+            'pdf_revision_id' => (int) ($request['pdf_revision_id'] ?? 0),
             'estudo_id' => (int) $request['estudo_id'],
             'destination_id' => (int) $request['destination_id'],
             'transport' => 'philips_non_dicom',
@@ -516,6 +541,18 @@ final class ReportDeliveryRequestService
         return (int) $parsed;
     }
 
+    private function positiveIntOrZero(mixed $value, string $name): int
+    {
+        if ($value === null || $value === '' || (is_numeric($value) && (int) $value === 0)) {
+            return 0;
+        }
+        $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($parsed === false) {
+            throw new DomainException("{$name} deve ser inteiro não negativo.", 422);
+        }
+        return (int) $parsed;
+    }
+
     /** @param array<string,mixed> $request @param array<string,mixed> $input */
     private function sameRequestParameters(array $request, array $input, string $requestUuid): bool
     {
@@ -524,6 +561,7 @@ final class ReportDeliveryRequestService
         return (string) ($request['request_uuid'] ?? '') === $requestUuid
             && (int) ($request['report_id'] ?? 0) === (int) ($input['report_id'] ?? 0)
             && (int) ($request['report_version'] ?? 0) === (int) ($input['report_version'] ?? 0)
+            && (int) ($request['pdf_revision_id'] ?? 0) === (int) ($input['pdf_revision_id'] ?? 0)
             && (int) ($request['destination_id'] ?? 0) === (int) ($input['destination_id'] ?? 0)
             && (string) ($request['delivery_profile'] ?? '') === (string) ($input['delivery_profile'] ?? '')
             && (string) ($request['dispatch_mode'] ?? '') === (string) ($input['dispatch_mode'] ?? '')
@@ -618,7 +656,7 @@ final class ReportDeliveryRequestService
     {
         $allowed = [
             'id', 'request_uuid', 'tenant_id', 'report_id', 'estudo_id',
-            'report_version', 'report_version_source_key', 'destination_id', 'transport',
+            'report_version', 'report_version_source_key', 'pdf_revision_id', 'destination_id', 'transport',
             'ambiente', 'delivery_profile', 'dispatch_mode', 'snapshot_schema_version',
             'status', 'requested_by',
             'approved_by', 'approved_at', 'materialized_at', 'armed_at', 'outbox_id', 'job_id',

@@ -49,8 +49,14 @@ final class ReportDeliveryArtifactService
         );
         $studyInstanceUid = '';
         if ($isNonDicomFolder) {
-            $snapshot = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob($job);
-            $binary = $snapshot['content'];
+            $pdfRevisionId = $this->pdfRevisionIdForJob($job);
+            if ($pdfRevisionId > 0) {
+                $revision = (new ReportVersionPdfRevisionService($this->pdo))->readForJob($job);
+                $binary = $revision['content'];
+            } else {
+                $snapshot = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob($job);
+                $binary = $snapshot['content'];
+            }
             $studyInstanceUid = $this->studyInstanceUidForJob($job);
         } else {
             $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
@@ -85,6 +91,20 @@ final class ReportDeliveryArtifactService
             'report_id' => (int) $job['report_id'],
             'study_instance_uid' => $studyInstanceUid,
         ];
+    }
+
+    /** @param array<string,mixed> $job */
+    private function pdfRevisionIdForJob(array $job): int
+    {
+        $revisionId = (int) ($job['pdf_revision_id'] ?? 0);
+        if ($revisionId > 0) {
+            return $revisionId;
+        }
+        if (!is_string($job['payload_json'] ?? null)) {
+            return 0;
+        }
+        $payload = json_decode((string) $job['payload_json'], true);
+        return is_array($payload) ? max(0, (int) ($payload['pdf_revision_id'] ?? 0)) : 0;
     }
 
     /** @param array<string,mixed> $job */
