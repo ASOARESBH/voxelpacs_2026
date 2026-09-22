@@ -139,7 +139,7 @@ final class ReportVersionPdfRevisionService
         $pdo = $this->pdo ?? Database::getInstance();
         try {
             $pdo->beginTransaction();
-            $existing = $this->findByKey($tenantId, $revisionKey, true);
+            $existing = $this->findByKey($tenantId, $revisionKey);
             if ($existing !== null) {
                 $pdo->commit();
                 if ($createdNewFile) {
@@ -173,9 +173,9 @@ final class ReportVersionPdfRevisionService
                      :revision_key, :source_pdf_snapshot_sha256, :pdf_snapshot_path, :pdf_snapshot_sha256,
                      :pdf_snapshot_size_bytes, :pdf_snapshot_renderer, :pdf_snapshot_schema_version,
                      :reason_code, :created_by)';
-            if (SqlHelper::isPostgres()) {
-                $insertSql .= ' RETURNING id';
-            }
+            $insertSql .= SqlHelper::isPostgres()
+                ? ' ON CONFLICT DO NOTHING RETURNING id'
+                : ' ON DUPLICATE KEY UPDATE revision_key = revision_key';
             $insert = $pdo->prepare($insertSql);
             $insert->execute([
                 ':tenant_id' => $tenantId,
@@ -194,10 +194,18 @@ final class ReportVersionPdfRevisionService
                 ':created_by' => $createdBy,
             ]);
             $id = SqlHelper::isPostgres()
-                ? (int) $insert->fetchColumn()
+                ? (int) ($insert->fetchColumn() ?: 0)
                 : (int) $pdo->lastInsertId();
             if ($id <= 0) {
-                throw new RuntimeException('Revisão PDF não foi persistida.');
+                $existing = $this->findByKey($tenantId, $revisionKey);
+                if ($existing !== null) {
+                    $pdo->commit();
+                    if ($createdNewFile) {
+                        @unlink($path);
+                    }
+                    return $this->readMetadata($existing, false);
+                }
+                throw new RuntimeException('Revisão PDF não foi persistida após conflito concorrente.');
             }
             $pdo->commit();
         } catch (Throwable $e) {
@@ -355,13 +363,10 @@ final class ReportVersionPdfRevisionService
     }
 
     /** @return array<string,mixed>|null */
-    private function findByKey(int $tenantId, string $revisionKey, bool $forUpdate = false): ?array
+    private function findByKey(int $tenantId, string $revisionKey): ?array
     {
         $pdo = $this->pdo ?? Database::getInstance();
         $sql = 'SELECT * FROM pacs_report_version_pdf_revisions WHERE tenant_id = :tenant_id AND revision_key = :revision_key LIMIT 1';
-        if ($forUpdate) {
-            $sql .= SqlHelper::isPostgres() ? ' FOR KEY SHARE' : ' FOR SHARE';
-        }
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':tenant_id' => $tenantId, ':revision_key' => $revisionKey]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
