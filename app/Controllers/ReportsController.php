@@ -255,6 +255,11 @@ class ReportsController extends Controller
                     'estudo_assumido_por_outro'      => 'Este estudo foi assumido por outro médico e não pode ser assinado por sua conta.',
                     'devolutiva_dados_insuficientes' => 'A assinatura não foi concluída porque a devolutiva do laudo não recebeu todos os dados obrigatórios. Tente novamente; se persistir, informe o suporte técnico.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
+                    'patient_name_unavailable'           => 'O PatientName do estudo não está disponível para assinar o laudo.',
+                    'patient_name_source_invalid'       => 'A origem do nome estruturado é inválida.',
+                    'patient_name_family'               => 'Informe Family do paciente.',
+                    'patient_name_given'                => 'Informe Given do paciente.',
+                    'patient_name_middle'               => 'O Middle informado é inválido.',
                     default                           => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
@@ -593,6 +598,38 @@ class ReportsController extends Controller
                 $this->view('reports/pdf_empty', [
                     'reportToken' => (string) ($data['public_token'] ?? ''),
                 ], 'pacs');
+                return;
+            }
+
+            $situacaoCanonica = (string) ($data['situacao'] ?? '');
+            if (in_array($situacaoCanonica, ['assinado', 'liberado'], true)) {
+                $snapshotPdf = (new \App\Services\ReportVersionPdfSnapshotService($pdo))
+                    ->readLatestForReport((int) ($data['tenant_id'] ?? 0), $reportId);
+                if (!is_array($snapshotPdf) || !is_file((string) ($snapshotPdf['path'] ?? ''))) {
+                    Logger::error('ReportsController::pdf snapshot canônico ausente', [
+                        'report_id' => $reportId,
+                        'tenant_id' => (int) ($data['tenant_id'] ?? 0),
+                    ]);
+                    http_response_code(503);
+                    echo 'PDF canônico indisponível.';
+                    return;
+                }
+                if (!$portalPatientPdf) {
+                    $userId = Auth::userId();
+                    $user = Auth::user();
+                    $this->reportRepo->logAction(
+                        $reportId, (int) $data['estudo_id'], (int) $data['tenant_id'],
+                        $userId, $user->name ?? $user->nome ?? '', 'pdf',
+                        $download ? 'Download PDF canônico' : 'Visualização PDF canônico'
+                    );
+                }
+                $filename = 'laudo-' . $reportId . '-v' . (int) ($snapshotPdf['version'] ?? 0) . '.pdf';
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
+                header('Content-Length: ' . (string) ($snapshotPdf['size'] ?? filesize((string) $snapshotPdf['path'])));
+                header('Cache-Control: private, no-store, max-age=0');
+                header('X-Content-Type-Options: nosniff');
+                readfile((string) $snapshotPdf['path']);
                 return;
             }
 
@@ -1159,6 +1196,21 @@ class ReportsController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     // Helpers privados
     // ══════════════════════════════════════════════════════════════════════════
+    private function mensagemErroReport(string $codigo): string
+    {
+        return match ($codigo) {
+            'patient_name_unavailable' => 'O PatientName do estudo não está disponível para liberar o laudo.',
+            'patient_name_source_invalid' => 'A origem do nome estruturado é inválida.',
+            'patient_name_family' => 'Informe Family do paciente.',
+            'patient_name_given' => 'Informe Given do paciente.',
+            'patient_name_middle' => 'O Middle informado é inválido.',
+            'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',
+            'report_nao_assinado' => 'O laudo ainda não foi assinado.',
+            'report_nao_encontrado' => 'Laudo não encontrado.',
+            default => 'Não foi possível liberar o laudo.',
+        };
+    }
+
     private function normalizarTemplate(array $row): array
     {
         $secoesJson = [];

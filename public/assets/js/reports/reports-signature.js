@@ -71,7 +71,10 @@ window.VoxelReports.signature = (function () {
                 return fetch('/reports/sign', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
-                    body: JSON.stringify({ report_id: config.reportId, modo }),
+                    body: JSON.stringify({
+                        report_id: config.reportId,
+                        modo,
+                    }),
                 });
             })
             .then((response) => response ? response.json() : null)

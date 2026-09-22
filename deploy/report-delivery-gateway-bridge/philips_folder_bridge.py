@@ -65,6 +65,8 @@ ENVELOPE_DIAGNOSTIC_STAGES = (
 )
 SMB_DIAGNOSTIC_STAGES = ("LIST", "WRITE", "RENAME", "VERIFY")
 SMB_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_SMB_DIAGNOSTICS"
+PATIENT_NAME_EXCEPTION_ENV = "PHILIPS_FOLDER_ALLOW_MISSING_PATIENT_NAME_COMPONENTS_FOR_HOMOLOGATION"
+PATIENT_NAME_AS_FAMILY_ENV = "PHILIPS_FOLDER_ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION"
 SMB_DIAGNOSTIC_CLASSIFICATIONS = (
     "none", "not_found", "authentication", "permission", "connectivity",
     "timeout", "remote_io", "invalid_artifact", "configuration", "host_key", "unknown",
@@ -129,6 +131,8 @@ class Policy:
         self.destination_id = int(setting("PHILIPS_FOLDER_DESTINATION_ID"))
         self.mode = setting("PHILIPS_FOLDER_MODE")
         self.allowed_job_id = int(os.environ.get("PHILIPS_FOLDER_ALLOW_JOB_ID", "0"))
+        self.patient_name_exception_enabled = os.environ.get(PATIENT_NAME_EXCEPTION_ENV, "0").strip() == "1"
+        self.patient_name_as_family_enabled = os.environ.get(PATIENT_NAME_AS_FAMILY_ENV, "0").strip() == "1"
         self.target_directory = Path(setting("PHILIPS_FOLDER_TARGET_DIRECTORY"))
         self.secret = root_only_regular_file(setting("PHILIPS_FOLDER_HMAC_FILE")).read_text(encoding="utf-8").strip().encode("utf-8")
         self.ca_file = str(root_only_regular_file(setting("PHILIPS_FOLDER_CLIENT_CA_FILE")))
@@ -395,6 +399,14 @@ class Handler(BaseHTTPRequestHandler):
         xml_hash = self.headers.get("X-VOXEL-XML-SHA256", "").lower()
         xml_task_file_path_hash = self.headers.get("X-VOXEL-XML-TASK-FILE-PATH-SHA256", "").lower()
         xml_document_type_applicable = self.headers.get("X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE", "")
+        patient_name_components_omitted = self.headers.get("X-VOXEL-Patient-Name-Components-Omitted", "0")
+        patient_name_as_family = self.headers.get("X-VOXEL-Patient-Name-As-Family", "0")
+        report_id_header = self.headers.get("X-VOXEL-Report-ID", "0")
+        report_version_header = self.headers.get("X-VOXEL-Report-Version", "0")
+        estudo_id_header = self.headers.get("X-VOXEL-Estudo-ID", "0")
+        environment_header = self.headers.get("X-VOXEL-Environment", "")
+        delivery_profile_header = self.headers.get("X-VOXEL-Delivery-Profile", "")
+        transport_header = self.headers.get("X-VOXEL-Transport", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
         signature = self.headers.get("X-VOXEL-Signature", "")
         try:
@@ -402,6 +414,9 @@ class Handler(BaseHTTPRequestHandler):
             tenant_id = int(tenant_id_header)
             pdf_length = int(self.headers.get("X-VOXEL-PDF-Size", ""))
             xml_length = int(self.headers.get("X-VOXEL-XML-Size", ""))
+            report_id = int(report_id_header)
+            report_version = int(report_version_header)
+            estudo_id = int(estudo_id_header)
             request_time = int(timestamp)
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
@@ -421,6 +436,9 @@ class Handler(BaseHTTPRequestHandler):
             and re.fullmatch(r"[a-f0-9]{64}", xml_hash) is not None
             and re.fullmatch(r"[a-f0-9]{64}", xml_task_file_path_hash) is not None
             and xml_document_type_applicable in {"0", "1"}
+            and patient_name_components_omitted in {"0", "1"}
+            and patient_name_as_family in {"0", "1"}
+            and not (patient_name_components_omitted == "1" and patient_name_as_family == "1")
             and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
         )
         if not permitted:
@@ -428,6 +446,31 @@ class Handler(BaseHTTPRequestHandler):
             return
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        allow_missing_patient_name_components = patient_name_components_omitted == "1"
+        allow_patient_name_as_family = patient_name_as_family == "1"
+        if allow_missing_patient_name_components and (
+            not POLICY.patient_name_exception_enabled
+            or tenant_id != 2
+            or destination_id_header != "6"
+            or report_id != 74
+            or report_version != 11
+            or estudo_id != 1704
+            or environment_header != "homologacao"
+            or delivery_profile_header != "submission_document"
+            or transport_header != "philips_non_dicom"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if allow_patient_name_as_family and (
+            not POLICY.patient_name_as_family_enabled
+            or tenant_id != 2
+            or destination_id_header != "6"
+            or environment_header != "homologacao"
+            or delivery_profile_header != "submission_document"
+            or transport_header != "philips_non_dicom"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
         envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
@@ -437,6 +480,26 @@ class Handler(BaseHTTPRequestHandler):
             str(pdf_length), xml_filename, xml_hash, str(xml_length),
             xml_task_file_path_hash, xml_document_type_applicable, timestamp,
         ]
+        if allow_missing_patient_name_components:
+            signature_parts.extend([
+                "patient_name_components_omitted",
+                report_id_header,
+                report_version_header,
+                estudo_id_header,
+                environment_header,
+                delivery_profile_header,
+                transport_header,
+            ])
+        if allow_patient_name_as_family:
+            signature_parts.extend([
+                "patient_name_as_family",
+                report_id_header,
+                report_version_header,
+                estudo_id_header,
+                environment_header,
+                delivery_profile_header,
+                transport_header,
+            ])
         if envelope:
             signature_parts.append(envelope_hash)
         expected = hmac.new(POLICY.secret, "\n".join(signature_parts).encode("utf-8"), hashlib.sha256).hexdigest()
@@ -477,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 xml_length,
                 xml_task_file_path_hash,
                 xml_document_type_applicable == "1",
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
             ) as files:
                 with self.temporary_smb_credentials(envelope, POLICY.destination_id, tenant_id, job_id=job_id) as credentials:
                     transport = self.deliver_submission_package_remote(
@@ -488,6 +553,8 @@ class Handler(BaseHTTPRequestHandler):
                         xml_task_file_path_hash,
                         xml_document_type_applicable == "1",
                         credentials,
+                        allow_missing_patient_name_components,
+                        allow_patient_name_as_family,
                     )
         except BridgeTransferError as error:
             LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
@@ -524,6 +591,8 @@ class Handler(BaseHTTPRequestHandler):
         xml_length: int,
         xml_task_file_path_hash: str,
         xml_document_type_applicable: bool,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
     ):
         pdf_path: Path | None = None
         xml_path: Path | None = None
@@ -557,6 +626,8 @@ class Handler(BaseHTTPRequestHandler):
                 pdf_filename,
                 xml_task_file_path_hash,
                 xml_document_type_applicable,
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
             )
             yield pdf_path, xml_path
         finally:
@@ -601,6 +672,8 @@ class Handler(BaseHTTPRequestHandler):
         xml_task_file_path_hash: str,
         xml_document_type_applicable: bool,
         credentials: Path | None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
     ) -> str:
         if credentials is None or not isinstance(POLICY.smb, dict):
             raise BridgeTransferError("credentials_unavailable")
@@ -665,6 +738,8 @@ class Handler(BaseHTTPRequestHandler):
                 pdf_filename,
                 xml_task_file_path_hash,
                 xml_document_type_applicable,
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
             )
             if not pdf_ok or not xml_ok:
                 raise BridgeTransferError("remote_io")
@@ -1225,6 +1300,8 @@ class Handler(BaseHTTPRequestHandler):
         xml_pdf_filename: str | None = None,
         xml_task_file_path_hash: str | None = None,
         xml_document_type_applicable: bool | None = None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
     ) -> bool:
         descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
         os.close(descriptor)
@@ -1258,6 +1335,8 @@ class Handler(BaseHTTPRequestHandler):
                         xml_pdf_filename,
                         xml_task_file_path_hash,
                         xml_document_type_applicable,
+                        allow_missing_patient_name_components,
+                        allow_patient_name_as_family,
                     )
                 except BridgeTransferError as error:
                     self._log_smb_stage(job_id, "VERIFY", result, error.category, remote_size, False)
@@ -1280,6 +1359,8 @@ class Handler(BaseHTTPRequestHandler):
         pdf_filename: str,
         task_file_path_hash: str,
         document_type_applicable: bool | None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
     ) -> None:
         try:
             raw = xml_path.read_bytes()
@@ -1298,9 +1379,6 @@ class Handler(BaseHTTPRequestHandler):
                 values[element.tag] = element.text or ""
             required = {
                 "task_patient_id",
-                "task_patient_humanname_family",
-                "task_patient_humanname_given",
-                "task_patient_humanname_middle",
                 "task_document_name",
                 "task_document_date",
                 "task_image_date",
@@ -1319,7 +1397,25 @@ class Handler(BaseHTTPRequestHandler):
                 "task_modalities",
                 "task_delete_file",
             }
+            if not allow_missing_patient_name_components:
+                required.update({
+                    "task_patient_humanname_family",
+                    "task_patient_humanname_given",
+                    "task_patient_humanname_middle",
+                })
+            elif any(name in values for name in {
+                "task_patient_humanname_family",
+                "task_patient_humanname_given",
+                "task_patient_humanname_middle",
+            }):
+                raise BridgeTransferError("invalid_artifact")
             if not required.issubset(values):
+                raise BridgeTransferError("invalid_artifact")
+            if allow_patient_name_as_family and (
+                values.get("task_patient_humanname_family", "") == ""
+                or values.get("task_patient_humanname_given", "") != ""
+                or values.get("task_patient_humanname_middle", "") != ""
+            ):
                 raise BridgeTransferError("invalid_artifact")
             if values["task_file_name"] != pdf_filename:
                 raise BridgeTransferError("invalid_artifact")

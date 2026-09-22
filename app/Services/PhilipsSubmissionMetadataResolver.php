@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\DicomPersonName;
+
 /**
  * Resolve o snapshot de metadata do submission Philips a partir de fontes já congeladas.
  *
  * Este componente não consulta banco, não deriva identidade clínica e não transforma
- * released_by em task_author_id. Componentes estruturados ausentes permanecem ausentes
- * para que o gerador falhe fechado com o campo correspondente. O timestamp de liberação
- * explícito é normalizado para UTC sem criar ou substituir a data clínica.
+ * released_by em task_author_id. A autoria humana vem do ReferringPhysicianName
+ * estruturado e a data do documento vem de StudyDate/StudyTime. O PatientName plano
+ * somente chega como Family quando a versão congelada registra patient_name_fallback;
+ * a política de homologação continua controlando a emissão sem Given/Middle.
  */
 final class PhilipsSubmissionMetadataResolver
 {
-    /** @param array<string,mixed> $payload @return array<string,mixed> */
-    public function resolve(array $payload): array
+    /** @param array<string,mixed> $payload @param array<string,mixed> $deliveryContext @return array<string,mixed> */
+    public function resolve(array $payload, array $deliveryContext = []): array
     {
         $source = $payload['philips_submission'] ?? [];
         $source = is_array($source) ? $source : [];
@@ -26,7 +29,7 @@ final class PhilipsSubmissionMetadataResolver
             'task_patient_humanname_given' => null,
             'task_patient_humanname_middle' => null,
             'task_document_name' => null,
-            'task_document_date' => $this->documentDate($payload['released_at'] ?? null),
+            'task_document_date' => $this->studyDocumentDate($payload['study_date'] ?? null, $payload['study_time'] ?? null),
             'task_image_date' => $this->dateTime($payload['study_date'] ?? null, $payload['study_time'] ?? null),
             'task_accession_number' => $this->stringOrNull($payload['accession_number'] ?? null),
             'task_document_mimetype' => 'application/pdf',
@@ -34,9 +37,50 @@ final class PhilipsSubmissionMetadataResolver
             'task_patient_gender' => $this->stringOrNull($payload['patient_sex'] ?? null),
             'task_patient_issuer' => $this->stringOrNull($payload['issuer_of_patient_id'] ?? null),
             'task_modalities' => $this->stringOrNull($payload['modality'] ?? null),
+            'task_author_humanname_family' => null,
+            'task_author_humanname_given' => null,
+            'task_author_humanname_middle' => null,
         ];
 
-        if (array_key_exists('patient_name_override', $payload)) {
+        $referringPhysician = $this->dicomPersonName(
+            $this->stringOrNull($payload['referring_physician_name'] ?? null)
+        );
+        if ($referringPhysician !== null) {
+            $resolved['task_author_humanname_family'] = $referringPhysician['family'];
+            $resolved['task_author_humanname_given'] = $referringPhysician['given'];
+            $resolved['task_author_humanname_middle'] = $referringPhysician['middle'];
+        }
+
+        $patientName = $this->versionPatientName($payload);
+        $patientNameAsFamily = $patientName !== null
+            && ($payload['patient_name_source'] ?? null) === 'patient_name_fallback';
+        if ($patientName === null) {
+            foreach ([
+                [self::patientNameFromTagsRaw($payload['tags_raw'] ?? null), true],
+                [$this->stringOrNull($payload['patient_name_dicom'] ?? null), true],
+                [$this->stringOrNull($payload['patient_name'] ?? null), false],
+            ] as [$patientNameRaw, $allowFlatPatientName]) {
+                $parsed = $this->dicomPersonName($patientNameRaw);
+                if ($parsed !== null) {
+                    $patientName = $parsed;
+                    break;
+                }
+                if ($allowFlatPatientName
+                    && $patientNameRaw !== null
+                    && $patientNameRaw !== ''
+                    && !str_contains($patientNameRaw, '^')
+                    && PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($deliveryContext)) {
+                    $patientName = ['family' => $patientNameRaw, 'given' => '', 'middle' => ''];
+                    $patientNameAsFamily = true;
+                    break;
+                }
+            }
+        }
+        if ($patientName !== null) {
+            $resolved['task_patient_humanname_family'] = $patientName['family'];
+            $resolved['task_patient_humanname_given'] = $patientName['given'];
+            $resolved['task_patient_humanname_middle'] = $patientName['middle'];
+        } elseif (array_key_exists('patient_name_override', $payload)) {
             $override = $payload['patient_name_override'];
             if (!is_array($override)) {
                 throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
@@ -44,28 +88,12 @@ final class PhilipsSubmissionMetadataResolver
             $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
             $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
             $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
-        } else {
-            $patientNameRaw = self::patientNameFromTagsRaw($payload['tags_raw'] ?? null)
-                ?? $this->stringOrNull($payload['patient_name_dicom'] ?? null)
-                ?? $this->stringOrNull($payload['patient_name'] ?? null);
-            $patientName = $this->dicomPersonName($patientNameRaw);
-            if ($patientName !== null) {
-                $resolved['task_patient_humanname_family'] = $patientName['family'];
-                $resolved['task_patient_humanname_given'] = $patientName['given'];
-                $resolved['task_patient_humanname_middle'] = $patientName['middle'];
-            }
         }
+        $resolved['patient_name_as_family'] = $patientNameAsFamily;
 
         foreach ([
-            'task_patient_humanname_family',
-            'task_patient_humanname_given',
-            'task_patient_humanname_middle',
             'task_document_name',
-            'task_image_date',
             'task_author_id',
-            'task_author_humanname_family',
-            'task_author_humanname_given',
-            'task_author_humanname_middle',
             'task_patient_birthday',
             'task_patient_gender',
             'task_patient_issuer',
@@ -74,16 +102,6 @@ final class PhilipsSubmissionMetadataResolver
             if (array_key_exists($field, $source)) {
                 $resolved[$field] = $source[$field];
             }
-        }
-
-        if (array_key_exists('patient_name_override', $payload)) {
-            $override = $payload['patient_name_override'];
-            if (!is_array($override)) {
-                throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
-            }
-            $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
-            $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
-            $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
         }
 
         return $resolved;
@@ -122,6 +140,34 @@ final class PhilipsSubmissionMetadataResolver
         return is_string($value) ? trim($value) : null;
     }
 
+    /** @param array<string,mixed> $payload @return array{family:string,given:string,middle:string}|null */
+    private function versionPatientName(array $payload): ?array
+    {
+        $fields = ['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'];
+        $present = false;
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $payload) && $payload[$field] !== null && $payload[$field] !== '') {
+                $present = true;
+                break;
+            }
+        }
+        if (!$present) {
+            return null;
+        }
+
+        $source = $payload['patient_name_source'] ?? null;
+        if (!is_string($source) || !in_array($source, ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'], true)) {
+            throw new PhilipsXmlFieldUnresolvedException('patient_name_source');
+        }
+        $givenRequired = $source !== 'patient_name_fallback';
+
+        return [
+            'family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_family'] ?? null, 'task_patient_humanname_family'),
+            'given' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_given'] ?? '', 'task_patient_humanname_given', $givenRequired),
+            'middle' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_middle'] ?? '', 'task_patient_humanname_middle', false),
+        ];
+    }
+
     private function dateTime(mixed $date, mixed $time): ?string
     {
         $date = $this->stringOrNull($date);
@@ -132,54 +178,28 @@ final class PhilipsSubmissionMetadataResolver
         return $date . ' ' . $time;
     }
 
-    private function documentDate(mixed $value): ?string
+    private function studyDocumentDate(mixed $date, mixed $time): ?string
     {
-        $value = $this->stringOrNull($value);
-        if ($value === null || $value === '') {
+        $date = $this->stringOrNull($date);
+        if ($date === null || $date === '') {
             return null;
         }
-        if (preg_match('/^\d{14}$/', $value) === 1) {
-            $date = \DateTimeImmutable::createFromFormat('!YmdHis', $value, new \DateTimeZone('UTC'));
-            return $date instanceof \DateTimeImmutable && $date->format('YmdHis') === $value
-                ? $date->format('Y-m-d H:i:s')
-                : null;
+        if (preg_match('/^\d{8}$/', $date) === 1) {
+            $date = substr($date, 0, 4) . '-' . substr($date, 4, 2) . '-' . substr($date, 6, 2);
         }
-        if (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.(\d+))?([+-]\d{2})(?::?(\d{2}))?$/', $value, $parts) === 1) {
-            $fraction = isset($parts[2]) && $parts[2] !== ''
-                ? '.' . str_pad(substr($parts[2], 0, 6), 6, '0')
-                : '';
-            $offset = $parts[3] . ':' . str_pad($parts[4] ?? '00', 2, '0');
-            $format = '!Y-m-d H:i:s' . ($fraction !== '' ? '.u' : '') . 'P';
-            $date = \DateTimeImmutable::createFromFormat($format, $parts[1] . $fraction . $offset);
-            $errors = \DateTimeImmutable::getLastErrors();
-            if ($date instanceof \DateTimeImmutable
-                && ($errors === false || ((int) ($errors['warning_count'] ?? 0) === 0 && (int) ($errors['error_count'] ?? 0) === 0))) {
-                return $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-            }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
             return null;
         }
-        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value) === 1) {
-            $date = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new \DateTimeZone('UTC'));
-            return $date instanceof \DateTimeImmutable && $date->format('Y-m-d H:i:s') === $value ? $value : null;
+        $time = $this->stringOrNull($time);
+        if ($time === null || $time === '') {
+            return $date . ' 00:00:00';
         }
-
-        return null;
+        return $this->dateTime($date, $time);
     }
 
     /** @return array{family:string,given:string,middle:string}|null */
     private function dicomPersonName(mixed $value): ?array
     {
-        if (!is_string($value) || strpos($value, '^') === false) {
-            return null;
-        }
-        $parts = explode('^', trim($value));
-        if (count($parts) < 2 || trim($parts[0]) === '' || trim($parts[1]) === '') {
-            return null;
-        }
-        return [
-            'family' => trim($parts[0]),
-            'given' => trim($parts[1]),
-            'middle' => trim($parts[2] ?? ''),
-        ];
+        return DicomPersonName::components(is_string($value) ? $value : null);
     }
 }

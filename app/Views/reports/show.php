@@ -21,6 +21,7 @@ $modernoLateral = ($reportLayoutCodigo ?? '') === 'moderno_lateral';
 </div>
 
 <?php include __DIR__ . '/partials/_modal_historico.php'; ?>
+<?php include __DIR__ . '/partials/_modal_liberacao.php'; ?>
 <?php if (!$readonly): ?>
     <?php include __DIR__ . '/partials/_modal_assinatura.php'; ?>
 <?php endif; ?>

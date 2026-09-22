@@ -56,6 +56,8 @@ expect_true($first->size === strlen($first->content), 'XML size must match encod
 expect_true(hash('sha256', $first->content) === $first->sha256, 'XML SHA-256 must match content');
 expect_true($first->sha256 === $second->sha256 && $first->content === $second->content, 'Generation must be deterministic');
 expect_true(str_starts_with($first->content, '<?xml version="1.0" encoding="iso-8859-1"?>'), 'XML declaration must use ISO-8859-1');
+expect_true(!str_contains($first->content, "\0"), 'Serialized XML must not contain NUL bytes');
+expect_true(str_contains($first->content, '<submission>') && str_contains($first->content, '<document>'), 'XML root structure must be present');
 expect_true(str_contains($first->content, 'Silva &amp; Costa'), 'XML ampersand must be escaped');
 expect_true(str_contains($first->content, 'Laudo &amp; teste'), 'XML document text must be escaped');
 expect_true(str_contains($first->content, '<task_patient_gender>F</task_patient_gender>'), 'Gender must be normalized');
@@ -63,6 +65,24 @@ expect_true(str_contains($first->content, '<task_document_date>20260914170001</t
 expect_true(str_contains($first->content, '<task_patient_birthday>19800102</task_patient_birthday>'), 'Birthday must be normalized');
 expect_true(str_contains($first->content, '<task_document_mimetype>application/pdf</task_document_mimetype>'), 'MIME must be PDF');
 expect_true(str_contains($first->content, '<task_document_type>11502-2</task_document_type>'), 'Document type must be serialized');
+
+$flatInput = $input;
+$flatInput['task_patient_humanname_family'] = 'Flat Patient Name';
+$flatInput['task_patient_humanname_given'] = '';
+$flatInput['task_patient_humanname_middle'] = '';
+$flatInput['patient_name_as_family'] = true;
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
+$flatDocument = $generator->generate($flatInput, [
+    'tenant_id' => 2,
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+    'transport' => 'philips_non_dicom',
+]);
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_family>Flat Patient Name</task_patient_humanname_family>'), 'Flat PatientName must be serialized entirely in family');
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_given></task_patient_humanname_given>'), 'Flat PatientName must serialize an empty given');
+expect_true(str_contains($flatDocument->content, '<task_patient_humanname_middle></task_patient_humanname_middle>'), 'Flat PatientName must serialize an empty middle');
+putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
 
 if (function_exists('simplexml_load_string')) {
     $previous = libxml_use_internal_errors(true);
@@ -89,6 +109,25 @@ try {
     expect_true(false, 'Ambiguous modality separator must fail closed');
 } catch (PhilipsXmlFieldUnresolvedException $error) {
     expect_true($error->field === 'task_modalities', 'Ambiguous modality must identify its field');
+}
+
+$multiModalities = $input;
+$multiModalities['task_modalities'] = 'ct\\mr';
+$multiDocument = $generator->generate($multiModalities);
+expect_true(
+    str_contains($multiDocument->content, '<task_modalities>CT\\MR</task_modalities>'),
+    'DICOM multi-valued modalities must preserve the backslash separator'
+);
+
+foreach (['CT;MR', 'CT|MR'] as $ambiguousSeparator) {
+    $ambiguous = $input;
+    $ambiguous['task_modalities'] = $ambiguousSeparator;
+    try {
+        $generator->generate($ambiguous);
+        expect_true(false, 'Ambiguous modality separator must fail closed');
+    } catch (PhilipsXmlFieldUnresolvedException $error) {
+        expect_true($error->field === 'task_modalities', 'Ambiguous modality must identify its field');
+    }
 }
 
 echo "PHILIPS_SUBMISSION_DOCUMENT_GENERATOR_STATIC_OK\n";

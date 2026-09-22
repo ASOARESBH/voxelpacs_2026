@@ -497,9 +497,6 @@ class ReportDeliveryController extends Controller
                 'task_site_id',
                 'task_document_name',
                 'task_author_id',
-                'task_author_humanname_family',
-                'task_author_humanname_given',
-                'task_author_humanname_middle',
                 'task_document_type_applicable',
                 'task_document_type',
                 'task_modalities',
@@ -794,19 +791,10 @@ class ReportDeliveryController extends Controller
             'task_site_id' => 'SITE_ID Philips',
             'task_document_name' => 'nome do documento Philips',
             'task_author_id' => 'identificador do autor Philips',
-            'task_author_humanname_family' => 'sobrenome do autor Philips',
-            'task_author_humanname_given' => 'nome do autor Philips',
         ] as $field => $label) {
             $value = $submission[$field] ?? null;
             if (!is_string($value) || trim($value) === '' || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
                 throw new DomainException("Informe {$label} para o perfil Philips XML.");
-            }
-        }
-
-        foreach (['task_author_humanname_middle'] as $field) {
-            $value = $submission[$field] ?? '';
-            if (!is_string($value) || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
-                throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
             }
         }
 

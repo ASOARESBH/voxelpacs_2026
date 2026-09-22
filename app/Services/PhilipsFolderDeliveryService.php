@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Logger;
+
 /**
  * Transporte PDF-only para a pasta Philips remota.
  *
@@ -130,7 +132,16 @@ final class PhilipsFolderDeliveryService
         $password = $this->smbPassword($encryptedSecret);
         try {
             $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, (int) ($job['tenant_id'] ?? 0), $destinationId);
-            $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            try {
+                $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            } catch (PhilipsXmlFieldUnresolvedException $error) {
+                Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
+                    'job_id' => $jobId,
+                    'stage' => 'xml_generation',
+                    'field' => $error->field,
+                ]);
+                throw new PhilipsFolderDeliveryException('xml_field_unresolved', 'xml_field_unresolved');
+            }
             $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
             $xmlFileName = $package->xmlDocument->filename;
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
@@ -145,10 +156,24 @@ final class PhilipsFolderDeliveryService
                 $timeout,
                 $envelope,
                 $package->xmlDocument->taskFilePath,
-                $package->xmlDocument->documentTypeApplicable
+                $package->xmlDocument->documentTypeApplicable,
+                [
+                    'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                    'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
+                    'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                    'report_id' => $reportId,
+                    'report_version' => $reportVersion,
+                    'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+                    'destination_id' => $destinationId,
+                    'ambiente' => (string) ($job['ambiente'] ?? ''),
+                    'delivery_profile' => (string) ($job['delivery_profile'] ?? $configuration['delivery_profile'] ?? ''),
+                    'transport' => (string) ($job['transport'] ?? ''),
+                ]
             );
             return $result + [
                 'xml_filename' => $xmlFileName,
+                'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
                 'pdf_artifact' => $package->pdfArtifact,
                 'xml_artifact' => [
                     'type' => 'philips_submission_xml',

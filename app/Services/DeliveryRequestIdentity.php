@@ -40,11 +40,12 @@ final class DeliveryRequestIdentity
     public static function requestKey(array $value): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 1,
+            'schema_version' => 2,
             'tenant_id' => (int) ($value['tenant_id'] ?? 0),
             'request_uuid' => self::assertUuidV4((string) ($value['request_uuid'] ?? '')),
             'report_id' => (int) ($value['report_id'] ?? 0),
             'report_version' => (int) ($value['report_version'] ?? 0),
+            'pdf_revision_id' => (int) ($value['pdf_revision_id'] ?? 0),
             'snapshot_digest' => (string) ($value['snapshot_digest'] ?? ''),
             'destination_id' => (int) ($value['destination_id'] ?? 0),
             'delivery_profile' => (string) ($value['delivery_profile'] ?? ''),
@@ -55,10 +56,11 @@ final class DeliveryRequestIdentity
     public static function activeIdentityKey(array $value): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 1,
+            'schema_version' => 2,
             'tenant_id' => (int) ($value['tenant_id'] ?? 0),
             'report_id' => (int) ($value['report_id'] ?? 0),
             'report_version' => (int) ($value['report_version'] ?? 0),
+            'pdf_revision_id' => (int) ($value['pdf_revision_id'] ?? 0),
             'snapshot_digest' => (string) ($value['snapshot_digest'] ?? ''),
             'destination_id' => (int) ($value['destination_id'] ?? 0),
             'delivery_profile' => (string) ($value['delivery_profile'] ?? ''),
@@ -70,7 +72,7 @@ final class DeliveryRequestIdentity
     public static function snapshotDigest(int $tenantId, int $reportId, int $reportVersion, array $report): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 1,
+            'schema_version' => 2,
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
             'estudo_id' => (int) ($report['estudo_id'] ?? 0),
@@ -96,6 +98,7 @@ final class DeliveryRequestIdentity
                 'patient_sex' => (string) ($report['patient_sex'] ?? ''),
                 'study_date' => (string) ($report['study_date'] ?? ''),
                 'study_time' => (string) ($report['study_time'] ?? ''),
+                'referring_physician_name' => (string) ($report['referring_physician_name'] ?? ''),
                 'institution_name' => (string) ($report['institution_name'] ?? ''),
                 'issuer_of_patient_id' => (string) ($report['issuer_of_patient_id'] ?? ''),
             ],
@@ -108,11 +111,23 @@ final class DeliveryRequestIdentity
         int $reportId,
         int $reportVersion,
         array $report,
-        string $patientNameOverrideDigest = ''
+        string $patientNameOverrideDigest = '',
+        int $pdfRevisionId = 0
     ): string {
         $snapshotDigest = self::snapshotDigest($tenantId, $reportId, $reportVersion, $report);
-        if ($patientNameOverrideDigest === '') {
+        if ($patientNameOverrideDigest === '' && $pdfRevisionId <= 0) {
             return $snapshotDigest;
+        }
+        if ($pdfRevisionId < 0) {
+            throw new DomainException('pdf_revision_id inválido.');
+        }
+        if ($pdfRevisionId > 0) {
+            return hash('sha256', self::canonicalJson([
+                'schema_version' => 3,
+                'snapshot_digest' => $snapshotDigest,
+                'patient_name_override_digest' => $patientNameOverrideDigest,
+                'pdf_revision_id' => $pdfRevisionId,
+            ]));
         }
         return hash('sha256', self::canonicalJson([
             'schema_version' => 2,

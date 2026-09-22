@@ -165,6 +165,11 @@ check_case('FAIL_CLOSED_XML_WELL_FORMED', simplexml_load_string($badXml->content
 $badXmlPath = $testDir . '/invalid.xml';
 file_put_contents($badXmlPath, $badXml->content);
 check_case('FAIL_CLOSED_PACKAGE_XML_WELL_FORMED', expect_throw(fn() => new ReportDeliveryPackage($pdfArtifact, $badXml, $badXmlPath)), $results, $failures);
+$nulXmlContent = str_replace('</submission>', "\0</submission>", $doc1->content);
+$nulXml = new PhilipsSubmissionDocument($doc1->filename, $nulXmlContent, hash('sha256', $nulXmlContent), strlen($nulXmlContent), $doc1->pdfFilename, $doc1->taskFilePath, $doc1->documentTypeApplicable, $doc1->deleteFile, $doc1->documentType);
+$nulXmlPath = $testDir . '/nul.xml';
+file_put_contents($nulXmlPath, $nulXml->content);
+check_case('FAIL_CLOSED_PACKAGE_XML_NUL', expect_throw(fn() => new ReportDeliveryPackage($pdfArtifact, $nulXml, $nulXmlPath)), $results, $failures);
 $wrongLinkDocument = new PhilipsSubmissionDocument($doc1->filename, $doc1->content, $doc1->sha256, $doc1->size, 'VOXEL_OTHER_001.pdf', $doc1->taskFilePath, $doc1->documentTypeApplicable, $doc1->deleteFile, $doc1->documentType);
 check_case('FAIL_CLOSED_PACKAGE_FILENAME_LINKAGE', expect_throw(fn() => new ReportDeliveryPackage($pdfArtifact, $wrongLinkDocument, $xmlPath)), $results, $failures);
 

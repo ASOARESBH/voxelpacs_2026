@@ -93,12 +93,15 @@ final class ReportDeliveryRequestRepository
                        e.unidade_id AS estabelecimento_id, e.study_instance_uid,
                        e.accession_number, e.modalities, e.patient_id, e.patient_name, e.tags_raw,
                        e.patient_birth_date, e.patient_sex, e.study_date, e.study_time,
+                       e.referring_physician_name,
                        e.institution_name, e.issuer_of_patient_id,
                        rv.id AS report_version_row_id, rv.versao,
                        rv.usuario_id AS report_version_user_id,
                        rv.usuario_nome AS report_version_user_name,
                        rv.acao, rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
-                       rv.secao_conclusao, rv.secao_recomendacao, rv.created_at AS version_created_at
+                       rv.secao_conclusao, rv.secao_recomendacao,
+                       rv.patient_name_family, rv.patient_name_given, rv.patient_name_middle, rv.patient_name_source,
+                       rv.created_at AS version_created_at
                   FROM reports r
                   INNER JOIN bi_pacs_estudos e
                           ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
@@ -170,7 +173,7 @@ final class ReportDeliveryRequestRepository
     public function findActiveIdentity(int $tenantId, string $activeIdentityKey): ?array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT id, request_uuid, status, report_id, report_version, destination_id, delivery_profile
+            "SELECT id, request_uuid, status, report_id, report_version, pdf_revision_id, destination_id, delivery_profile
                FROM pacs_report_delivery_requests
               WHERE tenant_id = :tenant_id
                 AND active_identity_key = :active_identity_key
@@ -188,12 +191,14 @@ final class ReportDeliveryRequestRepository
             "INSERT INTO pacs_report_delivery_requests
                 (request_uuid, request_key, active_identity_key, tenant_id, estabelecimento_id,
                  report_id, estudo_id, report_version, report_version_source_key,
+                 pdf_revision_id,
                  destination_id, transport, ambiente, delivery_profile, dispatch_mode,
                  snapshot_schema_version, authorized_snapshot_digest, destination_config_digest,
                  destination_config_observed_at, status, request_reason, requested_by)
              VALUES
                 (:request_uuid, :request_key, :active_identity_key, :tenant_id, :estabelecimento_id,
                  :report_id, :estudo_id, :report_version, :report_version_source_key,
+                 :pdf_revision_id,
                  :destination_id, :transport, :ambiente, :delivery_profile, :dispatch_mode,
                  :snapshot_schema_version, :authorized_snapshot_digest, :destination_config_digest,
                  :destination_config_observed_at, 'prepared', :request_reason, :requested_by)
@@ -209,6 +214,7 @@ final class ReportDeliveryRequestRepository
             ':estudo_id' => $request['estudo_id'],
             ':report_version' => $request['report_version'],
             ':report_version_source_key' => $request['report_version_source_key'],
+            ':pdf_revision_id' => $request['pdf_revision_id'] ?? null,
             ':destination_id' => $request['destination_id'],
             ':transport' => $request['transport'],
             ':ambiente' => $request['ambiente'],
@@ -331,12 +337,14 @@ final class ReportDeliveryRequestRepository
         if (!in_array($status, ['delivered', 'failed'], true)) {
             throw new RuntimeException('Invalid terminal Delivery Request status');
         }
-        $column = $status === 'delivered' ? 'completed_at' : 'updated_at';
+        $terminalTimestamp = $status === 'delivered'
+            ? 'completed_at = NOW(), updated_at = NOW()'
+            : 'updated_at = NOW()';
         $stmt = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_requests
                 SET status = :status, active_identity_key = NULL,
                     last_error_code = :error_code,
-                    {$column} = NOW(), updated_at = NOW()
+                    {$terminalTimestamp}
               WHERE id = :request_id AND tenant_id = :tenant_id
                 AND status IN ('processing','armed','materialized')"
         );

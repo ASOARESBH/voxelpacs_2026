@@ -14,11 +14,11 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Gera artefatos clínicos exclusivos de jobs já reservados ao worker.
+ * Materializa artefatos clínicos exclusivos de jobs já reservados ao worker.
  *
- * O PDF é renderizado a partir da versão imutável do laudo registrada na
- * outbox. O arquivo fica sob storage privado e nunca é exposto a usuários ou
- * destinos externos por URL.
+ * O PDF Non-DICOM é lido do snapshot binário canônico da versão imutável;
+ * somente o caminho DICOM legado ainda renderiza no worker. O arquivo fica
+ * sob storage privado e nunca é exposto a usuários ou destinos externos por URL.
  */
 final class ReportDeliveryArtifactService
 {
@@ -42,11 +42,29 @@ final class ReportDeliveryArtifactService
             throw new RuntimeException('Artefato PDF solicitado para um transporte incompatível.');
         }
 
-        $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
-        $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
-        $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
-
-        $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        $isNonDicomFolder = in_array(
+            (string) ($job['transport'] ?? ''),
+            [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT],
+            true
+        );
+        $studyInstanceUid = '';
+        if ($isNonDicomFolder) {
+            $pdfRevisionId = $this->pdfRevisionIdForJob($job);
+            if ($pdfRevisionId > 0) {
+                $revision = (new ReportVersionPdfRevisionService($this->pdo))->readForJob($job);
+                $binary = $revision['content'];
+            } else {
+                $snapshot = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob($job);
+                $binary = $snapshot['content'];
+            }
+            $studyInstanceUid = $this->studyInstanceUidForJob($job);
+        } else {
+            $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
+            $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
+            $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
+            $studyInstanceUid = (string) ($estudo->study_instance_uid ?? '');
+            $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        }
         if (strlen($binary) < 100 || !str_starts_with($binary, '%PDF')) {
             throw new RuntimeException('Falha ao gerar PDF válido para devolutiva DICOM.');
         }
@@ -71,8 +89,44 @@ final class ReportDeliveryArtifactService
             'filename' => $filename,
             'storage_path' => $storagePath,
             'report_id' => (int) $job['report_id'],
-            'study_instance_uid' => (string) ($estudo->study_instance_uid ?? ''),
+            'study_instance_uid' => $studyInstanceUid,
         ];
+    }
+
+    /** @param array<string,mixed> $job */
+    private function pdfRevisionIdForJob(array $job): int
+    {
+        $revisionId = (int) ($job['pdf_revision_id'] ?? 0);
+        if ($revisionId > 0) {
+            return $revisionId;
+        }
+        if (!is_string($job['payload_json'] ?? null)) {
+            return 0;
+        }
+        $payload = json_decode((string) $job['payload_json'], true);
+        return is_array($payload) ? max(0, (int) ($payload['pdf_revision_id'] ?? 0)) : 0;
+    }
+
+    /** @param array<string,mixed> $job */
+    private function studyInstanceUidForJob(array $job): string
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT e.study_instance_uid
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+              WHERE r.id = :report_id AND r.tenant_id = :tenant_id AND e.id = :study_id
+              LIMIT 1'
+        );
+        $stmt->execute([
+            ':report_id' => (int) ($job['report_id'] ?? 0),
+            ':tenant_id' => (int) ($job['tenant_id'] ?? 0),
+            ':study_id' => (int) ($job['estudo_id'] ?? 0),
+        ]);
+        $uid = $stmt->fetchColumn();
+        if (!is_string($uid) || trim($uid) === '') {
+            throw new RuntimeException('Estudo do snapshot PDF não encontrado para o job.');
+        }
+        return $uid;
     }
 
     private function loadReport(int $reportId, int $tenantId): object

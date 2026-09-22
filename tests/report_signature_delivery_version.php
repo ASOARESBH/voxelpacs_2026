@@ -30,7 +30,7 @@ assertNotText('proximaVersao($reportId) - 1', $service,
     'Nenhum fluxo de report pode reutilizar a versão anterior ou zero.');
 assertText('$versaoNumero = $this->repo->proximaVersao($reportId);', $service,
     'A assinatura deve usar o próximo número de versão persistível.');
-assertText('$this->repo->createVersion($reportId, $conteudoDecodificado, \'assinado\', $userId, $versaoNumero);', $service,
+assertText('$this->repo->createVersion($reportId, $conteudoDecodificado, \'assinado\', $userId, $versaoNumero, $patientName);', $service,
     'A versão assinada deve ser criada antes da devolutiva.');
 assertText('$versaoNumero,', $service,
     'A devolutiva deve receber a mesma versão criada na assinatura.');

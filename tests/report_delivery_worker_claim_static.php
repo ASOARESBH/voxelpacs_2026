@@ -8,6 +8,12 @@ if ($repository === false) {
     fwrite(STDERR, "Unable to read worker repository.\n");
     exit(1);
 }
+$workerPath = __DIR__ . '/../bin/report_delivery_worker.php';
+$worker = file_get_contents($workerPath);
+if ($worker === false) {
+    fwrite(STDERR, "Unable to read worker.\n");
+    exit(1);
+}
 
 function expect_claim(bool $condition, string $message): void
 {
@@ -19,12 +25,16 @@ function expect_claim(bool $condition, string $message): void
 
 $claimNextStart = strpos($repository, 'public function claimNextJob(');
 $claimByIdStart = strpos($repository, 'public function claimJobById(');
-$driftStart = strpos($repository, 'private function linkedRequestHasDrift(');
+$driftStart = strpos($repository, 'private function linkedRequestFailureCode(');
 $leasedStart = strpos($repository, 'public function findLeasedJobContext(');
+$snapshotStart = strpos($repository, 'private function findRequestSnapshot(');
+$snapshotEnd = strpos($repository, 'private function sameTimestamp(');
 expect_claim($claimNextStart !== false && $claimByIdStart !== false && $driftStart !== false && $leasedStart !== false, 'claim methods must exist');
+expect_claim($snapshotStart !== false && $snapshotEnd !== false && $snapshotStart < $snapshotEnd, 'claim snapshot projection must exist');
 
 $claimNext = substr($repository, $claimNextStart, $claimByIdStart - $claimNextStart);
 $claimById = substr($repository, $claimByIdStart, $driftStart - $claimByIdStart);
+$claimSnapshot = substr($repository, $snapshotStart, $snapshotEnd - $snapshotStart);
 
 foreach (['claimNextJob' => $claimNext, 'claimJobById' => $claimById] as $method => $sql) {
     expect_claim(str_contains($sql, 'FOR UPDATE OF j'), "{$method} must lock only the job relation");
@@ -43,15 +53,49 @@ expect_claim(str_contains($claimNext, 'LEFT JOIN pacs_report_delivery_requests d
 expect_claim(str_contains($claimById, 'LEFT JOIN pacs_report_delivery_requests dr'), 'claimJobById must continue joining linked requests');
 expect_claim(str_contains($claimNext, "dr.status = 'armed'"), 'claimNextJob must require armed linked requests');
 expect_claim(str_contains($claimById, "dr.status = 'armed'"), 'claimJobById must require armed linked requests');
-expect_claim(str_contains($repository, 'private function linkedRequestHasDrift(array $job)'), 'claim must retain server-side request drift validation');
-expect_claim(str_contains($repository, 'if ($this->linkedRequestHasDrift($job))'), 'claim must fail closed on request drift');
+expect_claim(str_contains($repository, 'private function linkedRequestFailureCode(array $job)'), 'claim must retain server-side request validation');
+expect_claim(str_contains($repository, 'if ($claimFailureCode !== null)'), 'claim must fail closed on request drift or disabled feature');
+expect_claim(str_contains($repository, "return 'feature_disabled';"), 'linked requests must fail closed when the feature is disabled');
+expect_claim(str_contains($claimSnapshot, 'e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex'), 'claim snapshot digest projection must include tags_raw');
+expect_claim(str_contains($claimSnapshot, 'e.study_time, e.referring_physician_name, e.institution_name'), 'claim snapshot digest projection must include referring physician');
+foreach ([
+    'r.id AS report_id',
+    'r.tenant_id',
+    'e.id AS estudo_id_effective',
+    'e.tenant_id AS estudo_tenant_id',
+    'e.unidade_id AS estabelecimento_id',
+    'r.liberado_por',
+    'r.assinado_por',
+    'rv.versao',
+    'rv.usuario_id AS report_version_user_id',
+    'rv.usuario_nome AS report_version_user_name',
+    'rv.acao',
+    'rv.patient_name_family',
+    'rv.patient_name_given',
+    'rv.patient_name_middle',
+    'rv.patient_name_source',
+    'rv.created_at AS version_created_at',
+] as $fieldProjection) {
+    expect_claim(str_contains($claimSnapshot, $fieldProjection), "claim snapshot projection must include {$fieldProjection}");
+}
 expect_claim(str_contains($repository, 'UPDATE pacs_report_delivery_jobs'), 'claim must retain conditional state transition');
 expect_claim(str_contains($repository, "SET status = 'processing'"), 'claim must retain processing transition');
 expect_claim(str_contains($repository, 'attempt_count = attempt_count + 1'), 'claim must retain one-at-a-time attempt accounting');
 expect_claim(str_contains($repository, 'request_override_max_attempts'), 'worker must load the request-scoped retry limit');
 expect_claim(str_contains($repository, 'pacs_report_delivery_request_patient_name_overrides pno'), 'worker must join the request-scoped override');
-expect_claim(str_contains($repository, '$overrideMaxAttempts > 0') && str_contains($repository, 'maxAttempts = $overrideMaxAttempts'), 'request-scoped override must disable retry at one attempt');
+expect_claim(str_contains($repository, '$overrideMaxAttempts > 0') && str_contains($repository, 'return $overrideMaxAttempts'), 'request-scoped override must disable retry at one attempt');
+expect_claim(str_contains($repository, 'private ?int $oneShotJobId = null'), 'one-shot state must be process-local and default-off');
+expect_claim(str_contains($repository, 'public function enableOneShotForJob(int $jobId)'), 'one-shot activation must be explicit and job-scoped');
+expect_claim(str_contains($repository, 'effectiveMaxAttempts(array $job)'), 'retry limit must use a single effective calculation');
+expect_claim(str_contains($repository, 'oneShotJobId !== null') && str_contains($repository, 'return 1;'), 'one-shot must cap only the selected job at one attempt');
+expect_claim(str_contains($repository, "metadata['one_shot'] = true") && str_contains($repository, "metadata['effective_max_attempts'] = 1"), 'one-shot audit metadata must be sanitized and technical');
+expect_claim(str_contains($worker, '$this->repository->enableOneShotForJob($jobId);'), 'runOne must activate one-shot before claim');
+expect_claim(substr_count($worker, 'enableOneShotForJob(') === 1, 'global worker must not activate one-shot implicitly');
 expect_claim(str_contains($repository, 'beginTransaction()') && str_contains($repository, 'commit()'), 'claim must retain transaction boundary');
+expect_claim(str_contains($repository, 'lastLedgerFailureStage'), 'ledger must expose only a sanitized failure stage');
+expect_claim(str_contains($worker, "'ledger_stage' => " . '$this->repository->lastLedgerFailureStage() ?? \'unknown\''), 'worker must log the sanitized ledger stage');
+expect_claim(!str_contains($worker, "'sql' =>") && !str_contains($worker, "'params' =>"), 'worker failure logging must not include SQL or parameters');
+expect_claim(str_contains($repository, "'completed_at = NOW(), updated_at = NOW()'") && str_contains($repository, "'updated_at = NOW()'"), 'request sync must avoid duplicate updated_at assignment');
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 
 fwrite(STDOUT, "REPORT_DELIVERY_WORKER_CLAIM_STATIC_OK\n");

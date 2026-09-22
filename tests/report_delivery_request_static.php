@@ -96,6 +96,8 @@ $syntheticReport = [
 $snapshotDigestA = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, $syntheticReport);
 $snapshotDigestB = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, array_replace($syntheticReport, ['secao_conclusao' => 'changed']));
 expect_request($snapshotDigestA !== $snapshotDigestB, 'Snapshot digest must change when versioned content changes');
+$snapshotDigestC = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, array_replace($syntheticReport, ['referring_physician_name' => 'Doctor^One']));
+expect_request($snapshotDigestA !== $snapshotDigestC, 'Snapshot digest must change when Referring Physician changes');
 $syntheticDestination = [
     'id' => 6,
     'tenant_id' => 2,
@@ -142,9 +144,12 @@ expect_request(str_contains($repository, "'submission_document', 'queued', :idem
 expect_request(str_contains($repository, 'pacs_report_delivery_requests'), 'Repository must use the request table');
 expect_request(str_contains($worker, "o.delivery_request_id IS NULL OR dr.status = 'armed'"), 'Worker must require armed request');
 expect_request(!str_contains($worker, 'j.' . 'delivery_request_id'), 'Worker must not assume a request column on jobs');
-expect_request(str_contains($worker, 'linkedRequestHasDrift') && str_contains($worker, 'configuration_drift'), 'Worker must fail closed on request drift');
-expect_request(str_contains($worker, 'NULL AS delivery_request_id'), 'Feature OFF must keep historical jobs independent of the request table');
+expect_request(str_contains($worker, 'linkedRequestFailureCode') && str_contains($worker, 'configuration_drift'), 'Worker must fail closed on request drift');
+expect_request(str_contains($worker, "return 'feature_disabled';"), 'Feature OFF must fail closed and synchronize linked requests');
+expect_request(str_contains($worker, 'if ($requestId <= 0)'), 'Feature OFF must keep historical jobs without a request independent');
 expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worker request join must use the outbox linkage');
+expect_request(str_contains($repository, '$terminalTimestamp = $status ==='), 'Terminal Request timestamp must be selected without duplicate assignments');
+expect_request(!str_contains($repository, '{$column} = NOW(), updated_at = NOW()'), 'Failed Request must not assign updated_at twice');
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
 expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');

@@ -94,24 +94,47 @@ window.VoxelReports.main = (function () {
         const btnComparativos = document.getElementById('btn-comparativos');
         if (btnComparativos) btnComparativos.addEventListener('click', () => alert('Comparativos entre exames — em breve.'));
         const btnLiberar = document.getElementById('btn-liberar');
+        const releaseModalEl = document.getElementById('modalLiberacao');
+        const releaseModal = releaseModalEl ? new bootstrap.Modal(releaseModalEl) : null;
+        const releaseConfirm = document.getElementById('btn-confirmar-liberacao');
+        const releaseError = document.getElementById('liberacao-erro');
         if (btnLiberar) {
             btnLiberar.addEventListener('click', () => {
                 if (window.VoxelReports.chat?.hasPending()) {
                     alert('Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.');
                     return;
                 }
-                if (!confirm('Liberar este laudo? Depois da liberação ele ficará pronto para impressão.')) return;
+                if (!releaseModal || !releaseConfirm) {
+                    alert(releaseModalEl?.dataset.releaseError || 'Não foi possível abrir a confirmação de liberação.');
+                    return;
+                }
+                if (releaseError) releaseError.style.display = 'none';
+                releaseModal.show();
+            });
+        }
+        if (releaseConfirm) {
+            releaseConfirm.addEventListener('click', () => {
+                if (!btnLiberar) return;
                 btnLiberar.disabled = true;
+                releaseConfirm.disabled = true;
+                const payload = {
+                    report_id: config.reportId,
+                    csrf: config.csrf,
+                };
                 fetch('/api/reports/liberar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf },
-                    body: JSON.stringify({ report_id: config.reportId, csrf: config.csrf }),
+                    body: JSON.stringify(payload),
                 })
                     .then((r) => r.json())
                     .then((data) => {
                         if (!data.ok) {
                             btnLiberar.disabled = false;
-                            alert(data.msg || 'Não foi possível liberar o laudo.');
+                            releaseConfirm.disabled = false;
+                            if (releaseError) {
+                                releaseError.textContent = data.msg || 'Não foi possível liberar o laudo.';
+                                releaseError.style.display = 'block';
+                            }
                             return;
                         }
                         if (typeof window.voxelRetornarWorklist === 'function') {
@@ -122,7 +145,11 @@ window.VoxelReports.main = (function () {
                     })
                     .catch(() => {
                         btnLiberar.disabled = false;
-                        alert('Falha de comunicação ao liberar o laudo.');
+                        releaseConfirm.disabled = false;
+                        if (releaseError) {
+                            releaseError.textContent = 'Falha de comunicação ao liberar o laudo.';
+                            releaseError.style.display = 'block';
+                        }
                     });
             });
         }

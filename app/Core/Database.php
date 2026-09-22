@@ -10,12 +10,12 @@ class Database {
     public static function getInstance(): PDO {
         if (self::$instance === null) {
             try {
-                $driver  = strtolower((string) ($_ENV['DB_DRIVER'] ?? 'mysql'));
-                $host    = $_ENV['DB_HOST']     ?? 'localhost';
-                $db      = $_ENV['DB_DATABASE'] ?? 'voxel_bi';
-                $user    = $_ENV['DB_USERNAME'] ?? 'root';
-                $pass    = $_ENV['DB_PASSWORD'] ?? '';
-                $port    = $_ENV['DB_PORT']     ?? ($driver === 'pgsql' ? '5432' : '3306');
+                $driver  = strtolower(self::environmentValue('DB_DRIVER', 'mysql'));
+                $host    = self::environmentValue('DB_HOST', 'localhost');
+                $db      = self::environmentValue('DB_DATABASE', 'voxel_bi');
+                $user    = self::environmentValue('DB_USERNAME', 'root');
+                $pass    = self::environmentValue('DB_PASSWORD', '');
+                $port    = self::environmentValue('DB_PORT', $driver === 'pgsql' ? '5432' : '3306');
                 $charset = 'utf8mb4';
                 $options = [
                     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -24,7 +24,7 @@ class Database {
                 ];
 
                 if ($driver === 'pgsql') {
-                    $schema = preg_replace('/[^a-zA-Z0-9_]/', '', (string) ($_ENV['DB_SCHEMA'] ?? 'public')) ?: 'public';
+                    $schema = preg_replace('/[^a-zA-Z0-9_]/', '', self::environmentValue('DB_SCHEMA', 'public')) ?: 'public';
                     $dsn = "pgsql:host={$host};port={$port};dbname={$db};options='--search_path={$schema},public'";
                     self::$instance = new PostgresPdo($dsn, $user, $pass, $options);
                 } elseif ($driver === 'mysql') {
@@ -43,6 +43,22 @@ class Database {
         }
 
         return self::$instance;
+    }
+
+    private static function environmentValue(string $key, ?string $default = null): ?string
+    {
+        $value = $_ENV[$key] ?? null;
+        if ($value !== null && $value !== '') {
+            return (string) $value;
+        }
+
+        $value = $_SERVER[$key] ?? null;
+        if ($value !== null && $value !== '') {
+            return (string) $value;
+        }
+
+        $value = getenv($key);
+        return $value === false || $value === '' ? $default : $value;
     }
 
     /**

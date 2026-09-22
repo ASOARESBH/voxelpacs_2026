@@ -35,23 +35,39 @@ final class PhilipsSubmissionPackageProducer
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $payload = $this->requestSnapshot->hydratePayload($job, $payload);
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
+        $deliveryContext = $this->deliveryContext($job, $configuration);
 
-        $input = $this->resolvedInput($payload, $configuration, $pdfFilename);
+        $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
         $input['pdf_filename'] = $pdfFilename;
-        $document = $this->generator->generate($input);
+        $document = $this->generator->generate($input, $deliveryContext);
         $xmlStoragePath = $this->artifacts->storeGeneratedArtifact(
             $job,
             $document->filename,
             $document->content
         );
 
-        return new ReportDeliveryPackage($pdf + ['filename' => $pdfFilename], $document, $xmlStoragePath);
+        return new ReportDeliveryPackage(array_replace($pdf, ['filename' => $pdfFilename]), $document, $xmlStoragePath);
     }
 
-    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @return array<string,mixed> */
-    private function resolvedInput(array $payload, array $configuration, string $pdfFilename): array
+    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array<string,mixed> */
+    private function deliveryContext(array $job, array $configuration): array
     {
-        $input = $this->metadata->resolve($payload);
+        return [
+            'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+            'report_id' => (int) ($job['report_id'] ?? 0),
+            'report_version' => (int) ($job['report_version'] ?? 0),
+            'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+            'destination_id' => (int) ($job['destination_id'] ?? 0),
+            'ambiente' => (string) ($job['ambiente'] ?? ''),
+            'delivery_profile' => (string) ($job['delivery_profile'] ?? ($configuration['delivery_profile'] ?? '')),
+            'transport' => (string) ($job['transport'] ?? ''),
+        ];
+    }
+
+    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @param array<string,mixed> $deliveryContext @return array<string,mixed> */
+    private function resolvedInput(array $payload, array $configuration, string $pdfFilename, array $deliveryContext): array
+    {
+        $input = $this->metadata->resolve($payload, $deliveryContext);
         $settings = $configuration['philips_submission'] ?? null;
         if (!is_array($settings)) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_path');
@@ -61,9 +77,6 @@ final class PhilipsSubmissionPackageProducer
             'task_site_id',
             'task_document_name',
             'task_author_id',
-            'task_author_humanname_family',
-            'task_author_humanname_given',
-            'task_author_humanname_middle',
             'task_delete_file',
             'task_document_type_applicable',
             'task_document_type',
