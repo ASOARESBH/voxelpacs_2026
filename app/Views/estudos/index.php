@@ -499,17 +499,21 @@ $periodoLabel = [
                 $slaMCls = slaClass($e['assumido_em'], $fimSla);
             }
 
-            // Permissões de ação: o laudo e o peer review são exclusivos do
-            // médico que assumiu. usuario_responsavel_id referencia bi_users.id.
+            // Laudos normais permanecem exclusivos do médico que assumiu.
+            // Um ciclo Peer Review aberto é compartilhado entre médicos
+            // autorizados da mesma unidade/tenant.
             $estudoPertenceAoMedico = (int) ($e['usuario_responsavel_id'] ?? 0) > 0
                 && (int) ($e['usuario_responsavel_id'] ?? 0) === (int) ($usuarioLogadoId ?? 0);
+            $peerReviewAberta = !empty($e['peer_review_aberta']);
             $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto'], true);
             $podeLaudar  = $isMedicoLogado
                 && $estudoPertenceAoMedico
                 && in_array($sit, ['a_laudar','em_laudo','rascunho'], true);
             $podePeerReview = $isMedicoLogado
-                && $estudoPertenceAoMedico
-                && in_array($sit, ['assinado', 'liberado'], true)
+                && (
+                    ($estudoPertenceAoMedico && in_array($sit, ['assinado', 'liberado'], true))
+                    || ($peerReviewAberta && $sit === 'peer_review')
+                )
                 && !empty($e['study_instance_uid']);
 
             // Gestão: consulta administrativa apenas para quem possui a permissão

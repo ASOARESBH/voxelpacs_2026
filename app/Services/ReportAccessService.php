@@ -8,6 +8,7 @@ use App\Core\Access\MedicoAccess;
 use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Logger;
+use App\Core\SqlHelper;
 use PDO;
 
 /**
@@ -20,10 +21,16 @@ use PDO;
 final class ReportAccessService
 {
     private PDO $pdo;
+    private bool $hasPeerReviewTable = false;
 
     public function __construct()
     {
         $this->pdo = Database::getInstance();
+        try {
+            $this->hasPeerReviewTable = SqlHelper::hasTable($this->pdo, 'pacs_report_peer_reviews');
+        } catch (\Throwable $e) {
+            $this->hasPeerReviewTable = false;
+        }
     }
 
     public function findAuthorizedReport(int $reportId, bool $requireOwnership = true): ?object
@@ -34,6 +41,7 @@ final class ReportAccessService
 
         $stmt = $this->pdo->prepare(
             "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+                    {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
@@ -62,6 +70,7 @@ final class ReportAccessService
 
         $stmt = $this->pdo->prepare(
             "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+                    {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
@@ -86,6 +95,7 @@ final class ReportAccessService
 
         $stmt = $this->pdo->prepare(
             "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+                    {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id
@@ -184,7 +194,8 @@ final class ReportAccessService
         } elseif (!MedicoAccess::isInstitutionAllowed((string) ($resource->institution_name ?? ''))) {
             $reason = 'unidade_nao_autorizada';
         } elseif ($requireOwnership && MedicoAccess::isRestricted()
-            && (int) ($resource->usuario_responsavel_id ?? 0) !== (int) Auth::userId()) {
+            && (int) ($resource->usuario_responsavel_id ?? 0) !== (int) Auth::userId()
+            && !$this->isOpenPeerReview($resource)) {
             $reason = 'estudo_assumido_por_outro';
         }
 
@@ -200,5 +211,27 @@ final class ReportAccessService
             'motivo' => $reason,
         ]);
         return false;
+    }
+
+    private function peerReviewSelectSql(): string
+    {
+        if (!$this->hasPeerReviewTable) {
+            return '0 AS peer_review_aberta,';
+        }
+
+        return "CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM pacs_report_peer_reviews pr
+                    WHERE pr.tenant_id = e.tenant_id
+                      AND pr.report_id = r.id
+                      AND pr.estudo_id = e.id
+                      AND pr.status = 'aberta'
+                ) THEN 1 ELSE 0 END AS peer_review_aberta,";
+    }
+
+    private function isOpenPeerReview(object $resource): bool
+    {
+        return strtolower(trim((string) ($resource->situacao ?? ''))) === 'peer_review'
+            && (int) ($resource->peer_review_aberta ?? 0) === 1;
     }
 }

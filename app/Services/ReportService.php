@@ -277,7 +277,19 @@ class ReportService {
         // estudo_id é o nome da FK no schema de produção.
         $estudoIdFK = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
         $estudo = $estudoIdFK ? $this->repo->findEstudoById($estudoIdFK) : null;
-        if (!$estudo || (int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+        $peerReviewAberto = null;
+        if ($reportSituacao === 'peer_review') {
+            try {
+                $peerReviewAberto = (new ReportPeerReviewService())->contexto($reportId)['aberta'] ?? null;
+            } catch (\Throwable $e) {
+                $peerReviewAberto = null;
+            }
+        }
+        $sharedPeerReview = $reportSituacao === 'peer_review' && $peerReviewAberto !== null;
+        if (!$estudo || (
+            (int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId
+            && !$sharedPeerReview
+        )) {
             Logger::warning('[ReportService::salvar] tentativa de salvar laudo sem posse', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoIdFK,
@@ -434,7 +446,8 @@ class ReportService {
         if (!$estudo) {
             return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
         }
-        if ((int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+        $sharedPeerReview = $reportSituacao === 'peer_review' && $peerReviewAberto !== null;
+        if ((int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId && !$sharedPeerReview) {
             Logger::warning('[ReportService::assinar] tentativa de assinatura sem posse', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoId,

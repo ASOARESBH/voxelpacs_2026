@@ -94,9 +94,29 @@ class EstudosController extends Controller
             $where[] = '1=0';
         }
 
-        // Posse exclusiva: médico vê a fila livre e os estudos que assumiu.
+        // Posse exclusiva para o fluxo normal; ciclos Peer Review abertos são
+        // uma fila compartilhada entre médicos autorizados da mesma unidade.
         if ($isMedicoFiltro && $usuarioLogadoId > 0) {
-            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?)";
+            $peerReviewClause = '1=0';
+            try {
+                if (SqlHelper::hasTable(Database::getInstance(), 'pacs_report_peer_reviews')) {
+                    $peerReviewClause = "(
+                        COALESCE(e.situacao, 'novo') = 'peer_review'
+                        AND EXISTS (
+                            SELECT 1
+                            FROM pacs_report_peer_reviews pr
+                            WHERE pr.tenant_id = e.tenant_id
+                              AND pr.estudo_id = e.id
+                              AND pr.status = 'aberta'
+                        )
+                    )";
+                }
+            } catch (\Throwable $ex) {
+                $peerReviewClause = '1=0';
+            }
+            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto')
+                OR e.usuario_responsavel_id = ?
+                OR {$peerReviewClause})";
             $params[] = $usuarioLogadoId;
         }
 
@@ -399,6 +419,7 @@ class EstudosController extends Controller
         $hasReportSituacao = false;
         $hasChatStatus = false;
         $hasDownloadAvailability = false;
+        $hasPeerReviews = false;
         try {
             $hasPedidos = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_pedidos');
             $hasExamesComplementares = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_exames_complementares');
@@ -408,6 +429,7 @@ class EstudosController extends Controller
             $hasReportSituacao = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'situacao');
             $hasChatStatus = $hasChats && SqlHelper::hasColumn($pdo, 'pacs_report_chats', 'status');
             $hasDownloadAvailability = SqlHelper::hasTable($pdo, 'bi_pacs_download_availability');
+            $hasPeerReviews = SqlHelper::hasTable($pdo, 'pacs_report_peer_reviews');
         } catch (\Throwable $ex) {
             Logger::warning('[EstudosController::index] joins opcionais indisponíveis', [
                 'tenant_id' => $tenantId,
@@ -438,6 +460,15 @@ class EstudosController extends Controller
         $reportSelectSql = $hasReports
             ? "r.id AS report_id, {$reportPublicTokenSql} AS report_public_token, {$reportSituacaoSql} AS report_situacao"
             : "NULL AS report_id, '' AS report_public_token, '' AS report_situacao";
+        $peerReviewSelectSql = $hasPeerReviews
+            ? "CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM pacs_report_peer_reviews pr
+                    WHERE pr.tenant_id = e.tenant_id
+                      AND pr.estudo_id = e.id
+                      AND pr.status = 'aberta'
+                ) THEN 1 ELSE 0 END"
+            : '0';
         $chatSelectSql = "{$chatStatusSql} AS chat_status";
         $downloadAvailabilitySelectSql = $hasDownloadAvailability
             ? "COALESCE((da.status <> 'unavailable'), TRUE) AS download_available"
@@ -508,6 +539,7 @@ class EstudosController extends Controller
                     {$pedidoSelectSql},
                     {$exameComplementarSelectSql},
                     {$reportSelectSql},
+                    {$peerReviewSelectSql} AS peer_review_aberta,
                     {$chatSelectSql},
                     {$downloadAvailabilitySelectSql}
                 FROM bi_pacs_estudos e
