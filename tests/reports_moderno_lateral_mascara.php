@@ -140,6 +140,8 @@ $htmlComQr = (string) ob_get_clean();
 if (class_exists('chillerlan\\QRCode\\QRCode') && class_exists('chillerlan\\QRCode\\QROptions')) {
     mascaraPdfAssert(strpos($htmlComQr, 'class="voxel-institutional-qr"') !== false, 'QR institucional ativo deve ser renderizado no cabeçalho do Moderno Lateral.');
     mascaraPdfAssert(strpos($htmlComQr, 'width: 78px; height: 78px') !== false, 'QR institucional deve ocupar dimensão fixa sem deslocar os dados clínicos.');
+    mascaraPdfAssert(strpos($htmlComQr, 'src="data:image/png;base64,') !== false, 'QR institucional do snapshot deve usar PNG Base64 local.');
+    mascaraPdfAssert(strpos($htmlComQr, 'data:image/svg+xml;base64,') === false, 'QR institucional do snapshot não deve depender de SVG Base64.');
 }
 
 $r['pdf_snapshot_logo_src'] = 'data:image/png;base64,AA==';

@@ -133,11 +133,11 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
         .pdf-patient-line strong { font-weight: 700; }
 
-        .pdf-report-content { color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
+        .pdf-report-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
         .pdf-clinical-section { margin: 0 0 21px; page-break-inside: avoid; }
         .pdf-clinical-section:last-child { margin-bottom: 0; }
         .pdf-clinical-section-title { margin: 0 0 6px; color: #111; font-size: 12px; font-weight: 700; line-height: 1.35; text-transform: uppercase; }
-        .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
+        .pdf-clinical-section-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
         .pdf-clinical-section-content p { margin: 0 0 11px; }
         .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 18px 0 6px; font: 700 12px Arial, Helvetica, sans-serif; }
         .pdf-report-content h1:first-child, .pdf-report-content h2:first-child, .pdf-report-content h3:first-child, .pdf-report-content h4:first-child, .pdf-report-content h5:first-child, .pdf-report-content h6:first-child { margin-top: 0; }
@@ -181,15 +181,16 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 
         @media print {
             @page { size: A4 portrait; margin: 0; }
-            html, body { width: 210mm; min-height: 297mm; background: #fff; }
+            html, body { width: 210mm; min-height: 0; background: #fff; }
             body { font-size: 11px; }
             .pdf-actions { display: none !important; }
-            .pdf-page { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; margin: 0; padding: 18mm 18mm 23mm; box-shadow: none; }
+            .pdf-page { display: flex; flex-direction: column; width: 210mm; min-height: 0; margin: 0; padding: 18mm 18mm 23mm; box-shadow: none; }
             .pdf-header, .pdf-patient, .pdf-signature, .pdf-footer { position: static; }
             .pdf-patient { margin-top: 11px; }
             .pdf-signature { margin-top: auto; padding-top: 50px; }
             .pdf-footer { margin-top: 12px; }
-            .pdf-report-content, .pdf-clinical-section-content { font-size: 13px; line-height: 1.62; }
+            /* Dompdf calcula a largura do flex item sem descontar o padding do A4. */
+            .pdf-report-content, .pdf-clinical-section-content { width: 174mm; max-width: 174mm; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }
     </style>
