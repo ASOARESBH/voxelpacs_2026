@@ -33,6 +33,7 @@ foreach ([
     'str_starts_with($content, \'%PDF\')',
     'writeAtomicallyIfAbsent(',
     'rename($temporaryPath, $path)',
+    "SqlHelper::isPostgres() ? ' FOR KEY SHARE' : ' FOR SHARE'",
 ] as $marker) {
     if (!str_contains($service, $marker)) {
         throw new RuntimeException('Marker ausente no serviço de revisão PDF: ' . $marker);
@@ -50,6 +51,9 @@ if (!str_contains($context, "\$report['situacao'] ?? ''")
 
 if (preg_match('/UPDATE\\s+report_versions|DELETE\\s+FROM\\s+report_versions/i', $service) === 1) {
     throw new RuntimeException('O serviço de revisão não pode alterar ou excluir report_versions.');
+}
+if (str_contains($service, "SELECT * FROM pacs_report_version_pdf_revisions WHERE tenant_id = :tenant_id AND revision_key = :revision_key LIMIT 1 FOR UPDATE")) {
+    throw new RuntimeException('A revisão imutável não deve exigir lock de UPDATE.');
 }
 
 foreach ([

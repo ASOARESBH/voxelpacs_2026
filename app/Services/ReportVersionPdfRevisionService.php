@@ -360,7 +360,7 @@ final class ReportVersionPdfRevisionService
         $pdo = $this->pdo ?? Database::getInstance();
         $sql = 'SELECT * FROM pacs_report_version_pdf_revisions WHERE tenant_id = :tenant_id AND revision_key = :revision_key LIMIT 1';
         if ($forUpdate) {
-            $sql .= ' FOR UPDATE';
+            $sql .= SqlHelper::isPostgres() ? ' FOR KEY SHARE' : ' FOR SHARE';
         }
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':tenant_id' => $tenantId, ':revision_key' => $revisionKey]);
