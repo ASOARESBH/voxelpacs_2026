@@ -42,8 +42,8 @@ class ReportDeliveryWorkerRepository
             array_map(static fn($transport): string => trim((string) $transport), $transports),
             static fn(string $transport): bool => $transport !== ''
         )));
-        $requestsEnabled = filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-        $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
+        $requestsEnabled = $this->requestsFeatureEnabled();
+        $requestSelect = 'o.delivery_request_id';
         $requestJoin = $requestsEnabled
             ? "LEFT JOIN pacs_report_delivery_requests dr
                         ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
@@ -93,8 +93,9 @@ class ReportDeliveryWorkerRepository
                 $this->pdo->commit();
                 return null;
             }
-            if ($this->linkedRequestHasDrift($job)) {
-                $this->failUnclaimedRequestJob($job);
+            $claimFailureCode = $this->linkedRequestFailureCode($job);
+            if ($claimFailureCode !== null) {
+                $this->failUnclaimedRequestJob($job, $claimFailureCode);
                 $this->pdo->commit();
                 return null;
             }
@@ -145,8 +146,8 @@ class ReportDeliveryWorkerRepository
         $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $placeholders = [];
         $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
-        $requestsEnabled = filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-        $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
+        $requestsEnabled = $this->requestsFeatureEnabled();
+        $requestSelect = 'o.delivery_request_id';
         $requestJoin = $requestsEnabled
             ? "LEFT JOIN pacs_report_delivery_requests dr
                         ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
@@ -191,8 +192,9 @@ class ReportDeliveryWorkerRepository
                 $this->pdo->commit();
                 return null;
             }
-            if ($this->linkedRequestHasDrift($job)) {
-                $this->failUnclaimedRequestJob($job);
+            $claimFailureCode = $this->linkedRequestFailureCode($job);
+            if ($claimFailureCode !== null) {
+                $this->failUnclaimedRequestJob($job, $claimFailureCode);
                 $this->pdo->commit();
                 return null;
             }
@@ -220,7 +222,21 @@ class ReportDeliveryWorkerRepository
     }
 
     /** @param array<string,mixed> $job */
-    private function linkedRequestHasDrift(array $job): bool
+    private function linkedRequestFailureCode(array $job): ?string
+    {
+        $requestId = (int) ($job['delivery_request_id'] ?? 0);
+        if ($requestId <= 0) {
+            return null;
+        }
+        if (!$this->requestsFeatureEnabled()) {
+            return 'feature_disabled';
+        }
+
+        return $this->requestHasDrift($job) ? 'configuration_drift' : null;
+    }
+
+    /** @param array<string,mixed> $job */
+    private function requestHasDrift(array $job): bool
     {
         $requestId = (int) ($job['delivery_request_id'] ?? 0);
         if ($requestId <= 0) {
@@ -316,8 +332,11 @@ class ReportDeliveryWorkerRepository
     }
 
     /** @param array<string,mixed> $job */
-    private function failUnclaimedRequestJob(array $job): void
+    private function failUnclaimedRequestJob(array $job, string $failureCode = 'configuration_drift'): void
     {
+        if (!in_array($failureCode, ['configuration_drift', 'feature_disabled'], true)) {
+            $failureCode = 'configuration_drift';
+        }
         $tenantId = (int) ($job['tenant_id'] ?? 0);
         $jobId = (int) ($job['id'] ?? 0);
         $outboxId = (int) ($job['outbox_id'] ?? 0);
@@ -325,23 +344,36 @@ class ReportDeliveryWorkerRepository
         $update = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_jobs
                 SET status = 'failed', worker_eligible_at = NULL, next_attempt_at = NULL,
-                    locked_at = NULL, locked_by = NULL, last_error = 'configuration_drift', updated_at = NOW()
+                    locked_at = NULL, locked_by = NULL, last_error = :error_code, updated_at = NOW()
               WHERE id = :job_id AND tenant_id = :tenant_id
                 AND status IN ('queued', 'retrying')"
         );
-        $update->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+        $update->execute([
+            ':error_code' => $failureCode,
+            ':job_id' => $jobId,
+            ':tenant_id' => $tenantId,
+        ]);
         if ($requestId > 0) {
             $requestUpdate = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_requests
                     SET status = 'failed', active_identity_key = NULL,
-                        last_error_code = 'configuration_drift', last_error_stage = 'claim', updated_at = NOW()
+                        last_error_code = :error_code, last_error_stage = 'claim', updated_at = NOW()
                   WHERE id = :request_id AND tenant_id = :tenant_id AND status = 'armed'"
             );
-            $requestUpdate->execute([':request_id' => $requestId, ':tenant_id' => $tenantId]);
+            $requestUpdate->execute([
+                ':error_code' => $failureCode,
+                ':request_id' => $requestId,
+                ':tenant_id' => $tenantId,
+            ]);
         }
         if ($update->rowCount() === 1 && $outboxId > 0) {
             $this->refreshOutboxStatus($outboxId, $tenantId);
         }
+    }
+
+    private function requestsFeatureEnabled(): bool
+    {
+        return filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
     }
 
     private function destinationSelectorValues(int $destinationId, int $tenantId, string $table, string $column): string
@@ -568,8 +600,7 @@ class ReportDeliveryWorkerRepository
     /** @return array<string,mixed>|null */
     public function findLeasedJobContext(int $jobId, string $workerId): ?array
     {
-        $requestsEnabled = filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-        $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
+        $requestSelect = 'o.delivery_request_id';
         $stmt = $this->pdo->prepare(
             "SELECT j.id, j.outbox_id, j.tenant_id, j.estabelecimento_id, j.transport,
                     o.report_id, o.report_version, o.estudo_id, o.payload_json, {$requestSelect}
@@ -629,8 +660,8 @@ class ReportDeliveryWorkerRepository
     /** @return array<string,mixed>|null */
     private function lockJob(int $jobId, string $workerId): ?array
     {
-        $requestsEnabled = filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
-        $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
+        $requestsEnabled = $this->requestsFeatureEnabled();
+        $requestSelect = 'o.delivery_request_id';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
         $requestJoin = $requestsEnabled
             ? "LEFT JOIN pacs_report_delivery_requests dr

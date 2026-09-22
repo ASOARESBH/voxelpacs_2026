@@ -25,7 +25,7 @@ function expect_claim(bool $condition, string $message): void
 
 $claimNextStart = strpos($repository, 'public function claimNextJob(');
 $claimByIdStart = strpos($repository, 'public function claimJobById(');
-$driftStart = strpos($repository, 'private function linkedRequestHasDrift(');
+$driftStart = strpos($repository, 'private function linkedRequestFailureCode(');
 $leasedStart = strpos($repository, 'public function findLeasedJobContext(');
 $snapshotStart = strpos($repository, 'private function findRequestSnapshot(');
 $snapshotEnd = strpos($repository, 'private function sameTimestamp(');
@@ -53,8 +53,9 @@ expect_claim(str_contains($claimNext, 'LEFT JOIN pacs_report_delivery_requests d
 expect_claim(str_contains($claimById, 'LEFT JOIN pacs_report_delivery_requests dr'), 'claimJobById must continue joining linked requests');
 expect_claim(str_contains($claimNext, "dr.status = 'armed'"), 'claimNextJob must require armed linked requests');
 expect_claim(str_contains($claimById, "dr.status = 'armed'"), 'claimJobById must require armed linked requests');
-expect_claim(str_contains($repository, 'private function linkedRequestHasDrift(array $job)'), 'claim must retain server-side request drift validation');
-expect_claim(str_contains($repository, 'if ($this->linkedRequestHasDrift($job))'), 'claim must fail closed on request drift');
+expect_claim(str_contains($repository, 'private function linkedRequestFailureCode(array $job)'), 'claim must retain server-side request validation');
+expect_claim(str_contains($repository, 'if ($claimFailureCode !== null)'), 'claim must fail closed on request drift or disabled feature');
+expect_claim(str_contains($repository, "return 'feature_disabled';"), 'linked requests must fail closed when the feature is disabled');
 expect_claim(str_contains($claimSnapshot, 'e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex'), 'claim snapshot digest projection must include tags_raw');
 expect_claim(str_contains($repository, 'UPDATE pacs_report_delivery_jobs'), 'claim must retain conditional state transition');
 expect_claim(str_contains($repository, "SET status = 'processing'"), 'claim must retain processing transition');

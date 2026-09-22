@@ -144,8 +144,9 @@ expect_request(str_contains($repository, "'submission_document', 'queued', :idem
 expect_request(str_contains($repository, 'pacs_report_delivery_requests'), 'Repository must use the request table');
 expect_request(str_contains($worker, "o.delivery_request_id IS NULL OR dr.status = 'armed'"), 'Worker must require armed request');
 expect_request(!str_contains($worker, 'j.' . 'delivery_request_id'), 'Worker must not assume a request column on jobs');
-expect_request(str_contains($worker, 'linkedRequestHasDrift') && str_contains($worker, 'configuration_drift'), 'Worker must fail closed on request drift');
-expect_request(str_contains($worker, 'NULL AS delivery_request_id'), 'Feature OFF must keep historical jobs independent of the request table');
+expect_request(str_contains($worker, 'linkedRequestFailureCode') && str_contains($worker, 'configuration_drift'), 'Worker must fail closed on request drift');
+expect_request(str_contains($worker, "return 'feature_disabled';"), 'Feature OFF must fail closed and synchronize linked requests');
+expect_request(str_contains($worker, 'if ($requestId <= 0)'), 'Feature OFF must keep historical jobs without a request independent');
 expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worker request join must use the outbox linkage');
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
 expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
