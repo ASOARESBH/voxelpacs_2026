@@ -84,7 +84,10 @@ class ReportService {
      * por token público. O Study UID nunca é recebido da URL pública.
      */
     public function carregarParaEdicaoPorReport(object $report): array {
-        return $this->carregarParaEdicao((string) ($report->study_instance_uid ?? ''));
+        return $this->carregarParaEdicao(
+            (string) ($report->study_instance_uid ?? ''),
+            $report
+        );
     }
 
     /**
@@ -92,7 +95,7 @@ class ReportService {
 
      * se abre em modo edição ou somente-leitura (lock de outro usuário).
      */
-    public function carregarParaEdicao(string $studyUid): array {
+    public function carregarParaEdicao(string $studyUid, ?object $authorizedReport = null): array {
         $estudo = $this->repo->findEstudoByStudyUid($studyUid);
         if (!$estudo) {
             return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
@@ -103,9 +106,10 @@ class ReportService {
         $lockInfo = null;
 
         // A abertura do editor é um acesso clínico sensível. A autorização
-        // central confere tenant, InstitutionName permitido e posse exclusiva
-        // para médico restrito antes de criar ou carregar qualquer report.
-        if (!(new ReportAccessService())->isStudyAllowed($estudo)) {
+        // O report autorizado pelo token é reaproveitado no segundo gate. Isso
+        // permite a exceção tenant-wide somente para Peer Review aberto, sem
+        // transformar a abertura por Study UID em um bypass de autorização.
+        if (!(new ReportAccessService())->isStudyAllowed($estudo, true, $authorizedReport)) {
             AuditLogger::log('report.acesso_negado', 'bi_pacs_estudos', (int) $estudo->id, [
                 'usuario_tentativa_id' => $userId,
                 'situacao' => $estudo->situacao ?? null,

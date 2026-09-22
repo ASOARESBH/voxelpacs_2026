@@ -71,15 +71,28 @@ $perfilLabel = [
 <?php if ($sucesso === 'usuario_criado'): ?>
 <div class="pacs-alert pacs-alert-success mb-3">
     <i class="fa fa-check-circle me-2"></i>
-    Usuário criado com sucesso! Um link para criação de senha foi enviado por e-mail.
+    <?= htmlspecialchars(t('usuarios.email.sucesso.cadastro'), ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php elseif ($sucesso === 'usuario_criado_email_falhou'): ?>
+<div class="pacs-alert pacs-alert-warning mb-3">
+    <i class="fa fa-triangle-exclamation me-2"></i>
+    <?= htmlspecialchars(t('usuarios.email.sucesso.cadastro_sem_email'), ENT_QUOTES, 'UTF-8') ?>
 </div>
 <?php elseif ($sucesso === 'usuario_atualizado'): ?>
 <div class="pacs-alert pacs-alert-success mb-3">
-    <i class="fa fa-check-circle me-2"></i> Usuário atualizado com sucesso.
+    <i class="fa fa-check-circle me-2"></i><?= htmlspecialchars(t('usuarios.email.sucesso.atualizado'), ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php elseif ($sucesso === 'email_alteracao_solicitada'): ?>
+<div class="pacs-alert pacs-alert-success mb-3">
+    <i class="fa fa-envelope me-2"></i><?= htmlspecialchars(t('usuarios.email.sucesso.troca_solicitada'), ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php elseif ($sucesso === 'email_alteracao_nao_enviada'): ?>
+<div class="pacs-alert pacs-alert-warning mb-3">
+    <i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars(t('usuarios.email.sucesso.troca_pendente_sem_envio'), ENT_QUOTES, 'UTF-8') ?>
 </div>
 <?php elseif ($sucesso === 'link_reenviado'): ?>
 <div class="pacs-alert pacs-alert-success mb-3">
-    <i class="fa fa-envelope me-2"></i> Link de acesso reenviado com sucesso.
+    <i class="fa fa-envelope me-2"></i><?= htmlspecialchars(t('usuarios.email.sucesso.reenvio'), ENT_QUOTES, 'UTF-8') ?>
 </div>
 <?php elseif ($sucesso === '2fa_habilitado' || $sucesso === '2fa_desabilitado'): ?>
 <div class="pacs-alert pacs-alert-success mb-3">
@@ -95,6 +108,10 @@ $perfilLabel = [
 <?php elseif ($error === 'acesso_negado'): ?>
 <div class="pacs-alert pacs-alert-danger mb-3">
     <i class="fa fa-shield-halved me-2"></i> Somente administradores autorizados podem gerenciar outros usuários e grupos.
+</div>
+<?php elseif ($error === 'link_nao_enviado'): ?>
+<div class="pacs-alert pacs-alert-danger mb-3">
+    <i class="fa fa-envelope-circle-exclamation me-2"></i><?= htmlspecialchars(t('usuarios.email.error.envio'), ENT_QUOTES, 'UTF-8') ?>
 </div>
 <?php elseif ($error): ?>
 <div class="pacs-alert pacs-alert-danger mb-3">
@@ -195,6 +212,7 @@ $perfilLabel = [
                         <form method="POST" action="/usuarios/<?= $u['id'] ?>/reenviar-link"
                               style="display:inline;"
                               title="Reenviar link de acesso">
+                            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['csrf_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                             <button type="submit" class="btn-pacs-outline"
                                     style="padding:.2rem .5rem;font-size:.72rem;cursor:pointer;"
                                     title="Reenviar link de criação de senha">
@@ -212,6 +230,7 @@ $perfilLabel = [
                         <form method="POST" action="/usuarios/<?= $u['id'] ?>/toggle"
                               style="display:inline;"
                               onsubmit="return confirm('Confirmar alteração de status?')">
+                            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['csrf_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                             <button type="submit"
                                     class="btn-pacs-outline"
                                     style="padding:.2rem .5rem;font-size:.72rem;cursor:pointer;<?= $ativo ? 'color:#f59e0b;' : 'color:#34d399;' ?>"

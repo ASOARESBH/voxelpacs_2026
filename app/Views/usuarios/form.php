@@ -12,6 +12,7 @@ $worklistPreference = $worklistPreference ?? ['enabled' => false, 'sort_mode' =>
 $title         = $title         ?? 'Usuário';
 $error         = $error         ?? '';
 $isEdit        = $usuario !== null;
+$emailPending  = $isEdit && !empty(is_array($usuario) ? ($usuario['email_pendente'] ?? '') : ($usuario->email_pendente ?? ''));
 
 $val = function (string $campo) use ($usuario): string {
     if (!$usuario) return '';
@@ -28,10 +29,13 @@ foreach (['pendente', 'a_laudar', 'em_laudo', 'rascunho', 'assinado', 'peer_revi
 }
 
 $errorMsgs = [
-    'campos_obrigatorios' => 'Preencha todos os campos obrigatórios.',
-    'email_invalido'      => 'O e-mail informado não é válido.',
-    'email_ja_cadastrado' => 'Este e-mail já está cadastrado neste negócio.',
-    'erro_interno'        => 'Ocorreu um erro interno. Tente novamente.',
+    'campos_obrigatorios'  => t('usuarios.email.error.campos_obrigatorios'),
+    'email_invalido'       => t('usuarios.email.error.invalido'),
+    'email_ja_cadastrado'  => t('usuarios.email.error.ja_cadastrado'),
+    'email_in_use'         => t('usuarios.email.error.ja_cadastrado'),
+    'pending_other_tenant' => t('usuarios.email.error.pendente_outro_tenant'),
+    'delivery'             => t('usuarios.email.error.envio'),
+    'erro_interno'         => t('usuarios.email.error.interno'),
 ];
 ?>
 
@@ -112,18 +116,15 @@ $errorMsgs = [
                 <label class="form-label-dark" for="userEmail">
                     E-mail <?= !$isEdit ? '<span class="text-danger">*</span>' : '' ?>
                 </label>
-                <?php if ($isEdit): ?>
-                    <input type="email" class="form-control-dark" value="<?= $val('email') ?>" disabled
-                           style="opacity:.6;cursor:not-allowed;" title="O e-mail não pode ser alterado">
-                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">
-                        <i class="fa fa-lock me-1"></i>E-mail não pode ser alterado
-                    </small>
-                <?php else: ?>
-                    <input type="email" id="userEmail" name="email" class="form-control-dark"
-                           value="<?= $val('email') ?>" placeholder="medico@clinica.com.br"
-                           required maxlength="255">
-                    <small style="color:var(--pacs-text-muted);font-size:.7rem;">
-                        <i class="fa fa-envelope me-1"></i>Um link para criar a senha será enviado para este e-mail
+                <input type="email" id="userEmail" name="email" class="form-control-dark"
+                       value="<?= $val('email') ?>" placeholder="medico@clinica.com.br"
+                       required maxlength="255">
+                <small style="color:var(--pacs-text-muted);font-size:.7rem;">
+                    <i class="fa fa-envelope me-1"></i><?= htmlspecialchars(t($isEdit ? 'usuarios.email.ajuda_edicao' : 'usuarios.email.ajuda_cadastro'), ENT_QUOTES, 'UTF-8') ?>
+                </small>
+                <?php if ($emailPending): ?>
+                    <small style="display:block;color:var(--pacs-warning,#f59e0b);font-size:.72rem;margin-top:.35rem;">
+                        <i class="fa fa-hourglass-half me-1"></i><?= htmlspecialchars(t('usuarios.email.pendente'), ENT_QUOTES, 'UTF-8') ?>
                     </small>
                 <?php endif; ?>
             </div>
@@ -345,18 +346,20 @@ $errorMsgs = [
         <?= $isEdit ? 'Salvar alterações' : 'Criar usuário e enviar link' ?>
     </button>
     <a href="/usuarios" class="btn-pacs-outline">Cancelar</a>
-    <?php if ($isEdit): ?>
-    <form method="POST" action="/usuarios/<?= $val('id') ?>/reenviar-link"
-          style="display:inline;margin-left:auto;"
-          onsubmit="return confirm('Reenviar link de acesso para este usuário?')">
-        <button type="submit" class="btn-pacs-outline" style="font-size:.8rem;">
-            <i class="fa fa-envelope me-1"></i> Reenviar link de acesso
-        </button>
-    </form>
-    <?php endif; ?>
 </div>
 
 </form>
+
+<?php if ($isEdit): ?>
+<form method="POST" action="/usuarios/<?= $val('id') ?>/reenviar-link"
+      style="display:flex;justify-content:flex-end;margin-top:.75rem;"
+      onsubmit="return confirm('<?= htmlspecialchars(t('usuarios.email.confirmar_reenvio'), ENT_QUOTES, 'UTF-8') ?>')">
+    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['csrf_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+    <button type="submit" class="btn-pacs-outline" style="font-size:.8rem;">
+        <i class="fa fa-envelope me-1"></i><?= htmlspecialchars(t('usuarios.email.reenviar'), ENT_QUOTES, 'UTF-8') ?>
+    </button>
+</form>
+<?php endif; ?>
 
 <script>
 function atualizarSubmodulosRelatorios() {
