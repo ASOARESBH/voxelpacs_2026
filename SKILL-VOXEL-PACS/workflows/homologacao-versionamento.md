@@ -20,29 +20,29 @@ O checkout produtivo em `/var/www/voxelpacs/app` está na branch `main`, mas pos
 
 Esse estado impede declarar que um novo worktree baseado apenas em `origin/main` representa o runtime atual. O processo correto é identificar os arquivos de código que constituem mudanças legítimas, registrar os que devem entrar no Git e manter dados de runtime, segredos, logs e storage fora do repositório.
 
-## Topologia planejada
+## Topologia publicada
 
 ```text
 homolog.voxelpacs.com.br
         |
         v
-Nginx server block separado
+Nginx server block separado + TLS
         |
         v
- /var/www/voxelpacs/versoes/current/public
+ /var/www/voxelpacs/releases/1.0/public
         |
         v
-worktree versao/1.0
+release da branch versao/1.0
         |
         v
-PostgreSQL compartilhado, somente com migrations aditivas e compatíveis
+PostgreSQL voxelpacs_homolog, sem delivery/Philips
 ```
 
-O diretório `versoes/` ainda não existe no servidor e não foi criado nesta fase. A criação remota exigirá uma janela operacional própria, backup validado, preflight do Nginx, certificado TLS e plano de rollback.
+O registro A, o vhost, o certificado TLS e a release foram criados em janela operacional controlada. A raiz produtiva continua em `/var/www/voxelpacs/app` e o vhost produtivo não foi alterado.
 
-## Limites desta fase
+## Limites preservados
 
-Esta fase não cria DNS, vhost, certificado, diretório remoto, symlink, `.env`, pool FPM, worker, migration, banco, job, e-mail ou alteração da raiz produtiva. Também não copia o `.env` produtivo para o worktree. Segredos e storage permanecem fora do Git.
+O `.env` da release é root-only, foi criado no servidor a partir da configuração operacional existente e aponta exclusivamente para `voxelpacs_homolog`; não foi incluído no Git nem no pacote local. O storage da release é separado e privado. Não houve migration, alteração do banco produtivo, job, worker global, envio de e-mail ou alteração da raiz produtiva.
 
 O deploy oficial atual aceita apenas commits alcançáveis por `origin/main`, publica somente os arquivos alterados no commit recebido e recarrega o PHP-FPM. Ele não executa Composer, migration, Nginx, worker ou invalidação explícita de OPcache. A homologação por versão deverá ganhar uma etapa explícita de publicação somente depois que o drift for resolvido e revisado.
 
@@ -54,7 +54,7 @@ O worker de delivery global não é iniciado por este workflow. O `tenant-agent`
 
 ## Próximos gates
 
-O próximo gate é a reconciliação do drift produtivo sem expor ou versionar dados sensíveis. Em seguida, a branch da versão deve receber o marcador, o código de exibição da versão e testes estáticos. Só depois poderão ser preparados, separadamente, um pacote de release, uma configuração Nginx de homologação e um plano de aplicação.
+O próximo gate funcional é testar autenticação e autorização na URL de homologação com contas próprias do banco `voxelpacs_homolog`, mantendo delivery, Philips e workers desligados. Qualquer teste que envie e-mail real, aplique migration ou altere integrações exige autorização operacional separada.
 
 A ativação operacional exige validação de DNS, TLS, permissões privadas do worktree, sessão isolada, smoke tests de autenticação e autorização, além da confirmação de que a raiz continua respondendo com seu código e seus assets originais. Rollback deve consistir em remover ou desativar o vhost de homologação e apontar o symlink da versão para o release anterior, sem apagar dados clínicos.
 

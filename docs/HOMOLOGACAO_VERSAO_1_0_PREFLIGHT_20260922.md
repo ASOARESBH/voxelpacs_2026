@@ -2,9 +2,9 @@
 
 ## Conclusão
 
-A Opção B foi iniciada somente no clone. O worktree `versao/1.0` foi criado a partir do commit efetivamente identificado no checkout produtivo, e não a partir de `origin/main`. Nenhuma configuração remota foi alterada.
+A Opção B foi concluída no escopo autorizado. O worktree `versao/1.0` foi criado a partir do commit efetivamente identificado no checkout produtivo, e não a partir de `origin/main`; a release foi publicada em diretório separado, com banco homologado e flags de delivery desabilitadas.
 
-O preflight encontrou drift relevante entre o checkout produtivo e seu commit Git de referência. Por isso, a versão está preparada para investigação, mas ainda não está pronta para publicação em um host de homologação.
+O preflight encontrou drift relevante entre o checkout produtivo e seu commit Git de referência. A evidência foi preservada no relatório; a homologação foi publicada somente a partir da branch `versao/1.0`, sem limpar ou substituir o checkout produtivo.
 
 ## Estado local
 
@@ -29,15 +29,32 @@ A classificação sanitizada do drift mostrou alterações rastreadas e arquivos
 
 O servidor tem aproximadamente 62 GiB livres. O checkout ativo ocupa aproximadamente 485 MiB, `shared` 76 MiB e `releases` 13 MiB. O espaço físico não é o bloqueio imediato; o bloqueio é a equivalência do código e a separação do banco/processos.
 
-## Topologia ainda não criada
+## Topologia criada e validada
 
-Não existem no servidor os diretórios `versoes/` e `versoes/current`. Também não há vhost ou DNS para `homolog.voxelpacs.com.br` ou `staging.voxelpacs.com.br`. O host `server.voxelpacs.com.br` é o endpoint resolvido do PACS atual.
+O registro A `homolog.voxelpacs.com.br → 167.233.254.41` foi criado na zona HostGator com TTL 300. O Nginx possui server block separado, a release está em `/var/www/voxelpacs/releases/1.0` e o certificado TLS foi emitido para o hostname. O endpoint produtivo `server.voxelpacs.com.br` permaneceu inalterado.
 
 A aplicação usa caminhos absolutos para assets, formulários e redirects. O bootstrap usa sessão com `cookie_path=/` e não define `cookie_samesite` no runtime atual. Essa evidência sustenta o uso de host próprio em vez de prefixo literal `/1.0`.
 
 ## Próxima ação controlada
 
-A próxima ação deve ser somente no clone: produzir o inventário de reconciliação por categoria, selecionar o conjunto mínimo de arquivos de código que representa o runtime, atualizar a documentação de release e testar o marcador de versão. Não se deve limpar o checkout remoto, executar `git add` remoto, copiar `.env`, criar DNS, editar Nginx ou iniciar qualquer serviço nesta etapa.
+## Resultado operacional
+
+| Verificação | Resultado |
+|---|---|
+| URL de homologação | `https://homolog.voxelpacs.com.br/` |
+| DNS externo | `PASS` — resolve para `167.233.254.41` |
+| HTTPS | `PASS` — certificado válido para o hostname |
+| `/health` | `200 homolog-ok` |
+| HTTP → HTTPS | `301` |
+| Aplicação | `200` no smoke test da raiz |
+| Release | `1.0`, commit `e33df76e0a95c1b20669eb18d9732fa6ec70196b` |
+| Banco | `voxelpacs_homolog`, separado do banco produtivo |
+| Delivery/Philips | Desabilitados no `.env` da homologação |
+| Worker global | Não iniciado |
+| PHP-FPM produtivo | Não recarregado; somente Nginx recebeu reload para o novo vhost |
+| Dados clínicos produtivos | Não alterados |
+
+O rollback é reversível: desabilitar o vhost `homolog-voxelpacs.conf`, remover o registro A após o TTL e retirar a release `1.0` sem tocar no checkout produtivo, no banco produtivo ou no storage clínico.
 
 ## Referências
 
