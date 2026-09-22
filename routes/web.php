@@ -16,6 +16,8 @@ Router::post('/login/idioma', 'AuthController@setLoginLocale');
 Router::get('/logout', 'AuthController@logout');
 Router::get('/selecionar-empresa',  'AuthController@selectTenant');
 Router::post('/selecionar-empresa', 'AuthController@setTenant');
+Router::get('/acesso/confirmar-email/{token}', 'Auth\\EmailChangeController@show');
+Router::post('/acesso/confirmar-email/{token}', 'Auth\\EmailChangeController@confirm');
 
 // Raiz → worklist
 Router::get('/', fn() => header('Location: /estudos'));
