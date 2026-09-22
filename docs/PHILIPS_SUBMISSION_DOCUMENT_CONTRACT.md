@@ -17,7 +17,7 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_patient_humanname_given` | Componentes congelados em `report_versions`; DICOM estruturado e confirmação manual são fontes da versão; override request-scoped aprovado somente como fallback histórico | Obrigatório, exceto na política de homologação descrita abaixo |
 | `task_patient_humanname_middle` | Terceiro componente congelado na versão; ausente vira vazio | Opcional; omitido somente pela política de homologação descrita abaixo |
 | `task_document_name` | Valor explícito configurado no destino | Obrigatório |
-| `task_document_date` | `released_at` congelado no snapshot, normalizado para UTC e serializado como `YYYYMMDDHHMMSS` | Obrigatório |
+| `task_document_date` | `study_date`/`study_time` do estudo, derivados de StudyDate/StudyTime e serializados como `YYYYMMDDHHMMSS`; sem horário, usa `00:00:00` | Obrigatório |
 | `task_image_date` | Combinação explícita de `study_date` e `study_time`; se incompleta, falha | Obrigatório |
 | `task_file_path` | Diretório lógico explícito configurado e aprovado pelo receptor; o producer anexa o `task_file_name` dinâmico ao gerar o XML | Obrigatório |
 | `task_file_name` | Nome de transporte VOXEL do PDF, validado pelo gerador | Obrigatório |
@@ -28,9 +28,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_site_id` | Valor explícito configurado no destino | Obrigatório |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
-| `task_author_humanname_family` | Valor explícito configurado | Obrigatório |
-| `task_author_humanname_given` | Valor explícito configurado | Obrigatório |
-| `task_author_humanname_middle` | Valor explícito configurado; ausente vira vazio | Opcional |
+| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName) | Obrigatório |
+| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name` | Obrigatório |
+| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; ausente vira vazio | Opcional |
 | `task_modalities` | `modalities` do estudo no snapshot, sem conversão heurística de separadores | Obrigatório |
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
@@ -39,7 +39,9 @@ O parser de nome de paciente só aceita componentes DICOM estruturados separados
 
 Depois de assinatura/liberação, os quatro campos estruturados são imutáveis. O snapshot tenant-scoped transporta somente esses componentes já congelados; a resolução do XML não relê nem altera o PatientName original. Versões antigas sem os campos permanecem compatíveis e continuam sujeitas à resolução DICOM/override histórica.
 
-`task_document_date` representa o instante de liberação congelado no snapshot (`reports.liberado_em`). Timestamps com fração e offset são convertidos para UTC e então normalizados para `YYYY-MM-DD HH:MM:SS` antes de o gerador serializá-los como `YYYYMMDDHHMMSS`. Nenhuma nova data é criada e `released_by` não participa da resolução.
+`task_document_date` representa a data/hora clínica do exame, usando `bi_pacs_estudos.study_date` e `study_time`, correspondentes a StudyDate/StudyTime. A data sem horário é completada com `00:00:00`; `reports.liberado_em` e `released_by` não participam da resolução.
+
+Os três componentes `task_author_humanname_*` são resolvidos exclusivamente do ReferringPhysicianName estruturado do estudo. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. Nome plano, componente ausente obrigatório ou fonte não estruturada falha fechado; o sistema não divide nomes por espaços.
 
 ### Override request-scoped de PatientName
 
@@ -65,7 +67,7 @@ O package marca apenas `patient_name_components_omitted=true` em metadata saniti
 
 ## Configuração administrativa
 
-A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, autoria, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
+A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, identificador técnico do autor, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. Os nomes humanos do autor não são editáveis nesse destino: vêm do ReferringPhysicianName do estudo. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
 
 O Controller valida o profile, o transporte SMB, a bridge privada, os campos obrigatórios, os booleanos, o tipo documental `11502-2` e a ausência de tipo quando ele não é aplicável. A credencial continua passando pelo fluxo existente de criptografia e preservação; nenhum segredo é incluído no XML, logs, snapshot ou documentação.
 

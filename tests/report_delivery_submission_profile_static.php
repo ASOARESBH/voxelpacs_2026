@@ -31,9 +31,6 @@ foreach ([
     'task_site_id',
     'task_document_name',
     'task_author_id',
-    'task_author_humanname_family',
-    'task_author_humanname_given',
-    'task_author_humanname_middle',
     'task_delete_file',
     'task_document_type_applicable',
     '11502-2',
@@ -49,9 +46,7 @@ foreach ([
     'data-field="task_site_id"',
     'data-field="task_document_name"',
     'data-field="task_author_id"',
-    'data-field="task_author_humanname_family"',
-    'data-field="task_author_humanname_given"',
-    'data-field="task_author_humanname_middle"',
+    'task_author_source_help',
     'data-field="task_document_type_applicable"',
     'data-field="task_document_type"',
     'data-field="task_delete_file"',
@@ -77,18 +72,23 @@ expect_profile(
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
+expect_profile(!str_contains($producer, "'task_author_humanname_family'")
+    && !str_contains($producer, "'task_author_humanname_given'")
+    && !str_contains($producer, "'task_author_humanname_middle'"), 'Package producer must not accept configured human author names');
 expect_profile(!str_contains($producer, "'task_patient_humanname_family'")
     && !str_contains($producer, "'task_patient_humanname_given'")
     && !str_contains($producer, "'task_patient_humanname_middle'"), 'Package producer must not accept administrative PatientName components');
 expect_profile(str_contains($outbox, "'patient_name_dicom'"), 'Snapshot must preserve raw DICOM PatientName separately from display text');
 expect_profile(str_contains($snapshot, 'e.tags_raw') && str_contains($snapshot, "'tags_raw'"), 'Delivery Request snapshot must preserve tags_raw for structured DICOM resolution');
+expect_profile(str_contains($snapshot, 'e.referring_physician_name') && str_contains($snapshot, "'referring_physician_name'"), 'Delivery Request snapshot must preserve Referring Physician');
 expect_profile(str_contains($snapshot, 'rv.patient_name_family') && str_contains($snapshot, "'patient_name_source'"), 'Delivery Request snapshot must preserve frozen version components');
 expect_profile(str_contains($resolver, "patient_name_dicom"), 'Resolver must consume the raw DICOM PatientName source');
 expect_profile(str_contains($resolver, 'patientNameFromTagsRaw'), 'Resolver must inspect tags_raw before normalized name fields');
 expect_profile(str_contains($resolver, 'allowsPatientNameAsFamily') && str_contains($resolver, 'deliveryContext'), 'Resolver must require the scoped homologation context for flat PatientName family mode');
 expect_profile(str_contains($resolver, 'patient_name_as_family'), 'Resolver must mark the scoped flat PatientName family mode');
 expect_profile(str_contains($resolver, 'versionPatientName'), 'Resolver must prioritize report_version components');
-expect_profile(str_contains($resolver, "setTimezone(new \\DateTimeZone('UTC'))"), 'Resolver must normalize release timestamps to UTC');
+expect_profile(str_contains($resolver, 'studyDocumentDate'), 'Resolver must derive document date from StudyDate/StudyTime');
+expect_profile(str_contains($resolver, 'referring_physician_name'), 'Resolver must derive author names from Referring Physician');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
 expect_profile(str_contains($versionName, 'DicomPersonName::components') && str_contains($versionName, 'patient_name_confirmation_required'), 'Version service must parse DICOM PN and require explicit confirmation for flat names');
 expect_profile(str_contains($versionMigration, 'patient_name_family') && str_contains($versionMigration, 'report_versions_patient_name_immutable'), 'Migration must add structured fields and immutability');
@@ -96,6 +96,7 @@ expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not spl
 expect_profile(str_contains($contract, 'pdf_only'), 'Contract must document backward compatibility');
 expect_profile(str_contains($contract, 'task_document_type'), 'Contract must document conditional document type');
 expect_profile(str_contains($contract, 'PatientName-as-family'), 'Contract must document the scoped PatientName family exception');
+expect_profile(str_contains($contract, 'ReferringPhysicianName') && str_contains($contract, 'StudyDate/StudyTime'), 'Contract must document clinical XML sources');
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = file_get_contents($root . '/lang/' . ($locale === 'pt_BR' ? 'pt_BR' : $locale) . '.php');

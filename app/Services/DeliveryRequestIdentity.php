@@ -72,7 +72,7 @@ final class DeliveryRequestIdentity
     public static function snapshotDigest(int $tenantId, int $reportId, int $reportVersion, array $report): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 1,
+            'schema_version' => 2,
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
             'estudo_id' => (int) ($report['estudo_id'] ?? 0),
@@ -98,6 +98,7 @@ final class DeliveryRequestIdentity
                 'patient_sex' => (string) ($report['patient_sex'] ?? ''),
                 'study_date' => (string) ($report['study_date'] ?? ''),
                 'study_time' => (string) ($report['study_time'] ?? ''),
+                'referring_physician_name' => (string) ($report['referring_physician_name'] ?? ''),
                 'institution_name' => (string) ($report['institution_name'] ?? ''),
                 'issuer_of_patient_id' => (string) ($report['issuer_of_patient_id'] ?? ''),
             ],

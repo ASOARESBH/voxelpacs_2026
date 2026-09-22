@@ -29,6 +29,7 @@ $assertions = [
     ['request_repository', ':pdf_revision_id'],
     ['worker_repository', 'ReportDeliveryRequestPatientNameOverrideService($this->pdo)'],
     ['worker_repository', 'ReportVersionPdfRevisionService($this->pdo))->findById('],
+    ['worker_repository', 'o.payload_json'],
     ['worker_repository', 'json_decode((string) ($job[\'payload_json\'] ?? \'\'), true)'],
     ['artifact_service', 'ReportVersionPdfRevisionService($this->pdo)'],
     ['artifact_service', 'pdfRevisionIdForJob('],

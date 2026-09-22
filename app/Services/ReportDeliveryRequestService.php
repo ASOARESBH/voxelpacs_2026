@@ -430,9 +430,7 @@ final class ReportDeliveryRequestService
             || !$this->isTrue($submission['task_document_type_applicable'] ?? false)
             || (string) ($submission['task_document_type'] ?? '') !== '11502-2'
             || $this->isTrue($submission['task_delete_file'] ?? true)
-            || (int) ($submission['task_author_id'] ?? 0) <= 0
-            || trim((string) ($submission['task_author_humanname_family'] ?? '')) === ''
-            || trim((string) ($submission['task_author_humanname_given'] ?? '')) === '') {
+            || (int) ($submission['task_author_id'] ?? 0) <= 0) {
             throw new DomainException('Destination 6 não possui metadata submission_document completa.', 422);
         }
     }

@@ -96,6 +96,8 @@ $syntheticReport = [
 $snapshotDigestA = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, $syntheticReport);
 $snapshotDigestB = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, array_replace($syntheticReport, ['secao_conclusao' => 'changed']));
 expect_request($snapshotDigestA !== $snapshotDigestB, 'Snapshot digest must change when versioned content changes');
+$snapshotDigestC = DeliveryRequestIdentity::snapshotDigest(2, 74, 11, array_replace($syntheticReport, ['referring_physician_name' => 'Doctor^One']));
+expect_request($snapshotDigestA !== $snapshotDigestC, 'Snapshot digest must change when Referring Physician changes');
 $syntheticDestination = [
     'id' => 6,
     'tenant_id' => 2,

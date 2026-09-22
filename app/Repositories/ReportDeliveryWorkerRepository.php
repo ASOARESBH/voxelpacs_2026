@@ -572,7 +572,7 @@ class ReportDeliveryWorkerRepository
         $requestSelect = $requestsEnabled ? 'o.delivery_request_id' : 'NULL AS delivery_request_id';
         $stmt = $this->pdo->prepare(
             "SELECT j.id, j.outbox_id, j.tenant_id, j.estabelecimento_id, j.transport,
-                    o.report_id, o.report_version, o.estudo_id, {$requestSelect}
+                    o.report_id, o.report_version, o.estudo_id, o.payload_json, {$requestSelect}
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
              WHERE j.id = :id

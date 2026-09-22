@@ -11,8 +11,8 @@ use App\Helpers\DicomPersonName;
  *
  * Este componente não consulta banco, não deriva identidade clínica e não transforma
  * released_by em task_author_id. Componentes estruturados ausentes permanecem ausentes
- * para que o gerador falhe fechado com o campo correspondente. O timestamp de liberação
- * explícito é normalizado para UTC sem criar ou substituir a data clínica.
+ * para que o gerador falhe fechado com o campo correspondente. A autoria humana vem
+ * do ReferringPhysicianName estruturado e a data do documento vem de StudyDate/StudyTime.
  */
 final class PhilipsSubmissionMetadataResolver
 {
@@ -28,7 +28,7 @@ final class PhilipsSubmissionMetadataResolver
             'task_patient_humanname_given' => null,
             'task_patient_humanname_middle' => null,
             'task_document_name' => null,
-            'task_document_date' => $this->documentDate($payload['released_at'] ?? null),
+            'task_document_date' => $this->studyDocumentDate($payload['study_date'] ?? null, $payload['study_time'] ?? null),
             'task_image_date' => $this->dateTime($payload['study_date'] ?? null, $payload['study_time'] ?? null),
             'task_accession_number' => $this->stringOrNull($payload['accession_number'] ?? null),
             'task_document_mimetype' => 'application/pdf',
@@ -36,7 +36,19 @@ final class PhilipsSubmissionMetadataResolver
             'task_patient_gender' => $this->stringOrNull($payload['patient_sex'] ?? null),
             'task_patient_issuer' => $this->stringOrNull($payload['issuer_of_patient_id'] ?? null),
             'task_modalities' => $this->stringOrNull($payload['modality'] ?? null),
+            'task_author_humanname_family' => null,
+            'task_author_humanname_given' => null,
+            'task_author_humanname_middle' => null,
         ];
+
+        $referringPhysician = $this->dicomPersonName(
+            $this->stringOrNull($payload['referring_physician_name'] ?? null)
+        );
+        if ($referringPhysician !== null) {
+            $resolved['task_author_humanname_family'] = $referringPhysician['family'];
+            $resolved['task_author_humanname_given'] = $referringPhysician['given'];
+            $resolved['task_author_humanname_middle'] = $referringPhysician['middle'];
+        }
 
         $patientName = $this->versionPatientName($payload);
         $patientNameAsFamily = false;
@@ -79,11 +91,7 @@ final class PhilipsSubmissionMetadataResolver
 
         foreach ([
             'task_document_name',
-            'task_image_date',
             'task_author_id',
-            'task_author_humanname_family',
-            'task_author_humanname_given',
-            'task_author_humanname_middle',
             'task_patient_birthday',
             'task_patient_gender',
             'task_patient_issuer',
@@ -167,38 +175,23 @@ final class PhilipsSubmissionMetadataResolver
         return $date . ' ' . $time;
     }
 
-    private function documentDate(mixed $value): ?string
+    private function studyDocumentDate(mixed $date, mixed $time): ?string
     {
-        $value = $this->stringOrNull($value);
-        if ($value === null || $value === '') {
+        $date = $this->stringOrNull($date);
+        if ($date === null || $date === '') {
             return null;
         }
-        if (preg_match('/^\d{14}$/', $value) === 1) {
-            $date = \DateTimeImmutable::createFromFormat('!YmdHis', $value, new \DateTimeZone('UTC'));
-            return $date instanceof \DateTimeImmutable && $date->format('YmdHis') === $value
-                ? $date->format('Y-m-d H:i:s')
-                : null;
+        if (preg_match('/^\d{8}$/', $date) === 1) {
+            $date = substr($date, 0, 4) . '-' . substr($date, 4, 2) . '-' . substr($date, 6, 2);
         }
-        if (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.(\d+))?([+-]\d{2})(?::?(\d{2}))?$/', $value, $parts) === 1) {
-            $fraction = isset($parts[2]) && $parts[2] !== ''
-                ? '.' . str_pad(substr($parts[2], 0, 6), 6, '0')
-                : '';
-            $offset = $parts[3] . ':' . str_pad($parts[4] ?? '00', 2, '0');
-            $format = '!Y-m-d H:i:s' . ($fraction !== '' ? '.u' : '') . 'P';
-            $date = \DateTimeImmutable::createFromFormat($format, $parts[1] . $fraction . $offset);
-            $errors = \DateTimeImmutable::getLastErrors();
-            if ($date instanceof \DateTimeImmutable
-                && ($errors === false || ((int) ($errors['warning_count'] ?? 0) === 0 && (int) ($errors['error_count'] ?? 0) === 0))) {
-                return $date->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-            }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
             return null;
         }
-        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value) === 1) {
-            $date = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new \DateTimeZone('UTC'));
-            return $date instanceof \DateTimeImmutable && $date->format('Y-m-d H:i:s') === $value ? $value : null;
+        $time = $this->stringOrNull($time);
+        if ($time === null || $time === '') {
+            return $date . ' 00:00:00';
         }
-
-        return null;
+        return $this->dateTime($date, $time);
     }
 
     /** @return array{family:string,given:string,middle:string}|null */

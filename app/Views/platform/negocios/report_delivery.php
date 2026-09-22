@@ -216,9 +216,7 @@ $transportLabels = [
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required></div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-family"><?= $escape(t('philips_non_dicom.task_author_family_label')) ?></label><input class="form-control" id="nondicom-task-author-family" data-submission-field data-field="task_author_humanname_family" data-required></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-given"><?= $escape(t('philips_non_dicom.task_author_given_label')) ?></label><input class="form-control" id="nondicom-task-author-given" data-submission-field data-field="task_author_humanname_given" data-required></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-middle"><?= $escape(t('philips_non_dicom.task_author_middle_label')) ?></label><input class="form-control" id="nondicom-task-author-middle" data-submission-field data-field="task_author_humanname_middle"></div>
+                                    <div class="col-12"><div class="form-text"><?= $escape(t('philips_non_dicom.task_author_source_help')) ?></div></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type"><?= $escape(t('philips_non_dicom.task_document_type_label')) ?></label><input class="form-control" id="nondicom-task-type" data-submission-field data-field="task_document_type" value="11502-2"></div>
                                     <div class="col-md-6"><label class="form-label" for="nondicom-task-delete-file"><?= $escape(t('philips_non_dicom.task_delete_file_label')) ?></label><select class="form-select" id="nondicom-task-delete-file" data-submission-field data-field="task_delete_file" data-required><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option></select><div class="form-text"><?= $escape(t('philips_non_dicom.task_delete_file_help')) ?></div></div>
@@ -658,8 +656,7 @@ $transportLabels = [
             const capturedSubmission = capturedConfiguration.philips_submission;
             const allowedSubmissionFields = [
                 'task_file_path', 'task_site_id', 'task_document_name', 'task_author_id',
-                'task_author_humanname_family', 'task_author_humanname_given',
-                'task_author_humanname_middle', 'task_document_type_applicable',
+                'task_document_type_applicable',
                 'task_document_type', 'task_modalities', 'task_document_mimetype', 'task_delete_file',
             ];
             const submissionValues = {};
