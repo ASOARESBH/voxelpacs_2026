@@ -14,8 +14,9 @@ $regras = [
         && str_contains($controller, "'nome' => \$meRow['nome']"),
     'demais perfis preservam todos os médicos do tenant' => str_contains($controller, 'Admin, superadmin, analista e viewer preservam a visão completa.')
         && str_contains($controller, 'SELECT id, nome FROM bi_medicos WHERE tenant_id = ? AND ativo = 1 ORDER BY nome'),
-    'filtro consulta o nome gravado no estudo' => str_contains($controller, "e.assumido_por LIKE ?")
-        && str_contains($controller, "\$params[] = '%' . \$filtros['medico'] . '%';"),
+    'filtro consulta o nome gravado no estudo' => str_contains($controller, "\$filtros['medico']")
+        && str_contains($controller, "['e.assumido_por']")
+        && str_contains($controller, 'aplicarBuscaNormalizada'),
     'assumir estudo grava nome do médico' => str_contains($controller, 'assumido_por (nome médico)')
         && str_contains($controller, 'assumido_por           = ?'),
     'view envia o nome selecionado' => str_contains($view, 'value="<?= htmlspecialchars($nomeMed) ?>"'),
