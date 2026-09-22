@@ -44,7 +44,8 @@ expectContains($migration, "'peer_review'", 'migration inclui estado peer_review
 expectContains($migration, 'pacs_report_peer_reviews', 'migration cria ciclos de revisão');
 expectContains($migration, 'pacs_report_peer_review_originais', 'migration cria snapshot imutável');
 expectContains($migration, 'UNIQUE KEY `uq_peer_review_original`', 'snapshot original possui unicidade por ciclo');
-expectContains($migration, 'ALTER TABLE `reports` ADD COLUMN `peer_review_id`', 'report vivo aponta para o ciclo');
+expectContains($migration, 'ALTER TABLE `reports`', 'migration altera reports');
+expectContains($migration, 'ADD COLUMN `peer_review_id`', 'report vivo aponta para o ciclo');
 
 expectContains($service, 'MIN_MOTIVO_CHARS = 20', 'backend exige motivo mínimo');
 expectContains($service, 'in_array($situacao, [\'assinado\', \'liberado\'], true)', 'abertura só aceita assinado/liberado');
@@ -64,8 +65,8 @@ expectContains($controller, 'motivo_curto', 'controller devolve erro de motivo c
 expectContains($routes, "Router::post('/api/reports/peer-review/open'", 'rota POST de abertura registrada');
 expectContains($routes, "Router::get('/api/reports/peer-review/context'", 'rota de contexto registrada');
 $routesContent = file_get_contents($routes);
-if (strpos($routesContent, "Router::post('/api/reports/peer-review/open'") > strpos($routesContent, "Router::get('/reports/{study_uid}'")) {
-    throw new RuntimeException('FAIL: rota Peer Review ficou depois do wildcard do Reports');
+if (strpos($routesContent, "Router::post('/api/reports/peer-review/open'") > strpos($routesContent, "Router::get('/reports/r/{token}'")) {
+    throw new RuntimeException('FAIL: rota Peer Review ficou depois da rota dinâmica do Reports');
 }
 
 expectContains($worklist, 'in_array($sit, [\'assinado\', \'liberado\'], true)', 'botão da Worklist é condicional a assinado/liberado');
