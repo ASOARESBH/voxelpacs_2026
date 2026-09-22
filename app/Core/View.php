@@ -67,4 +67,16 @@ class View {
         $version = defined('ASSET_VERSION') ? ASSET_VERSION : self::ASSET_VERSION;
         return '/assets/' . ltrim($path, '/') . '?v=' . $version;
     }
+
+    /** Retorna a versão do ambiente quando o marcador explícito existe e é válido. */
+    public static function version(): string {
+        $root = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__, 2);
+        $path = $root . '/VERSAO.txt';
+        if (!is_readable($path)) {
+            return '';
+        }
+
+        $version = trim((string) file_get_contents($path));
+        return preg_match('/^\d+\.\d+(?:\.\d+)?$/', $version) === 1 ? $version : '';
+    }
 }

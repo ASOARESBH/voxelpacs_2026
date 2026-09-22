@@ -949,4 +949,5 @@ return [
     'servidor_pacs.tenant_config.erro_gateway' => 'Could not consult the gateway.',
     'servidor_pacs.tenant_config.confirmar_cstore' => 'This action enables DICOM receiving. Type exactly LIBERAR C-STORE to confirm.',
     'servidor_pacs.tenant_config.erro_cstore' => 'Could not release C-STORE.',
+    'comum.versao_ambiente' => 'Environment version', 
 ];
