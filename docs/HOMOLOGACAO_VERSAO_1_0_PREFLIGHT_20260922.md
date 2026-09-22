@@ -2,9 +2,9 @@
 
 ## Conclusão
 
-A Opção B foi iniciada somente no clone. O worktree `versao/1.0` foi criado a partir do commit efetivamente identificado no checkout produtivo, e não a partir de `origin/main`. Nenhuma configuração remota foi alterada.
+A Opção B foi publicada em host próprio. O worktree `versao/1.0` foi criado a partir do commit efetivamente identificado no checkout produtivo, e não a partir de `origin/main`. A release foi publicada separadamente, com banco `voxelpacs_homolog` e integrações de delivery desabilitadas.
 
-O preflight encontrou drift relevante entre o checkout produtivo e seu commit Git de referência. Por isso, a versão está preparada para investigação, mas ainda não está pronta para publicação em um host de homologação.
+O preflight encontrou drift relevante entre o checkout produtivo e seu commit Git de referência. A homologação não substitui nem limpa o checkout produtivo; ela executa a versão rastreada em release própria e mantém o drift documentado para reconciliação futura.
 
 ## Estado local
 
@@ -29,15 +29,17 @@ A classificação sanitizada do drift mostrou alterações rastreadas e arquivos
 
 O servidor tem aproximadamente 62 GiB livres. O checkout ativo ocupa aproximadamente 485 MiB, `shared` 76 MiB e `releases` 13 MiB. O espaço físico não é o bloqueio imediato; o bloqueio é a equivalência do código e a separação do banco/processos.
 
-## Topologia ainda não criada
+## Topologia publicada
 
-Não existem no servidor os diretórios `versoes/` e `versoes/current`. Também não há vhost ou DNS para `homolog.voxelpacs.com.br` ou `staging.voxelpacs.com.br`. O host `server.voxelpacs.com.br` é o endpoint resolvido do PACS atual.
+O DNS `homolog.voxelpacs.com.br` aponta para `167.233.254.41`, com TLS válido e vhost separado. A aplicação é servida por `/var/www/voxelpacs/releases/1.0/public`; o checkout produtivo continua em `/var/www/voxelpacs/app`. A release possui `.env` fora do Git, apontando para `voxelpacs_homolog`, sem credenciais de produção e com delivery/Philips desabilitados.
 
 A aplicação usa caminhos absolutos para assets, formulários e redirects. O bootstrap usa sessão com `cookie_path=/` e não define `cookie_samesite` no runtime atual. Essa evidência sustenta o uso de host próprio em vez de prefixo literal `/1.0`.
 
-## Próxima ação controlada
+## Isolamento validado
 
-A próxima ação deve ser somente no clone: produzir o inventário de reconciliação por categoria, selecionar o conjunto mínimo de arquivos de código que representa o runtime, atualizar a documentação de release e testar o marcador de versão. Não se deve limpar o checkout remoto, executar `git add` remoto, copiar `.env`, criar DNS, editar Nginx ou iniciar qualquer serviço nesta etapa.
+A homologação é executada e testada somente no worktree `/home/ubuntu/voxelpacs_2026_versions/1.0`, branch `versao/1.0`. O wrapper `scripts/build-homolog.sh` bloqueia a compilação na raiz ou em outra branch; o teste estático `tests/homologation_isolation_static.php` confirmou que `.env`, storage runtime e dados sensíveis não estão rastreados. A compilação cria dependências ignoradas no worktree e o pacote fora da árvore, sem cópia automática ou escrita em `/home/ubuntu/voxelpacs_2026`.
+
+O runtime remoto foi validado por metadados: release `1.0` presente, raiz de homologação distinta da raiz produtiva, banco homologado selecionado e flags de delivery desligadas. Nenhum worker global, e-mail real, migration, DICOM, Orthanc ou transmissão Philips faz parte deste ciclo funcional.
 
 ## Referências
 

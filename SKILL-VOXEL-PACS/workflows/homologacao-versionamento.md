@@ -52,6 +52,14 @@ O PostgreSQL possui a base `voxelpacs_homolog` com os schemas `homologacao`, `pu
 
 O worker de delivery global não é iniciado por este workflow. O `tenant-agent` existente continua sendo um processo do host e não é duplicado para a versão. Fluxos assíncronos serão considerados dependência compartilhada até existir isolamento explícito por versão.
 
+## Isolamento de execução e compilação
+
+O checkout raiz do projeto (`/home/ubuntu/voxelpacs_2026`) não é o diretório de execução da homologação. A versão homologada deve ser executada e testada somente no worktree `/home/ubuntu/voxelpacs_2026_versions/1.0`, na branch `versao/1.0`, e é publicada no host remoto somente em `/var/www/voxelpacs/releases/1.0`.
+
+O `.env`, o storage, os logs, as sessões e o banco da homologação permanecem fora do Git e fora do checkout raiz. O wrapper `scripts/build-homolog.sh` bloqueia a compilação quando a branch não é `versao/1.0` ou quando `VERSAO.txt` não contém `1.0`. A compilação pode criar apenas dependências ignoradas no worktree da versão e o pacote de saída fora da árvore; não há cópia automática, `rsync` ou escrita no checkout raiz.
+
+Qualquer promoção para outro ambiente é uma ação explícita e separada: deve usar um pacote validado e um comando operacional autorizado. Executar testes, Composer ou a aplicação na homologação não deve alterar `/home/ubuntu/voxelpacs_2026`, o vhost produtivo, o banco produtivo, DICOM, Orthanc, delivery ou workers.
+
 ## Próximos gates
 
 O próximo gate é a reconciliação do drift produtivo sem expor ou versionar dados sensíveis. Em seguida, a branch da versão deve receber o marcador, o código de exibição da versão e testes estáticos. Só depois poderão ser preparados, separadamente, um pacote de release, uma configuração Nginx de homologação e um plano de aplicação.
