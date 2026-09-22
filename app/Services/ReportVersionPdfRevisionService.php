@@ -131,10 +131,10 @@ final class ReportVersionPdfRevisionService
             'reason_code' => $reasonCode,
         ]));
 
-        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
+        $storageBase = PdfSnapshotPathResolver::storageBasePath();
         $directory = sprintf(
-            '%s/storage/report_version_pdf_revisions/%d/%d/v%d',
-            rtrim($basePath, '/'),
+            '%s/report_version_pdf_revisions/%d/%d/v%d',
+            $storageBase,
             $tenantId,
             $reportId,
             $version
@@ -145,6 +145,10 @@ final class ReportVersionPdfRevisionService
         @chmod($directory, 0700);
         $path = $directory . '/revision-' . $pdfHash . '.pdf';
         $createdNewFile = $this->writeAtomicallyIfAbsent($path, $binary, $pdfHash);
+        $relativePath = PdfSnapshotPathResolver::relativePathFor(
+            $path,
+            sprintf('report_version_pdf_revisions/%d/%d/v%d', $tenantId, $reportId, $version)
+        );
 
         $pdo = $this->pdo ?? Database::getInstance();
         try {
@@ -196,7 +200,7 @@ final class ReportVersionPdfRevisionService
                 ':revision_key' => $revisionKey,
                 ':source_kind' => $sourceKind,
                 ':source_pdf_snapshot_sha256' => $sourceHash,
-                ':pdf_snapshot_path' => $path,
+                     ':pdf_snapshot_path' => $relativePath,
                 ':pdf_snapshot_sha256' => $pdfHash,
                 ':pdf_snapshot_size_bytes' => $pdfSize,
                 ':pdf_snapshot_renderer' => self::RENDERER,
@@ -310,18 +314,14 @@ final class ReportVersionPdfRevisionService
         }
         $expectedHash = strtolower(trim((string) ($row['pdf_snapshot_sha256'] ?? '')));
         $expectedSize = (int) ($row['pdf_snapshot_size_bytes'] ?? 0);
-        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
-        $storageRoot = realpath(sprintf(
-            '%s/storage/report_version_pdf_revisions/%d/%d/v%d',
-            rtrim($basePath, '/'), $tenantId, $reportId, $version
-        ));
         $path = (string) ($row['pdf_snapshot_path'] ?? '');
-        $pathReal = is_file($path) ? realpath($path) : false;
+        $pathReal = PdfSnapshotPathResolver::resolve(
+            $path,
+            sprintf('report_version_pdf_revisions/%d/%d/v%d', $tenantId, $reportId, $version)
+        );
         if (!preg_match('/^[0-9a-f]{64}$/', $expectedHash)
             || $expectedSize < 100
-            || $storageRoot === false
-            || $pathReal === false
-            || !str_starts_with($pathReal, $storageRoot . DIRECTORY_SEPARATOR)
+            || $pathReal === null
             || !is_readable($pathReal)
         ) {
             throw new RuntimeException('Revisão PDF inválida ou inacessível.');

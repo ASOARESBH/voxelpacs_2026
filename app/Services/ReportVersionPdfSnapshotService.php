@@ -12,8 +12,9 @@ use RuntimeException;
  * Snapshot binário canônico da versão do laudo.
  *
  * O arquivo é privado, tenant-scoped pelo caminho e referenciado na
- * report_versions. Depois de assinado/liberado, a migration impede mutação
- * dos metadados e do conteúdo clínico da versão.
+ * report_versions por um caminho relativo ao storage do ambiente. Caminhos
+ * absolutos legados são aceitos somente quando ainda estão dentro do
+ * storage atual e do diretório tenant/report esperado.
  */
 final class ReportVersionPdfSnapshotService
 {
@@ -114,8 +115,8 @@ final class ReportVersionPdfSnapshotService
 
         $hash = strtolower(hash('sha256', $binary));
         $size = strlen($binary);
-        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
-        $directory = sprintf('%s/storage/report_versions/%d/%d', rtrim($basePath, '/'), $tenantId, $reportId);
+        $storageBase = PdfSnapshotPathResolver::storageBasePath();
+        $directory = sprintf('%s/report_versions/%d/%d', $storageBase, $tenantId, $reportId);
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
             throw new RuntimeException('Não foi possível criar o storage privado do snapshot PDF.');
         }
@@ -142,6 +143,10 @@ final class ReportVersionPdfSnapshotService
             $createdNewFile = true;
         }
         @chmod($path, 0600);
+        $relativePath = PdfSnapshotPathResolver::relativePathFor(
+            $path,
+            sprintf('report_versions/%d/%d', $tenantId, $reportId)
+        );
 
         $pdo = $this->pdo ?? Database::getInstance();
         $stmt = $pdo->prepare(
@@ -157,7 +162,7 @@ final class ReportVersionPdfSnapshotService
         );
         try {
             $stmt->execute([
-                ':path' => $path,
+                ':path' => $relativePath,
                 ':sha256' => $hash,
                 ':size' => $size,
                 ':renderer' => self::RENDERER,
@@ -211,17 +216,16 @@ final class ReportVersionPdfSnapshotService
             throw new RuntimeException('Snapshot PDF canônico não encontrado para a versão do job.');
         }
 
-        $path = (string) ($row['pdf_snapshot_path'] ?? '');
+        $storedPath = (string) ($row['pdf_snapshot_path'] ?? '');
         $expectedHash = strtolower(trim((string) ($row['pdf_snapshot_sha256'] ?? '')));
         $expectedSize = (int) ($row['pdf_snapshot_size_bytes'] ?? 0);
-        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
-        $storageRoot = realpath(sprintf('%s/storage/report_versions/%d/%d', rtrim($basePath, '/'), $tenantId, $reportId));
-        $pathReal = is_file($path) ? realpath($path) : false;
+        $pathReal = PdfSnapshotPathResolver::resolve(
+            $storedPath,
+            sprintf('report_versions/%d/%d', $tenantId, $reportId)
+        );
         if (!preg_match('/^[0-9a-f]{64}$/', $expectedHash)
             || $expectedSize < 100
-            || $storageRoot === false
-            || $pathReal === false
-            || !str_starts_with($pathReal, $storageRoot . DIRECTORY_SEPARATOR)
+            || $pathReal === null
             || !is_readable($pathReal)
         ) {
             throw new RuntimeException('Snapshot PDF canônico inválido ou inacessível.');

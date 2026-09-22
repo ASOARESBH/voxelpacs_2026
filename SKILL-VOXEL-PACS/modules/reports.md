@@ -116,5 +116,7 @@ Em qualquer exceção de assinatura, `ReportService::assinar()` registra `report
 
 Para laudos históricos assinados/liberados que não têm nenhum metadado de snapshot, a visualização interativa usa fallback explícito do renderer legado, sem alterar a versão clínica. Metadado parcial, caminho ausente, hash inválido ou arquivo corrompido não recebe fallback silencioso e continua sendo erro operacional auditável. O layout `moderno_lateral` usa tabelas de geometria fixa e quebra segura de valores para que a coluna de identificação do exame permaneça dentro da largura útil A4 do dompdf.
 
+Os campos `pdf_snapshot_path` de `report_versions` e `pacs_report_version_pdf_revisions` persistem caminhos relativos ao `STORAGE_PATH`, como `report_versions/{tenant_id}/{report_id}/...`. `PdfSnapshotPathResolver` resolve o caminho no ambiente atual e exige que o arquivo permaneça dentro do prefixo tenant/report/version esperado. Caminhos absolutos legados só são aceitos quando ainda apontam para o storage atual e para o mesmo escopo; não há fallback para caminho absoluto de outra release ou de produção.
+
 ## Última análise
 2026-09-22
