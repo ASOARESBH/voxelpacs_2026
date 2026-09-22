@@ -6,6 +6,16 @@ Peer Review é um ciclo clínico auditável que permite que um laudo já **assin
 
 A regra não é uma segunda fila de posse comum. Fora de um ciclo Peer Review aberto, o laudo continua exclusivo do médico responsável; durante um ciclo aberto, a exceção compartilhada é válida somente dentro do escopo clínico autorizado.
 
+## Política-alvo solicitada — acesso tenant-wide
+
+Foi solicitada uma ampliação da exceção: enquanto o ciclo estiver `aberta`, **qualquer cadastro com perfil `medico`, vínculo médico ativo e tenant ativo igual ao do laudo** poderá localizar, abrir, editar e concluir o Peer Review, independentemente de `InstitutionName`/unidade. O tenant continua sendo uma fronteira obrigatória; outro tenant, médico sem vínculo ativo, conta inativa, ciclo fechado ou laudo fora do estado `peer_review` continuam bloqueados.
+
+A abertura inicial do ciclo permanece, por padrão, uma ação do médico responsável pelo laudo. A política-alvo trata de acessar um ciclo já aberto; permitir que qualquer médico do tenant inicie uma revisão é uma decisão diferente e não deve ser inferida. A assinatura continua exigindo a assinatura visual ativa do médico que efetivamente assina, CSRF, sessão autenticada, conteúdo válido e conclusão transacional do ciclo.
+
+O escopo de **modalidades** é uma permissão independente atualmente aplicada por `GrupoModalidadeService`. A implementação segura deve manter esse gate até decisão explícita em contrário; portanto, “tenant-wide” remove a barreira de unidade para Peer Review, mas não concede automaticamente modalidades que o grupo do médico não autoriza.
+
+Essa política-alvo ainda não está implementada. O estado efetivo descrito nas seções abaixo continua sendo o comportamento vigente até a correção e seus testes serem publicados.
+
 ## Arquivos e contratos principais
 
 | Camada | Arquivo | Responsabilidade |
