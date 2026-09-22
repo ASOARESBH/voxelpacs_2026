@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Core\SqlHelper;
+use App\Core\Logger;
 use App\Services\DeliveryRequestIdentity;
 use PDO;
 use Throwable;
@@ -341,6 +342,14 @@ class ReportDeliveryWorkerRepository
         $jobId = (int) ($job['id'] ?? 0);
         $outboxId = (int) ($job['outbox_id'] ?? 0);
         $requestId = (int) ($job['delivery_request_id'] ?? 0);
+        Logger::warning('[ReportDeliveryWorker] Claim de Request vinculada bloqueado', [
+            'tenant_id' => $tenantId,
+            'job_id' => $jobId,
+            'outbox_id' => $outboxId,
+            'delivery_request_id' => $requestId,
+            'stage' => 'claim',
+            'reason_category' => $failureCode,
+        ]);
         $update = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_jobs
                 SET status = 'failed', worker_eligible_at = NULL, next_attempt_at = NULL,

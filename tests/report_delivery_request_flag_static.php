@@ -48,5 +48,10 @@ expect_flag_contract(
     substr_count($worker, 'failUnclaimedRequestJob($job, $claimFailureCode)') === 2,
     'claim automático e one-shot devem usar a mesma sincronização fail-closed'
 );
+expect_flag_contract(
+    str_contains($worker, "Logger::warning('[ReportDeliveryWorker] Claim de Request vinculada bloqueado'")
+        && str_contains($worker, "'reason_category' => $failureCode"),
+    'bloqueio de claim deve gerar telemetria técnica sanitizada'
+);
 
 fwrite(STDOUT, "report_delivery_request_flag_static: PASS\n");
