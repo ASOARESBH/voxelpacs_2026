@@ -50,7 +50,7 @@ expect_flag_contract(
 );
 expect_flag_contract(
     str_contains($worker, "Logger::warning('[ReportDeliveryWorker] Claim de Request vinculada bloqueado'")
-        && str_contains($worker, "'reason_category' => $failureCode"),
+        && str_contains($worker, "'reason_category' => \$failureCode"),
     'bloqueio de claim deve gerar telemetria técnica sanitizada'
 );
 
