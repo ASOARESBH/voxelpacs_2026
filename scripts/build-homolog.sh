@@ -29,4 +29,4 @@ printf 'OUTPUT_SCOPE=HOME_ARCHIVE_AND_VERSION_WORKTREE_VENDOR\n'
 
 # O build oficial instala apenas dependências ignoradas pelo Git e gera o
 # pacote fora da árvore; nenhum arquivo é copiado para o checkout raiz.
-exec "$ROOT/scripts/build.sh"
+exec bash "$ROOT/scripts/build.sh"
