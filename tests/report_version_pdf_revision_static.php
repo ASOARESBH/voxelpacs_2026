@@ -8,13 +8,17 @@ $contextPath = $root . '/app/Services/ReportPdfDeliveryContextService.php';
 $postgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_postgresql.sql';
 $privilegesPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_privileges_postgresql.sql';
 $mysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_mysql.sql';
+$sourceKindPostgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revision_source_kind_postgresql.sql';
+$sourceKindMysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revision_source_kind_mysql.sql';
 $service = file_get_contents($servicePath);
 $context = file_get_contents($contextPath);
 $postgres = file_get_contents($postgresPath);
 $privileges = file_get_contents($privilegesPath);
 $mysql = file_get_contents($mysqlPath);
+$sourceKindPostgres = file_get_contents($sourceKindPostgresPath);
+$sourceKindMysql = file_get_contents($sourceKindMysqlPath);
 
-foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'privileges' => $privileges, 'mysql' => $mysql] as $name => $content) {
+foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'privileges' => $privileges, 'mysql' => $mysql, 'source_kind_postgres' => $sourceKindPostgres, 'source_kind_mysql' => $sourceKindMysql] as $name => $content) {
     if (!is_string($content) || $content === '') {
         throw new RuntimeException($name . ' da revisão PDF não foi lido.');
     }
@@ -32,6 +36,9 @@ foreach ([
     'hash_equals($expectedHash, strtolower($hash))',
     'str_starts_with($content, \'%PDF\')',
     'writeAtomicallyIfAbsent(',
+    "'current_report_body'",
+    '$sourceKind',
+    'source_kind',
     'rename($temporaryPath, $path)',
     'ON CONFLICT DO NOTHING RETURNING id',
     'ON DUPLICATE KEY UPDATE revision_key = revision_key',
@@ -73,6 +80,14 @@ foreach ([
 foreach (['postgres' => $postgres, 'mysql' => $mysql] as $name => $migration) {
     if (preg_match('/reason_code.*visual_renderer_correction.*operational_replacement/is', $migration) !== 1) {
         throw new RuntimeException('reason_code sem valores controlados na migration ' . $name . '.');
+    }
+}
+
+foreach (['postgres' => $sourceKindPostgres, 'mysql' => $sourceKindMysql] as $name => $migration) {
+    foreach (['source_kind', 'canonical_snapshot', 'current_report_body'] as $marker) {
+        if (!str_contains($migration, $marker)) {
+            throw new RuntimeException('Proveniência source_kind ausente na migration ' . $name . ': ' . $marker);
+        }
     }
 }
 
