@@ -14,7 +14,11 @@ A abertura inicial do ciclo permanece, por padrão, uma ação do médico respon
 
 O escopo de **modalidades** é uma permissão independente atualmente aplicada por `GrupoModalidadeService`. A implementação segura deve manter esse gate até decisão explícita em contrário; portanto, “tenant-wide” remove a barreira de unidade para Peer Review, mas não concede automaticamente modalidades que o grupo do médico não autoriza.
 
-Essa política-alvo ainda não está implementada. O estado efetivo descrito nas seções abaixo continua sendo o comportamento vigente até a correção e seus testes serem publicados.
+### Etapa 1 implementada no clone
+
+Nesta etapa, a exceção tenant-wide foi implementada somente no `ReportAccessService` e no segundo gate do `ReportService`, com a resolução de `MedicoAccess` limitada a vínculos `ativo = 1`. O report já autorizado pelo token é passado ao segundo gate e só libera a exceção quando estudo, tenant, situação e ciclo aberto correspondem.
+
+Ainda não fazem parte desta etapa a ampliação da Worklist, o escopo institucional do CHAT, a autorização própria de Medidas ou o fluxo de histórico/restauração. Até essas etapas serem implementadas e testadas, o sistema pode permitir a abertura direta do Laudário para outro médico do tenant, mas ainda não garante que ele encontre todos os Peer Reviews na Worklist nem que todos os cards auxiliares funcionem fora da unidade original.
 
 ## Arquivos e contratos principais
 
