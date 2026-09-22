@@ -5,12 +5,13 @@ use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Core\Logger;
-use App\Core\Mailer;
 use App\Core\SqlHelper;
 use App\Core\TenantContext;
 use App\Core\Audit\AuditLogger;
 use App\Core\Access\ViewerAccess;
 use App\Core\Access\ViewerRegistry;
+use App\Services\UserAccessMailService;
+use App\Services\UserEmailChangeService;
 use App\Services\WorklistPreferenceService;
 
 /**
@@ -58,6 +59,7 @@ class UsuariosController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function index(): void
     {
+        $this->csrfToken();
         $tenantId = TenantContext::id();
         $pdo      = Database::getInstance();
         $usuarios = [];
@@ -115,6 +117,7 @@ class UsuariosController extends Controller
     public function create(): void
     {
         if (!$this->requireUserManagement()) return;
+        $this->csrfToken();
 
         $tenantId = TenantContext::id();
         $pdo      = Database::getInstance();
@@ -189,7 +192,8 @@ class UsuariosController extends Controller
         }
 
         try {
-            $check = $pdo->prepare("SELECT id FROM bi_users WHERE email = ?");
+            $pdo->beginTransaction();
+            $check = $pdo->prepare("SELECT id FROM bi_users WHERE LOWER(email) = LOWER(?)");
             $check->execute([$email]);
             $userId = (int)$check->fetchColumn();
 
@@ -199,6 +203,7 @@ class UsuariosController extends Controller
                 );
                 $chkTenant->execute([$userId, $tenantId]);
                 if ($chkTenant->fetchColumn()) {
+                    $pdo->rollBack();
                     $this->redirect('/usuarios/create?error=email_ja_cadastrado');
                     return;
                 }
@@ -226,15 +231,23 @@ class UsuariosController extends Controller
                 $this->vincularMedico($pdo, $medicoId, $userId, $tenantId);
             }
 
-            if (!$this->enviarLinkCriarSenha($pdo, $userId, $tenantId, $email, $name)) {
-                Logger::warning("[UsuariosController::store] conta criada, mas o SMTP recusou o convite para user_id={$userId}");
-            }
+            $pdo->commit();
+
+            $mailResult = (new UserAccessMailService())->sendInvitation($pdo, $userId, $tenantId, $email, $name);
+            AuditLogger::log('usuario.criado', 'bi_users', $userId, [
+                'tenant_id' => $tenantId,
+                'perfil' => $perfil,
+                'invitation_result' => $mailResult['ok'] ? 'accepted' : 'failed',
+            ], (int) $tenantId, 'acesso');
 
             Logger::info("[UsuariosController::store] user_id={$userId} tenant_id={$tenantId} perfil={$perfil}");
-            $this->redirect('/usuarios?sucesso=usuario_criado');
+            $this->redirect('/usuarios?sucesso=' . ($mailResult['ok'] ? 'usuario_criado' : 'usuario_criado_email_falhou'));
 
         } catch (\Throwable $e) {
-            Logger::error('[UsuariosController::store] ' . $e->getMessage());
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Logger::error('[UsuariosController::store] falha controlada', ['error_class' => get_class($e)]);
             $this->redirect('/usuarios/create?error=erro_interno');
         }
     }
@@ -245,13 +258,15 @@ class UsuariosController extends Controller
     public function edit(int $id): void
     {
         if (!$this->requireUserManagement()) return;
+        $this->csrfToken();
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
 
         try {
             $stmt = $pdo->prepare("
-                SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.ultimo_login,
+                SELECT u.id, u.name, u.email, u.email_pendente, u.email_pendente_solicitada_em,
+                       u.role, u.status, u.created_at, u.ultimo_login,
                        ut.perfil, ut.ativo AS tenant_ativo,
                        m.id   AS medico_id,
                        m.nome AS medico_nome,
@@ -342,6 +357,7 @@ class UsuariosController extends Controller
         }
 
         $name     = trim($_POST['name']       ?? '');
+        $email    = strtolower(trim($_POST['email'] ?? ''));
         $perfil   = $_POST['perfil']          ?? 'viewer';
         $medicoId = (int)($_POST['medico_id'] ?? 0);
         $modulos  = $_POST['modulos']         ?? [];
@@ -353,11 +369,17 @@ class UsuariosController extends Controller
         if (!in_array($perfil, ['admin','medico','secretaria','analista','viewer'])) {
             $perfil = 'viewer';
         }
+        if ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255)) {
+            $this->redirect('/usuarios/' . $id . '/edit?error=email_invalido');
+            return;
+        }
 
         try {
-            $stmtRole = $pdo->prepare('SELECT role FROM bi_users WHERE id = ? LIMIT 1');
+            $stmtRole = $pdo->prepare('SELECT role, email FROM bi_users WHERE id = ? LIMIT 1');
             $stmtRole->execute([$id]);
-            $targetRole = (string) ($stmtRole->fetchColumn() ?: '');
+            $target = $stmtRole->fetch(\PDO::FETCH_ASSOC) ?: [];
+            $targetRole = (string) ($target['role'] ?? '');
+            $currentEmail = strtolower(trim((string) ($target['email'] ?? '')));
             $visualizadoresAntes = ViewerAccess::disabledKeysForUser($id, (int) $tenantId);
             if ($name) {
                 $pdo->prepare("UPDATE bi_users SET name = ? WHERE id = ?")->execute([$name, $id]);
@@ -407,11 +429,29 @@ class UsuariosController extends Controller
                 $this->vincularMedico($pdo, $medicoId, $id, $tenantId);
             }
 
+            $emailResult = null;
+            if ($email !== '' && $email !== $currentEmail) {
+                $emailResult = (new UserEmailChangeService())->request(
+                    $id,
+                    (int) $tenantId,
+                    $email,
+                    Auth::isPlatformAdmin()
+                );
+                if (!$emailResult['ok'] && empty($emailResult['pending'])) {
+                    $this->redirect('/usuarios/' . $id . '/edit?error=' . urlencode((string) ($emailResult['error'] ?? 'erro_interno')));
+                    return;
+                }
+            }
+
             Logger::info("[UsuariosController::update] user_id={$id} tenant_id={$tenantId} perfil={$perfil}");
-            $this->redirect('/usuarios?sucesso=usuario_atualizado');
+            if ($emailResult !== null && !$emailResult['ok'] && !empty($emailResult['pending'])) {
+                $this->redirect('/usuarios?sucesso=email_alteracao_nao_enviada');
+                return;
+            }
+            $this->redirect('/usuarios?sucesso=' . ($emailResult !== null && $emailResult['ok'] ? 'email_alteracao_solicitada' : 'usuario_atualizado'));
 
         } catch (\Throwable $e) {
-            Logger::error('[UsuariosController::update] ' . $e->getMessage());
+            Logger::error('[UsuariosController::update] falha controlada', ['error_class' => get_class($e)]);
             $this->redirect('/usuarios/' . $id . '/edit?error=erro_interno');
         }
     }
@@ -422,6 +462,10 @@ class UsuariosController extends Controller
     public function toggleStatus(int $id): void
     {
         if (!$this->requireUserManagement()) return;
+        if (!$this->validCsrfPost()) {
+            $this->redirect('/usuarios?error=erro_interno');
+            return;
+        }
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
@@ -432,12 +476,23 @@ class UsuariosController extends Controller
         }
 
         try {
+            $current = $pdo->prepare('SELECT ativo FROM bi_user_tenants WHERE user_id = ? AND tenant_id = ? LIMIT 1');
+            $current->execute([$id, $tenantId]);
+            $next = !(bool) $current->fetchColumn();
             $pdo->prepare(
-                "UPDATE bi_user_tenants SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END
+                "UPDATE bi_user_tenants SET ativo = ?
                  WHERE user_id = ? AND tenant_id = ?"
-            )->execute([$id, $tenantId]);
+            )->execute([$next ? 1 : 0, $id, $tenantId]);
+            AuditLogger::log(
+                $next ? 'usuario.ativado' : 'usuario.desativado',
+                'bi_user_tenants',
+                $id,
+                ['tenant_id' => $tenantId, 'ativo' => $next],
+                (int) $tenantId,
+                'acesso'
+            );
         } catch (\Throwable $e) {
-            Logger::error('[UsuariosController::toggleStatus] ' . $e->getMessage());
+            Logger::error('[UsuariosController::toggleStatus] falha controlada', ['error_class' => get_class($e)]);
         }
 
         $this->redirect('/usuarios');
@@ -484,6 +539,10 @@ class UsuariosController extends Controller
     public function reenviarLink(int $id): void
     {
         if (!$this->requireUserManagement()) return;
+        if (!$this->validCsrfPost()) {
+            $this->redirect('/usuarios?error=erro_interno');
+            return;
+        }
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
@@ -497,16 +556,22 @@ class UsuariosController extends Controller
             );
             $stmt->execute([$tenantId, $id]);
             $user = $stmt->fetch(\PDO::FETCH_ASSOC);
-            if ($user) {
-                if (!$this->enviarLinkCriarSenha($pdo, $id, $tenantId, $user['email'], $user['name'])) {
-                    Logger::warning("[UsuariosController::reenviarLink] SMTP recusou o convite para user_id={$id}");
-                }
+            if (!$user) {
+                $this->redirect('/usuarios?error=nao_encontrado');
+                return;
             }
+            $result = (new UserAccessMailService())->sendInvitation($pdo, $id, (int) $tenantId, (string) $user['email'], (string) $user['name']);
+            AuditLogger::log('usuario.link_reenviado', 'bi_users', $id, [
+                'tenant_id' => $tenantId,
+                'result' => $result['ok'] ? 'accepted' : 'failed',
+            ], (int) $tenantId, 'acesso');
+            $this->redirect('/usuarios?' . ($result['ok'] ? 'sucesso=link_reenviado' : 'error=link_nao_enviado'));
+            return;
         } catch (\Throwable $e) {
-            Logger::error('[UsuariosController::reenviarLink] ' . $e->getMessage());
+            Logger::error('[UsuariosController::reenviarLink] falha controlada', ['error_class' => get_class($e)]);
+            $this->redirect('/usuarios?error=link_nao_enviado');
+            return;
         }
-
-        $this->redirect('/usuarios?sucesso=link_reenviado');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -644,52 +709,4 @@ class UsuariosController extends Controller
         )->execute([$userId, $medicoId, $tenantId]);
     }
 
-    private function enviarLinkCriarSenha(\PDO $pdo, int $userId, int $tenantId, string $email, string $name): bool
-    {
-        try {
-            $pdo->prepare(
-                "UPDATE bi_tenant_access_tokens SET usado = 1
-                 WHERE user_id = ? AND tenant_id = ? AND usado = 0 AND tipo = 'criar_senha'"
-            )->execute([$userId, $tenantId]);
-
-            $token = bin2hex(random_bytes(32));
-            $pdo->prepare(
-                "INSERT INTO bi_tenant_access_tokens
-                    (user_id, tenant_id, token, tipo, usado, expires_at)
-                 VALUES (?,?,?,'criar_senha',0,?)"
-            )->execute([
-                $userId,
-                $tenantId,
-                $token,
-                date('Y-m-d H:i:s', strtotime('+48 hours')),
-            ]);
-
-            $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $baseUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'server.voxelpacs.com.br');
-            $link    = $baseUrl . '/acesso/criar-senha/' . $token;
-
-            $html = '<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">'
-                . '<h2 style="color:#0a1628;">Bem-vindo ao VOXEL PACS</h2>'
-                . '<p>Olá, <strong>' . htmlspecialchars($name) . '</strong>!</p>'
-                . '<p>Sua conta foi criada no VOXEL PACS. Clique no botão abaixo para definir sua senha:</p>'
-                . '<p style="text-align:center;margin:2rem 0;">'
-                . '<a href="' . htmlspecialchars($link) . '" '
-                . 'style="background:#4fc3f7;color:#0a1628;padding:.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:700;">'
-                . 'Criar minha senha</a></p>'
-                . '<p style="color:#64748b;font-size:.85rem;">Link válido por 48 horas. Use apenas uma vez.</p>'
-                . '</div>';
-
-            if (Mailer::send($email, 'Acesso ao VOXEL PACS — Crie sua senha', $html)) {
-                Logger::info("[UsuariosController::enviarLinkCriarSenha] SMTP aceitou o convite para user_id={$userId}");
-                return true;
-            }
-
-            Logger::warning("[UsuariosController::enviarLinkCriarSenha] SMTP recusou o convite para user_id={$userId}");
-            return false;
-
-        } catch (\Throwable $e) {
-            Logger::error('[UsuariosController::enviarLinkCriarSenha] ' . $e->getMessage());
-            return false;
-        }
-    }
 }
