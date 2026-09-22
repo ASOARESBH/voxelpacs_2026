@@ -148,6 +148,8 @@ expect_request(str_contains($worker, 'linkedRequestFailureCode') && str_contains
 expect_request(str_contains($worker, "return 'feature_disabled';"), 'Feature OFF must fail closed and synchronize linked requests');
 expect_request(str_contains($worker, 'if ($requestId <= 0)'), 'Feature OFF must keep historical jobs without a request independent');
 expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worker request join must use the outbox linkage');
+expect_request(str_contains($repository, '$terminalTimestamp = $status ==='), 'Terminal Request timestamp must be selected without duplicate assignments');
+expect_request(!str_contains($repository, '{$column} = NOW(), updated_at = NOW()'), 'Failed Request must not assign updated_at twice');
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
 expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');

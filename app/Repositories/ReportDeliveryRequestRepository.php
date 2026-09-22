@@ -337,12 +337,14 @@ final class ReportDeliveryRequestRepository
         if (!in_array($status, ['delivered', 'failed'], true)) {
             throw new RuntimeException('Invalid terminal Delivery Request status');
         }
-        $column = $status === 'delivered' ? 'completed_at' : 'updated_at';
+        $terminalTimestamp = $status === 'delivered'
+            ? 'completed_at = NOW(), updated_at = NOW()'
+            : 'updated_at = NOW()';
         $stmt = $this->pdo->prepare(
             "UPDATE pacs_report_delivery_requests
                 SET status = :status, active_identity_key = NULL,
                     last_error_code = :error_code,
-                    {$column} = NOW(), updated_at = NOW()
+                    {$terminalTimestamp}
               WHERE id = :request_id AND tenant_id = :tenant_id
                 AND status IN ('processing','armed','materialized')"
         );
