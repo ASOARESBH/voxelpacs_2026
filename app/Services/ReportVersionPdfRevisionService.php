@@ -27,8 +27,8 @@ final class ReportVersionPdfRevisionService
     }
 
     /**
-     * Renderiza uma revisão operacional a partir do conteúdo explícito da
-     * versão e persiste somente a nova linha/storage privado.
+     * Renderiza uma revisão a partir do conteúdo explícito da versão e
+     * persiste somente a nova linha/storage privado.
      *
      * @return array{id:int,tenant_id:int,report_id:int,report_version:int,revision_number:int,revision_key:string,source_pdf_snapshot_sha256:string,pdf_snapshot_path:string,pdf_snapshot_sha256:string,pdf_snapshot_size_bytes:int,pdf_snapshot_renderer:string,pdf_snapshot_schema_version:int,reason_code:string,created_by:int|null,created_new_file:bool}
      */
@@ -38,6 +38,42 @@ final class ReportVersionPdfRevisionService
         int $version,
         string $reasonCode = 'visual_renderer_correction',
         ?int $createdBy = null
+    ): array {
+        return $this->createWithContextSource($tenantId, $reportId, $version, $reasonCode, $createdBy, false);
+    }
+
+    /**
+     * Cria uma revisão operacional usando explicitamente o corpo atual do
+     * report liberado. Não altera report_versions nem o snapshot canônico.
+     *
+     * @return array{id:int,tenant_id:int,report_id:int,report_version:int,revision_number:int,revision_key:string,source_pdf_snapshot_sha256:string,pdf_snapshot_path:string,pdf_snapshot_sha256:string,pdf_snapshot_size_bytes:int,pdf_snapshot_renderer:string,pdf_snapshot_schema_version:int,reason_code:string,created_by:int|null,created_new_file:bool}
+     */
+    public function createOperationalReplacementFromCurrentReport(
+        int $tenantId,
+        int $reportId,
+        int $version,
+        ?int $createdBy = null
+    ): array {
+        return $this->createWithContextSource(
+            $tenantId,
+            $reportId,
+            $version,
+            'operational_replacement',
+            $createdBy,
+            true
+        );
+    }
+
+    /**
+     * @return array{id:int,tenant_id:int,report_id:int,report_version:int,revision_number:int,revision_key:string,source_pdf_snapshot_sha256:string,pdf_snapshot_path:string,pdf_snapshot_sha256:string,pdf_snapshot_size_bytes:int,pdf_snapshot_renderer:string,pdf_snapshot_schema_version:int,reason_code:string,created_by:int|null,created_new_file:bool}
+     */
+    private function createWithContextSource(
+        int $tenantId,
+        int $reportId,
+        int $version,
+        string $reasonCode,
+        ?int $createdBy,
+        bool $useCurrentReportBody
     ): array {
         $reasonCode = trim($reasonCode);
         if (!in_array($reasonCode, ['visual_renderer_correction', 'operational_replacement'], true)) {
@@ -53,12 +89,20 @@ final class ReportVersionPdfRevisionService
             'report_id' => $reportId,
             'report_version' => $version,
         ]);
-        $context = (new ReportPdfDeliveryContextService($this->pdo))->build([
+        $contextBuilder = new ReportPdfDeliveryContextService($this->pdo);
+        $context = $useCurrentReportBody
+            ? $contextBuilder->buildFromCurrentReport([
+                'tenant_id' => $tenantId,
+                'report_id' => $reportId,
+                'estudo_id' => (int) $identity['estudo_id'],
+                'report_version' => $version,
+            ])
+            : $contextBuilder->build([
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
             'estudo_id' => (int) $identity['estudo_id'],
             'report_version' => $version,
-        ]);
+            ]);
         $binary = (new ReportPdfService())->renderSnapshotBinary($context);
         $this->assertPdf($binary);
 

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $servicePath = $root . '/app/Services/ReportVersionPdfRevisionService.php';
+$contextPath = $root . '/app/Services/ReportPdfDeliveryContextService.php';
 $postgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_postgresql.sql';
 $mysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_mysql.sql';
 $service = file_get_contents($servicePath);
+$context = file_get_contents($contextPath);
 $postgres = file_get_contents($postgresPath);
 $mysql = file_get_contents($mysqlPath);
 
-foreach (['service' => $service, 'postgres' => $postgres, 'mysql' => $mysql] as $name => $content) {
+foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'mysql' => $mysql] as $name => $content) {
     if (!is_string($content) || $content === '') {
         throw new RuntimeException($name . ' da revisão PDF não foi lido.');
     }
@@ -18,6 +20,8 @@ foreach (['service' => $service, 'postgres' => $postgres, 'mysql' => $mysql] as 
 
 foreach ([
     'createForVersion(',
+    'createOperationalReplacementFromCurrentReport(',
+    'buildFromCurrentReport(',
     'loadVersionIdentity(',
     'SqlHelper::isPostgres()',
     'r.tenant_id = rev.tenant_id',
@@ -31,6 +35,15 @@ foreach ([
     if (!str_contains($service, $marker)) {
         throw new RuntimeException('Marker ausente no serviço de revisão PDF: ' . $marker);
     }
+}
+
+if (!str_contains($service, "'operational_replacement'")) {
+    throw new RuntimeException('A revisão operacional não possui reason_code explícito.');
+}
+
+if (!str_contains($context, "\$report['situacao'] ?? ''")
+    || !str_contains($context, "!== 'liberado'")) {
+    throw new RuntimeException('A substituição operacional não exige report liberado.');
 }
 
 if (preg_match('/UPDATE\\s+report_versions|DELETE\\s+FROM\\s+report_versions/i', $service) === 1) {

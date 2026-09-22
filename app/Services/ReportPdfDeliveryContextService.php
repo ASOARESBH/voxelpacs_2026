@@ -29,6 +29,41 @@ final class ReportPdfDeliveryContextService
     /** @param array<string,mixed> $job @return array<string,mixed> */
     public function build(array $job): array
     {
+        [$tenantId, $reportId, $studyId, $version] = $this->validateJob($job);
+        $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
+        $report = $this->applyVersionContent($report, $tenantId, $reportId, $version);
+        if (!ReportClinicalContentService::hasReportContent($report)) {
+            throw new RuntimeException('Versão visual do PDF sem conteúdo clínico válido.');
+        }
+
+        return $this->buildVisualContext($report, $tenantId);
+    }
+
+    /**
+     * Constrói contexto somente para uma revisão operacional explicitamente
+     * autorizada. A fonte clínica é o report atual já liberado; a versão
+     * histórica não é alterada nem usada como fallback silencioso.
+     *
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    public function buildFromCurrentReport(array $job): array
+    {
+        [$tenantId, $reportId, $studyId] = $this->validateJob($job);
+        $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
+        if (strtolower(trim((string) ($report['situacao'] ?? ''))) !== 'liberado') {
+            throw new RuntimeException('Substituição operacional exige report liberado.');
+        }
+        if (!ReportClinicalContentService::hasReportContent($report)) {
+            throw new RuntimeException('Report atual sem conteúdo clínico válido.');
+        }
+
+        return $this->buildVisualContext($report, $tenantId);
+    }
+
+    /** @param array<string,mixed> $job @return array{0:int,1:int,2:int,3:int} */
+    private function validateJob(array $job): array
+    {
         $tenantId = (int) ($job['tenant_id'] ?? 0);
         $reportId = (int) ($job['report_id'] ?? 0);
         $studyId = (int) ($job['estudo_id'] ?? 0);
@@ -36,12 +71,12 @@ final class ReportPdfDeliveryContextService
         if ($tenantId <= 0 || $reportId <= 0 || $studyId <= 0 || $version <= 0) {
             throw new RuntimeException('Contexto visual do PDF incompleto.');
         }
+        return [$tenantId, $reportId, $studyId, $version];
+    }
 
-        $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
-        $report = $this->applyVersionContent($report, $tenantId, $reportId, $version);
-        if (!ReportClinicalContentService::hasReportContent($report)) {
-            throw new RuntimeException('Versão visual do PDF sem conteúdo clínico válido.');
-        }
+    /** @param array<string,mixed> $report @return array<string,mixed> */
+    private function buildVisualContext(array $report, int $tenantId): array
+    {
         $report = $this->applyMask($report, $tenantId);
         $report = $this->applyInstitutionalChannels($report, $tenantId);
         $report = $this->applyCompanyRegistration($report, $tenantId);
