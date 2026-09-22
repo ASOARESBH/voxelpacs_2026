@@ -83,11 +83,12 @@ class ReportPeerReviewController extends Controller
         }
 
         try {
-            if (!(new ReportAccessService())->findAuthorizedReport($reportId)) {
+            $authorizedReport = (new ReportAccessService())->findAuthorizedReport($reportId);
+            if (!$authorizedReport) {
                 $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404);
                 return;
             }
-            $result = $this->service->abrir($reportId, $motivo);
+            $result = $this->service->abrir($authorizedReport, $motivo);
             $messages = [
                 'motivo_curto' => 'Informe o motivo da revisão com pelo menos 20 caracteres.',
                 'report_nao_encontrado' => 'Laudo não encontrado ou sem permissão no tenant atual.',

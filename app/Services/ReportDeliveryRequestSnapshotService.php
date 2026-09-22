@@ -1,0 +1,123 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Core\Database;
+use App\Repositories\ReportDeliveryRequestRepository;
+use PDO;
+use RuntimeException;
+
+/**
+ * Recupera somente metadata operacional do snapshot explícito no momento do package.
+ * O conteúdo clínico permanece no ReportDeliveryArtifactService/versionamento.
+ */
+final class ReportDeliveryRequestSnapshotService
+{
+    public function __construct(
+        private ?PDO $pdo = null,
+        private ?ReportDeliveryRequestRepository $repository = null,
+        private ?ReportDeliveryRequestPatientNameOverrideService $patientNameOverride = null
+    )
+    {
+        $this->pdo ??= Database::getInstance();
+        $this->repository ??= new ReportDeliveryRequestRepository($this->pdo);
+        $this->patientNameOverride ??= new ReportDeliveryRequestPatientNameOverrideService($this->pdo);
+    }
+
+    /** @return array<string,mixed>|null */
+    public function resolveExplicit(int $tenantId, int $reportId, int $reportVersion, bool $forUpdate = false): ?array
+    {
+        if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0) {
+            return null;
+        }
+
+        $snapshot = $this->repository->findReportVersion($tenantId, $reportId, $reportVersion, $forUpdate);
+        if (!$snapshot || (int) ($snapshot['tenant_id'] ?? 0) !== $tenantId
+            || (int) ($snapshot['estudo_tenant_id'] ?? 0) !== $tenantId
+            || (int) ($snapshot['estudo_id'] ?? 0) !== (int) ($snapshot['estudo_id_effective'] ?? 0)) {
+            return null;
+        }
+
+        return $snapshot;
+    }
+
+    /** @param array<string,mixed> $job @param array<string,mixed> $payload @return array<string,mixed> */
+    public function hydratePayload(array $job, array $payload, bool $consumeOverride = true): array
+    {
+        $requestId = (int) ($job['delivery_request_id'] ?? 0);
+        if ($requestId <= 0) {
+            return $payload;
+        }
+        $tenantId = (int) ($job['tenant_id'] ?? 0);
+        $reportId = (int) ($job['report_id'] ?? 0);
+        $reportVersion = (int) ($job['report_version'] ?? 0);
+        $studyId = (int) ($job['estudo_id'] ?? 0);
+        if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0 || $studyId <= 0) {
+            throw new RuntimeException('Snapshot da Delivery Request incompleto.');
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT r.situacao, r.liberado_por, r.liberado_em,
+                    rv.patient_name_family, rv.patient_name_given, rv.patient_name_middle, rv.patient_name_source,
+                    e.study_instance_uid, e.accession_number, e.patient_id,
+                    e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex,
+                    e.study_date, e.study_time, e.modalities,
+                    e.referring_physician_name,
+                    e.institution_name, e.issuer_of_patient_id
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e
+                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+               INNER JOIN report_versions rv
+                       ON rv.report_id = r.id AND rv.versao = :report_version
+              WHERE r.tenant_id = :tenant_id
+                AND r.id = :report_id
+                AND e.id = :study_id
+              LIMIT 2"
+        );
+        $stmt->execute([
+            ':tenant_id' => $tenantId,
+            ':report_id' => $reportId,
+            ':report_version' => $reportVersion,
+            ':study_id' => $studyId,
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== 1) {
+            throw new RuntimeException('Snapshot da Delivery Request não é único.');
+        }
+        $snapshot = $rows[0];
+        if ((string) ($snapshot['situacao'] ?? '') !== 'liberado') {
+            throw new RuntimeException('Snapshot da Delivery Request não está liberado.');
+        }
+
+        $hydrated = array_replace($payload, [
+            'tenant_id' => $tenantId,
+            'estabelecimento_id' => (int) ($job['estabelecimento_id'] ?? 0) ?: null,
+            'report_id' => $reportId,
+            'report_version' => $reportVersion,
+            'estudo_id' => $studyId,
+            'institution_name' => (string) ($snapshot['institution_name'] ?? ''),
+            'issuer_of_patient_id' => (string) ($snapshot['issuer_of_patient_id'] ?? ''),
+            'study_instance_uid' => (string) ($snapshot['study_instance_uid'] ?? ''),
+            'accession_number' => (string) ($snapshot['accession_number'] ?? ''),
+            'patient_id' => (string) ($snapshot['patient_id'] ?? ''),
+            'patient_name' => (string) ($snapshot['patient_name'] ?? ''),
+            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null)
+                ?? (string) ($snapshot['patient_name'] ?? ''),
+            'patient_birth_date' => (string) ($snapshot['patient_birth_date'] ?? ''),
+            'patient_sex' => (string) ($snapshot['patient_sex'] ?? ''),
+            'study_date' => (string) ($snapshot['study_date'] ?? ''),
+            'study_time' => (string) ($snapshot['study_time'] ?? ''),
+            'modality' => (string) ($snapshot['modalities'] ?? ''),
+            'referring_physician_name' => (string) ($snapshot['referring_physician_name'] ?? ''),
+            'released_by' => (int) ($snapshot['liberado_por'] ?? 0),
+            'released_at' => (string) ($snapshot['liberado_em'] ?? ''),
+            'patient_name_family' => $snapshot['patient_name_family'] ?? null,
+            'patient_name_given' => $snapshot['patient_name_given'] ?? null,
+            'patient_name_middle' => $snapshot['patient_name_middle'] ?? null,
+            'patient_name_source' => $snapshot['patient_name_source'] ?? null,
+        ]);
+        return $this->patientNameOverride->applyToPayload($tenantId, $requestId, $hydrated, $consumeOverride);
+    }
+}

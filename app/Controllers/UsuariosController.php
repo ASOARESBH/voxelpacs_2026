@@ -9,9 +9,12 @@ use App\Core\Mailer;
 use App\Core\SqlHelper;
 use App\Core\TenantContext;
 use App\Core\Audit\AuditLogger;
+use App\Core\Access\ViewerAccess;
+use App\Core\Access\ViewerRegistry;
+use App\Services\WorklistPreferenceService;
 
 /**
- * UsuariosController — Módulo de Usuários do Negócio (tenant)
+ * UsuariosController — Módulo de Usuários do Negócio (tenant), incluindo restrições opt-out de visualizadores.
  *
  * Perfis disponíveis (bi_user_tenants.perfil):
  *   admin      → acesso total ao negócio
@@ -131,14 +134,18 @@ class UsuariosController extends Controller
             }
         }
 
+        $viewerStates = ViewerAccess::statesForUser(0, (int) $tenantId, 'viewer');
         $this->view('usuarios/form', [
             'usuario'      => null,
             'modulosAtivos'=> [],
             'relatorioModulos' => [],
+            'worklistPreference' => array_merge((new WorklistPreferenceService())->globalDefaults(false), ['enabled' => false, 'source' => 'global']),
             'medicos'      => $medicos,
             'modulos'      => self::MODULOS,
             'modPadrao'    => self::MODULOS_PADRAO,
             'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
+            'viewerCatalog' => ViewerRegistry::all(),
+            'viewerStates' => $viewerStates,
             'title'        => 'Novo Usuário',
             'error'        => $_GET['error'] ?? '',
         ], 'pacs');
@@ -150,6 +157,10 @@ class UsuariosController extends Controller
     public function store(): void
     {
         if (!$this->requireUserManagement()) return;
+        if (!$this->validCsrfPost()) {
+            $this->redirect('/usuarios/create?error=erro_interno');
+            return;
+        }
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
@@ -160,6 +171,9 @@ class UsuariosController extends Controller
         $medicoId = (int)($_POST['medico_id']         ?? 0);
         $modulos  = $_POST['modulos']                 ?? (self::MODULOS_PADRAO[$perfil] ?? []);
         $relatorioModulos = $_POST['relatorio_modulos'] ?? [];
+        $visualizadores = isset($_POST['visualizadores_present'])
+            ? (array) ($_POST['visualizadores'] ?? [])
+            : array_keys(ViewerRegistry::all());
 
         if (!in_array($perfil, ['admin','medico','secretaria','analista','viewer'])) {
             $perfil = 'viewer';
@@ -206,6 +220,7 @@ class UsuariosController extends Controller
 
             $this->salvarPermissoes($pdo, $userId, $tenantId, $modulos);
             $this->salvarPermissoesRelatorios($pdo, $userId, $tenantId, $relatorioModulos, in_array('relatorios', $modulos, true));
+            $this->salvarVisualizadores($pdo, $userId, (int) $tenantId, (array) $visualizadores, $perfil, 'viewer');
 
             if ($medicoId > 0) {
                 $this->vincularMedico($pdo, $medicoId, $userId, $tenantId);
@@ -236,7 +251,7 @@ class UsuariosController extends Controller
 
         try {
             $stmt = $pdo->prepare("
-                SELECT u.id, u.name, u.email, u.status, u.created_at, u.ultimo_login,
+                SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.ultimo_login,
                        ut.perfil, ut.ativo AS tenant_ativo,
                        m.id   AS medico_id,
                        m.nome AS medico_nome,
@@ -272,15 +287,32 @@ class UsuariosController extends Controller
             );
             $stmtMed->execute([$tenantId, $id]);
             $medicos = $stmtMed->fetchAll(\PDO::FETCH_ASSOC);
+            $worklistPreference = (new WorklistPreferenceService())->resolveForUser(
+                $id,
+                (int) $tenantId,
+                ($usuario['perfil'] ?? '') === 'medico'
+            );
+            if (($worklistPreference['source'] ?? '') !== 'usuario') {
+                $worklistPreference['enabled'] = false;
+            }
+            $viewerStates = ViewerAccess::statesForUser(
+                (int) $id,
+                (int) $tenantId,
+                (string) ($usuario['perfil'] ?? 'viewer'),
+                (string) ($usuario['role'] ?? '')
+            );
 
             $this->view('usuarios/form', [
                 'usuario'      => $usuario,
                 'modulosAtivos'=> $modulosAtivos,
                 'relatorioModulos' => $relatorioModulos,
+                'worklistPreference' => $worklistPreference,
                 'medicos'      => $medicos,
                 'modulos'      => self::MODULOS,
                 'modPadrao'    => self::MODULOS_PADRAO,
                 'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
+                'viewerCatalog' => ViewerRegistry::all(),
+                'viewerStates' => $viewerStates,
                 'title'        => 'Editar Usuário',
                 'error'        => $_GET['error'] ?? '',
             ], 'pacs');
@@ -297,6 +329,10 @@ class UsuariosController extends Controller
     public function update(int $id): void
     {
         if (!$this->requireUserManagement()) return;
+        if (!$this->validCsrfPost()) {
+            $this->redirect('/usuarios/' . $id . '/edit?error=erro_interno');
+            return;
+        }
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
@@ -310,12 +346,19 @@ class UsuariosController extends Controller
         $medicoId = (int)($_POST['medico_id'] ?? 0);
         $modulos  = $_POST['modulos']         ?? [];
         $relatorioModulos = $_POST['relatorio_modulos'] ?? [];
+        $visualizadores = isset($_POST['visualizadores_present'])
+            ? (array) ($_POST['visualizadores'] ?? [])
+            : array_keys(ViewerRegistry::all());
 
         if (!in_array($perfil, ['admin','medico','secretaria','analista','viewer'])) {
             $perfil = 'viewer';
         }
 
         try {
+            $stmtRole = $pdo->prepare('SELECT role FROM bi_users WHERE id = ? LIMIT 1');
+            $stmtRole->execute([$id]);
+            $targetRole = (string) ($stmtRole->fetchColumn() ?: '');
+            $visualizadoresAntes = ViewerAccess::disabledKeysForUser($id, (int) $tenantId);
             if ($name) {
                 $pdo->prepare("UPDATE bi_users SET name = ? WHERE id = ?")->execute([$name, $id]);
             }
@@ -326,6 +369,33 @@ class UsuariosController extends Controller
 
             $this->salvarPermissoes($pdo, $id, $tenantId, $modulos);
             $this->salvarPermissoesRelatorios($pdo, $id, $tenantId, $relatorioModulos, in_array('relatorios', $modulos, true));
+            $visualizadoresDepois = $this->salvarVisualizadores(
+                $pdo, $id, (int) $tenantId, (array) $visualizadores, $perfil, $targetRole
+            );
+            if ($visualizadoresAntes !== $visualizadoresDepois) {
+                AuditLogger::log(
+                    'auth.visualizadores_usuario_atualizados',
+                    'bi_user_viewers',
+                    $id,
+                    ['visualizadores_desabilitados_antes' => $visualizadoresAntes, 'visualizadores_desabilitados_depois' => $visualizadoresDepois],
+                    (int) $tenantId,
+                    'acesso'
+                );
+            }
+            $worklistPreference = (new WorklistPreferenceService())->saveForUser(
+                $id,
+                (int) $tenantId,
+                (array) ($_POST['worklist_preferences'] ?? []),
+                $perfil === 'medico',
+                Auth::userId()
+            );
+            AuditLogger::log(
+                'usuario.worklist_preferencia_atualizada',
+                'bi_user_worklist_preferences',
+                $id,
+                ['tenant_id' => (int) $tenantId, 'source' => $worklistPreference['source']],
+                (int) $tenantId
+            );
 
             // Remove vínculo anterior com outro médico
             $pdo->prepare(
@@ -505,6 +575,60 @@ class UsuariosController extends Controller
             if (!isset(self::RELATORIO_SUBMODULOS[$chave])) continue;
             $insert->execute([$tenantId, $userId, $chave, Auth::userId()]);
         }
+    }
+
+    /** @return string[] Chaves desabilitadas persistidas após o salvamento. */
+    private function salvarVisualizadores(
+        \PDO $pdo,
+        int $userId,
+        int $tenantId,
+        array $selecionados,
+        string $perfil,
+        ?string $role
+    ): array {
+        // A migration é aditiva; enquanto não aplicada, preserva o comportamento
+        // legado sem impedir o cadastro ou a edição de usuários.
+        // Não permita que um search_path legado silencie uma exceção individual.
+        if (!ViewerAccess::restrictionStoreAvailable($pdo)) return [];
+        $selecionados = array_values(array_unique(array_filter(
+            array_map('strval', $selecionados),
+            static fn (string $key): bool => ViewerRegistry::has($key)
+        )));
+        $privilegiado = ViewerAccess::isPrivilegedTarget($perfil, $role);
+        if ($privilegiado) {
+            $desabilitados = [];
+        } else {
+            $estados = ViewerAccess::statesForUser($userId, $tenantId, $perfil, $role);
+            $editaveis = array_keys(array_filter(
+                $estados,
+                static fn (array $estado): bool => !empty($estado['editable'])
+            ));
+            $atuais = ViewerAccess::disabledKeysForUser($userId, $tenantId);
+            // Itens cinza não são enviados pelo browser. Preservamos sua regra
+            // anterior para que a indisponibilidade de infraestrutura do tenant
+            // nunca cause mudança implícita na política individual.
+            $preservados = array_values(array_diff($atuais, $editaveis));
+            $desabilitados = array_values(array_unique(array_merge(
+                $preservados,
+                array_values(array_diff($editaveis, $selecionados))
+            )));
+        }
+
+        // Modelo opt-out: apagar a configuração anterior restaura o padrão
+        // habilitado; gravamos somente as exceções explicitamente desmarcadas.
+        $table = ViewerAccess::restrictionStoreTable();
+        $pdo->prepare("DELETE FROM {$table} WHERE user_id = ? AND tenant_id = ?")
+            ->execute([$userId, $tenantId]);
+        if (!$desabilitados) return [];
+
+        $sql = SqlHelper::isPostgres()
+            ? "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON CONFLICT (user_id, tenant_id, viewer_key) DO UPDATE SET habilitado = EXCLUDED.habilitado, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()"
+            : "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado = VALUES(habilitado), updated_by_user_id = VALUES(updated_by_user_id), updated_at = CURRENT_TIMESTAMP";
+        $insert = $pdo->prepare($sql);
+        foreach ($desabilitados as $viewerKey) {
+            $insert->execute([$userId, $tenantId, $viewerKey, 0, Auth::userId()]);
+        }
+        return $desabilitados;
     }
 
     private function vincularMedico(\PDO $pdo, int $medicoId, int $userId, int $tenantId): void

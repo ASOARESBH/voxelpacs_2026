@@ -1,5 +1,7 @@
 <?php
-
+// Materialização de runtime Philips Folder: control-plane permanece inerte por feature flag.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+// Materialização da correção do teste SMB: falhas pré-bridge permanecem sanitizadas.
 namespace App\Controllers\Platform;
 
 use App\Core\Audit\AuditLogger;
@@ -13,6 +15,9 @@ use App\Services\InstitutionResolverService;
 use App\Services\DicomIssuerService;
 use App\Services\ReportDeliveryCryptoService;
 use App\Services\ReportDeliveryManualQueueService;
+use App\Services\PhilipsFolderDeliveryService;
+use App\Services\PhilipsFolderDeliveryException;
+use App\Services\PhilipsFolderSmbConnectivityService;
 use DomainException;
 use Throwable;
 
@@ -29,7 +34,7 @@ class ReportDeliveryController extends Controller
     private Tenant $tenantModel;
 
     /** @var array<int, string> */
-    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp'];
+    private array $transports = ['dicom_pdf', 'dicom_sr', 'hl7_oru', 'https_webhook', 'sftp', 'philips_folder', 'philips_non_dicom'];
 
     public function __construct()
     {
@@ -103,6 +108,12 @@ class ReportDeliveryController extends Controller
                 $issuerNormalized,
                 $institutionName
             );
+            $eligible = array_values(array_filter($eligible, static fn(array $destination): bool =>
+                ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                    || PhilipsFolderDeliveryService::enabled())
+                && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                    || PhilipsFolderDeliveryService::nonDicomEnabled())
+            ));
             $manualEligible = array_filter($eligible, static fn(array $destination): bool =>
                 (string) ($destination['ambiente'] ?? '') === 'homologacao'
             );
@@ -129,16 +140,36 @@ class ReportDeliveryController extends Controller
         if (!$this->isPlatformAdmin()) {
             $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
         }
+        $this->logSanitizedSaveDiagnostics(
+            $tenantId,
+            $destinationId,
+            'request_received',
+            $_POST['configuration_json'] ?? null
+        );
         if (!$this->validCsrf()) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                'csrf_failed',
+                $_POST['configuration_json'] ?? null,
+                'csrf_invalid'
+            );
             $this->json(['success' => false, 'message' => 'Sessão expirada. Atualize a página e tente novamente.'], 419);
         }
         if (!$this->tenantModel->find($tenantId)) {
             $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
         }
 
+        $validated = false;
         try {
             $data = $this->validatedPayload($tenantId);
+            $validated = true;
+            $this->logSanitizedSaveDiagnostics($tenantId, $destinationId, 'validation_passed', $data['configuration_json']);
             $savedId = $this->repository->saveDestination($tenantId, $destinationId, $data, (int) Auth::userId());
+            $this->logSanitizedSaveDiagnostics($tenantId, $destinationId, 'persisted', $data['configuration_json']);
+            $secretUpdate = (string) ($data['configuration_secret'] ?? '') !== ''
+                ? 'YES'
+                : ($destinationId !== null ? 'PRESERVED' : 'NOT_APPLICABLE');
             AuditLogger::log('report_delivery.destination_saved', 'pacs_report_delivery_destinations', $savedId, [
                 'tenant_id' => $tenantId,
                 'transport' => $data['transport'],
@@ -147,19 +178,41 @@ class ReportDeliveryController extends Controller
                 'producao_confirmada' => $data['producao_confirmada'],
                 'institution_names' => $data['institution_names'],
                 'issuers' => array_map(static fn(array $issuer): string => $issuer['normalized'], $data['issuers']),
+                'secret_update' => $secretUpdate,
             ]);
+            $credentialMessage = null;
+            if ($data['transport'] === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT && $destinationId !== null) {
+                $credentialMessage = $secretUpdate === 'YES'
+                    ? t('philips_non_dicom.senha_alterada_sucesso')
+                    : t('philips_non_dicom.configuracao_salva_senha_mantida');
+            }
             $this->json([
                 'success' => true,
-                'message' => !empty($data['enabled'])
+                'message' => $credentialMessage ?? (!empty($data['enabled'])
                     ? ($data['ambiente'] === 'producao'
                         ? t('delivery_hub.destination.producao_ativado')
                         : t('delivery_hub.destination.homologacao_ativado'))
-                    : t('delivery_hub.destination.desativado_salvo'),
+                    : t('delivery_hub.destination.desativado_salvo')),
                 'destination_id' => $savedId,
+                'secret_update' => $secretUpdate,
             ]);
         } catch (DomainException $e) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                $validated ? 'repository_domain_failure' : 'validation_failed',
+                $_POST['configuration_json'] ?? null,
+                $this->sanitizedSaveDiagnosticError($e->getMessage())
+            );
             $this->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
+            $this->logSanitizedSaveDiagnostics(
+                $tenantId,
+                $destinationId,
+                'unexpected_error',
+                $_POST['configuration_json'] ?? null,
+                'unexpected_throwable'
+            );
             Logger::error('[ReportDeliveryController::save] Falha ao salvar destino', [
                 'tenant_id' => $tenantId,
                 'destination_id' => $destinationId,
@@ -246,6 +299,54 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    public function retryManualHomologation(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if (!$this->tenantModel->find($tenantId)) {
+            $this->json(['success' => false, 'message' => 'Negócio não encontrado.'], 404);
+        }
+        if ((string) ($_POST['confirm_manual_homologation_retry'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_reenvio_homologacao')], 422);
+        }
+
+        try {
+            $result = $this->repository->retryManualHomologationJob($jobId, $tenantId);
+            AuditLogger::log('report_delivery.manual_homologation_retry', 'pacs_report_delivery_jobs', $result['job_id'], [
+                'tenant_id' => $tenantId,
+                'delivery_id' => $result['delivery_id'],
+                'destination_id' => $result['destination_id'],
+                'actor' => (int) Auth::userId(),
+                'action' => 'manual_homologation_retry',
+                'previous_status' => $result['previous_status'],
+                'new_status' => $result['new_status'],
+                'attempt_number' => $result['attempt_number'],
+            ], $tenantId);
+            $this->json([
+                'success' => true,
+                'message' => t('delivery_hub.released.reenvio_homologacao_aceito'),
+                'job_id' => $result['job_id'],
+                'delivery_id' => $result['delivery_id'],
+            ]);
+        } catch (DomainException $e) {
+            $message = $e->getMessage();
+            $errorCode = (int) $e->getCode();
+            $status = in_array($errorCode, [404, 409], true) ? $errorCode : 422;
+            $this->json(['success' => false, 'message' => $message], $status);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::retryManualHomologation] Falha no reenvio manual', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_reenvio_homologacao')], 500);
+        }
+    }
+
     public function resendReleasedReport(int $tenantId, int $reportId): void
     {
         if (!$this->isPlatformAdmin()) {
@@ -286,6 +387,54 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    /** Teste técnico de conectividade SMB; não cria outbox, job, PDF ou XML. */
+    public function testSmb(int $tenantId, int $destinationId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_smb_test'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => 'Confirme o teste técnico SMB sem envio de laudo.'], 422);
+        }
+        try {
+            $destination = $this->repository->findDestination($destinationId, $tenantId, true);
+            if (!$destination || (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                || (string) ($destination['ambiente'] ?? '') !== 'homologacao') {
+                throw new DomainException('Destino Non-DICOM de homologação não encontrado.');
+            }
+            $configuration = json_decode((string) ($destination['configuration_json'] ?? '{}'), true);
+            if (!is_array($configuration)) {
+                throw new DomainException('Configuração do destino inválida.');
+            }
+            $result = (new PhilipsFolderSmbConnectivityService())->test(
+                $tenantId,
+                $destinationId,
+                $configuration,
+                (string) ($destination['configuration_secret'] ?? ''),
+                (int) ($destination['timeout_seconds'] ?? 30)
+            );
+            AuditLogger::log('report_delivery.smb_connectivity_tested', 'pacs_report_delivery_destinations', $destinationId, [
+                'tenant_id' => $tenantId,
+                'result' => $result,
+            ]);
+            $this->json(['success' => true, 'message' => 'CONEXÃO SMB OK']);
+        } catch (PhilipsFolderDeliveryException $e) {
+            AuditLogger::log('report_delivery.smb_connectivity_failed', 'pacs_report_delivery_destinations', $destinationId, [
+                'tenant_id' => $tenantId,
+                'reason_category' => $e->reasonCategory,
+            ]);
+            $this->json(['success' => false, 'message' => 'Teste SMB não concluído: ' . $this->sanitizedReason($e->reasonCategory)], 422);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::testSmb] Falha técnica sanitizada', ['tenant_id' => $tenantId, 'destination_id' => $destinationId, 'error_class' => get_class($e)]);
+            $this->json(['success' => false, 'message' => 'Teste SMB indisponível.'], 500);
+        }
+    }
+
     /**
      * Recupera um job cujo worker interrompeu antes de concluir a entrega.
      * A operação é permitida somente após dez minutos em processamento.
@@ -317,6 +466,135 @@ class ReportDeliveryController extends Controller
             ]);
             $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_recuperacao')], 500);
         }
+    }
+
+    private function saveDiagnosticsEnabled(): bool
+    {
+        $value = getenv('PHILIPS_DESTINATION_SAVE_DIAGNOSTICS');
+        if ($value === false) {
+            $value = $_ENV['PHILIPS_DESTINATION_SAVE_DIAGNOSTICS'] ?? $_SERVER['PHILIPS_DESTINATION_SAVE_DIAGNOSTICS'] ?? '0';
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /** @param mixed $rawConfiguration */
+    private function logSanitizedSaveDiagnostics(
+        int $tenantId,
+        ?int $destinationId,
+        string $stage,
+        mixed $rawConfiguration = null,
+        ?string $errorCode = null
+    ): void {
+        if (!$this->saveDiagnosticsEnabled()) {
+            return;
+        }
+
+        try {
+            $configuration = $this->decodeSaveDiagnosticConfiguration($rawConfiguration);
+            $allowedFields = [
+                'task_file_path',
+                'task_site_id',
+                'task_document_name',
+                'task_author_id',
+                'task_document_type_applicable',
+                'task_document_type',
+                'task_modalities',
+                'task_document_mimetype',
+                'task_delete_file',
+            ];
+            $nestedSubmission = is_array($configuration['philips_submission'] ?? null)
+                ? $configuration['philips_submission']
+                : null;
+            $nestedPresence = [];
+            $rootPresence = [];
+            foreach ($allowedFields as $field) {
+                $nestedPresence[$field] = $nestedSubmission !== null && array_key_exists($field, $nestedSubmission);
+                $rootPresence[$field] = array_key_exists($field, $configuration);
+            }
+
+            $profile = is_string($configuration['delivery_profile'] ?? null)
+                ? trim($configuration['delivery_profile'])
+                : '';
+            $profileState = in_array($profile, ['pdf_only', 'submission_document'], true)
+                ? $profile
+                : ($profile === '' ? 'ABSENT' : 'INVALID');
+            $submissionKeyPresent = array_key_exists('philips_submission', $configuration);
+
+            $context = [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'stage' => $stage,
+                'post_field_presence' => [
+                    'nome' => array_key_exists('nome', $_POST),
+                    'transport' => array_key_exists('transport', $_POST),
+                    'ambiente' => array_key_exists('ambiente', $_POST),
+                    'enabled' => array_key_exists('enabled', $_POST),
+                    'disparar_na_liberacao' => array_key_exists('disparar_na_liberacao', $_POST),
+                    'configuration_json' => array_key_exists('configuration_json', $_POST),
+                    'configuration_secret' => array_key_exists('configuration_secret', $_POST),
+                    'institution_names' => array_key_exists('institution_names', $_POST),
+                    'issuer_of_patient_ids' => array_key_exists('issuer_of_patient_ids', $_POST),
+                ],
+                'configuration_json_state' => $this->saveDiagnosticJsonState($rawConfiguration, $configuration),
+                'delivery_profile' => $profileState,
+                'philips_submission' => $submissionKeyPresent
+                    ? ($nestedSubmission === null ? 'INVALID_TYPE' : 'PRESENT')
+                    : 'ABSENT',
+                'nested_field_presence' => $nestedPresence,
+                'root_field_presence' => $rootPresence,
+                'configuration_secret_present' => trim((string) ($_POST['configuration_secret'] ?? '')) !== '',
+            ];
+            if ($errorCode !== null) {
+                $context['sanitized_error_code'] = $errorCode;
+            }
+
+            Logger::info('[ReportDeliveryController::save][sanitized-diagnostics]', $context);
+        } catch (Throwable) {
+            // Diagnóstico nunca pode alterar o resultado funcional do Save.
+        }
+    }
+
+    /** @return array<string,mixed> */
+    private function decodeSaveDiagnosticConfiguration(mixed $rawConfiguration): array
+    {
+        if (is_array($rawConfiguration)) {
+            return $rawConfiguration;
+        }
+        if (!is_string($rawConfiguration) || trim($rawConfiguration) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawConfiguration, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function saveDiagnosticJsonState(mixed $rawConfiguration, array $configuration): string
+    {
+        if ($rawConfiguration === null && $configuration === []) {
+            return 'NOT_PROVIDED';
+        }
+        if (is_array($rawConfiguration)) {
+            return 'VALID_ARRAY';
+        }
+        if (!is_string($rawConfiguration) || trim($rawConfiguration) === '') {
+            return 'EMPTY';
+        }
+
+        return json_decode($rawConfiguration, true) !== null || trim($rawConfiguration) === 'null'
+            ? 'VALID_JSON'
+            : 'INVALID_JSON';
+    }
+
+    private function sanitizedSaveDiagnosticError(string $message): string
+    {
+        return match (true) {
+            str_contains($message, 'contrato Philips XML') => 'submission_object_missing',
+            str_contains($message, 'perfil Philips XML') => 'submission_field_invalid',
+            str_contains($message, 'SMB Non-DICOM') => 'transport_configuration_invalid',
+            str_contains($message, 'Issuer') || str_contains($message, 'InstitutionName') => 'source_selection_invalid',
+            default => 'domain_validation_failed',
+        };
     }
 
     /** @return array<string, mixed> */
@@ -376,6 +654,16 @@ class ReportDeliveryController extends Controller
         }
         if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
             throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
+        }
+        if ($transport === PhilipsFolderDeliveryService::TRANSPORT && !PhilipsFolderDeliveryService::enabled()) {
+            if ($enabled || !empty($_POST['disparar_na_liberacao'])) {
+                throw new DomainException(t('philips_folder.feature_desativada'));
+            }
+        }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT && !PhilipsFolderDeliveryService::nonDicomEnabled()) {
+            if ($enabled || !empty($_POST['disparar_na_liberacao'])) {
+                throw new DomainException('O canal Philips Non-DICOM permanece desativado até autorização operacional.');
+            }
         }
         if ($configuration === '') {
             $configuration = '{}';
@@ -463,7 +751,83 @@ class ReportDeliveryController extends Controller
             if (!in_array($protocol, ['sftp', 'ftps'], true) || $directory === '' || $directory[0] !== '/' || $username === '') {
                 throw new DomainException('Informe protocolo seguro, pasta remota iniciando com / e usuário do destino.');
             }
+            return;
         }
+
+        if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
+            if (($configuration['delivery_profile'] ?? '') !== 'pdf_only'
+                || !filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                throw new DomainException(t('philips_folder.configuracao_invalida'));
+            }
+        }
+
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
+            $share = trim((string) ($configuration['smb_share'] ?? ''));
+            $username = trim((string) ($configuration['smb_username'] ?? ''));
+            $profile = (string) ($configuration['delivery_profile'] ?? '');
+            if (!in_array($profile, [PhilipsFolderDeliveryService::PROFILE_PDF_ONLY, PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT], true)
+                || ($configuration['transport_protocol'] ?? '') !== 'smb'
+                || !filter_var($configuration['gateway_bridge'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                || !$validHost || $port !== 445
+                || preg_match('/^[A-Za-z0-9._-]{1,80}$/', $share) !== 1
+                || preg_match('/^(?:[A-Za-z0-9._-]{1,64}\\\\)?[A-Za-z0-9._-]{1,64}$/', $username) !== 1) {
+                throw new DomainException('Configuração SMB Non-DICOM inválida.');
+            }
+            if ($profile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null);
+            }
+        }
+    }
+
+    /** @param mixed $submission */
+    private function validatePhilipsSubmissionConfiguration(mixed $submission): void
+    {
+        if (!is_array($submission)) {
+            throw new DomainException('Configure o contrato Philips XML antes de habilitar este perfil.');
+        }
+
+        foreach ([
+            'task_file_path' => 'caminho Philips do XML',
+            'task_site_id' => 'SITE_ID Philips',
+            'task_document_name' => 'nome do documento Philips',
+            'task_author_id' => 'identificador do autor Philips',
+        ] as $field => $label) {
+            $value = $submission[$field] ?? null;
+            if (!is_string($value) || trim($value) === '' || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
+                throw new DomainException("Informe {$label} para o perfil Philips XML.");
+            }
+        }
+
+        foreach (['task_delete_file', 'task_document_type_applicable'] as $field) {
+            if (!array_key_exists($field, $submission)) {
+                throw new DomainException("Configure {$field} no perfil Philips XML.");
+            }
+            $value = $submission[$field];
+            if (!is_bool($value) && !(is_int($value) && in_array($value, [0, 1], true))
+                && !(is_string($value) && in_array(strtolower(trim($value)), ['true', 'false', '1', '0'], true))) {
+                throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
+            }
+        }
+
+        $typeApplicable = filter_var($submission['task_document_type_applicable'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $documentType = trim((string) ($submission['task_document_type'] ?? ''));
+        if ($typeApplicable === true && $documentType !== '11502-2') {
+            throw new DomainException('O tipo de documento Philips deve ser 11502-2 quando aplicável.');
+        }
+        if ($typeApplicable === false && $documentType !== '') {
+            throw new DomainException('Remova o tipo de documento Philips quando ele não for aplicável.');
+        }
+    }
+
+    private function sanitizedReason(?string $reason): string
+    {
+        return match ($reason) {
+            'authentication' => 'autenticação recusada',
+            'permission' => 'acesso ao compartilhamento recusado',
+            'connectivity', 'timeout', 'gateway_unavailable' => 'conectividade indisponível',
+            'credentials_unavailable' => 'credencial não configurada',
+            default => 'falha técnica sanitizada',
+        };
     }
 
     private function isPlatformAdmin(): bool

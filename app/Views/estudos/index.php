@@ -1,7 +1,10 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 /**
  * VOXEL PACS — Worklist de Estudos (v4)
- * Layout reformulado: compacto, ícones de sexo coloridos, SLA semafórico, Ações espaçosas.
+ * Layout reformulado: compacto, ícones de sexo coloridos, SLA semafórico, Ações espaçosas e menu de visualizadores efetivo.
+ * O modal de CHAT reutiliza o contrato reduzido de destinatário e interação.
  */
 
 /* ─── helpers de URL ─────────────────────────────────────────────────────── */
@@ -219,12 +222,12 @@ $periodoLabel = [
         <span><?= htmlspecialchars($modoGestao ? t('gestao_exames.titulo') : 'Worklist de Estudos') ?></span>
         <?php if ($modoGestao): ?><span class="wl-mode-badge"><?= htmlspecialchars(t('gestao_exames.badge')) ?></span><?php endif; ?>
     </div>
+    <a href="/desktop/download?platform=windows&amp;channel=stable&amp;source=worklist" class="wl-desktop-btn" title="<?= htmlspecialchars(t('downloads.worklist_title'), ENT_QUOTES) ?>">
+        <i class="fa fa-desktop"></i> <?= htmlspecialchars(t('downloads.worklist_cta')) ?>
+    </a>
     <a href="/estudos/instalar" class="wl-pwa-btn" title="Instalar app da Worklist no seu computador">
         <i class="fa fa-download"></i> Instalar App
     </a>
-    <button type="button" id="btn-voxel-desktop" class="wl-desktop-btn" title="Baixar o VOXEL Desktop — visualizador oficial VOXEL PACS">
-        <i class="fa fa-desktop"></i> <span id="vd-label">VOXEL Desktop</span>
-    </button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ RESUMO (oculto — ganho de espaço vertical) -->
@@ -467,6 +470,8 @@ $periodoLabel = [
             $sit  = $e['situacao']  ?? 'novo';
             $prio = $e['prioridade']?? 'normal';
             $sex  = strtoupper(trim($e['patient_sex'] ?? ''));
+            // Exibição somente: o registro e os identificadores continuam inalterados.
+            $pacienteDisplay = \App\Helpers\DicomPersonName::displayFromStudy($e) ?: '—';
             $mods = array_filter(array_map('trim', explode('\\', $e['modalities'] ?? '')));
             if (empty($mods) && !empty($e['modalities'])) $mods = [trim($e['modalities'])];
             $rowClass = 'wl-row' . ($prio==='urgente'?' row-urgente':($prio==='critico'?' row-critico':''));
@@ -494,17 +499,21 @@ $periodoLabel = [
                 $slaMCls = slaClass($e['assumido_em'], $fimSla);
             }
 
-            // Permissões de ação: o laudo e o peer review são exclusivos do
-            // médico que assumiu. usuario_responsavel_id referencia bi_users.id.
+            // Laudos normais permanecem exclusivos do médico que assumiu.
+            // Um ciclo Peer Review aberto é compartilhado entre médicos
+            // autorizados da mesma unidade/tenant.
             $estudoPertenceAoMedico = (int) ($e['usuario_responsavel_id'] ?? 0) > 0
                 && (int) ($e['usuario_responsavel_id'] ?? 0) === (int) ($usuarioLogadoId ?? 0);
+            $peerReviewAberta = !empty($e['peer_review_aberta']);
             $podeAssumir = $isMedicoLogado && in_array($sit, ['novo','aberto'], true);
             $podeLaudar  = $isMedicoLogado
                 && $estudoPertenceAoMedico
                 && in_array($sit, ['a_laudar','em_laudo','rascunho'], true);
             $podePeerReview = $isMedicoLogado
-                && $estudoPertenceAoMedico
-                && in_array($sit, ['assinado', 'liberado'], true)
+                && (
+                    ($estudoPertenceAoMedico && in_array($sit, ['assinado', 'liberado'], true))
+                    || ($peerReviewAberta && $sit === 'peer_review')
+                )
                 && !empty($e['study_instance_uid']);
 
             // Gestão: consulta administrativa apenas para quem possui a permissão
@@ -515,6 +524,9 @@ $periodoLabel = [
             $podeConsultarLaudoGestao = $modoGestao
                 && $podeGerenciarPedido
                 && in_array($reportSituacaoGestao, ['assinado', 'liberado'], true)
+                && preg_match('/^[a-f0-9]{48}$/', $reportTokenGestao) === 1;
+            $podeIniciarEntregaNonDicom = !empty($canManageNonDicomDelivery)
+                && $reportSituacaoGestao === 'liberado'
                 && preg_match('/^[a-f0-9]{48}$/', $reportTokenGestao) === 1;
 
             // Recebido há
@@ -540,7 +552,7 @@ $periodoLabel = [
                 <div class="wl-pac-row">
                     <?= sexoIcon($sex) ?>
                     <div class="wl-pac-info">
-                        <div class="wl-pac-nome"><?= htmlspecialchars($e['patient_name'] ?? '—') ?></div>
+                        <div class="wl-pac-nome"><?= htmlspecialchars($pacienteDisplay) ?></div>
                         <div class="wl-pac-sub">
                             <?php $idade = formatarIdade($e); if ($idade) echo $idade; ?>
                             <?php if (!empty($e['patient_id'])): ?>
@@ -630,6 +642,11 @@ $periodoLabel = [
                 <?php else: ?>
                     <span class="wl-muted"><?= htmlspecialchars(t('pedido_medico.status.nao_anexado')) ?></span>
                 <?php endif; ?>
+                <?php if (!empty($e['exame_complementar_id'])): ?>
+                    <span class="pedido-anexado-badge exame-complementar-badge" title="<?= htmlspecialchars(t('exames_complementares.status.anexado')) ?>">
+                        <i class="fa fa-notes-medical"></i> <?= htmlspecialchars(t('exames_complementares.status.anexado')) ?>
+                    </span>
+                <?php endif; ?>
             </td>
 
             <!-- Situação -->
@@ -670,11 +687,15 @@ $periodoLabel = [
                         <?php if ($podeGerenciarPedido): ?>
                         <button type="button" class="wl-btn-pedido pedido-trigger"
                                 data-id="<?= (int) $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay, ENT_QUOTES) ?>"
                                 data-pedido-id="<?= (int) ($e['pedido_id'] ?? 0) ?>"
                                 data-pedido-nome="<?= htmlspecialchars($e['pedido_nome_original'] ?? '', ENT_QUOTES) ?>"
                                 data-pedido-mime="<?= htmlspecialchars($e['pedido_mime_type'] ?? '', ENT_QUOTES) ?>"
                                 data-pedido-tamanho="<?= (int) ($e['pedido_tamanho_bytes'] ?? 0) ?>"
+                                data-exame-complementar-id="<?= (int) ($e['exame_complementar_id'] ?? 0) ?>"
+                                data-exame-complementar-nome="<?= htmlspecialchars($e['exame_complementar_nome_original'] ?? '', ENT_QUOTES) ?>"
+                                data-exame-complementar-mime="<?= htmlspecialchars($e['exame_complementar_mime_type'] ?? '', ENT_QUOTES) ?>"
+                                data-exame-complementar-tamanho="<?= (int) ($e['exame_complementar_tamanho_bytes'] ?? 0) ?>"
                                 title="<?= htmlspecialchars(t('pedido_medico.acao.gerenciar')) ?>">
                             <i class="fa fa-paperclip"></i> <?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?>
                         </button>
@@ -688,7 +709,7 @@ $periodoLabel = [
                         <?php if ($podeGerenciarPedido): ?>
                         <button type="button" class="wl-btn-gerenciar gerenciar-trigger"
                                 data-id="<?= (int) $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '', ENT_QUOTES) ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay, ENT_QUOTES) ?>"
                                 data-report-id="<?= (int) ($e['report_id'] ?? 0) ?>"
                                 data-report-situacao="<?= htmlspecialchars((string) ($e['report_situacao'] ?? ''), ENT_QUOTES) ?>"
                                 data-chat-status="<?= htmlspecialchars((string) ($e['chat_status'] ?? ''), ENT_QUOTES) ?>"
@@ -711,6 +732,13 @@ $periodoLabel = [
                             <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
                         </span>
                         <?php endif; ?>
+                        <?php if ($podeIniciarEntregaNonDicom): ?>
+                        <a class="wl-btn-gerenciar"
+                           href="/platform/negocios/<?= (int) $tenantId ?>/report-delivery?report_public_token=<?= rawurlencode($reportTokenGestao) ?>"
+                           title="Preparar entrega manual Philips Non-DICOM PDF-only">
+                            <i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('philips_non_dicom.atalho_entrega'), ENT_QUOTES) ?>
+                        </a>
+                        <?php endif; ?>
                         <?php endif; ?>
                     <?php else: ?>
                         <?php if ($podePeerReview && !empty($e['report_public_token'])): ?>
@@ -722,7 +750,7 @@ $periodoLabel = [
                         <?php if ($podeAssumir): ?>
                         <button type="button" class="wl-btn-assumir"
                                 data-id="<?= $e['id'] ?>"
-                                data-paciente="<?= htmlspecialchars($e['patient_name'] ?? '') ?>"
+                                data-paciente="<?= htmlspecialchars($pacienteDisplay) ?>"
                                 data-study-uid="<?= htmlspecialchars($e['study_instance_uid'] ?? '') ?>"
                                 title="Assumir para laudo">
                             <i class="fa fa-hand-holding-medical"></i> Assumir
@@ -745,28 +773,41 @@ $periodoLabel = [
                         <?php endif; ?>
                         <?php endif; ?>
 
-                        <?php if (!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])): ?>
+                        <?php
+                        $viewerStates = is_array($e['viewer_states'] ?? null) ? $e['viewer_states'] : [];
+                        $viewerVisible = static fn (string $key): bool => !empty($viewerStates[$key]['visible']);
+                        $hasViewerVisible = $viewerVisible('voxel_view') || $viewerVisible('voxel_desktop') || $viewerVisible('radiant') || $viewerVisible('weasis');
+                        ?>
+                        <?php if ((!empty($e['study_instance_uid']) || !empty($e['orthanc_id'])) && $hasViewerVisible): ?>
                         <div class="wl-viewer-wrap">
                             <button type="button" class="wl-btn-abrir viewer-trigger" title="Abrir estudo">
                                 <i class="fa fa-eye"></i> Abrir <i class="fa fa-caret-down" style="font-size:.55rem;"></i>
                             </button>
                             <div class="wl-viewer-menu">
+                                <?php if ($viewerVisible('voxel_view')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir" class="wl-vm-item" target="_blank">
                                     <i class="fa fa-globe"></i> <?= htmlspecialchars(t('viewer_desktop.menu.web')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('voxel_desktop')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-voxel" class="wl-vm-item wl-vm-voxel" target="_blank">
-                                    <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> VOXEL Desktop
+                                    <i class="fa fa-desktop" style="width:16px;text-align:center;color:#1a56db;"></i> <?= htmlspecialchars(t('viewer_access.catalog.voxel_desktop')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('radiant')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-radiant" class="wl-vm-item" target="_blank">
                                     <img src="/assets/img/icon-radiant.ico" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.radiant')) ?>
                                 </a>
+                                <?php endif; ?>
+                                <?php if ($viewerVisible('weasis')): ?>
                                 <a href="/estudos/<?= $e['id'] ?>/abrir-weasis" class="wl-vm-item" target="_blank">
                                     <img src="/assets/img/icon-weasis.svg" alt="" class="wl-vm-icon"> <?= htmlspecialchars(t('viewer_desktop.menu.weasis')) ?>
                                 </a>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <?php else: ?>
-                        <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="Sem UID">
+                        <span class="wl-btn-abrir" style="opacity:.3;cursor:not-allowed;" title="<?= htmlspecialchars(t('viewer_access.worklist.indisponivel'), ENT_QUOTES) ?>">
                             <i class="fa fa-eye-slash"></i>
                         </span>
                         <?php endif; ?>
@@ -849,6 +890,17 @@ $periodoLabel = [
 <?php endif; ?>
 
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
+<!-- Escolha explícita do tipo de anexo antes de abrir o formulário. -->
+<div class="modal fade" id="anexoTipoModal" tabindex="-1" aria-labelledby="anexoTipoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content pedido-modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="anexoTipoModalLabel"><i class="fa fa-paperclip me-2"></i><?= htmlspecialchars(t('exames_complementares.selecao.titulo')) ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.fechar')) ?>"></button></div>
+        <div class="modal-body"><p class="pedido-modal-help"><?= htmlspecialchars(t('exames_complementares.selecao.instrucoes')) ?></p><div class="pedido-file-options">
+            <button type="button" class="pedido-file-option" id="btnTipoPedidoMedico"><i class="fa fa-file-prescription"></i><span><?= htmlspecialchars(t('pedido_medico.acao.pedido')) ?></span><small><?= htmlspecialchars(t('exames_complementares.selecao.pedido_desc')) ?></small></button>
+            <button type="button" class="pedido-file-option" id="btnTipoExameComplementar"><i class="fa fa-notes-medical"></i><span><?= htmlspecialchars(t('exames_complementares.titulo')) ?></span><small><?= htmlspecialchars(t('exames_complementares.selecao.complementar_desc')) ?></small></button>
+        </div></div>
+    </div></div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════ MODAL PEDIDO -->
 <div class="modal fade" id="pedidoModal" tabindex="-1" aria-labelledby="pedidoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -901,6 +953,31 @@ $periodoLabel = [
     </div>
 </div>
 
+<!-- ════════════════════════════════ MODAL EXAMES COMPLEMENTARES -->
+<div class="modal fade" id="examesComplementaresModal" tabindex="-1" aria-labelledby="examesComplementaresModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content pedido-modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="examesComplementaresModalLabel"><i class="fa fa-notes-medical me-2"></i><?= htmlspecialchars(t('exames_complementares.modal.titulo')) ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.fechar')) ?>"></button></div>
+        <form id="examesComplementaresForm" enctype="multipart/form-data" method="post"><div class="modal-body">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+            <div class="pedido-estudo-context"><span class="pedido-estudo-label"><?= htmlspecialchars(t('exames_complementares.modal.estudo')) ?></span><strong id="examesComplementaresPacienteNome">—</strong></div>
+            <div id="examesComplementaresAtual" class="pedido-atual" style="display:none;"></div>
+            <p class="pedido-modal-help"><?= htmlspecialchars(t('exames_complementares.modal.instrucoes')) ?></p>
+            <div class="pedido-file-options">
+                <button type="button" class="pedido-file-option" id="btnExamesComplementaresImportar"><i class="fa fa-folder-open"></i><span><?= htmlspecialchars(t('exames_complementares.acao.importar')) ?></span><small><?= htmlspecialchars(t('exames_complementares.modal.importar_desc')) ?></small></button>
+                <button type="button" class="pedido-file-option" id="btnExamesComplementaresCamera"><i class="fa fa-camera"></i><span><?= htmlspecialchars(t('exames_complementares.acao.camera')) ?></span><small><?= htmlspecialchars(t('exames_complementares.modal.camera_desc')) ?></small></button>
+            </div>
+            <input type="file" id="examesComplementaresFile" name="exame_complementar" class="visually-hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,application/pdf,image/*">
+            <input type="file" id="examesComplementaresCameraFile" class="visually-hidden" accept="image/*" capture="environment" aria-label="<?= htmlspecialchars(t('exames_complementares.acao.camera')) ?>">
+            <div id="examesComplementaresSelecionado" class="pedido-arquivo-selecionado" style="display:none;"></div>
+            <div id="examesComplementaresErro" class="alert alert-danger py-2 small" style="display:none;"></div>
+        </div><div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('exames_complementares.acao.cancelar')) ?></button>
+            <button type="button" class="btn btn-outline-danger" id="btnExamesComplementaresRemover" style="display:none;"><i class="fa fa-trash"></i> <?= htmlspecialchars(t('exames_complementares.acao.remover')) ?></button>
+            <button type="submit" class="btn btn-primary" id="btnExamesComplementaresSalvar" disabled><i class="fa fa-cloud-arrow-up"></i> <?= htmlspecialchars(t('exames_complementares.acao.salvar')) ?></button>
+        </div></form>
+    </div></div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════ MODAL GERENCIAR -->
 <div class="modal fade" id="gerenciarModal" tabindex="-1" aria-labelledby="gerenciarModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -944,6 +1021,11 @@ $periodoLabel = [
                         <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante')) ?></strong><small id="gerenciarSolicitanteDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.solicitante_desc')) ?></small></span>
                         <i class="fa fa-chevron-right ms-auto"></i>
                     </button>
+                    <button type="button" id="gerenciarInformacoes" class="gerenciar-menu-item">
+                        <i class="fa fa-triangle-exclamation"></i>
+                        <span><strong><?= htmlspecialchars(t('gestao_gerenciar.menu.informacoes')) ?></strong><small id="gerenciarInformacoesDesc"><?= htmlspecialchars(t('gestao_gerenciar.menu.informacoes_desc')) ?></small></span>
+                        <i class="fa fa-chevron-right ms-auto"></i>
+                    </button>
                 </div>
                 <div id="gerenciarLockNotice" class="gerenciar-lock-notice" style="display:none;">
                     <i class="fa fa-lock"></i> <span><?= htmlspecialchars(t('gestao_gerenciar.menu.bloqueado_pendencia')) ?></span>
@@ -976,6 +1058,29 @@ $periodoLabel = [
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════ MODAL INFORMAÇÕES -->
+<div class="modal fade" id="gerenciarInformacoesModal" tabindex="-1" aria-labelledby="gerenciarInformacoesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content gestao-gerenciar-modal">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gerenciarInformacoesModalLabel"><i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars(t('gestao_gerenciar.informacoes.titulo')) ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= htmlspecialchars(t('gestao_gerenciar.acao.fechar')) ?>"></button>
+            </div>
+            <form id="gerenciarInformacoesForm">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
+                    <div id="gerenciarInformacoesStatus" class="alert py-2 small" style="display:none;"></div>
+                    <label class="w-100" for="gerenciarInformacoesInput"><?= htmlspecialchars(t('gestao_gerenciar.informacoes.campo')) ?>
+                        <textarea id="gerenciarInformacoesInput" name="informacoes" class="form-control mt-1" rows="5" maxlength="1000" autocomplete="off" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.placeholder')) ?>"></textarea>
+                    </label>
+                    <small class="text-muted d-block mt-2"><?= htmlspecialchars(t('gestao_gerenciar.informacoes.ajuda')) ?></small>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= htmlspecialchars(t('gestao_gerenciar.acao.cancelar')) ?></button><button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> <?= htmlspecialchars(t('gestao_gerenciar.informacoes.salvar')) ?></button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════ MODAL CHAT GERENCIAR -->
 <div class="modal fade" id="gerenciarChatModal" tabindex="-1" aria-labelledby="gerenciarChatModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -991,34 +1096,18 @@ $periodoLabel = [
                     <input type="hidden" id="gerenciarChatReportId" name="report_id" value="0">
                     <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
                     <input type="hidden" name="origem" value="gestao_exames">
-                    <div class="gerenciar-chat-grid">
-                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.destinatario')) ?>
-                            <select id="gerenciarChatTipo" name="destinatario_tipo" class="form-select form-select-sm">
-                                <option value="grupo"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?></option>
-                                <option value="usuario"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?></option>
-                            </select>
-                        </label>
-                        <label id="gerenciarChatGrupoWrap"><?= htmlspecialchars(t('gestao_gerenciar.chat.grupo')) ?>
-                            <select id="gerenciarChatGrupo" name="destinatario_grupo" class="form-select form-select-sm"></select>
-                        </label>
-                        <label id="gerenciarChatUsuarioWrap" style="display:none;"><?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?>
-                            <select id="gerenciarChatUsuario" name="destinatario_user_id" class="form-select form-select-sm"></select>
-                        </label>
-                        <label><?= htmlspecialchars(t('gestao_gerenciar.chat.tema')) ?>
-                            <select id="gerenciarChatAssuntoCodigo" name="assunto_codigo" class="form-select form-select-sm"></select>
-                        </label>
-                        <label class="gerenciar-chat-assunto"><?= htmlspecialchars(t('gestao_gerenciar.chat.assunto')) ?>
-                            <input id="gerenciarChatAssunto" name="assunto" class="form-control form-control-sm" maxlength="180" placeholder="<?= htmlspecialchars(t('gestao_gerenciar.chat.assunto_placeholder')) ?>">
-                        </label>
-                    </div>
+                    <label class="gerenciar-chat-recipient" for="gerenciarChatDestinatario"><?= htmlspecialchars(t('gestao_gerenciar.chat.selecione_destinatario')) ?>
+                        <select id="gerenciarChatDestinatario" class="form-select form-select-sm"></select>
+                    </label>
                     <label class="gerenciar-chat-mensagem"><?= htmlspecialchars(t('gestao_gerenciar.chat.mensagem')) ?>
-                        <textarea id="gerenciarChatMensagem" name="mensagem" class="form-control" rows="3" maxlength="5000" required></textarea>
+                        <textarea id="gerenciarChatMensagem" name="mensagem" class="form-control" rows="3" maxlength="5000" required placeholder="<?= htmlspecialchars(t('gestao_gerenciar.chat.mensagem_placeholder')) ?>"></textarea>
                     </label>
                     <div class="gerenciar-chat-footer">
                         <small id="gerenciarChatHint" class="text-muted"></small>
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary btn-sm" id="gerenciarChatEnviar"><i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.enviar')) ?></button>
-                            <button type="button" class="btn btn-success btn-sm" id="gerenciarChatConcluir"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.concluir')) ?></button>
+                            <button type="submit" class="btn btn-primary btn-sm" id="gerenciarChatEnviar"><i class="fa fa-paper-plane"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.enviar_interacao')) ?></button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" id="gerenciarChatCritical" style="display:none;"><i class="fa fa-triangle-exclamation"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.acao_achado_critico')) ?></button>
+                            <button type="button" class="btn btn-success btn-sm" id="gerenciarChatConcluir"><i class="fa fa-check"></i> <?= htmlspecialchars(t('gestao_gerenciar.chat.concluir_liberar_evolucao')) ?></button>
                         </div>
                     </div>
                 </form>
@@ -1046,6 +1135,10 @@ $periodoLabel = [
                         <textarea id="gerenciarPrioridadeMotivo" name="motivo" class="form-control" rows="4" minlength="20" maxlength="1000" required></textarea>
                     </label>
                     <div class="d-flex justify-content-between mt-1"><small class="text-muted"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.minimo')) ?></small><small id="gerenciarPrioridadeCount" class="text-muted">0/20</small></div>
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="gerenciarPrioridadeConfirmacao" required>
+                        <label class="form-check-label small" for="gerenciarPrioridadeConfirmacao"><?= htmlspecialchars(t('gestao_gerenciar.prioridade.confirmacao_dupla')) ?></label>
+                    </div>
                     <div id="gerenciarPrioridadeDestinatarios" class="alert alert-info py-2 small mt-3" style="display:none;">
                         <div class="fw-semibold mb-1"><i class="fa fa-bell me-1"></i><?= htmlspecialchars(t('gestao_gerenciar.prioridade.destinatarios_titulo')) ?></div>
                         <div id="gerenciarPrioridadeDestinatariosLista"></div>
@@ -1101,6 +1194,13 @@ $periodoLabel = [
      data-aguardando-saneamento="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_saneamento')) ?>"
      data-aguardando-contraparte="<?= htmlspecialchars(t('gestao_gerenciar.js.aguardando_contraparte')) ?>"
      data-primeiro-envio="<?= htmlspecialchars(t('gestao_gerenciar.js.primeiro_envio')) ?>"
+     data-chat-mensagem-obrigatoria="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_mensagem_obrigatoria')) ?>"
+     data-chat-destinatario-obrigatorio="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_destinatario_obrigatorio')) ?>"
+     data-chat-confirmar-achado-critico="<?= htmlspecialchars(t('gestao_gerenciar.js.chat_confirmar_achado_critico')) ?>"
+     data-chat-destinatarios-grupos="<?= htmlspecialchars(t('gestao_gerenciar.chat.destinatarios_grupos')) ?>"
+     data-chat-destinatarios-usuarios="<?= htmlspecialchars(t('gestao_gerenciar.chat.destinatarios_usuarios')) ?>"
+     data-chat-usuario="<?= htmlspecialchars(t('gestao_gerenciar.chat.usuario')) ?>"
+     data-chat-nenhum-destinatario="<?= htmlspecialchars(t('gestao_gerenciar.chat.nenhum_destinatario')) ?>"
      data-enviando="<?= htmlspecialchars(t('gestao_gerenciar.js.enviando')) ?>"
      data-enviado="<?= htmlspecialchars(t('gestao_gerenciar.js.enviado')) ?>"
      data-concluindo="<?= htmlspecialchars(t('gestao_gerenciar.js.concluindo')) ?>"
@@ -1110,6 +1210,7 @@ $periodoLabel = [
      data-sem-override="<?= htmlspecialchars(t('gestao_gerenciar.js.sem_override')) ?>"
      data-motivo-curto="<?= htmlspecialchars(t('gestao_gerenciar.js.motivo_curto')) ?>"
      data-confirmar-prioridade="<?= htmlspecialchars(t('gestao_gerenciar.js.confirmar_prioridade')) ?>"
+     data-confirmacao-prioridade-obrigatoria="<?= htmlspecialchars(t('gestao_gerenciar.erro.confirmacao_prioridade_obrigatoria')) ?>"
      data-destinatarios-carregando="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_carregando')) ?>"
      data-destinatarios-nenhum="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_nenhum')) ?>"
      data-destinatarios-grupo="<?= htmlspecialchars(t('gestao_gerenciar.js.destinatarios_grupo')) ?>"
@@ -1139,6 +1240,8 @@ $periodoLabel = [
      data-descricao-modalidade="<?= htmlspecialchars(t('gestao_gerenciar.descricao.modalidade')) ?>"
      data-descricao-sem-sugestoes="<?= htmlspecialchars(t('gestao_gerenciar.descricao.sem_sugestoes')) ?>"
      data-solicitante-sem-informacao="<?= htmlspecialchars(t('gestao_gerenciar.solicitante.sem_informacao')) ?>"
+     data-informacoes-sem-informacao="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.sem_informacao')) ?>"
+     data-informacoes-registradas="<?= htmlspecialchars(t('gestao_gerenciar.informacoes.registradas')) ?>"
      data-confirmar-descricao-lote="<?= htmlspecialchars(t('gestao_gerenciar.descricao.confirmar_lote')) ?>"></div>
 <?php endif; ?>
 
@@ -1371,9 +1474,7 @@ $periodoLabel = [
 .gerenciar-chat-message.is-own{border-left:3px solid var(--pacs-primary);}
 .gerenciar-chat-message header{display:flex;justify-content:space-between;gap:.5rem;font-size:.67rem;color:var(--pacs-text-muted);margin-bottom:.25rem;}
 .gerenciar-chat-message p{white-space:pre-wrap;word-break:break-word;font-size:.76rem;color:var(--pacs-text-primary);margin:0;}
-.gerenciar-chat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;}
-.gerenciar-chat-grid label,.gerenciar-chat-form>label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;font-weight:700;color:var(--pacs-text-secondary);}
-.gerenciar-chat-assunto{grid-column:1/-1;}
+.gerenciar-chat-recipient,.gerenciar-chat-form>label{display:flex;flex-direction:column;gap:.25rem;font-size:.68rem;font-weight:700;color:var(--pacs-text-secondary);}
 .gerenciar-chat-mensagem{margin-top:.6rem;}
 .gerenciar-chat-footer{display:flex;justify-content:space-between;gap:.6rem;align-items:center;margin-top:.65rem;flex-wrap:wrap;}
 .gerenciar-prioridade-atual{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.7rem;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.18);border-radius:7px;margin-bottom:1rem;}
@@ -1383,8 +1484,6 @@ $periodoLabel = [
 #gerenciarPrioridadeForm label{font-size:.7rem;font-weight:700;color:var(--pacs-text-secondary);}
 @media (max-width: 720px){
     .gerenciar-submenu{grid-template-columns:1fr;}
-    .gerenciar-chat-grid{grid-template-columns:1fr;}
-    .gerenciar-chat-assunto{grid-column:auto;}
     .gerenciar-chat-history{max-height:38vh;}
 }
 .wl-btn-assumir{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;
@@ -1824,6 +1923,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!modalEl || typeof bootstrap === 'undefined') return;
 
     const modal       = new bootstrap.Modal(modalEl);
+    const tipoModalEl = document.getElementById('anexoTipoModal');
+    const tipoModal = tipoModalEl ? new bootstrap.Modal(tipoModalEl) : null;
     const form        = document.getElementById('pedidoForm');
     const fileInput   = document.getElementById('pedidoFile');
     const cameraInput = document.getElementById('pedidoCameraFile');
@@ -1838,6 +1939,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const csrf         = form.querySelector('input[name="csrf"]');
     let estudoAtualId  = 0;
     let cameraFile     = null;
+    let triggerAnexoAtual = null;
 
     const I18N_PEDIDO = {
         tamanho: <?= json_encode(t('pedido_medico.js.tamanho')) ?>,
@@ -1889,6 +1991,12 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.pedido-trigger').forEach(function (button) {
         button.addEventListener('click', function (event) {
             event.preventDefault();
+            if (!button.dataset.anexoDireto && tipoModal) {
+                triggerAnexoAtual = button;
+                tipoModal.show();
+                return;
+            }
+            delete button.dataset.anexoDireto;
             estudoAtualId = Number(button.dataset.id || 0);
             form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(estudoAtualId) + '/pedido';
             pacienteEl.textContent = button.dataset.paciente || '—';
@@ -2005,6 +2113,62 @@ document.addEventListener('DOMContentLoaded', function () {
             removerBtn.innerHTML = textoOriginal;
         }
     });
+
+    document.getElementById('btnTipoPedidoMedico')?.addEventListener('click', function () {
+        if (!triggerAnexoAtual) return;
+        tipoModal?.hide();
+        triggerAnexoAtual.dataset.anexoDireto = '1';
+        triggerAnexoAtual.click();
+    });
+
+    document.getElementById('btnTipoExameComplementar')?.addEventListener('click', function () {
+        if (!triggerAnexoAtual) return;
+        tipoModal?.hide();
+        window.dispatchEvent(new CustomEvent('gestao:abrir-exame-complementar', { detail: triggerAnexoAtual }));
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('examesComplementaresModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+    const modal = new bootstrap.Modal(modalEl);
+    const form = document.getElementById('examesComplementaresForm');
+    const file = document.getElementById('examesComplementaresFile');
+    const camera = document.getElementById('examesComplementaresCameraFile');
+    const save = document.getElementById('btnExamesComplementaresSalvar');
+    const remove = document.getElementById('btnExamesComplementaresRemover');
+    const current = document.getElementById('examesComplementaresAtual');
+    const selected = document.getElementById('examesComplementaresSelecionado');
+    const errorBox = document.getElementById('examesComplementaresErro');
+    let studyId = 0, cameraFile = null;
+    const labels = {
+        selected: <?= json_encode(t('exames_complementares.js.selecionado')) ?>,
+        missing: <?= json_encode(t('exames_complementares.erro.arquivo_ausente')) ?>,
+        communication: <?= json_encode(t('exames_complementares.erro.comunicacao')) ?>,
+        saving: <?= json_encode(t('exames_complementares.js.salvando')) ?>,
+        removing: <?= json_encode(t('exames_complementares.js.removendo')) ?>,
+        confirmRemove: <?= json_encode(t('exames_complementares.confirmar.remover')) ?>,
+        consult: <?= json_encode(t('exames_complementares.acao.consultar')) ?>,
+    };
+    const tamanho = (v) => v >= 1048576 ? (v / 1048576).toFixed(2).replace('.', ',') + ' MB' : (v >= 1024 ? (v / 1024).toFixed(1).replace('.', ',') + ' KB' : v + ' B');
+    const erro = (v) => { errorBox.textContent = v || labels.communication; errorBox.style.display = 'block'; };
+    const limparErro = () => { errorBox.textContent = ''; errorBox.style.display = 'none'; };
+    window.addEventListener('gestao:abrir-exame-complementar', (event) => {
+        const button = event.detail; studyId = Number(button?.dataset?.id || 0); if (!studyId) return;
+        form.action = '/api/gestao-exames/estudos/' + encodeURIComponent(studyId) + '/exames-complementares';
+        document.getElementById('examesComplementaresPacienteNome').textContent = button.dataset.paciente || '—';
+        file.value = ''; camera.value = ''; cameraFile = null; selected.style.display = 'none'; save.disabled = true; limparErro();
+        const id = Number(button.dataset.exameComplementarId || 0); current.innerHTML = ''; remove.style.display = id > 0 ? 'inline-flex' : 'none';
+        if (id > 0) { const icon = document.createElement('i'); icon.className = 'fa fa-circle-check'; const name = document.createElement('span'); name.textContent = (button.dataset.exameComplementarNome || '') + ' (' + tamanho(Number(button.dataset.exameComplementarTamanho || 0)) + ')'; const link = document.createElement('a'); link.href = '/api/gestao-exames/exames-complementares/' + encodeURIComponent(id) + '/arquivo'; link.target = '_blank'; link.rel = 'noopener'; link.textContent = labels.consult; current.append(icon, name, link); current.style.display = 'flex'; } else current.style.display = 'none';
+        modal.show();
+    });
+    document.getElementById('btnExamesComplementaresImportar')?.addEventListener('click', () => { cameraFile = null; camera.value = ''; file.removeAttribute('capture'); file.click(); });
+    document.getElementById('btnExamesComplementaresCamera')?.addEventListener('click', () => { cameraFile = null; file.value = ''; camera.value = ''; camera.click(); });
+    const escolher = (item, veioCamera) => { if (!item) { save.disabled = true; selected.style.display = 'none'; return; } cameraFile = veioCamera ? item : null; if (veioCamera) file.value = ''; selected.textContent = labels.selected + ': ' + item.name + ' (' + tamanho(item.size) + ')'; selected.style.display = 'flex'; save.disabled = false; limparErro(); };
+    file.addEventListener('change', () => escolher(file.files?.[0], false));
+    camera.addEventListener('change', () => escolher(camera.files?.[0], true));
+    form.addEventListener('submit', async (event) => { event.preventDefault(); limparErro(); if (!file.files?.length && !cameraFile) { erro(labels.missing); return; } save.disabled = true; const original = save.innerHTML; save.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + labels.saving; try { const body = new FormData(form); if (cameraFile) body.set('exame_complementar', cameraFile, cameraFile.name || 'exame-complementar-camera.jpg'); const response = await fetch(form.action, { method: 'POST', headers: {'X-Requested-With':'XMLHttpRequest'}, body }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.msg || labels.communication); modal.hide(); window.location.reload(); } catch (e) { erro(e.message || labels.communication); save.disabled = false; save.innerHTML = original; } });
+    remove.addEventListener('click', async () => { if (!studyId || !window.confirm(labels.confirmRemove)) return; remove.disabled = true; const original = remove.innerHTML; remove.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + labels.removing; try { const csrf = form.querySelector('input[name="csrf"]')?.value || ''; const response = await fetch('/api/gestao-exames/estudos/' + encodeURIComponent(studyId) + '/exames-complementares/remover', { method: 'POST', headers: {'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}, body: JSON.stringify({csrf}) }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.msg || labels.communication); modal.hide(); window.location.reload(); } catch (e) { erro(e.message || labels.communication); remove.disabled = false; remove.innerHTML = original; } });
 });
 <?php endif; ?>
 
@@ -2204,75 +2368,9 @@ function resetDownloadUI() {
     if (bar)  { bar.style.width = '0%'; bar.style.background = ''; }
 }
 
-// ── Botão VOXEL Desktop ─────────────────────────────────────────────────────
-(function () {
-    const btn   = document.getElementById('btn-voxel-desktop');
-    const label = document.getElementById('vd-label');
-    if (!btn) return;
-
-    // Detecta se o VOXEL Desktop está instalado tentando abrir o protocolo voxel://
-    // e verificando se a aba permanece visível (heurística padrão de mercado)
-    function detectarInstalado(cb) {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        let respondeu = false;
-        const t = setTimeout(function () {
-            if (!respondeu) cb(false);
-            document.body.removeChild(iframe);
-        }, 800);
-        try {
-            iframe.src = 'voxel://ping';
-            // Se o protocolo estiver registrado, o navegador não vai lançar erro
-            // Consideramos instalado após 300ms sem erro
-            setTimeout(function () {
-                respondeu = true;
-                clearTimeout(t);
-                cb(true);
-                document.body.removeChild(iframe);
-            }, 300);
-        } catch (e) {
-            respondeu = true;
-            clearTimeout(t);
-            cb(false);
-            document.body.removeChild(iframe);
-        }
-    }
-
-    // Verifica se já foi detectado nesta sessão (sessionStorage)
-    const cached = sessionStorage.getItem('voxel_desktop_instalado');
-    if (cached === '1') {
-        btn.classList.add('vd-instalado');
-        label.textContent = 'VOXEL Desktop Instalado';
-        btn.title = 'Abrir VOXEL Desktop';
-    } else if (cached !== '0') {
-        // Primeira visita: tenta detectar silenciosamente
-        detectarInstalado(function (instalado) {
-            sessionStorage.setItem('voxel_desktop_instalado', instalado ? '1' : '0');
-            if (instalado) {
-                btn.classList.add('vd-instalado');
-                label.textContent = 'VOXEL Desktop Instalado';
-                btn.title = 'Abrir VOXEL Desktop';
-            }
-        });
-    }
-
-    btn.addEventListener('click', function () {
-        const instalado = sessionStorage.getItem('voxel_desktop_instalado') === '1';
-        if (instalado) {
-            // Abre o VOXEL Desktop sem estudo específico
-            window.location.href = 'voxel://open';
-        } else {
-            // Detecta OS e faz download do instalador
-            const ua = navigator.userAgent || '';
-            let platform = 'windows';
-            if (/Mac/i.test(ua))   platform = 'mac';
-            if (/Linux/i.test(ua) && !/Android/i.test(ua)) platform = 'linux';
-            window.location.href = '/desktop/download?platform=' + platform;
-        }
-    });
-}());
 </script>
 <?php if ($modoGestao && $podeGerenciarPedido): ?>
-<script src="/assets/js/gestao-exames-gerenciar.js?v=20260826-solicitante-caixa-alta-v1"></script>
+<!-- Asset do submenu Gerenciar: versão centralizada para evitar cache de runtime obsoleto. -->
+<?php $gestaoAssetVersion = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
+<script src="/assets/js/gestao-exames-gerenciar.js?v=<?= rawurlencode((string) $gestaoAssetVersion) ?>"></script>
 <?php endif; ?>

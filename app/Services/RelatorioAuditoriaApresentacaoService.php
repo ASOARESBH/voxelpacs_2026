@@ -25,6 +25,7 @@ final class RelatorioAuditoriaApresentacaoService
             'prioridade.alterada' => 'auditoria.evento.prioridade_alterada',
             'estudo.descricao_alterada' => 'auditoria.evento.descricao_alterada',
             'estudo.descricao_lote_alterada' => 'auditoria.evento.descricao_lote_alterada',
+            'estudo.informacoes_alteradas' => 'auditoria.evento.informacoes_alteradas',
             'relatorio.auditoria_visualizado' => 'auditoria.evento.relatorio_visualizado',
             'relatorio.auditoria_exportado' => 'auditoria.evento.relatorio_exportado',
             'relatorio.sla_medicos_visualizado' => 'auditoria.evento.sla_visualizado',
@@ -62,6 +63,7 @@ final class RelatorioAuditoriaApresentacaoService
         if ($acao === 'pedido.removido') return t('auditoria.contexto.pedido_removido');
         if ($acao === 'prioridade.alterada') return t('auditoria.contexto.prioridade_alterada');
         if (str_starts_with($acao, 'estudo.descricao_')) return t('auditoria.contexto.descricao_alterada');
+        if ($acao === 'estudo.informacoes_alteradas') return t('auditoria.contexto.informacoes_alteradas');
         if (str_starts_with($acao, 'report.peer_review_')) return t('auditoria.contexto.peer_review');
         return t('auditoria.contexto.registrado');
     }

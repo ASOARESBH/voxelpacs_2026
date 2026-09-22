@@ -32,6 +32,35 @@ final class RelatorioProdutividadeMedicosRepository
     {
     }
 
+    /** Prioridade operacional efetiva: override manual auditável, tag DICOM ou legado normalizado. */
+    private function prioridadeEfetivaSql(string $alias = 'e'): string
+    {
+        return "COALESCE(
+            NULLIF(BTRIM({$alias}.dicom_priority_override), ''),
+            CASE UPPER(BTRIM(COALESCE({$alias}.dicom_priority, '')))
+                WHEN 'STAT' THEN 'STAT'
+                WHEN 'HIGH' THEN 'HIGH'
+                WHEN 'ROUTINE' THEN 'ROUTINE'
+                WHEN 'MEDIUM' THEN 'MEDIUM'
+                WHEN 'LOW' THEN 'LOW'
+                ELSE NULL
+            END,
+            CASE LOWER(BTRIM(COALESCE({$alias}.prioridade, '')))
+                WHEN 'rotina' THEN 'ROUTINE'
+                WHEN 'normal' THEN 'ROUTINE'
+                WHEN 'urgente' THEN 'HIGH'
+                WHEN 'urgência' THEN 'HIGH'
+                WHEN 'critico' THEN 'STAT'
+                WHEN 'crítico' THEN 'STAT'
+                WHEN 'emergencia' THEN 'STAT'
+                WHEN 'emergência' THEN 'STAT'
+                WHEN 'ambulatorial' THEN 'LOW'
+                ELSE NULL
+            END,
+            'ROUTINE'
+        )";
+    }
+
     /** @return array<int,array{id:int,nome:string}> */
     public function medicos(int $tenantId): array
     {
@@ -67,13 +96,12 @@ final class RelatorioProdutividadeMedicosRepository
         // O catálogo DICOM permanece visível mesmo quando um tenant ainda não recebeu
         // estudos de determinada prioridade. Valores legados desconhecidos são preservados.
         $opcoes = self::PRIORIDADES_DICOM;
+        $prioridadeSql = $this->prioridadeEfetivaSql('e');
         $stmt = $this->pdo->prepare(
-            'SELECT DISTINCT UPPER(BTRIM(prioridade))
-               FROM bi_pacs_estudos
+            "SELECT DISTINCT {$prioridadeSql}
+               FROM bi_pacs_estudos e
               WHERE tenant_id = :tenant_id
-                AND prioridade IS NOT NULL
-                AND BTRIM(prioridade) <> \'\'
-              ORDER BY 1'
+              ORDER BY 1"
         );
         $stmt->execute([':tenant_id' => $tenantId]);
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $prioridade) {
@@ -129,11 +157,12 @@ final class RelatorioProdutividadeMedicosRepository
 
     /**
      * @param array{tenant_id:int,data_de:string,data_ate:string,base_periodo:string,unidade:string,modalidades:array<int,string>,estudo:string,medico_id:?int,pagina:int,por_pagina:int,medico_restrito_id:?int} $filtros
-     * @return array{linhas:array<int,array<string,mixed>>,total:int,totalizadores:array<string,int|null>,por_medico:array<int,array<string,mixed>>}
+     * @return array{linhas:array<int,array<string,mixed>>,total:int,totalizadores:array<string,int|null>,porMedico:array<int,array<string,mixed>>,resumoLiberados:array{modalidades:array<string,int>,prioridades:array<string,int>}}
      */
     public function buscar(array $filtros): array
     {
         [$where, $params] = $this->where($filtros);
+        $prioridadeSql = $this->prioridadeEfetivaSql('e');
 
         $peerReviews = '
             SELECT estudo_id,
@@ -154,21 +183,9 @@ final class RelatorioProdutividadeMedicosRepository
                 COALESCE(e.patient_id, \'—\') AS patient_id,
                 e.institution_name AS unidade,
                 e.modalities,
-                COALESCE(
-                    CASE LOWER(COALESCE(e.prioridade, \'\'))
-                        WHEN \'rotina\' THEN \'ROUTINE\'
-                        WHEN \'normal\' THEN \'ROUTINE\'
-                        WHEN \'urgente\' THEN \'HIGH\'
-                        WHEN \'urgência\' THEN \'HIGH\'
-                        WHEN \'critico\' THEN \'STAT\'
-                        WHEN \'crítico\' THEN \'STAT\'
-                        WHEN \'emergencia\' THEN \'STAT\'
-                        WHEN \'emergência\' THEN \'STAT\'
-                        WHEN \'ambulatorial\' THEN \'LOW\'
-                        ELSE UPPER(NULLIF(e.prioridade, \'\'))
-                    END,
-                    \'ROUTINE\'
-                ) AS prioridade,
+                ' . $prioridadeSql . ' AS prioridade,
+                (NULLIF(BTRIM(e.dicom_priority_override), \'\') IS NOT NULL) AS prioridade_manual,
+                COALESCE(NULLIF(BTRIM(e.dicom_priority), \'\'), NULLIF(BTRIM(e.prioridade), \'\'), \'ROUTINE\') AS prioridade_origem,
                 COALESCE(
                     NULLIF(e.study_description, \'\'),
                     NULLIF(e.scheduled_procedure_step_desc, \'\'),
@@ -212,18 +229,20 @@ final class RelatorioProdutividadeMedicosRepository
 
         $totalizadores = $this->totalizar($all);
         $porMedico = $this->agruparPorMedico($all);
+        $resumoLiberados = $this->resumirLiberados($all);
 
         $total = count($all);
         $porPagina = max(1, min(100, (int) $filtros['por_pagina']));
         $pagina = max(1, (int) $filtros['pagina']);
         $linhas = array_slice($all, ($pagina - 1) * $porPagina, $porPagina);
 
-        return compact('linhas', 'total', 'totalizadores', 'porMedico');
+        return compact('linhas', 'total', 'totalizadores', 'porMedico', 'resumoLiberados');
     }
 
     /** @param array<string,mixed> $filtros @return array{0:array<int,string>,1:array<string,mixed>} */
     private function where(array $filtros): array
     {
+        $prioridadeSql = $this->prioridadeEfetivaSql('e');
         $where = [
             'r.tenant_id = :tenant_id',
             "r.situacao::text IN ('assinado', 'liberado')",
@@ -249,21 +268,7 @@ final class RelatorioProdutividadeMedicosRepository
         }
 
         if ($filtros['prioridade'] !== '') {
-            $where[] = "COALESCE(
-                CASE LOWER(COALESCE(e.prioridade, ''))
-                    WHEN 'rotina' THEN 'ROUTINE'
-                    WHEN 'normal' THEN 'ROUTINE'
-                    WHEN 'urgente' THEN 'HIGH'
-                    WHEN 'urgência' THEN 'HIGH'
-                    WHEN 'critico' THEN 'STAT'
-                    WHEN 'crítico' THEN 'STAT'
-                    WHEN 'emergencia' THEN 'STAT'
-                    WHEN 'emergência' THEN 'STAT'
-                    WHEN 'ambulatorial' THEN 'LOW'
-                    ELSE UPPER(NULLIF(e.prioridade, ''))
-                END,
-                'ROUTINE'
-            ) = :prioridade";
+            $where[] = "{$prioridadeSql} = :prioridade";
             $params[':prioridade'] = $filtros['prioridade'];
         }
 
@@ -307,6 +312,43 @@ final class RelatorioProdutividadeMedicosRepository
             'sla_medio_min' => $conclusoes ? (int) round(array_sum($conclusoes) / count($conclusoes)) : null,
             'sla_total_min' => $conclusoes ? (int) array_sum($conclusoes) : null,
         ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $linhas
+     * @return array{modalidades:array<string,int>,prioridades:array<string,int>}
+     */
+    private function resumirLiberados(array $linhas): array
+    {
+        $modalidades = [];
+        $prioridades = [];
+        $ordemPrioridade = array_flip(array_keys(self::PRIORIDADES_DICOM));
+
+        foreach ($linhas as $linha) {
+            if (($linha['situacao_laudo'] ?? '') !== 'liberado') {
+                continue;
+            }
+
+            $modalidadesDaLinha = [];
+            foreach (explode('\\', (string) ($linha['modalities'] ?? '')) as $modalidade) {
+                $modalidade = strtoupper(trim($modalidade));
+                if ($modalidade !== '') {
+                    $modalidadesDaLinha[$modalidade] = true;
+                }
+            }
+            foreach (array_keys($modalidadesDaLinha) as $modalidade) {
+                $modalidades[$modalidade] = ($modalidades[$modalidade] ?? 0) + 1;
+            }
+
+            $prioridade = strtoupper(trim((string) ($linha['prioridade'] ?? 'ROUTINE')));
+            $prioridade = array_key_exists($prioridade, self::PRIORIDADES_DICOM) ? $prioridade : 'ROUTINE';
+            $prioridades[$prioridade] = ($prioridades[$prioridade] ?? 0) + 1;
+        }
+
+        ksort($modalidades, SORT_NATURAL);
+        uksort($prioridades, static fn(string $a, string $b): int => ($ordemPrioridade[$a] ?? PHP_INT_MAX) <=> ($ordemPrioridade[$b] ?? PHP_INT_MAX));
+
+        return ['modalidades' => $modalidades, 'prioridades' => $prioridades];
     }
 
     /** @param array<int,array<string,mixed>> $linhas @return array<int,array<string,mixed>> */

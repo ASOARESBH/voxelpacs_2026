@@ -1,5 +1,7 @@
 /* Gestão de Exames — submenu Gerenciar
  * O backend continua sendo a autoridade para tenant, pendência e prioridade.
+ * O CHAT usa o mesmo destinatário único e a mesma ação crítica explícita.
+ * A resposta administrativa inicia com o médico autor ativo quando aplicável.
  */
 (function () {
     'use strict';
@@ -14,6 +16,7 @@
         context: null,
         csrf: document.querySelector('#pedidoForm input[name="csrf"]')?.value || '',
         reopenGerenciarAfterDescription: false,
+        reopenGerenciarAfterInformation: false,
     };
 
     const $ = (selector) => document.querySelector(selector);
@@ -61,6 +64,14 @@
         element.style.display = message ? 'block' : 'none';
     }
 
+    function showStudyInformationStatus(message, type = 'danger') {
+        const element = $('#gerenciarInformacoesStatus');
+        if (!element) return;
+        element.className = `alert alert-${type} py-2 small`;
+        element.textContent = message || '';
+        element.style.display = message ? 'block' : 'none';
+    }
+
     function csrfToken() {
         return state.csrf
             || document.querySelector('#gerenciarDescricaoForm input[name="csrf"]')?.value
@@ -78,18 +89,6 @@
             LOW: text('prioridadeLow'),
         };
         return labels[value] || option?.label || value;
-    }
-
-    function subjectLabel(option) {
-        const labels = {
-            erro_pedido: text('temaErroPedido'),
-            contraste: text('temaContraste'),
-            exames_complementares: text('temaExamesComplementares'),
-            duvida_administrativa: text('temaDuvidaAdministrativa'),
-            achado_critico: 'ACHADO CRÍTICO',
-            outro: text('temaOutro'),
-        };
-        return labels[String(option?.codigo || '')] || option?.label || option?.codigo || '';
     }
 
     function reportStatusLabel(status) {
@@ -143,11 +142,15 @@
         const canInteract = context?.can_interact !== false;
         const canComplete = context?.can_complete !== false;
         const send = $('#gerenciarChatEnviar');
+        const critical = $('#gerenciarChatCritical');
         const complete = $('#gerenciarChatConcluir');
         const message = $('#gerenciarChatMensagem');
+        const recipient = $('#gerenciarChatDestinatario');
         const hint = $('#gerenciarChatHint');
         if (send) send.disabled = !canInteract;
+        if (critical) critical.disabled = !canInteract;
         if (message) message.disabled = !canInteract;
+        if (recipient) recipient.disabled = !canInteract;
         if (complete) complete.disabled = !pending || !canComplete;
         if (hint) {
             hint.textContent = pending
@@ -160,7 +163,8 @@
     function renderContext(context) {
         state.context = context || {};
         state.reportId = Number(context?.report_id || 0);
-        $('#gerenciarPacienteNome').textContent = context?.patient_name || '—';
+        const patientName = $('#gerenciarPacienteNome');
+        if (patientName) patientName.textContent = context?.patient_name || '—';
         const reportStatus = reportStatusLabel(context?.report_situacao);
         const effectivePriorityLabel = priorityLabel(context?.priority || {});
         const meta = [
@@ -168,7 +172,8 @@
             reportStatus ? `${text('laudo')}: ${reportStatus}` : text('semLaudo'),
             context?.priority?.effective ? `${text('prioridade')}: ${effectivePriorityLabel}` : ''
         ].filter(Boolean).join(' · ');
-        $('#gerenciarEstudoMeta').textContent = meta;
+        const studyMeta = $('#gerenciarEstudoMeta');
+        if (studyMeta) studyMeta.textContent = meta;
 
         const viewReport = $('#gerenciarVerLaudo');
         if (viewReport) {
@@ -181,41 +186,83 @@
         const descriptionButton = $('#gerenciarDescricao');
         const priorityButton = $('#gerenciarPrioridade');
         const requestingPhysicianButton = $('#gerenciarSolicitante');
+        const informationButton = $('#gerenciarInformacoes');
         const badge = $('#gerenciarChatBadge');
         const lockNotice = $('#gerenciarLockNotice');
         const pending = Boolean(context?.chat_pending);
         if (badge) badge.style.display = pending ? 'inline-flex' : 'none';
         if (priorityButton) priorityButton.disabled = pending;
         if (requestingPhysicianButton) requestingPhysicianButton.disabled = pending;
+        if (informationButton) informationButton.disabled = pending;
         if (lockNotice) lockNotice.style.display = pending ? 'block' : 'none';
         if (chatButton) chatButton.disabled = !state.reportId;
         if (descriptionButton) descriptionButton.disabled = !context?.modalidade;
         const descriptionDetail = $('#gerenciarDescricaoDesc');
         if (descriptionDetail) descriptionDetail.textContent = context?.modalidade || text('erroOperacao');
-        $('#gerenciarPrioridadeDesc').textContent = context?.priority?.effective
-            ? priorityLabel(context.priority)
-            : text('prioridade');
+        const priorityDetail = $('#gerenciarPrioridadeDesc');
+        if (priorityDetail) {
+            priorityDetail.textContent = context?.priority?.effective
+                ? priorityLabel(context.priority)
+                : text('prioridade');
+        }
         const requesterDetail = $('#gerenciarSolicitanteDesc');
         if (requesterDetail) requesterDetail.textContent = context?.requesting_physician || text('solicitanteSemInformacao');
+        const informationDetail = $('#gerenciarInformacoesDesc');
+        if (informationDetail) informationDetail.textContent = context?.study_information_present
+            ? text('informacoesRegistradas')
+            : text('informacoesSemInformacao');
 
         const chat = context?.chat || null;
         renderChatHistory(chat);
-        fillSelect($('#gerenciarChatGrupo'), chat?.groups || [], 'id', 'label', chat?.destinatario_grupo_id);
-        fillSelect($('#gerenciarChatUsuario'), chat?.users || [], 'id', 'name', chat?.destinatario_user_id);
-        fillSelect($('#gerenciarChatAssuntoCodigo'), chat?.subjects || [], 'codigo', 'label', chat?.assunto_codigo, subjectLabel);
-        $('#gerenciarChatTipo').value = chat?.destinatario_tipo || 'grupo';
-        $('#gerenciarChatAssunto').value = chat?.assunto || '';
-        $('#gerenciarChatReportId').value = String(state.reportId);
-        updateChatRecipientVisibility();
+        fillChatRecipients(chat || {});
+        const canCommunicateCritical = (chat?.subjects || []).some((subject) => subject?.codigo === 'achado_critico');
+        const critical = $('#gerenciarChatCritical');
+        if (critical) critical.style.display = canCommunicateCritical ? '' : 'none';
+        const reportIdInput = $('#gerenciarChatReportId');
+        if (reportIdInput) reportIdInput.value = String(state.reportId);
         updateChatControls(chat || {}, context);
     }
 
-    function updateChatRecipientVisibility() {
-        const isUser = $('#gerenciarChatTipo')?.value === 'usuario';
-        const groupWrap = $('#gerenciarChatGrupoWrap');
-        const userWrap = $('#gerenciarChatUsuarioWrap');
-        if (groupWrap) groupWrap.style.display = isUser ? 'none' : 'flex';
-        if (userWrap) userWrap.style.display = isUser ? 'flex' : 'none';
+    function selectedChatRecipient(chat) {
+        const preferredUserId = Number(chat?.destinatario_preferencial_user_id || 0);
+        if (preferredUserId > 0) return `usuario:${preferredUserId}`;
+        const type = chat?.destinatario_tipo === 'usuario' ? 'usuario' : 'grupo';
+        const id = type === 'usuario' ? chat?.destinatario_user_id : chat?.destinatario_grupo_id;
+        return id ? `${type}:${id}` : '';
+    }
+
+    function fillChatRecipients(chat) {
+        const select = $('#gerenciarChatDestinatario');
+        if (!select) return;
+        const selected = selectedChatRecipient(chat);
+        const groups = Array.isArray(chat?.groups) ? chat.groups : [];
+        const users = Array.isArray(chat?.users) ? chat.users : [];
+        const groupOptions = groups.map((group) => {
+            const id = Number(group?.id || 0);
+            const count = Number(group?.total_membros || 0);
+            const label = `${group?.label || text('chatDestinatariosGrupos')}${count > 0 ? ` (${count})` : ''}`;
+            return `<option value="grupo:${id}"${selected === `grupo:${id}` ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        const userOptions = users.map((user) => {
+            const id = Number(user?.id || 0);
+            const label = `${user?.name || text('chatUsuario')}${user?.perfil ? ` — ${user.perfil}` : ''}`;
+            return `<option value="usuario:${id}"${selected === `usuario:${id}` ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        select.innerHTML = [
+            groupOptions ? `<optgroup label="${escapeHtml(text('chatDestinatariosGrupos'))}">${groupOptions}</optgroup>` : '',
+            userOptions ? `<optgroup label="${escapeHtml(text('chatDestinatariosUsuarios'))}">${userOptions}</optgroup>` : '',
+        ].join('') || `<option value="" selected disabled>${escapeHtml(text('chatNenhumDestinatario'))}</option>`;
+    }
+
+    function parseChatRecipient() {
+        const value = $('#gerenciarChatDestinatario')?.value || '';
+        const match = /^(grupo|usuario):([1-9][0-9]*)$/.exec(value);
+        if (!match) return null;
+        return {
+            type: match[1],
+            groupId: match[1] === 'grupo' ? match[2] : '',
+            userId: match[1] === 'usuario' ? match[2] : null,
+        };
     }
 
     async function loadContext(studyId) {
@@ -232,44 +279,84 @@
         showFeedback('', 'info');
     }
 
-    async function sendChat(event) {
-        event.preventDefault();
+    async function sendChat(event, action = 'enviar_interacao') {
+        event?.preventDefault();
         if (!state.reportId || state.context?.can_interact === false) return;
-        const form = $('#gerenciarChatForm');
-        const data = Object.fromEntries(new FormData(form).entries());
-        data.report_id = state.reportId;
-        data.csrf = state.csrf;
-        if (data.assunto_codigo === 'achado_critico' && !window.confirm('Confirmar o registro de ACHADO CRÍTICO? A sinalização será gravada no estudo e os administradores do tenant serão notificados por e-mail.')) return;
+        const message = $('#gerenciarChatMensagem');
+        const body = String(message?.value || '').trim();
+        const recipient = parseChatRecipient();
+        const isCritical = action === 'comunicar_achado_critico';
+        if (!body) {
+            showChatStatus(text('chatMensagemObrigatoria'), 'danger');
+            message?.focus();
+            return;
+        }
+        if (!recipient) {
+            showChatStatus(text('chatDestinatarioObrigatorio'), 'danger');
+            $('#gerenciarChatDestinatario')?.focus();
+            return;
+        }
+        if (isCritical && !window.confirm(text('chatConfirmarAchadoCritico'))) return;
+        const data = {
+            report_id: state.reportId,
+            csrf: state.csrf,
+            origem: 'gestao_exames',
+            destinatario_tipo: recipient.type,
+            destinatario_grupo: recipient.groupId,
+            destinatario_user_id: recipient.userId,
+            assunto_codigo: isCritical ? 'achado_critico' : 'outro',
+            assunto: '',
+            mensagem: body,
+            acao: action,
+        };
         showChatStatus(text('enviando'), 'info');
-        const response = await fetch('/api/reports/chat/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin',
-            body: JSON.stringify(data)
-        });
-        let payload = {};
-        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
-        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
-        $('#gerenciarChatMensagem').value = '';
-        await loadContext(state.studyId);
-        showChatStatus(payload.email_warning || text('enviado'), payload.email_warning ? 'warning' : 'success');
+        const send = $('#gerenciarChatEnviar');
+        const critical = $('#gerenciarChatCritical');
+        if (send) send.disabled = true;
+        if (critical) critical.disabled = true;
+        try {
+            const response = await fetch('/api/reports/chat/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                body: JSON.stringify(data)
+            });
+            let payload = {};
+            try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            message.value = '';
+            await loadContext(state.studyId);
+            showChatStatus(payload.email_warning || text('enviado'), payload.email_warning ? 'warning' : 'success');
+        } finally {
+            if (send) send.disabled = false;
+            if (critical) critical.disabled = false;
+        }
     }
 
     async function completeChat() {
-        if (!state.reportId || $('#gerenciarChatConcluir').disabled) return;
+        const button = $('#gerenciarChatConcluir');
+        if (!state.reportId || !button || button.disabled) return;
         if (!window.confirm(text('confirmarConclusao'))) return;
+        if (button) button.disabled = true;
         showChatStatus(text('concluindo'), 'info');
-        const response = await fetch('/api/reports/chat/complete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ report_id: state.reportId, csrf: state.csrf, origem: 'gestao_exames' })
-        });
-        let payload = {};
-        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
-        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
-        await loadContext(state.studyId);
-        showChatStatus(text('concluido'), 'success');
+        try {
+            const response = await fetch('/api/reports/chat/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ report_id: state.reportId, csrf: state.csrf, origem: 'gestao_exames' })
+            });
+            let payload = {};
+            try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+            if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+            showChatStatus(text('concluido'), 'success');
+            // A Worklist é a fonte visual do estado. Recarrega os dados já
+            // restaurados pelo backend, sem simular status apenas no navegador.
+            window.setTimeout(() => window.location.reload(), 250);
+        } catch (error) {
+            showChatStatus(error.message || text('erroOperacao'), 'danger');
+            if (button) button.disabled = false;
+        }
     }
 
     function renderDescriptionSuggestions(suggestions) {
@@ -296,6 +383,10 @@
 
     function normalizeRequestingPhysicianInput(value) {
         return String(value || '').toLocaleUpperCase();
+    }
+
+    function normalizeStudyInformationInput(value) {
+        return String(value || '').toLocaleUpperCase('pt-BR');
     }
 
     async function openDescriptionModal() {
@@ -388,6 +479,7 @@
         fillSelect($('#gerenciarPrioridadeSelect'), priority.options || [], 'value', 'label', priority.effective, priorityLabel);
         $('#gerenciarPrioridadeMotivo').value = '';
         $('#gerenciarPrioridadeCount').textContent = '0/20';
+        $('#gerenciarPrioridadeConfirmacao').checked = false;
         $('#gerenciarPrioridadeAviso').style.display = 'none';
         $('#gerenciarPrioridadeErro').style.display = 'none';
         modal('gerenciarPrioridadeModal')?.show();
@@ -399,6 +491,23 @@
         $('#gerenciarSolicitanteInput').value = normalizeRequestingPhysicianInput(state.context?.requesting_physician_manual || '');
         showRequestingPhysicianStatus('', 'info');
         modal('gerenciarSolicitanteModal')?.show();
+    }
+
+    function openStudyInformationModal() {
+        if (!state.studyId || state.context?.chat_pending) return;
+        const informationModal = modal('gerenciarInformacoesModal');
+        if (!informationModal) return;
+        $('#gerenciarInformacoesInput').value = normalizeStudyInformationInput(state.context?.study_information || '');
+        showStudyInformationStatus('', 'info');
+        const mainElement = document.getElementById('gerenciarModal');
+        const mainModal = modal('gerenciarModal');
+        if (mainElement?.classList.contains('show') && mainModal) {
+            state.reopenGerenciarAfterInformation = true;
+            mainElement.addEventListener('hidden.bs.modal', () => informationModal.show(), { once: true });
+            mainModal.hide();
+        } else {
+            informationModal.show();
+        }
     }
 
     async function saveRequestingPhysician(event) {
@@ -417,6 +526,25 @@
         try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
         if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
         modal('gerenciarSolicitanteModal')?.hide();
+        window.location.reload();
+    }
+
+    async function saveStudyInformation(event) {
+        event.preventDefault();
+        if (!state.studyId || state.context?.chat_pending) return;
+        const input = $('#gerenciarInformacoesInput');
+        const value = normalizeStudyInformationInput(input?.value || '').trim();
+        input.value = value;
+        const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/informacoes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ informacoes: value, csrf: csrfToken() })
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
+        if (!response.ok || !payload.ok) throw new Error(payload.msg || text('erroOperacao'));
+        modal('gerenciarInformacoesModal')?.hide();
         window.location.reload();
     }
 
@@ -456,13 +584,18 @@
             $('#gerenciarPrioridadeErro').style.display = 'block';
             return;
         }
+        if (!$('#gerenciarPrioridadeConfirmacao')?.checked) {
+            $('#gerenciarPrioridadeErro').textContent = text('confirmacaoPrioridadeObrigatoria');
+            $('#gerenciarPrioridadeErro').style.display = 'block';
+            return;
+        }
         if (!window.confirm(text('confirmarPrioridade'))) return;
         const priority = $('#gerenciarPrioridadeSelect').value;
         const response = await fetch(`/api/gestao-exames/estudos/${encodeURIComponent(state.studyId)}/prioridade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
-            body: JSON.stringify({ prioridade: priority, motivo: reason, csrf: state.csrf })
+            body: JSON.stringify({ prioridade: priority, motivo: reason, confirmar_prioridade: true, csrf: state.csrf })
         });
         let payload = {};
         try { payload = await response.json(); } catch (error) { /* resposta não JSON */ }
@@ -494,6 +627,17 @@
             const input = event.currentTarget;
             input.value = normalizeRequestingPhysicianInput(input.value);
         });
+        const studyInformationInput = $('#gerenciarInformacoesInput');
+        if (studyInformationInput) studyInformationInput.style.textTransform = 'uppercase';
+        studyInformationInput?.addEventListener('input', (event) => {
+            const input = event.currentTarget;
+            const normalized = normalizeStudyInformationInput(input.value);
+            if (input.value !== normalized) input.value = normalized;
+        });
+        studyInformationInput?.addEventListener('change', (event) => {
+            const input = event.currentTarget;
+            input.value = normalizeStudyInformationInput(input.value);
+        });
         document.querySelectorAll('.gerenciar-trigger').forEach((button) => {
             button.addEventListener('click', async () => {
                 modal('gerenciarModal')?.show();
@@ -514,10 +658,18 @@
         });
         $('#gerenciarPrioridade')?.addEventListener('click', openPriorityModal);
         $('#gerenciarSolicitante')?.addEventListener('click', openRequestingPhysicianModal);
+        $('#gerenciarInformacoes')?.addEventListener('click', openStudyInformationModal);
+        document.getElementById('gerenciarInformacoesModal')?.addEventListener('hidden.bs.modal', () => {
+            if (!state.reopenGerenciarAfterInformation || !state.context) return;
+            state.reopenGerenciarAfterInformation = false;
+            modal('gerenciarModal')?.show();
+        });
         $('#gerenciarPrioridadeSelect')?.addEventListener('change', loadPriorityRecipients);
-        $('#gerenciarChatTipo')?.addEventListener('change', updateChatRecipientVisibility);
         $('#gerenciarChatForm')?.addEventListener('submit', (event) => {
             sendChat(event).catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarChatCritical')?.addEventListener('click', () => {
+            sendChat(null, 'comunicar_achado_critico').catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarChatConcluir')?.addEventListener('click', () => {
             completeChat().catch((error) => showChatStatus(error.message || text('erroOperacao'), 'danger'));
@@ -537,6 +689,9 @@
         });
         $('#gerenciarSolicitanteForm')?.addEventListener('submit', (event) => {
             saveRequestingPhysician(event).catch((error) => showRequestingPhysicianStatus(error.message || text('erroOperacao'), 'danger'));
+        });
+        $('#gerenciarInformacoesForm')?.addEventListener('submit', (event) => {
+            saveStudyInformation(event).catch((error) => showStudyInformationStatus(error.message || text('erroOperacao'), 'danger'));
         });
         $('#gerenciarPrioridadeMotivo')?.addEventListener('input', (event) => {
             $('#gerenciarPrioridadeCount').textContent = `${event.target.value.length}/20`;

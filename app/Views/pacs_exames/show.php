@@ -1,13 +1,14 @@
 <?php
 // View: Detalhe de Estudo DICOM
 $orthancBase = rtrim($servidor['url'] ?? '', '/');
+// A tela usa uma projeção visual segura e não regrava o PatientName.
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h4 mb-0">
             <i class="fa fa-x-ray me-2 text-primary"></i>
-            Estudo DICOM — <?= htmlspecialchars($estudo['patient_name_display'] ?: $estudo['patient_name'] ?: 'Paciente') ?>
+            Estudo DICOM — <?= htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente') ?>
         </h1>
         <small class="text-muted">
             <?= $estudo['study_date'] ? date('d/m/Y', strtotime($estudo['study_date'])) : '' ?>
@@ -40,7 +41,7 @@ $orthancBase = rtrim($servidor['url'] ?? '', '/');
             <div class="card-body p-3">
                 <?php
                 $fields = [
-                    'Nome'           => $estudo['patient_name_display'] ?: $estudo['patient_name'],
+                    'Nome'           => \App\Helpers\DicomPersonName::displayFromStudy($estudo),
                     'ID Paciente'    => $estudo['patient_id'],
                     'Data Nasc.'     => $estudo['patient_birth_date'] ? date('d/m/Y', strtotime($estudo['patient_birth_date'])) : null,
                     'Sexo'           => match(strtoupper($estudo['patient_sex'] ?? '')) {

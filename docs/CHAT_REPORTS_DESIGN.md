@@ -14,9 +14,17 @@ O módulo usa o cadastro real de grupos organizacionais `bi_grupos` e `bi_grupo_
 
 O estado da conversa é `pendente` ou `concluido`. Ao enviar uma interação, a conversa é criada ou reaberta e o estudo recebe `situacao = 'pendente'`. O estado anterior é salvo para que a conclusão restaure o fluxo anterior de forma determinística. Ao concluir, o estudo retorna ao estado anterior permitido, preferindo `em_laudo` quando o valor anterior não for um estado editável.
 
-## Assuntos
+## Formulário reduzido no Laudário e na Gestão de Exames
 
-O seletor usa temas padronizados: **Erro no pedido**, **Contraste**, **Exames complementares**, **Dúvida administrativa** e **Outro**. O campo livre de assunto permanece obrigatório para explicar o caso; o tema serve para classificação e para o assunto do e-mail.
+No laudário e no modal de Gestão de Exames, o formulário operacional exibe somente o seletor único de destinatário, o campo de interação e a ação de envio. O seletor reúne grupos e usuários ativos do tenant, mas o navegador continua enviando internamente o tipo e o identificador de destinatário esperados pelo serviço. O tema comum e o campo livre de assunto deixam de ser exibidos; a interação comum utiliza a classificação interna `outro` e o assunto correspondente, preservando o histórico, o e-mail e a auditoria existentes.
+
+**Achado crítico** permanece uma ação médica separada e explícita. O médico deve preencher a interação e acionar **Comunicar achado crítico**; a ação exige confirmação reforçada no cliente e um identificador de ação correspondente no servidor. O servidor rejeita marcação crítica enviada pela ação comum, mantém a restrição de perfil médico e preserva a marcação clínica, auditoria e notificação obrigatória dos administradores ativos do tenant.
+
+Toda interação válida, crítica ou comum, é persistida na mesma transação que abre ou mantém o CHAT em `pendente` e altera a situação do estudo para `pendente`. A liberação do fluxo continua dependente de resposta da contraparte e conclusão explícita, não de um envio isolado.
+
+Quando a pendência foi aberta por um médico e outro usuário autorizado do mesmo tenant acessa o CHAT pela Gestão de Exames, o contexto sugere esse médico ativo como destinatário individual inicial da resposta. A sugestão não altera a regra do endpoint: o servidor continua exigindo que o usuário esteja ativo no tenant e impede o autor atual de enviar interação para si próprio. Se o médico original não estiver ativo ou o próprio médico abrir o CHAT, a interface usa o destinatário configurado ou o grupo administrativo padrão.
+
+Após resposta da contraparte, a conclusão continua explícita e auditável pelo botão **Concluir pendência e liberar evolução**. A resposta isolada não reabre nem libera automaticamente o fluxo do laudo.
 
 ## E-mail
 

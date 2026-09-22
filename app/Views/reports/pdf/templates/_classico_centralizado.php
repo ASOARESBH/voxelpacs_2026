@@ -20,7 +20,7 @@
     <title>Laudo — <?= $paciente ?></title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Arial', sans-serif; font-size: 12px; color: #222; background: #fff; }
+        body { font-family: 'Arial', sans-serif; font-size: 12px; line-height: 1.3; color: #222; background: #fff; }
         .pdf-page { max-width: 800px; margin: 0 auto; padding: 2rem; }
 
         /* Cabeçalho */
@@ -39,9 +39,15 @@
         .pdf-pinfo strong { color: #222; }
 
         /* Seções */
-        .pdf-section { margin-bottom: 1.2rem; }
-        .pdf-section-title { font-size: .85rem; font-weight: 700; text-transform: uppercase; color: #003366; border-bottom: 1px solid #ccd; padding-bottom: .25rem; margin-bottom: .5rem; letter-spacing: .5px; }
-        .pdf-section-content { font-size: .85rem; line-height: 1.7; color: #222; }
+        .pdf-section { margin-bottom: .65rem; }
+        .pdf-section-title { font-size: .85rem; font-weight: 700; text-transform: uppercase; color: #003366; border-bottom: 1px solid #ccd; padding-bottom: .15rem; margin-bottom: .25rem; letter-spacing: .5px; }
+        .pdf-section-content { font-size: .85rem; line-height: 1.3; color: #222; }
+        .pdf-section-content p { margin: 0 0 2px; }
+        .pdf-section-content p.ql-spacing-compact { margin-bottom: 0; }
+        .pdf-section-content p.ql-spacing-normal { margin-bottom: 6px; }
+        .pdf-section-content p.ql-spacing-medium { margin-bottom: 12px; }
+        .pdf-section-content p.ql-spacing-wide { margin-bottom: 20px; }
+        .pdf-section-content h1, .pdf-section-content h2, .pdf-section-content h3, .pdf-section-content h4, .pdf-section-content h5, .pdf-section-content h6 { margin: 8px 0 3px; line-height: 1.3; }
         .pdf-section-content .ql-align-center { text-align: center; }
         .pdf-section-content .ql-align-right { text-align: right; }
         .pdf-section-content .ql-align-justify { text-align: justify; }
@@ -49,14 +55,14 @@
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #aaa; font-style: italic; }
 
         /* Assinatura */
-        .pdf-signature { border-top: 2px solid #003366; padding-top: 1rem; margin-top: 2rem; display: flex; justify-content: space-between; align-items: flex-start; }
+        .pdf-signature { border-top: 2px solid #003366; padding-top: .65rem; margin-top: 1rem; display: flex; justify-content: space-between; align-items: flex-start; }
         .pdf-sig-info { font-size: .8rem; }
         .pdf-sig-info strong { display: block; font-size: .9rem; color: #003366; }
         .pdf-sig-info span { color: #555; }
         .pdf-hash { font-size: .65rem; color: #999; word-break: break-all; margin-top: .5rem; }
 
         /* Rodapé */
-        .pdf-footer { border-top: 1px solid #ccc; padding-top: .75rem; margin-top: 2rem; display: flex; justify-content: space-between; align-items: center; font-size: .7rem; color: #888; }
+        .pdf-footer { border-top: 1px solid #ccc; padding-top: .5rem; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: .7rem; color: #888; }
 
         /* Botões de ação (não imprimem) */
         .pdf-actions { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
@@ -75,7 +81,8 @@
 <body>
 <div class="pdf-page">
 
-    <!-- Ações -->
+    <!-- Ações visíveis somente no viewer. -->
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
@@ -83,6 +90,7 @@
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Cabeçalho -->
     <div class="pdf-header">
@@ -120,8 +128,10 @@
     <!-- Assinatura -->
     <div class="pdf-signature">
         <div class="pdf-sig-info">
-            <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-            <img src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
+            <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+            <?php if ($assinaturaSrc === '' && empty($snapshotPdf) && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+            <?php if ($assinaturaSrc !== ''): ?>
+            <img src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>"
                  alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>"
                  style="max-width:220px;max-height:70px;display:block;margin-bottom:.35rem;">
             <?php endif; ?>

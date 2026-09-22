@@ -64,11 +64,27 @@ A tela usa **campos guiados**, sem exigir JSON do usuário. Ao selecionar o cana
 
 A validação ocorre tanto no navegador quanto no servidor. Destinos já existentes continuam compatíveis: ao clicar em **Editar**, as configurações internas conhecidas são convertidas novamente para os campos visuais.
 
+### Profile Philips `submission_document`
+
+O transporte `philips_non_dicom` aceita o profile compatível `pdf_only` e o profile opt-in `submission_document`. O segundo compõe o PDF imutável com um XML de submission e exige o objeto explícito `philips_submission` no destino. O Controller valida os campos configuráveis, o gerador resolve somente fontes estruturadas do snapshot e qualquer campo clínico ou de autoria sem origem explícita falha fechado. O profile `pdf_only` e os jobs históricos permanecem inalterados; o contrato detalhado está em `PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md`.
+
+Para `submission_document`, a Bridge só responde sucesso quando o PDF e o XML do mesmo package passam por hash, tamanho, XML bem-formado/ISO-8859-1, campos mínimos e linkage exato `task_file_name` → PDF. A resposta inclui `package_identity` e `package_verified=PASS`; o worker não marca o job como entregue sem esses indicadores. O cleanup remoto remove somente temporários `.part`, preservando os arquivos finais para Auto Ingestion.
+
 ## Serviço local do worker
 
 O processo local é instalado como `voxelpacs-report-delivery-worker.service`, supervisionado pelo `systemd`. Ele é a alternativa recomendada ao cron externo porque mantém o loop, o lease exclusivo, a recuperação automática e as credenciais no próprio servidor, sem publicar token de execução para terceiros.
 
-O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da versão imutável, encapsula o documento em objeto DICOM mantendo o Study UID do evento e executa C-STORE. O processo grava apenas estados técnicos sanitizados em tentativas, usa armazenamento privado para artefatos e falha de modo fechado se parâmetros obrigatórios, identificação do estudo ou perfil TLS solicitado não estiverem completos.
+O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da versão imutável, encapsula o documento em objeto DICOM mantendo o Study UID do evento e executa C-STORE. O processo grava apenas estados técnicos sanitizados em tentativas, usa armazenamento privado para artefatos e falha de modo fechado se parâmetros obrigatórios, identificação do estudo ou perfil TLS solicitado não estiverem completos. Cada subprocesso local é drenado de modo não bloqueante e possui watchdog com prazo limitado; um comando travado falha de forma controlada e não bloqueia indefinidamente o loop do serviço.
+
+Nas falhas de C-STORE direto, o worker mantém uma parcela limitada do `stderr` somente em memória para classificá-la e descartá-la imediatamente. A tentativa persiste somente `reason_category`, sem saída bruta, comando, argumentos, parâmetros de rede ou atributos DICOM. As categorias permitidas são `timeout`, `connect_failed`, `association_rejected`, `tls_required` e `command_failed`. A classificação não altera o lease, o backoff, a DLQ nem a política de retentativa.
+
+> O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada.
+
+### Identidade DICOM no retorno de laudo
+
+O retorno deve preservar **Patient ID** `(0010,0020)` e **Issuer of Patient ID** `(0010,0021)` como atributos distintos. O Patient ID não deve concatenar o issuer com separadores de componentes. Alguns receptores validam a combinação contra o estudo existente e recusam o C-STORE quando qualquer atributo diverge.
+
+O `pdf2dcm --study-from` utilizado no encapsulamento pode não reter `(0010,0021)` no objeto final. Portanto, quando o perfil do destino definir `issuer_of_patient_id`, o worker o reaplica explicitamente no Encapsulated PDF com `--key 0010,0021=<issuer>` antes do C-STORE. A configuração de issuer de saída é uma regra do **destino receptor** e pode divergir do issuer que foi usado para selecionar a origem/routing da outbox. Essa regra precisa ser homologada por destino e validada com PDF sintético antes de qualquer transmissão clínica.
 
 > Uma configuração que solicita TLS não é rebaixada silenciosamente para TCP. Enquanto não houver perfil de certificados configurado, o job falhará com estado técnico sanitizado e seguirá a política de retentativa/DLQ.
 
@@ -109,10 +125,13 @@ A migration é `database/migrations/2026-08-14_voxel_report_delivery_hub.sql`.
 | DICOM SR | Contrato e rastreabilidade prontos; requer mapeamento DICOM SR/TID 2000 e homologação. |
 | HL7 ORU^R01 | Contrato e rastreabilidade prontos; requer profile e interface do RIS/HIS receptor. |
 | SFTP/FTPS | Contrato e rastreabilidade prontos; requer geração de PDF, manifesto e credencial/chave por cliente. |
+| Philips Non-DICOM `submission_document` | Package PDF + XML implementado de forma opt-in; requer migration aditiva, validação do contrato externo e homologação específica da Bridge. |
 
 Nenhum destino clínico é habilitado pela implantação: a habilitação e a confirmação de produção ocorrem exclusivamente pelo painel de superadmin.
 
 ## Roteamento por Issuer e PACS de origem
+
+O painel administrativo lista servidores PACS exclusivamente através dos vínculos ativos do próprio negócio em `bi_negocio_servidor_pacs`. A consulta devolve somente identificador técnico interno e nome administrativo do servidor; ela não carrega URL, credenciais, AE Titles, estudos ou objetos DICOM.
 
 Um mesmo negócio pode receber estudos de vários PACS. Cada destino pode vincular um ou mais **Issuers** e, opcionalmente, InstitutionNames de fallback. O Issuer é normalizado antes da comparação e vem de `bi_pacs_estudos.issuer_of_patient_id`; o InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name`.
 
@@ -131,6 +150,8 @@ No painel **Devolutiva de Laudos**, selecione os Issuers dos servidores PACS ant
 > A seleção de origem é independente do canal de entrega. Um mesmo Issuer pode ter destinos distintos para DICOM, HTTPS, HL7 ou SFTP, desde que cada integração seja homologada e habilitada de forma explícita.
 
 ## Laudos liberados, estados e reenvio controlado
+
+Na listagem administrativa de laudos liberados, os filtros por nome usam parâmetros distintos para a representação de exibição e o valor DICOM bruto. Isso preserva a compatibilidade com PostgreSQL em prepared statements nativos e não altera o escopo obrigatório por tenant.
 
 O painel de cada negócio apresenta até 100 laudos com situação `liberado`, mesmo quando ainda não existe job de integração. A lista é sempre filtrada por tenant e permite filtrar por nome do paciente, modalidade ou Issuer. Não exibe conteúdo do laudo, token público, credenciais nem configuração sensível do destino.
 

@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 namespace App\Controllers;
 
 use App\Core\Controller;
@@ -6,18 +7,21 @@ use App\Core\Database;
 use App\Core\SqlHelper;
 use App\Core\Auth;
 use App\Core\Access\MedicoAccess;
+use App\Core\Access\ViewerAccess;
+use App\Core\Access\ViewerRegistry;
 use App\Services\DesktopViewerService;
 use App\Services\DesktopStudyLaunchService;
 use App\Services\InstitutionResolverService;
 use App\Services\GrupoModalidadeService;
 use App\Services\PedidoMedicoService;
+use App\Services\WorklistPreferenceService;
 
 /**
  * VOXEL PACS — EstudosController
  *
  * Worklist principal: lista, busca, filtros avançados e abertura de estudos DICOM.
  * Fonte: bi_pacs_estudos (cache do Orthanc sincronizado via /platform/servidor-pacs).
- * Abertura: redireciona diretamente para OHIF Viewer com StudyInstanceUID.
+ * Abertura: redireciona diretamente para OHIF Viewer com StudyInstanceUID, respeitando a permissão individual de visualizador.
  *
  * Filtros:
  *   q             → pesquisa global (patient_name, patient_id, study_instance_uid,
@@ -90,9 +94,29 @@ class EstudosController extends Controller
             $where[] = '1=0';
         }
 
-        // Posse exclusiva: médico vê a fila livre e os estudos que assumiu.
+        // Posse exclusiva para o fluxo normal; ciclos Peer Review abertos são
+        // uma fila compartilhada entre médicos autorizados da mesma unidade.
         if ($isMedicoFiltro && $usuarioLogadoId > 0) {
-            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?)";
+            $peerReviewClause = '1=0';
+            try {
+                if (SqlHelper::hasTable(Database::getInstance(), 'pacs_report_peer_reviews')) {
+                    $peerReviewClause = "(
+                        COALESCE(e.situacao, 'novo') = 'peer_review'
+                        AND EXISTS (
+                            SELECT 1
+                            FROM pacs_report_peer_reviews pr
+                            WHERE pr.tenant_id = e.tenant_id
+                              AND pr.estudo_id = e.id
+                              AND pr.status = 'aberta'
+                        )
+                    )";
+                }
+            } catch (\Throwable $ex) {
+                $peerReviewClause = '1=0';
+            }
+            $where[]  = "(COALESCE(e.situacao, 'novo') IN ('novo', 'aberto')
+                OR e.usuario_responsavel_id = ?
+                OR {$peerReviewClause})";
             $params[] = $usuarioLogadoId;
         }
 
@@ -275,6 +299,7 @@ class EstudosController extends Controller
         // preparados contra os campos clínicos permitidos no escopo do tenant.
         $searchFields = [
             'e.patient_name',
+            'e.patient_name_display',
             'e.patient_id',
             'e.study_instance_uid',
             'e.accession_number',
@@ -285,7 +310,12 @@ class EstudosController extends Controller
             $searchFields[] = 'e.scheduled_procedure_step_desc';
         }
         $this->aplicarBuscaNormalizada($where, $params, $filtros['q'], $searchFields);
-        $this->aplicarBuscaNormalizada($where, $params, $filtros['paciente'], ['e.patient_name']);
+        $this->aplicarBuscaNormalizada(
+            $where,
+            $params,
+            $filtros['paciente'],
+            ['e.patient_name', 'e.patient_name_display']
+        );
         $campoDataPeriodo = $this->campoDataPeriodoParaSituacao($filtros['situacao']);
         if ($filtros['dt_inicio'] !== '') {
             $where[]  = $campoDataPeriodo . ' >= ?';
@@ -335,6 +365,15 @@ class EstudosController extends Controller
         $whereStr = implode(' AND ', $where);
         $orderCol = 'e.' . $filtros['ordenar'];
         $orderDir = $filtros['direcao'];
+        $worklistPreference = (new WorklistPreferenceService())->resolveForUser(
+            $usuarioLogadoId,
+            $tenantId,
+            Auth::perfilAtual() === 'medico'
+        );
+        $hasExplicitOrder = isset($_GET['ordenar']) || isset($_GET['direcao']);
+        $orderSql = $hasExplicitOrder || $modoGestao
+            ? "{$orderCol} {$orderDir}, e.study_time {$orderDir}"
+            : (new WorklistPreferenceService())->orderBySql($worklistPreference, Auth::perfilAtual() === 'medico');
 
         // ── COUNT ─────────────────────────────────────────────────────────────────────────
         $total       = 0;
@@ -373,20 +412,24 @@ class EstudosController extends Controller
         // delas não pode tornar a Worklist inteira vazia, especialmente durante
         // restaurações e homologações de uma cópia histórica do banco.
         $hasPedidos = false;
+        $hasExamesComplementares = false;
         $hasReports = false;
         $hasChats = false;
         $hasReportPublicToken = false;
         $hasReportSituacao = false;
         $hasChatStatus = false;
         $hasDownloadAvailability = false;
+        $hasPeerReviews = false;
         try {
             $hasPedidos = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_pedidos');
+            $hasExamesComplementares = SqlHelper::hasTable($pdo, 'bi_pacs_estudos_exames_complementares');
             $hasReports = SqlHelper::hasTable($pdo, 'reports');
             $hasChats = $hasReports && SqlHelper::hasTable($pdo, 'pacs_report_chats');
             $hasReportPublicToken = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'public_token');
             $hasReportSituacao = $hasReports && SqlHelper::hasColumn($pdo, 'reports', 'situacao');
             $hasChatStatus = $hasChats && SqlHelper::hasColumn($pdo, 'pacs_report_chats', 'status');
             $hasDownloadAvailability = SqlHelper::hasTable($pdo, 'bi_pacs_download_availability');
+            $hasPeerReviews = SqlHelper::hasTable($pdo, 'pacs_report_peer_reviews');
         } catch (\Throwable $ex) {
             Logger::warning('[EstudosController::index] joins opcionais indisponíveis', [
                 'tenant_id' => $tenantId,
@@ -399,6 +442,11 @@ class EstudosController extends Controller
                p.tamanho_bytes AS pedido_tamanho_bytes, p.caminho_arquivo AS pedido_caminho_arquivo"
             : "NULL AS pedido_id, NULL AS pedido_nome_original, NULL AS pedido_mime_type,
                NULL AS pedido_tamanho_bytes, NULL AS pedido_caminho_arquivo";
+        $exameComplementarSelectSql = $hasExamesComplementares
+            ? "ec.id AS exame_complementar_id, ec.nome_original AS exame_complementar_nome_original,
+               ec.mime_type AS exame_complementar_mime_type, ec.tamanho_bytes AS exame_complementar_tamanho_bytes"
+            : "NULL AS exame_complementar_id, NULL AS exame_complementar_nome_original,
+               NULL AS exame_complementar_mime_type, NULL AS exame_complementar_tamanho_bytes";
         $reportPublicTokenSql = $hasReportPublicToken ? "COALESCE(r.public_token, '')" : "''";
         // pgloader preserva ENUMs como tipos PostgreSQL. Um COALESCE direto com
         // string vazia tenta converter '' para o ENUM e aborta a consulta; texto
@@ -412,6 +460,15 @@ class EstudosController extends Controller
         $reportSelectSql = $hasReports
             ? "r.id AS report_id, {$reportPublicTokenSql} AS report_public_token, {$reportSituacaoSql} AS report_situacao"
             : "NULL AS report_id, '' AS report_public_token, '' AS report_situacao";
+        $peerReviewSelectSql = $hasPeerReviews
+            ? "CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM pacs_report_peer_reviews pr
+                    WHERE pr.tenant_id = e.tenant_id
+                      AND pr.estudo_id = e.id
+                      AND pr.status = 'aberta'
+                ) THEN 1 ELSE 0 END"
+            : '0';
         $chatSelectSql = "{$chatStatusSql} AS chat_status";
         $downloadAvailabilitySelectSql = $hasDownloadAvailability
             ? "COALESCE((da.status <> 'unavailable'), TRUE) AS download_available"
@@ -421,6 +478,9 @@ class EstudosController extends Controller
             : '';
         $pedidoJoinSql = $hasPedidos
             ? 'LEFT JOIN bi_pacs_estudos_pedidos p ON p.estudo_id = e.id AND p.tenant_id = e.tenant_id'
+            : '';
+        $exameComplementarJoinSql = $hasExamesComplementares
+            ? 'LEFT JOIN bi_pacs_estudos_exames_complementares ec ON ec.estudo_id = e.id AND ec.tenant_id = e.tenant_id'
             : '';
         $reportJoinSql = $hasReports
             ? 'LEFT JOIN reports r ON r.estudo_id = e.id AND r.tenant_id = e.tenant_id'
@@ -439,6 +499,8 @@ class EstudosController extends Controller
                     e.study_time,
                     e.patient_id,
                     e.patient_name,
+                    e.patient_name_display,
+                    e.tags_raw, -- fonte somente leitura do fallback visual PN
                     e.patient_sex,
                     e.patient_age,
                     e.patient_birth_date,
@@ -453,6 +515,7 @@ class EstudosController extends Controller
                     e.num_instances,
                     e.study_instance_uid,
                     e.tenant_id,
+                    e.servidor_id,
                     e.manufacturer,
                     COALESCE(e.situacao,     'novo')   AS situacao,
                     COALESCE(e.especialidade,'')       AS especialidade,
@@ -474,21 +537,31 @@ class EstudosController extends Controller
                     {$scheduledProcedureStepDescriptionSql}      AS scheduled_procedure_step_desc,
                     COALESCE(e.requested_procedure_desc, '')    AS requested_procedure_desc,
                     {$pedidoSelectSql},
+                    {$exameComplementarSelectSql},
                     {$reportSelectSql},
+                    {$peerReviewSelectSql} AS peer_review_aberta,
                     {$chatSelectSql},
                     {$downloadAvailabilitySelectSql}
                 FROM bi_pacs_estudos e
                 {$pedidoJoinSql}
+                {$exameComplementarJoinSql}
                 {$reportJoinSql}
                 {$chatJoinSql}
                 {$downloadAvailabilityJoinSql}
                 WHERE {$whereStr}
-                ORDER BY {$orderCol} {$orderDir}, e.study_time {$orderDir}
+                ORDER BY {$orderSql}
                 {$limitClause}
             ";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             $estudos = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            foreach ($estudos as &$estudo) {
+                $estudo['viewer_states'] = ViewerAccess::statesForCurrentUser(
+                    (int) ($estudo['tenant_id'] ?? 0),
+                    isset($estudo['servidor_id']) ? (int) $estudo['servidor_id'] : null
+                );
+            }
+            unset($estudo);
         } catch (\Throwable $ex) {
             error_log('[EstudosController::index] SELECT: ' . $ex->getMessage());
         }
@@ -689,6 +762,7 @@ class EstudosController extends Controller
 
         $urlWorklist          = $modoGestao ? '/gestao-exames' : '/estudos';
         $podeGerenciarPedido  = (new PedidoMedicoService())->podeGerenciar($tenantId, $bypassGlobal);
+        $canManageNonDicomDelivery = Auth::isPlatformAdmin() && !$bypassGlobal && $tenantId !== null;
         $csrfToken             = $this->csrfToken();
         $worklistAutoRefresh = ['enabled' => !$modoGestao, 'seconds' => 60];
         if (!$modoGestao) {
@@ -707,8 +781,8 @@ class EstudosController extends Controller
             'estudos','filtros','total','totalPages','currentPage',
             'unidades','medicos','contadores','resumo',
             'tempoConsulta','ultimaSinc','isAdmin','isMedicoLogado','workspaceLaudoHabilitado',
-            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','csrfToken',
-            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh'
+            'modsAtivas','modoGestao','urlWorklist','podeGerenciarPedido','canManageNonDicomDelivery','tenantId','csrfToken',
+            'medicoLogadoNome','podeVerMedicoLaudo','usuarioLogadoId','worklistAutoRefresh','worklistPreference'
         );
 
         if ($partial) {
@@ -762,6 +836,11 @@ class EstudosController extends Controller
 
         if (!$estudo || !$this->podeAbrirPorModalidade($estudo, $tenantId, $bypassGlobal)) {
             $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
+            return;
+        }
+
+        if (!ViewerAccess::isUserEnabled('voxel_view')) {
+            $this->renderErroViewer(403, \App\Core\Translator::t('viewer_access.abertura.negada'));
             return;
         }
 
@@ -933,6 +1012,16 @@ class EstudosController extends Controller
                 'mensagem_erro' => 'Estudo não encontrado ou sem permissão de acesso.',
             ]);
             $this->renderErroViewer(404, 'Estudo não encontrado ou sem permissão de acesso.');
+            return;
+        }
+
+        $viewerKey = ViewerRegistry::keyForDesktopViewer($viewer);
+        if ($viewerKey === null || !ViewerAccess::isUserEnabled($viewerKey)) {
+            $service->registrarAcesso($contexto + [
+                'status' => 'negado',
+                'mensagem_erro' => 'visualizador_restrito_por_usuario',
+            ]);
+            $this->renderErroViewer(403, \App\Core\Translator::t('viewer_access.abertura.negada'));
             return;
         }
 

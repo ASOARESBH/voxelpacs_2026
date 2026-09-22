@@ -1,0 +1,1536 @@
+"""Bridge privada root-only para Philips Folder por SFTP com fallback SMB.
+
+O PACS nunca acessa SFTP, SMB, WireGuard ou credenciais remotas. Este listener
+recebe um artefato autenticado por mTLS + HMAC, faz staging local e somente a
+bridge o transfere a um peer IPv4 privado definido pela política root-only.
+Nenhuma configuração neste arquivo inicia a bridge ou habilita a feature do PACS.
+"""
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import hmac
+import ipaddress
+import json
+import logging
+import os
+import re
+import secrets
+import shutil
+import ssl
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+from contextlib import contextmanager
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from typing import NoReturn
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+
+MAX_BYTES = 50 * 1024 * 1024
+MAX_CLOCK_SKEW_SECONDS = 60
+STATE_ROOT = Path("/var/lib/voxelpacs/philips-folder-bridge")
+TARGET_ROOT = Path("/var/lib/voxelpacs/philips-folder-target")
+TRANSIENT_TRANSPORT_FAILURES = {"connectivity", "timeout"}
+SAFE_REMOTE_PATH = re.compile(r"^/[A-Za-z0-9._/-]{1,180}$")
+SAFE_SMB_PATH = re.compile(r"^/?[A-Za-z0-9._/-]{0,160}$")
+SAFE_USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+SAFE_SMB_USERNAME = re.compile(r"^(?:[A-Za-z0-9._-]{1,64}\\)?[A-Za-z0-9._-]{1,64}$")
+SAFE_SHARE = re.compile(r"^[A-Za-z0-9.$_-]{1,80}$")
+ENVELOPE_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_ENVELOPE_DIAGNOSTICS"
+ENVELOPE_DIAGNOSTIC_STAGES = (
+    "ENVELOPE_PRESENT",
+    "ENVELOPE_BASE64_DECODE",
+    "ENVELOPE_JSON_PARSE",
+    "REQUIRED_FIELDS_PRESENT",
+    "TENANT_MATCH",
+    "DESTINATION_MATCH",
+    "EXPIRY_VALID",
+    "EPHEMERAL_PUBLIC_KEY_VALID",
+    "X25519_DERIVATION",
+    "HKDF_DERIVATION",
+    "AES_GCM_DECRYPT",
+    "PLAINTEXT_FORMAT",
+    "PASSWORD_VALIDATION",
+)
+SMB_DIAGNOSTIC_STAGES = ("LIST", "WRITE", "RENAME", "VERIFY")
+SMB_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_SMB_DIAGNOSTICS"
+PATIENT_NAME_EXCEPTION_ENV = "PHILIPS_FOLDER_ALLOW_MISSING_PATIENT_NAME_COMPONENTS_FOR_HOMOLOGATION"
+PATIENT_NAME_AS_FAMILY_ENV = "PHILIPS_FOLDER_ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION"
+SMB_DIAGNOSTIC_CLASSIFICATIONS = (
+    "none", "not_found", "authentication", "permission", "connectivity",
+    "timeout", "remote_io", "invalid_artifact", "configuration", "host_key", "unknown",
+)
+
+
+def setting(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"missing_required_setting:{name}")
+    return value
+
+
+def private_ipv4(value: str) -> str:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as error:
+        raise RuntimeError("invalid_private_peer") from error
+    if address.version != 4 or not address.is_private:
+        raise RuntimeError("invalid_private_peer")
+    return str(address)
+
+
+def root_only_regular_file(value: str) -> Path:
+    path = Path(value)
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise RuntimeError("protected_file_unavailable") from error
+    if metadata.st_uid != 0 or not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode) or metadata.st_mode & 0o077:
+        raise RuntimeError("invalid_protected_file")
+    return path
+
+
+class BridgeTransferError(RuntimeError):
+    def __init__(self, category: str) -> None:
+        super().__init__(category)
+        self.category = category
+
+
+class EnvelopeValidationError(ValueError):
+    def __init__(self, stage: str, error_code: str) -> None:
+        super().__init__(error_code)
+        self.stage = stage
+        self.error_code = error_code
+
+
+def envelope_diagnostics_enabled() -> bool:
+    """Diagnostics are opt-in; the safe default is disabled (value 0)."""
+    return os.environ.get(ENVELOPE_DIAGNOSTICS_ENV, "0").strip() == "1"
+
+
+def smb_diagnostics_enabled() -> bool:
+    """SMB diagnostics are opt-in; the safe default is disabled (value 0)."""
+    return os.environ.get(SMB_DIAGNOSTICS_ENV, "0").strip() == "1"
+
+
+class Policy:
+    def __init__(self) -> None:
+        self.bind_ip = setting("PHILIPS_FOLDER_BIND_IP")
+        self.bind_port = int(setting("PHILIPS_FOLDER_BIND_PORT"))
+        self.destination_id = int(setting("PHILIPS_FOLDER_DESTINATION_ID"))
+        self.mode = setting("PHILIPS_FOLDER_MODE")
+        self.allowed_job_id = int(os.environ.get("PHILIPS_FOLDER_ALLOW_JOB_ID", "0"))
+        self.patient_name_exception_enabled = os.environ.get(PATIENT_NAME_EXCEPTION_ENV, "0").strip() == "1"
+        self.patient_name_as_family_enabled = os.environ.get(PATIENT_NAME_AS_FAMILY_ENV, "0").strip() == "1"
+        self.target_directory = Path(setting("PHILIPS_FOLDER_TARGET_DIRECTORY"))
+        self.secret = root_only_regular_file(setting("PHILIPS_FOLDER_HMAC_FILE")).read_text(encoding="utf-8").strip().encode("utf-8")
+        self.ca_file = str(root_only_regular_file(setting("PHILIPS_FOLDER_CLIENT_CA_FILE")))
+        self.server_cert = str(root_only_regular_file(setting("PHILIPS_FOLDER_SERVER_CERT_FILE")))
+        self.server_key = str(root_only_regular_file(setting("PHILIPS_FOLDER_SERVER_KEY_FILE")))
+        self.vpn_peer_host = private_ipv4(setting("PHILIPS_FOLDER_VPN_PEER_HOST"))
+        self.transport = setting("PHILIPS_FOLDER_TRANSPORT").lower()
+        self.fallback = os.environ.get("PHILIPS_FOLDER_FALLBACK", "").strip().lower()
+        if self.mode not in {"single_test", "destination"} or self.destination_id <= 0:
+            raise RuntimeError("invalid_bridge_policy")
+        # Em single_test sem job autorizado, a bridge pode iniciar somente para o
+        # preflight técnico. O roteamento de entrega continua recusando qualquer
+        # job porque nenhum ID positivo pode corresponder ao valor zero.
+        if self.transport not in {"sftp", "smb"} or self.fallback not in {"", "smb"}:
+            raise RuntimeError("invalid_transport_policy")
+        if self.transport != "sftp" and self.fallback:
+            raise RuntimeError("invalid_transport_fallback")
+        try:
+            target_resolved = self.target_directory.resolve(strict=True)
+            target_resolved.relative_to(TARGET_ROOT)
+        except (OSError, ValueError):
+            raise RuntimeError("invalid_bridge_target") from None
+        self.target_directory = target_resolved
+        if not self.secret or not self.target_directory.is_dir() or self.target_directory.is_symlink():
+            raise RuntimeError("invalid_bridge_target")
+        self.sftp = self._sftp_settings() if self.transport == "sftp" else None
+        self.envelope_private_key = self._envelope_private_key()
+        self.smb = self._smb_settings() if self.transport == "smb" or self.fallback == "smb" else None
+
+    def _envelope_private_key(self) -> X25519PrivateKey | None:
+        value = os.environ.get("PHILIPS_NON_DICOM_ENVELOPE_PRIVATE_KEY_FILE", "").strip()
+        if not value:
+            return None
+        encoded = root_only_regular_file(value).read_text(encoding="utf-8").strip()
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            return X25519PrivateKey.from_private_bytes(raw)
+        except (ValueError, TypeError):
+            raise RuntimeError("invalid_envelope_private_key") from None
+
+    def _sftp_settings(self) -> dict[str, object]:
+        host = private_ipv4(setting("PHILIPS_SFTP_HOST"))
+        port = int(setting("PHILIPS_SFTP_PORT"))
+        username = setting("PHILIPS_SFTP_USER")
+        remote_path = setting("PHILIPS_SFTP_REMOTE_PATH")
+        if host != self.vpn_peer_host or not 1 <= port <= 65535 or not SAFE_USERNAME.fullmatch(username) or not SAFE_REMOTE_PATH.fullmatch(remote_path):
+            raise RuntimeError("invalid_sftp_policy")
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "remote_path": remote_path.rstrip("/"),
+            "private_key": root_only_regular_file(setting("PHILIPS_SFTP_PRIVATE_KEY")),
+            "known_hosts": root_only_regular_file(setting("PHILIPS_SFTP_KNOWN_HOSTS")),
+        }
+
+    def _smb_settings(self) -> dict[str, object]:
+        host = private_ipv4(setting("PHILIPS_SMB_HOST"))
+        share = setting("PHILIPS_SMB_SHARE")
+        remote_path = os.environ.get("PHILIPS_SMB_REMOTE_PATH", "/").strip()
+        username = setting("PHILIPS_SMB_USER")
+        if host != self.vpn_peer_host or not SAFE_SHARE.fullmatch(share) or not SAFE_SMB_PATH.fullmatch(remote_path) or not SAFE_SMB_USERNAME.fullmatch(username):
+            raise RuntimeError("invalid_smb_policy")
+        credentials = os.environ.get("PHILIPS_SMB_CREDENTIALS_FILE", "").strip()
+        return {
+            "host": host,
+            "share": share,
+            "username": username,
+            "remote_path": remote_path.strip("/"),
+            "credentials": root_only_regular_file(credentials) if credentials else None,
+        }
+
+
+POLICY = Policy()
+STATE_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+os.chmod(STATE_ROOT, 0o700)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
+LOG = logging.getLogger("philips_folder_bridge")
+
+
+def state_file(job_id: int) -> Path:
+    return STATE_ROOT / f"job-{job_id}.json"
+
+
+def read_state(job_id: int) -> dict[str, str]:
+    try:
+        payload = json.loads(state_file(job_id).read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_state(job_id: int, value: dict[str, str]) -> None:
+    target = state_file(job_id)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, target)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def classify_transport_error(output: str, timeout: bool = False) -> str:
+    if timeout:
+        return "timeout"
+    value = output.lower()
+    if "host key verification failed" in value or "host identification has changed" in value:
+        return "host_key"
+    if "publickey" in value or "authentication" in value or "login incorrect" in value or "nt_status_logon_failure" in value:
+        return "authentication"
+    if "permission denied" in value or "access denied" in value:
+        return "permission"
+    if any(marker in value for marker in ("connection refused", "no route to host", "network is unreachable", "connection reset")):
+        return "connectivity"
+    if "timed out" in value or "timeout" in value:
+        return "timeout"
+    return "remote_io"
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "VOXEL-Philips-Folder-Bridge"
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+    def respond(self, status: HTTPStatus, body: dict[str, str]) -> None:
+        payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_envelope_diagnostics(
+        self,
+        job_id: int,
+        tenant_id: int | None,
+        destination_id: object,
+        envelope: str,
+        states: dict[str, str],
+        envelope_version: object = "unknown",
+        failure_stage: str = "none",
+        sanitized_error_code: str = "none",
+    ) -> None:
+        if not envelope_diagnostics_enabled():
+            return
+        safe_destination = str(destination_id) if re.fullmatch(r"[0-9]{1,20}", str(destination_id)) else "invalid"
+        safe_tenant = str(tenant_id) if isinstance(tenant_id, int) and tenant_id > 0 else "unknown"
+        safe_version = str(envelope_version) if envelope_version in {1, "1"} else "unknown"
+        safe_stage = failure_stage if failure_stage in ENVELOPE_DIAGNOSTIC_STAGES else "none"
+        safe_error = sanitized_error_code if re.fullmatch(r"[a-z0-9_]{1,64}", sanitized_error_code) else "internal_sanitized_error"
+        fields = {
+            "event": "philips_envelope_diagnostic",
+            "job_id": str(job_id),
+            "tenant_id": safe_tenant,
+            "destination_id": safe_destination,
+            "algorithm": "x25519+hkdf-sha256+aes-256-gcm",
+            "envelope_version": safe_version,
+            "envelope_size": str(len(envelope.encode("utf-8"))),
+            "failure_stage": safe_stage,
+            "sanitized_error_code": safe_error,
+        }
+        fields.update({stage: states.get(stage, "NOT_REACHED") for stage in ENVELOPE_DIAGNOSTIC_STAGES})
+        LOG.info("%s", " ".join(f"{key}={value}" for key, value in fields.items()))
+
+    def do_POST(self) -> None:  # noqa: N802
+        package_prefix = "/v1/philips-folder/package/"
+        if self.path.startswith(package_prefix) and self.path[len(package_prefix):].isdigit():
+            self.receive_submission_package(int(self.path[len(package_prefix):]))
+            return
+        auth_test_prefix = "/v1/philips-folder/smb-auth-test/"
+        if self.path.startswith(auth_test_prefix) and self.path[len(auth_test_prefix):].isdigit():
+            self.test_smb_authentication_readonly(int(self.path[len(auth_test_prefix):]))
+            return
+        test_prefix = "/v1/philips-folder/smb-test/"
+        if self.path.startswith(test_prefix) and self.path[len(test_prefix):].isdigit():
+            self.test_smb_connectivity(int(self.path[len(test_prefix):]))
+            return
+        prefix = "/v1/philips-folder/"
+        if not self.path.startswith(prefix) or not self.path[len(prefix):].isdigit():
+            self.respond(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        job_id = int(self.path[len(prefix):])
+        supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        destination_id_header = self.headers.get("X-VOXEL-Destination-ID", "")
+        filename = self.headers.get("X-VOXEL-Filename", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        supplied_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        content_length = self.headers.get("Content-Length", "")
+        try:
+            length = int(content_length)
+            request_time = int(timestamp)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        permitted = (
+            supplied_job_id == str(job_id)
+            and destination_id_header == str(POLICY.destination_id)
+            and 256 <= length <= MAX_BYTES
+            and self.valid_filename(filename)
+            and re.fullmatch(r"[a-f0-9]{64}", supplied_hash) is not None
+            and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
+        )
+        if not permitted:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        destination_id = POLICY.destination_id
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
+        signature_parts = ["POST", self.path, str(job_id), destination_id_header, filename, supplied_hash, str(length), timestamp]
+        if envelope:
+            signature_parts.append(envelope_hash)
+        signature_base = "\n".join(signature_parts)
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        if envelope and POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        previous = read_state(job_id)
+        if previous.get("sha256") == supplied_hash and previous.get("state") == "delivered":
+            self.respond(HTTPStatus.CREATED, {"reference": previous["reference"], "sha256": supplied_hash})
+            return
+        if previous:
+            self.respond(HTTPStatus.CONFLICT, {"error": "job_state_conflict"})
+            return
+        staged = self.receive_or_reuse_stage(filename, supplied_hash, length)
+        if staged is None:
+            return
+        try:
+            with self.temporary_smb_credentials(envelope, destination_id, job_id=job_id) as credentials:
+                transport = self.deliver_remote(job_id, filename, staged, supplied_hash, length, credentials)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_export_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
+            return
+        reference = f"gateway-philips-folder:{supplied_hash[:16]}"
+        write_state(job_id, {"state": "delivered", "sha256": supplied_hash, "reference": reference, "transport": transport})
+        LOG.info("event=philips_export_success job_id=%s transport=%s sha256_16=%s", job_id, transport, supplied_hash[:16])
+        self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": supplied_hash})
+
+    def receive_submission_package(self, job_id: int) -> None:
+        supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        tenant_id_header = self.headers.get("X-VOXEL-Tenant-ID", "")
+        destination_id_header = self.headers.get("X-VOXEL-Destination-ID", "")
+        package_filename = self.headers.get("X-VOXEL-Filename", "")
+        package_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
+        pdf_filename = self.headers.get("X-VOXEL-PDF-Filename", "")
+        pdf_hash = self.headers.get("X-VOXEL-PDF-SHA256", "").lower()
+        xml_filename = self.headers.get("X-VOXEL-XML-Filename", "")
+        xml_hash = self.headers.get("X-VOXEL-XML-SHA256", "").lower()
+        xml_task_file_path_hash = self.headers.get("X-VOXEL-XML-TASK-FILE-PATH-SHA256", "").lower()
+        xml_document_type_applicable = self.headers.get("X-VOXEL-XML-DOCUMENT-TYPE-APPLICABLE", "")
+        patient_name_components_omitted = self.headers.get("X-VOXEL-Patient-Name-Components-Omitted", "0")
+        patient_name_as_family = self.headers.get("X-VOXEL-Patient-Name-As-Family", "0")
+        report_id_header = self.headers.get("X-VOXEL-Report-ID", "0")
+        report_version_header = self.headers.get("X-VOXEL-Report-Version", "0")
+        estudo_id_header = self.headers.get("X-VOXEL-Estudo-ID", "0")
+        environment_header = self.headers.get("X-VOXEL-Environment", "")
+        delivery_profile_header = self.headers.get("X-VOXEL-Delivery-Profile", "")
+        transport_header = self.headers.get("X-VOXEL-Transport", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+            tenant_id = int(tenant_id_header)
+            pdf_length = int(self.headers.get("X-VOXEL-PDF-Size", ""))
+            xml_length = int(self.headers.get("X-VOXEL-XML-Size", ""))
+            report_id = int(report_id_header)
+            report_version = int(report_version_header)
+            estudo_id = int(estudo_id_header)
+            request_time = int(timestamp)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        permitted = (
+            supplied_job_id == str(job_id)
+            and tenant_id > 0
+            and destination_id_header == str(POLICY.destination_id)
+            and 256 <= length <= MAX_BYTES
+            and 100 <= pdf_length <= MAX_BYTES
+            and 32 <= xml_length <= 2 * 1024 * 1024
+            and self.valid_package_filename(package_filename)
+            and self.valid_filename(pdf_filename)
+            and self.valid_filename(xml_filename)
+            and re.fullmatch(r"[a-f0-9]{64}", package_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", pdf_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", xml_hash) is not None
+            and re.fullmatch(r"[a-f0-9]{64}", xml_task_file_path_hash) is not None
+            and xml_document_type_applicable in {"0", "1"}
+            and patient_name_components_omitted in {"0", "1"}
+            and patient_name_as_family in {"0", "1"}
+            and not (patient_name_components_omitted == "1" and patient_name_as_family == "1")
+            and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
+        )
+        if not permitted:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        allow_missing_patient_name_components = patient_name_components_omitted == "1"
+        allow_patient_name_as_family = patient_name_as_family == "1"
+        if allow_missing_patient_name_components and (
+            not POLICY.patient_name_exception_enabled
+            or tenant_id != 2
+            or destination_id_header != "6"
+            or report_id != 74
+            or report_version != 11
+            or estudo_id != 1704
+            or environment_header != "homologacao"
+            or delivery_profile_header != "submission_document"
+            or transport_header != "philips_non_dicom"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if allow_patient_name_as_family and (
+            not POLICY.patient_name_as_family_enabled
+            or tenant_id != 2
+            or destination_id_header != "6"
+            or environment_header != "homologacao"
+            or delivery_profile_header != "submission_document"
+            or transport_header != "philips_non_dicom"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
+        signature_parts = [
+            "POST", self.path, str(job_id), tenant_id_header, destination_id_header,
+            package_filename, package_hash, str(length), pdf_filename, pdf_hash,
+            str(pdf_length), xml_filename, xml_hash, str(xml_length),
+            xml_task_file_path_hash, xml_document_type_applicable, timestamp,
+        ]
+        if allow_missing_patient_name_components:
+            signature_parts.extend([
+                "patient_name_components_omitted",
+                report_id_header,
+                report_version_header,
+                estudo_id_header,
+                environment_header,
+                delivery_profile_header,
+                transport_header,
+            ])
+        if allow_patient_name_as_family:
+            signature_parts.extend([
+                "patient_name_as_family",
+                report_id_header,
+                report_version_header,
+                estudo_id_header,
+                environment_header,
+                delivery_profile_header,
+                transport_header,
+            ])
+        if envelope:
+            signature_parts.append(envelope_hash)
+        expected = hmac.new(POLICY.secret, "\n".join(signature_parts).encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        if not envelope or POLICY.envelope_private_key is None or POLICY.transport != "smb":
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        previous = read_state(job_id)
+        if (previous.get("sha256") == package_hash
+                and previous.get("state") == "delivered"
+                and previous.get("package_verified") == "PASS"
+                and previous.get("package_identity") == package_hash
+                and previous.get("task_file_path_sha256") == xml_task_file_path_hash
+                and previous.get("document_type_applicable") == xml_document_type_applicable):
+            self.respond(HTTPStatus.CREATED, {
+                "reference": previous["reference"],
+                "sha256": package_hash,
+                "package_identity": package_hash,
+                "package_verified": "PASS",
+            })
+            return
+        if previous:
+            self.respond(HTTPStatus.CONFLICT, {"error": "job_state_conflict"})
+            return
+        staged = self.receive_or_reuse_stage(package_filename, package_hash, length)
+        if staged is None:
+            return
+        try:
+            with self.extracted_submission_package(
+                staged,
+                pdf_filename,
+                pdf_hash,
+                pdf_length,
+                xml_filename,
+                xml_hash,
+                xml_length,
+                xml_task_file_path_hash,
+                xml_document_type_applicable == "1",
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
+            ) as files:
+                with self.temporary_smb_credentials(envelope, POLICY.destination_id, tenant_id, job_id=job_id) as credentials:
+                    transport = self.deliver_submission_package_remote(
+                        job_id,
+                        pdf_filename,
+                        files[0],
+                        xml_filename,
+                        files[1],
+                        xml_task_file_path_hash,
+                        xml_document_type_applicable == "1",
+                        credentials,
+                        allow_missing_patient_name_components,
+                        allow_patient_name_as_family,
+                    )
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
+            return
+        reference = f"gateway-philips-folder:{package_hash[:16]}"
+        write_state(job_id, {
+            "state": "delivered",
+            "sha256": package_hash,
+            "package_identity": package_hash,
+            "package_verified": "PASS",
+            "task_file_path_sha256": xml_task_file_path_hash,
+            "document_type_applicable": xml_document_type_applicable,
+            "reference": reference,
+            "transport": transport,
+        })
+        LOG.info("event=philips_package_success job_id=%s transport=%s sha256_16=%s", job_id, POLICY.transport, package_hash[:16])
+        self.respond(HTTPStatus.CREATED, {
+            "reference": reference,
+            "sha256": package_hash,
+            "package_identity": package_hash,
+            "package_verified": "PASS",
+        })
+
+    @contextmanager
+    def extracted_submission_package(
+        self,
+        staged: Path,
+        pdf_filename: str,
+        pdf_hash: str,
+        pdf_length: int,
+        xml_filename: str,
+        xml_hash: str,
+        xml_length: int,
+        xml_task_file_path_hash: str,
+        xml_document_type_applicable: bool,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
+    ):
+        pdf_path: Path | None = None
+        xml_path: Path | None = None
+        try:
+            with staged.open("rb") as source:
+                manifest_line = source.readline(16385)
+                if len(manifest_line) > 16384 or not manifest_line.endswith(b"\n"):
+                    raise BridgeTransferError("remote_io")
+                try:
+                    manifest = json.loads(manifest_line[:-1].decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise BridgeTransferError("remote_io") from None
+                if not isinstance(manifest, dict) or manifest.get("v") != 1:
+                    raise BridgeTransferError("remote_io")
+                expected_entries = {
+                    "pdf": {"filename": pdf_filename, "sha256": pdf_hash, "size": pdf_length},
+                    "xml": {"filename": xml_filename, "sha256": xml_hash, "size": xml_length},
+                }
+                for kind, expected in expected_entries.items():
+                    entry = manifest.get(kind)
+                    if not isinstance(entry, dict) or entry != expected:
+                        raise BridgeTransferError("remote_io")
+                pdf_path = self._extract_package_entry(source, pdf_filename, pdf_hash, pdf_length, b"%PDF")
+                if source.read(1) != b"\n":
+                    raise BridgeTransferError("remote_io")
+                xml_path = self._extract_package_entry(source, xml_filename, xml_hash, xml_length, b"<?xml")
+                if source.read(1) != b"":
+                    raise BridgeTransferError("remote_io")
+            self._validate_submission_xml(
+                xml_path,
+                pdf_filename,
+                xml_task_file_path_hash,
+                xml_document_type_applicable,
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
+            )
+            yield pdf_path, xml_path
+        finally:
+            if pdf_path is not None:
+                pdf_path.unlink(missing_ok=True)
+            if xml_path is not None:
+                xml_path.unlink(missing_ok=True)
+
+    def _extract_package_entry(self, source, filename: str, expected_hash: str, expected_length: int, prefix: bytes) -> Path:
+        descriptor, raw_path = tempfile.mkstemp(prefix="package-", suffix=".part", dir=STATE_ROOT)
+        path = Path(raw_path)
+        digest = hashlib.sha256()
+        remaining = expected_length
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                while remaining > 0:
+                    chunk = source.read(min(65536, remaining))
+                    if not chunk:
+                        raise BridgeTransferError("remote_io")
+                    output.write(chunk)
+                    digest.update(chunk)
+                    remaining -= len(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(path, 0o600)
+            with path.open("rb") as check:
+                actual_prefix = check.read(len(prefix))
+            if digest.hexdigest() != expected_hash or actual_prefix != prefix:
+                raise BridgeTransferError("remote_io")
+            return path
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+
+    def deliver_submission_package_remote(
+        self,
+        job_id: int,
+        pdf_filename: str,
+        pdf_path: Path,
+        xml_filename: str,
+        xml_path: Path,
+        xml_task_file_path_hash: str,
+        xml_document_type_applicable: bool,
+        credentials: Path | None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
+    ) -> str:
+        if credentials is None or not isinstance(POLICY.smb, dict):
+            raise BridgeTransferError("credentials_unavailable")
+        pdf_final, pdf_temporary = self._smb_remote_path(pdf_filename)
+        xml_final, xml_temporary = self._smb_remote_path(xml_filename)
+        entries = [
+            ("pdf", pdf_final, pdf_temporary, pdf_path, sha256_file(pdf_path), pdf_path.stat().st_size),
+            ("xml", xml_final, xml_temporary, xml_path, sha256_file(xml_path), xml_path.stat().st_size),
+        ]
+        missing = []
+        try:
+            for entry in entries:
+                _label, final_path, _temporary_path, _local_path, expected_hash, expected_size = entry
+                try:
+                    existing = self._smb_command(credentials, f"ls {final_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "LIST", classification=error.category)
+                    raise
+                if existing.returncode == 0:
+                    self._log_smb_stage(job_id, "LIST", existing, "none")
+                    if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, expected_size):
+                        continue
+                    raise BridgeTransferError("remote_io")
+                if not self._smb_missing(existing):
+                    classification = classify_transport_error(existing.stdout + existing.stderr)
+                    self._log_smb_stage(job_id, "LIST", existing, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "LIST", existing, "not_found")
+                missing.append(entry)
+
+            for label, _final_path, temporary_path, path, _expected_hash, _expected_size in missing:
+                try:
+                    uploaded = self._smb_command(credentials, f"put {path} {temporary_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "WRITE", classification=error.category)
+                    raise
+                if uploaded.returncode != 0:
+                    classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
+                    self._log_smb_stage(job_id, "WRITE", uploaded, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "WRITE", uploaded, "none")
+
+            for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:
+                try:
+                    renamed = self._smb_command(credentials, f"rename {temporary_path} {final_path}")
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "RENAME", classification=error.category)
+                    raise
+                if renamed.returncode != 0:
+                    classification = classify_transport_error(renamed.stdout + renamed.stderr)
+                    self._log_smb_stage(job_id, "RENAME", renamed, classification)
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(job_id, "RENAME", renamed, "none")
+
+            pdf_ok = self.smb_remote_matches(job_id, credentials, pdf_final, entries[0][4], entries[0][5])
+            xml_ok = self.smb_remote_matches(
+                job_id,
+                credentials,
+                xml_final,
+                entries[1][4],
+                entries[1][5],
+                pdf_filename,
+                xml_task_file_path_hash,
+                xml_document_type_applicable,
+                allow_missing_patient_name_components,
+                allow_patient_name_as_family,
+            )
+            if not pdf_ok or not xml_ok:
+                raise BridgeTransferError("remote_io")
+            LOG.info("event=philips_smb_package_success job_id=%s", job_id)
+            return "smb"
+        finally:
+            # Somente os nomes .part são temporários e podem ser removidos.
+            # Os arquivos finais são a entrega Philips e devem permanecer disponíveis
+            # para o Auto Ingestion; em caso de falha, preservá-los é fail-closed.
+            for path in [pdf_temporary, xml_temporary]:
+                try:
+                    self._smb_command(credentials, f"del {path}")
+                except BridgeTransferError:
+                    pass
+
+    def test_smb_connectivity(self, destination_id: int) -> None:
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        supplied_configuration_hash = self.headers.get("X-VOXEL-Configuration-SHA256", "")
+        try:
+            request_time = int(timestamp)
+            tenant_value = int(tenant_id)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        expected_configuration_hash = self.smb_configuration_hash()
+        if not hmac.compare_digest(supplied_configuration_hash, expected_configuration_hash):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest()
+        signature_base = "\n".join(["POST", self.path, tenant_id, str(destination_id), supplied_configuration_hash, envelope_hash, timestamp])
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        try:
+            with self.temporary_smb_credentials(envelope, destination_id, tenant_value) as credentials:
+                self.smb_write_probe(credentials)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_smb_test_failed destination_id=%s reason_category=%s", destination_id, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_smb_test_failed", "reason_category": error.category})
+            return
+        LOG.info("event=philips_smb_test_success destination_id=%s", destination_id)
+        self.respond(HTTPStatus.OK, {"status": "ok"})
+
+    def test_smb_authentication_readonly(self, destination_id: int) -> None:
+        if (
+            os.environ.get("PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED", "0").strip() != "1"
+            or POLICY.mode != "single_test"
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
+        supplied_configuration_hash = self.headers.get("X-VOXEL-Configuration-SHA256", "")
+        try:
+            request_time = int(timestamp)
+            tenant_value = int(tenant_id)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        expected_configuration_hash = self.smb_configuration_hash()
+        if not hmac.compare_digest(supplied_configuration_hash, expected_configuration_hash):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest()
+        signature_base = "\n".join(["POST", self.path, tenant_id, str(destination_id), supplied_configuration_hash, envelope_hash, timestamp])
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        try:
+            with self.temporary_smb_credentials(envelope, destination_id, tenant_value) as credentials:
+                result = self.smb_authentication_readonly(credentials, destination_id)
+        except BridgeTransferError as error:
+            LOG.warning("event=philips_smb_auth_readonly_failed destination_id=%s reason_category=%s", destination_id, error.category)
+            self.respond(HTTPStatus.BAD_GATEWAY, {
+                "error": "gateway_smb_test_failed",
+                "reason_category": error.category,
+                "smb_return_code": "unknown",
+                "smb_classification": error.category,
+                "smb_auth": "FAIL",
+                "smb_pwd": "FAIL",
+                "nt_status_logon_failure": "UNKNOWN",
+            })
+            return
+        if result["smb_auth"] != "PASS":
+            self.respond(HTTPStatus.BAD_GATEWAY, {
+                "error": "gateway_smb_test_failed",
+                "reason_category": result["smb_classification"],
+                **result,
+            })
+            return
+        LOG.info("event=philips_smb_auth_readonly_success destination_id=%s", destination_id)
+        self.respond(HTTPStatus.OK, {"status": "ok", "pwd": "confirmed", **result})
+
+    def smb_authentication_readonly(self, credentials: Path, destination_id: int) -> dict[str, str]:
+        try:
+            result = self._smb_command(credentials, "pwd")
+        except BridgeTransferError as error:
+            LOG.warning(
+                "event=philips_smb_auth_readonly_result destination_id=%s SMB_RETURN_CODE=unknown "
+                "SMB_CLASSIFICATION=%s SMB_AUTH=FAIL SMB_PWD=FAIL "
+                "NT_STATUS_LOGON_FAILURE=UNKNOWN",
+                destination_id,
+                error.category,
+            )
+            raise
+        output = (result.stdout + result.stderr).lower()
+        pwd_confirmed = result.returncode == 0 and "current directory is" in output
+        auth_failed = "nt_status_logon_failure" in output
+        classification = "none" if pwd_confirmed else ("authentication" if auth_failed else classify_transport_error(result.stdout + result.stderr))
+        LOG.info(
+            "event=philips_smb_auth_readonly_result destination_id=%s SMB_RETURN_CODE=%s "
+            "SMB_CLASSIFICATION=%s SMB_AUTH=%s SMB_PWD=%s NT_STATUS_LOGON_FAILURE=%s",
+            destination_id,
+            result.returncode,
+            classification,
+            "PASS" if pwd_confirmed else "FAIL",
+            "PASS" if pwd_confirmed else "FAIL",
+            "YES" if auth_failed else "NO",
+        )
+        return {
+            "smb_return_code": str(result.returncode),
+            "smb_classification": classification,
+            "smb_auth": "PASS" if pwd_confirmed else "FAIL",
+            "smb_pwd": "PASS" if pwd_confirmed else "FAIL",
+            "nt_status_logon_failure": "YES" if auth_failed else "NO",
+        }
+
+    def smb_configuration_hash(self) -> str:
+        if not isinstance(POLICY.smb, dict):
+            return ""
+        value = {
+            "host": str(POLICY.smb["host"]),
+            "port": 445,
+            "share": str(POLICY.smb["share"]),
+            "username": str(POLICY.smb["username"]),
+        }
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    @contextmanager
+    def temporary_smb_credentials(
+        self,
+        envelope: str,
+        destination_id: int,
+        tenant_id: int | None = None,
+        job_id: int | None = None,
+    ):
+        credential_file: Path | None = None
+        password = ""
+        try:
+            if not envelope:
+                if not isinstance(POLICY.smb, dict) or not isinstance(POLICY.smb.get("credentials"), Path):
+                    raise BridgeTransferError("credentials_unavailable")
+                yield POLICY.smb["credentials"]
+                return
+            password = self.open_secret_envelope(envelope, destination_id, tenant_id, job_id)
+            username = str(POLICY.smb["username"]) if isinstance(POLICY.smb, dict) else ""
+            account, domain = (username.split("\\", 1)[::-1] if "\\" in username else (username, ""))
+            descriptor, raw_path = tempfile.mkstemp(prefix="smb-credentials-", dir=STATE_ROOT)
+            credential_file = Path(raw_path)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write("username=" + account + "\npassword=" + password + "\n")
+                if domain:
+                    output.write("domain=" + domain + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(credential_file, 0o600)
+            yield credential_file
+        finally:
+            password = ""
+            if credential_file is not None:
+                credential_file.unlink(missing_ok=True)
+
+    def open_secret_envelope(
+        self,
+        envelope: str,
+        destination_id: int,
+        tenant_id: int | None,
+        job_id: int | None = None,
+    ) -> str:
+        states = {stage: "NOT_REACHED" for stage in ENVELOPE_DIAGNOSTIC_STAGES}
+        version: object = "unknown"
+        diagnostic_tenant = tenant_id if isinstance(tenant_id, int) and tenant_id > 0 else None
+        diagnostic_job = job_id if isinstance(job_id, int) and job_id > 0 else 0
+
+        def fail(stage: str, error_code: str) -> NoReturn:
+            states[stage] = "FAIL"
+            raise EnvelopeValidationError(stage, error_code)
+
+        states["ENVELOPE_PRESENT"] = "OK" if envelope else "FAIL"
+        if not envelope:
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, "ENVELOPE_PRESENT", "envelope_missing",
+            )
+            raise BridgeTransferError("credentials_unavailable")
+
+        try:
+            try:
+                outer = base64.b64decode(envelope, validate=True)
+                states["ENVELOPE_BASE64_DECODE"] = "OK"
+            except (binascii.Error, ValueError):
+                fail("ENVELOPE_BASE64_DECODE", "envelope_base64_invalid")
+
+            try:
+                decoded = json.loads(outer.decode("utf-8"))
+                states["ENVELOPE_JSON_PARSE"] = "OK"
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                fail("ENVELOPE_JSON_PARSE", "envelope_json_invalid")
+
+            required_fields = {
+                "v", "tenant_id", "destination_id", "expires_at",
+                "ephemeral_public", "iv", "tag", "ciphertext",
+            }
+            if not isinstance(decoded, dict) or not required_fields.issubset(decoded):
+                fail("REQUIRED_FIELDS_PRESENT", "required_fields_missing")
+            states["REQUIRED_FIELDS_PRESENT"] = "OK"
+            version = decoded.get("v", "unknown")
+            decoded_tenant = decoded.get("tenant_id")
+            diagnostic_tenant = decoded_tenant if type(decoded_tenant) is int and decoded_tenant > 0 else diagnostic_tenant
+
+            if type(decoded_tenant) is not int or (tenant_id is not None and decoded_tenant != tenant_id):
+                if tenant_id is None:
+                    states["TENANT_MATCH"] = "NOT_REACHED"
+                else:
+                    fail("TENANT_MATCH", "tenant_mismatch")
+            else:
+                states["TENANT_MATCH"] = "OK"
+
+            if decoded.get("destination_id") != destination_id:
+                fail("DESTINATION_MATCH", "destination_mismatch")
+            states["DESTINATION_MATCH"] = "OK"
+
+            if type(decoded.get("expires_at")) is not int:
+                fail("EXPIRY_VALID", "expiry_invalid")
+            expires_at = decoded["expires_at"]
+            if expires_at < int(time.time()) or expires_at > int(time.time()) + 90:
+                fail("EXPIRY_VALID", "expiry_invalid")
+            if POLICY.envelope_private_key is None:
+                fail("EXPIRY_VALID", "envelope_private_key_unavailable")
+            states["EXPIRY_VALID"] = "OK"
+
+            try:
+                ephemeral_raw = base64.b64decode(str(decoded["ephemeral_public"]), validate=True)
+                ephemeral = X25519PublicKey.from_public_bytes(ephemeral_raw)
+                states["EPHEMERAL_PUBLIC_KEY_VALID"] = "OK"
+            except (binascii.Error, ValueError, TypeError):
+                fail("EPHEMERAL_PUBLIC_KEY_VALID", "ephemeral_public_invalid")
+
+            try:
+                shared = POLICY.envelope_private_key.exchange(ephemeral)
+                states["X25519_DERIVATION"] = "OK"
+            except (ValueError, TypeError):
+                fail("X25519_DERIVATION", "x25519_failed")
+
+            context = "voxel-nondicom-smb-v1|" + str(decoded["tenant_id"]) + "|" + str(destination_id) + "|" + str(expires_at)
+            try:
+                key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=context.encode("utf-8")).derive(shared)
+                states["HKDF_DERIVATION"] = "OK"
+            except (ValueError, TypeError):
+                fail("HKDF_DERIVATION", "hkdf_failed")
+
+            try:
+                nonce = base64.b64decode(str(decoded["iv"]), validate=True)
+                ciphertext = base64.b64decode(str(decoded["ciphertext"]), validate=True)
+                tag = base64.b64decode(str(decoded["tag"]), validate=True)
+                plaintext = AESGCM(key).decrypt(nonce, ciphertext + tag, context.encode("utf-8"))
+                states["AES_GCM_DECRYPT"] = "OK"
+            except InvalidTag:
+                fail("AES_GCM_DECRYPT", "aes_gcm_failed")
+            except (binascii.Error, ValueError, TypeError):
+                fail("AES_GCM_DECRYPT", "aes_gcm_input_invalid")
+
+            try:
+                password = plaintext.decode("utf-8")
+                states["PLAINTEXT_FORMAT"] = "OK"
+            except UnicodeDecodeError:
+                fail("PLAINTEXT_FORMAT", "plaintext_invalid")
+            if not password or len(password) > 512 or "\x00" in password:
+                fail("PASSWORD_VALIDATION", "password_invalid")
+            states["PASSWORD_VALIDATION"] = "OK"
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, "none", "none",
+            )
+            return password
+        except EnvelopeValidationError as error:
+            self.log_envelope_diagnostics(
+                diagnostic_job, diagnostic_tenant, destination_id, envelope, states,
+                version, error.stage, error.error_code,
+            )
+            raise BridgeTransferError("credentials_unavailable") from None
+
+    def receive_or_reuse_stage(self, filename: str, expected_hash: str, length: int) -> Path | None:
+        final_path = POLICY.target_directory / filename
+        if final_path.exists() or final_path.is_symlink():
+            if final_path.is_file() and not final_path.is_symlink() and final_path.stat().st_size == length and hmac.compare_digest(sha256_file(final_path), expected_hash):
+                return final_path
+            self.respond(HTTPStatus.CONFLICT, {"error": "staging_conflict"})
+            return None
+        received = 0
+        digest = hashlib.sha256()
+        temporary: Path | None = None
+        try:
+            descriptor, raw_path = tempfile.mkstemp(prefix=".voxel-", suffix=".part", dir=POLICY.target_directory)
+            temporary = Path(raw_path)
+            with os.fdopen(descriptor, "wb") as output:
+                while received < length:
+                    chunk = self.rfile.read(min(65536, length - received))
+                    if not chunk:
+                        self.respond(HTTPStatus.BAD_REQUEST, {"error": "truncated_body"})
+                        return None
+                    output.write(chunk)
+                    digest.update(chunk)
+                    received += len(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            os.chmod(temporary, 0o600)
+            actual_hash = digest.hexdigest()
+            if received != length or not hmac.compare_digest(actual_hash, expected_hash):
+                self.respond(HTTPStatus.BAD_REQUEST, {"error": "integrity_check_failed"})
+                return None
+            os.replace(temporary, final_path)
+            temporary = None
+            return final_path
+        except OSError:
+            self.respond(HTTPStatus.BAD_GATEWAY, {"error": "staging_write_failed"})
+            return None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def deliver_remote(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int, credentials: Path | None) -> str:
+        try:
+            if POLICY.transport == "sftp":
+                self.transfer_sftp(job_id, filename, staged, length)
+                return "sftp"
+            self.transfer_smb(job_id, filename, staged, expected_hash, length, credentials)
+            return "smb"
+        except BridgeTransferError as primary_error:
+            if POLICY.transport == "sftp" and POLICY.fallback == "smb" and primary_error.category in TRANSIENT_TRANSPORT_FAILURES:
+                LOG.warning("event=philips_smb_fallback_attempt job_id=%s reason_category=%s", job_id, primary_error.category)
+                self.transfer_smb(job_id, filename, staged, expected_hash, length, credentials)
+                return "smb"
+            raise
+
+    @staticmethod
+    def _sftp_remote_path(filename: str) -> tuple[str, str]:
+        if not isinstance(POLICY.sftp, dict):
+            raise BridgeTransferError("configuration")
+        directory = str(POLICY.sftp["remote_path"])
+        final_path = f"{directory}/{filename}"
+        temporary_path = f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+        return final_path, temporary_path
+
+    @staticmethod
+    def _sftp_command(batch: str) -> subprocess.CompletedProcess[str]:
+        if not isinstance(POLICY.sftp, dict) or not shutil.which("sftp"):
+            raise BridgeTransferError("configuration")
+        command = [
+            "sftp",
+            "-F", "/dev/null",
+            "-oBatchMode=yes",
+            "-oStrictHostKeyChecking=yes",
+            "-oIdentitiesOnly=yes",
+            "-oUserKnownHostsFile=" + str(POLICY.sftp["known_hosts"]),
+            "-oIdentityFile=" + str(POLICY.sftp["private_key"]),
+            "-P", str(POLICY.sftp["port"]),
+            str(POLICY.sftp["username"]) + "@" + str(POLICY.sftp["host"]),
+        ]
+        try:
+            return subprocess.run(command, input=batch, capture_output=True, text=True, timeout=45, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise BridgeTransferError("timeout") from error
+        except OSError as error:
+            raise BridgeTransferError("configuration") from error
+
+    @staticmethod
+    def _sftp_missing(result: subprocess.CompletedProcess[str]) -> bool:
+        output = (result.stdout + result.stderr).lower()
+        return any(marker in output for marker in ("no such file", "couldn't stat", "not found"))
+
+    @staticmethod
+    def _sftp_size_matches(result: subprocess.CompletedProcess[str], expected_size: int) -> bool:
+        output = result.stdout + result.stderr
+        return bool(re.search(r"\s" + re.escape(str(expected_size)) + r"\s+[A-Z][a-z]{2}\s", output))
+
+    def sftp_remote_matches(self, remote_path: str, expected_hash: str, expected_size: int) -> bool:
+        descriptor, raw_path = tempfile.mkstemp(prefix="sftp-verify-", suffix=".part", dir=STATE_ROOT)
+        os.close(descriptor)
+        downloaded = Path(raw_path)
+        downloaded.unlink(missing_ok=True)
+        try:
+            result = self._sftp_command(f"get {remote_path} {downloaded}\n")
+            if result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
+            return downloaded.is_file() and downloaded.stat().st_size == expected_size and hmac.compare_digest(sha256_file(downloaded), expected_hash)
+        finally:
+            downloaded.unlink(missing_ok=True)
+
+    def transfer_sftp(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int) -> None:
+        final_path, temporary_path = self._sftp_remote_path(filename)
+        existing = self._sftp_command(f"ls -ln {final_path}\n")
+        if existing.returncode == 0:
+            if self.sftp_remote_matches(final_path, expected_hash, length):
+                LOG.info("event=philips_sftp_success job_id=%s", job_id)
+                return
+            raise BridgeTransferError("remote_io")
+        if not self._sftp_missing(existing):
+            raise BridgeTransferError(classify_transport_error(existing.stdout + existing.stderr))
+        uploaded = self._sftp_command(f"put {staged} {temporary_path}\nls -ln {temporary_path}\n")
+        if uploaded.returncode != 0 or not self._sftp_size_matches(uploaded, length):
+            raise BridgeTransferError(classify_transport_error(uploaded.stdout + uploaded.stderr))
+        renamed = self._sftp_command(f"rename {temporary_path} {final_path}\n")
+        if renamed.returncode != 0:
+            raise BridgeTransferError(classify_transport_error(renamed.stdout + renamed.stderr))
+        if not self.sftp_remote_matches(final_path, expected_hash, length):
+            raise BridgeTransferError("remote_io")
+        LOG.info("event=philips_sftp_success job_id=%s", job_id)
+
+    def _smb_command(self, credentials: Path, command: str) -> subprocess.CompletedProcess[str]:
+        if not isinstance(POLICY.smb, dict) or not shutil.which("smbclient"):
+            raise BridgeTransferError("configuration")
+        source = "//" + str(POLICY.smb["host"]) + "/" + str(POLICY.smb["share"])
+        try:
+            return subprocess.run([
+                "smbclient", source, "-A", str(credentials), "-m", "SMB3",
+                "--option=client min protocol=SMB3", "--option=client max protocol=SMB3",
+                "-c", command,
+            ], capture_output=True, text=True, timeout=45, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise BridgeTransferError("timeout") from error
+        except OSError as error:
+            raise BridgeTransferError("configuration") from error
+
+    @staticmethod
+    def _log_smb_stage(
+        job_id: int,
+        stage: str,
+        result: subprocess.CompletedProcess[str] | None = None,
+        classification: str = "unknown",
+        remote_size: int | None = None,
+        remote_hash_match: bool | None = None,
+    ) -> None:
+        """Log only bounded SMB telemetry; never log command, output, path, or content."""
+        if not smb_diagnostics_enabled():
+            return
+        safe_stage = stage if stage in SMB_DIAGNOSTIC_STAGES else "unknown"
+        safe_classification = (
+            classification if classification in SMB_DIAGNOSTIC_CLASSIFICATIONS else "unknown"
+        )
+        return_code = result.returncode if result is not None else "unknown"
+        stdout_size = len(result.stdout.encode("utf-8", "replace")) if result is not None else "unknown"
+        stderr_size = len(result.stderr.encode("utf-8", "replace")) if result is not None else "unknown"
+        safe_remote_size = remote_size if isinstance(remote_size, int) and remote_size >= 0 else "unknown"
+        safe_hash_match = (
+            "YES" if remote_hash_match is True else
+            "NO" if remote_hash_match is False else
+            "UNKNOWN"
+        )
+        try:
+            LOG.info(
+                "event=philips_smb_stage job_id=%s SMB_STAGE=%s SMB_RETURN_CODE=%s "
+                "SMB_CLASSIFICATION=%s SMB_STDOUT_PRESENT=%s SMB_STDERR_PRESENT=%s "
+                "SMB_STDOUT_SIZE=%s SMB_STDERR_SIZE=%s REMOTE_SIZE=%s REMOTE_HASH_MATCH=%s",
+                job_id,
+                safe_stage,
+                return_code,
+                safe_classification,
+                "YES" if result is not None and result.stdout else "NO" if result is not None else "UNKNOWN",
+                "YES" if result is not None and result.stderr else "NO" if result is not None else "UNKNOWN",
+                stdout_size,
+                stderr_size,
+                safe_remote_size,
+                safe_hash_match,
+            )
+        except Exception:
+            # Telemetry is best-effort and must never change the transport result.
+            pass
+
+    @staticmethod
+    def _diagnose_smb_list_result(
+        job_id: int,
+        filename: str,
+        result: subprocess.CompletedProcess[str],
+        classification: str,
+    ) -> None:
+        """Persist bounded LIST diagnostics without changing transport behavior."""
+        if os.environ.get("PHILIPS_SMB_LIST_DIAGNOSTICS", "0").strip() != "1":
+            return
+        try:
+            stdout = result.stdout.encode("utf-8", "replace")
+            stderr = result.stderr.encode("utf-8", "replace")
+            safe_classification = (
+                classification if classification in SMB_DIAGNOSTIC_CLASSIFICATIONS else "unknown"
+            )
+            LOG.info(
+                "event=philips_smb_list_diagnostic job_id=%s destination_id=%s "
+                "SMB_STAGE=LIST SMB_RETURN_CODE=%s SMB_STDOUT_PRESENT=%s "
+                "SMB_STDOUT_SIZE=%s SMB_STDOUT_SHA256=%s SMB_STDOUT_PREVIEW_HEX=%s "
+                "SMB_STDERR_PRESENT=%s SMB_STDERR_SIZE=%s SMB_STDERR_SHA256=%s "
+                "SMB_STDERR_PREVIEW_HEX=%s SMB_LIST_LOGICAL_COMMAND=ls_<final_path> "
+                "filename=%s SMB_CLASSIFICATION=%s",
+                job_id,
+                POLICY.destination_id,
+                result.returncode,
+                "YES" if stdout else "NO",
+                len(stdout),
+                hashlib.sha256(stdout).hexdigest() if stdout else "none",
+                stdout[:64].hex() if stdout else "none",
+                "YES" if stderr else "NO",
+                len(stderr),
+                hashlib.sha256(stderr).hexdigest() if stderr else "none",
+                stderr[:64].hex() if stderr else "none",
+                filename,
+                safe_classification,
+            )
+        except Exception:
+            # LIST diagnostics are best-effort and must never affect delivery.
+            pass
+
+    @staticmethod
+    def _smb_missing(result: subprocess.CompletedProcess[str]) -> bool:
+        output = (result.stdout + result.stderr).lower()
+        return any(marker in output for marker in ("nt_status_no_such_file", "not found", "no such file"))
+
+    def _smb_remote_path(self, filename: str) -> tuple[str, str]:
+        if not isinstance(POLICY.smb, dict):
+            raise BridgeTransferError("configuration")
+        directory = str(POLICY.smb["remote_path"])
+        return f"{directory}/{filename}", f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+
+    def smb_remote_matches(
+        self,
+        job_id: int,
+        credentials: Path,
+        remote_path: str,
+        expected_hash: str,
+        expected_size: int,
+        xml_pdf_filename: str | None = None,
+        xml_task_file_path_hash: str | None = None,
+        xml_document_type_applicable: bool | None = None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
+    ) -> bool:
+        descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
+        os.close(descriptor)
+        downloaded = Path(raw_path)
+        downloaded.unlink(missing_ok=True)
+        try:
+            try:
+                result = self._smb_command(credentials, f"get {remote_path} {downloaded}")
+            except BridgeTransferError as error:
+                self._log_smb_stage(job_id, "VERIFY", classification=error.category)
+                raise
+            if result.returncode != 0:
+                classification = classify_transport_error(result.stdout + result.stderr)
+                self._log_smb_stage(job_id, "VERIFY", result, classification)
+                raise BridgeTransferError(classification)
+            remote_size = downloaded.stat().st_size if downloaded.is_file() else None
+            remote_hash_match = (
+                downloaded.is_file()
+                and remote_size == expected_size
+                and hmac.compare_digest(sha256_file(downloaded), expected_hash)
+            )
+            if (
+                remote_hash_match
+                and xml_pdf_filename is not None
+                and xml_task_file_path_hash is not None
+                and xml_document_type_applicable is not None
+            ):
+                try:
+                    self._validate_submission_xml(
+                        downloaded,
+                        xml_pdf_filename,
+                        xml_task_file_path_hash,
+                        xml_document_type_applicable,
+                        allow_missing_patient_name_components,
+                        allow_patient_name_as_family,
+                    )
+                except BridgeTransferError as error:
+                    self._log_smb_stage(job_id, "VERIFY", result, error.category, remote_size, False)
+                    raise
+            self._log_smb_stage(
+                job_id,
+                "VERIFY",
+                result,
+                "none" if remote_hash_match else "remote_io",
+                remote_size,
+                remote_hash_match,
+            )
+            return remote_hash_match
+        finally:
+            downloaded.unlink(missing_ok=True)
+
+    def _validate_submission_xml(
+        self,
+        xml_path: Path,
+        pdf_filename: str,
+        task_file_path_hash: str,
+        document_type_applicable: bool | None,
+        allow_missing_patient_name_components: bool = False,
+        allow_patient_name_as_family: bool = False,
+    ) -> None:
+        try:
+            raw = xml_path.read_bytes()
+            declaration = b'<?xml version="1.0" encoding="iso-8859-1"?>'
+            if not raw.startswith(declaration) or b'encoding="UTF-8"' in raw[:128] or b'encoding="utf-8"' in raw[:128]:
+                raise BridgeTransferError("invalid_artifact")
+            raw.decode("iso-8859-1")
+            root = ET.fromstring(raw)
+            if root.tag != "submission" or len(root) != 1 or root[0].tag != "document" or len(root[0]) == 0:
+                raise BridgeTransferError("invalid_artifact")
+            document = root[0]
+            values: dict[str, str] = {}
+            for element in document:
+                if len(element) != 0 or element.tag in values:
+                    raise BridgeTransferError("invalid_artifact")
+                values[element.tag] = element.text or ""
+            required = {
+                "task_patient_id",
+                "task_document_name",
+                "task_document_date",
+                "task_image_date",
+                "task_file_path",
+                "task_file_name",
+                "task_accession_number",
+                "task_document_mimetype",
+                "task_patient_birthday",
+                "task_patient_gender",
+                "task_site_id",
+                "task_patient_issuer",
+                "task_author_id",
+                "task_author_humanname_family",
+                "task_author_humanname_given",
+                "task_author_humanname_middle",
+                "task_modalities",
+                "task_delete_file",
+            }
+            if not allow_missing_patient_name_components:
+                required.update({
+                    "task_patient_humanname_family",
+                    "task_patient_humanname_given",
+                    "task_patient_humanname_middle",
+                })
+            elif any(name in values for name in {
+                "task_patient_humanname_family",
+                "task_patient_humanname_given",
+                "task_patient_humanname_middle",
+            }):
+                raise BridgeTransferError("invalid_artifact")
+            if not required.issubset(values):
+                raise BridgeTransferError("invalid_artifact")
+            if allow_patient_name_as_family and (
+                values.get("task_patient_humanname_family", "") == ""
+                or values.get("task_patient_humanname_given", "") != ""
+                or values.get("task_patient_humanname_middle", "") != ""
+            ):
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_file_name"] != pdf_filename:
+                raise BridgeTransferError("invalid_artifact")
+            if not task_file_path_hash or not hmac.compare_digest(
+                hashlib.sha256(values["task_file_path"].encode("utf-8")).hexdigest(),
+                task_file_path_hash,
+            ):
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_document_mimetype"] != "application/pdf":
+                raise BridgeTransferError("invalid_artifact")
+            if values["task_delete_file"] not in {"true", "false"}:
+                raise BridgeTransferError("invalid_artifact")
+            if document_type_applicable is None:
+                raise BridgeTransferError("invalid_artifact")
+            if document_type_applicable and values.get("task_document_type") != "11502-2":
+                raise BridgeTransferError("invalid_artifact")
+            if not document_type_applicable and "task_document_type" in values:
+                raise BridgeTransferError("invalid_artifact")
+            if len([name for name in values if name == "task_file_name"]) != 1:
+                raise BridgeTransferError("invalid_artifact")
+        except (OSError, UnicodeError, ET.ParseError):
+            raise BridgeTransferError("invalid_artifact") from None
+
+    def smb_write_probe(self, credentials: Path) -> None:
+        descriptor, raw_path = tempfile.mkstemp(prefix="smb-probe-", suffix=".tmp", dir=STATE_ROOT)
+        probe = Path(raw_path)
+        remote = ""
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(b"VOXEL_SMB_CONNECTIVITY_PROBE\n")
+                output.flush()
+                os.fsync(output.fileno())
+            remote = str(POLICY.smb["remote_path"]) + "/.voxel-probe-" + secrets.token_hex(12) + ".tmp"
+            result = self._smb_command(credentials, f"put {probe} {remote}; del {remote}")
+            if result.returncode != 0:
+                raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
+        finally:
+            if remote:
+                try:
+                    self._smb_command(credentials, f"del {remote}")
+                except BridgeTransferError:
+                    pass
+            probe.unlink(missing_ok=True)
+
+    def transfer_smb(self, job_id: int, filename: str, staged: Path, expected_hash: str, length: int, credentials: Path | None) -> None:
+        if credentials is None:
+            raise BridgeTransferError("credentials_unavailable")
+        final_path, temporary_path = self._smb_remote_path(filename)
+        try:
+            existing = self._smb_command(credentials, f"ls {final_path}")
+        except BridgeTransferError as error:
+            self._log_smb_stage(job_id, "LIST", classification=error.category)
+            raise
+        if existing.returncode == 0:
+            self._log_smb_stage(job_id, "LIST", existing, "none")
+            self._diagnose_smb_list_result(job_id, filename, existing, "none")
+            if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, length):
+                LOG.info("event=philips_smb_success job_id=%s", job_id)
+                return
+            raise BridgeTransferError("remote_io")
+        if not self._smb_missing(existing):
+            classification = classify_transport_error(existing.stdout + existing.stderr)
+            self._log_smb_stage(job_id, "LIST", existing, classification)
+            self._diagnose_smb_list_result(job_id, filename, existing, classification)
+            raise BridgeTransferError(classification)
+        self._log_smb_stage(job_id, "LIST", existing, "not_found")
+        self._diagnose_smb_list_result(job_id, filename, existing, "not_found")
+
+        try:
+            uploaded = self._smb_command(credentials, f"put {staged} {temporary_path}")
+        except BridgeTransferError as error:
+            self._log_smb_stage(job_id, "WRITE", classification=error.category)
+            raise
+        if uploaded.returncode != 0:
+            classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
+            self._log_smb_stage(job_id, "WRITE", uploaded, classification)
+            raise BridgeTransferError(classification)
+        self._log_smb_stage(job_id, "WRITE", uploaded, "none")
+
+        try:
+            renamed = self._smb_command(credentials, f"rename {temporary_path} {final_path}")
+        except BridgeTransferError as error:
+            self._log_smb_stage(job_id, "RENAME", classification=error.category)
+            raise
+        if renamed.returncode != 0:
+            classification = classify_transport_error(renamed.stdout + renamed.stderr)
+            self._log_smb_stage(job_id, "RENAME", renamed, classification)
+            raise BridgeTransferError(classification)
+        self._log_smb_stage(job_id, "RENAME", renamed, "none")
+
+        if not self.smb_remote_matches(job_id, credentials, final_path, expected_hash, length):
+            raise BridgeTransferError("remote_io")
+        LOG.info("event=philips_smb_success job_id=%s", job_id)
+
+    @staticmethod
+    def valid_filename(value: str) -> bool:
+        return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.(?:pdf|xml)", value) is not None
+
+    @staticmethod
+    def valid_package_filename(value: str) -> bool:
+        return re.fullmatch(r"VOXEL_[A-Za-z0-9._-]{1,160}\.package", value) is not None
+
+
+def main() -> NoReturn:
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(cafile=POLICY.ca_file)
+    context.load_cert_chain(certfile=POLICY.server_cert, keyfile=POLICY.server_key)
+    server = HTTPServer((POLICY.bind_ip, POLICY.bind_port), Handler)
+    server.request_queue_size = 2
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    LOG.info("event=philips_folder_bridge_started destination_id=%s mode=%s transport=%s", POLICY.destination_id, POLICY.mode, POLICY.transport)
+    server.serve_forever(poll_interval=0.5)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,9 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 
 declare(strict_types=1);
+
+// Materialização de runtime Philips Folder: PDF oficial permanece privado.
 
 namespace App\Services;
 
@@ -11,11 +14,11 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Gera artefatos clínicos exclusivos de jobs já reservados ao worker.
+ * Materializa artefatos clínicos exclusivos de jobs já reservados ao worker.
  *
- * O PDF é renderizado a partir da versão imutável do laudo registrada na
- * outbox. O arquivo fica sob storage privado e nunca é exposto a usuários ou
- * destinos externos por URL.
+ * O PDF Non-DICOM é lido do snapshot binário canônico da versão imutável;
+ * somente o caminho DICOM legado ainda renderiza no worker. O arquivo fica
+ * sob storage privado e nunca é exposto a usuários ou destinos externos por URL.
  */
 final class ReportDeliveryArtifactService
 {
@@ -28,22 +31,40 @@ final class ReportDeliveryArtifactService
         $this->workerRepository = new ReportDeliveryWorkerRepository($this->pdo);
     }
 
-    /** @return array{content:string,sha256:string,size:int,filename:string,report_id:int,study_instance_uid:string} */
+    /** @return array{content:string,sha256:string,size:int,filename:string,storage_path:string,report_id:int,study_instance_uid:string} */
     public function buildPdfForLeasedJob(int $jobId, string $workerId): array
     {
         $job = $this->workerRepository->findLeasedJobContext($jobId, $workerId);
         if (!$job) {
             throw new RuntimeException('Job não está reservado para este worker.');
         }
-        if (($job['transport'] ?? '') !== 'dicom_pdf') {
-            throw new RuntimeException('Artefato PDF DICOM solicitado para um transporte incompatível.');
+        if (!in_array((string) ($job['transport'] ?? ''), ['dicom_pdf', PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)) {
+            throw new RuntimeException('Artefato PDF solicitado para um transporte incompatível.');
         }
 
-        $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
-        $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
-        $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
-
-        $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        $isNonDicomFolder = in_array(
+            (string) ($job['transport'] ?? ''),
+            [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT],
+            true
+        );
+        $studyInstanceUid = '';
+        if ($isNonDicomFolder) {
+            $pdfRevisionId = $this->pdfRevisionIdForJob($job);
+            if ($pdfRevisionId > 0) {
+                $revision = (new ReportVersionPdfRevisionService($this->pdo))->readForJob($job);
+                $binary = $revision['content'];
+            } else {
+                $snapshot = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob($job);
+                $binary = $snapshot['content'];
+            }
+            $studyInstanceUid = $this->studyInstanceUidForJob($job);
+        } else {
+            $report = $this->loadReport((int) $job['report_id'], (int) $job['tenant_id']);
+            $estudo = $this->loadStudy((int) $job['estudo_id'], (int) $job['tenant_id']);
+            $report->conteudo = $this->loadVersionContent((int) $job['report_id'], (int) $job['report_version']);
+            $studyInstanceUid = (string) ($estudo->study_instance_uid ?? '');
+            $binary = (new ReportPdfService())->renderBinary($estudo, $report);
+        }
         if (strlen($binary) < 100 || !str_starts_with($binary, '%PDF')) {
             throw new RuntimeException('Falha ao gerar PDF válido para devolutiva DICOM.');
         }
@@ -66,9 +87,46 @@ final class ReportDeliveryArtifactService
             'sha256' => $sha256,
             'size' => strlen($binary),
             'filename' => $filename,
+            'storage_path' => $storagePath,
             'report_id' => (int) $job['report_id'],
-            'study_instance_uid' => (string) ($estudo->study_instance_uid ?? ''),
+            'study_instance_uid' => $studyInstanceUid,
         ];
+    }
+
+    /** @param array<string,mixed> $job */
+    private function pdfRevisionIdForJob(array $job): int
+    {
+        $revisionId = (int) ($job['pdf_revision_id'] ?? 0);
+        if ($revisionId > 0) {
+            return $revisionId;
+        }
+        if (!is_string($job['payload_json'] ?? null)) {
+            return 0;
+        }
+        $payload = json_decode((string) $job['payload_json'], true);
+        return is_array($payload) ? max(0, (int) ($payload['pdf_revision_id'] ?? 0)) : 0;
+    }
+
+    /** @param array<string,mixed> $job */
+    private function studyInstanceUidForJob(array $job): string
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT e.study_instance_uid
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+              WHERE r.id = :report_id AND r.tenant_id = :tenant_id AND e.id = :study_id
+              LIMIT 1'
+        );
+        $stmt->execute([
+            ':report_id' => (int) ($job['report_id'] ?? 0),
+            ':tenant_id' => (int) ($job['tenant_id'] ?? 0),
+            ':study_id' => (int) ($job['estudo_id'] ?? 0),
+        ]);
+        $uid = $stmt->fetchColumn();
+        if (!is_string($uid) || trim($uid) === '') {
+            throw new RuntimeException('Estudo do snapshot PDF não encontrado para o job.');
+        }
+        return $uid;
     }
 
     private function loadReport(int $reportId, int $tenantId): object
@@ -152,6 +210,32 @@ final class ReportDeliveryArtifactService
         $path = $directory . '/' . $filename;
         if (file_put_contents($path, $binary, LOCK_EX) === false) {
             throw new RuntimeException('Não foi possível gravar o artefato PDF privado.');
+        }
+        @chmod($path, 0600);
+        return $path;
+    }
+
+    /** @param array<string,mixed> $job */
+    public function storeGeneratedArtifact(array $job, string $filename, string $binary): string
+    {
+        $jobId = (int) ($job['id'] ?? 0);
+        $tenantId = (int) ($job['tenant_id'] ?? 0);
+        $outboxId = (int) ($job['outbox_id'] ?? 0);
+        if ($jobId <= 0 || $tenantId <= 0 || $outboxId <= 0 || !preg_match('/^[A-Za-z0-9._-]{1,180}\.xml$/', $filename)) {
+            throw new RuntimeException('Artefato XML inválido.');
+        }
+        if ($binary === '' || !str_starts_with($binary, '<?xml')) {
+            throw new RuntimeException('Conteúdo XML inválido.');
+        }
+
+        $basePath = defined('BASE_PATH') ? (string) BASE_PATH : dirname(__DIR__, 2);
+        $directory = sprintf('%s/storage/report_delivery/%d/%d', rtrim($basePath, '/'), $tenantId, $outboxId);
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('Não foi possível criar o armazenamento privado do XML.');
+        }
+        $path = $directory . '/' . $filename;
+        if (file_put_contents($path, $binary, LOCK_EX) === false) {
+            throw new RuntimeException('Não foi possível gravar o artefato XML privado.');
         }
         @chmod($path, 0600);
         return $path;

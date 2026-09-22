@@ -1,5 +1,7 @@
 <?php
-
+// Materialização de runtime do roteamento manual: separa homologação explícita de automação por liberação.
+// Materialização de runtime Philips Folder: não cria jobs enquanto a flag estiver desligada.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 namespace App\Services;
 
 use App\Core\Logger;
@@ -85,11 +87,12 @@ class ReportDeliveryOutboxService
             'accession_number' => (string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''),
             'patient_id' => (string) ($estudo->patient_id ?? $estudo->paciente_id_externo ?? ''),
             'patient_name' => (string) ($estudo->patient_name_display ?? $estudo->patient_name ?? ''),
+            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($estudo->tags_raw ?? null),
             'patient_birth_date' => (string) ($estudo->patient_birth_date ?? ''),
             'patient_sex' => (string) ($estudo->patient_sex ?? ''),
             'study_date' => (string) ($estudo->study_date ?? ''),
             'study_time' => (string) ($estudo->study_time ?? ''),
-            'modality' => (string) ($estudo->modality ?? $estudo->modalidade ?? ''),
+            'modality' => (string) ($estudo->modalities ?? $estudo->modality ?? $estudo->modalidade ?? ''),
             'released_by' => $releasedBy,
             'released_at' => $releasedAt,
             'report_sha256' => $reportHash,
@@ -107,30 +110,62 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
+            $eligibleDestinations = $dispatchMode === 'manual_homologation'
+                ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName)
+                : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName);
             $destinations = array_values(array_filter(
-                $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName),
+                $eligibleDestinations,
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
+                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                        || PhilipsFolderDeliveryService::enabled())
+                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                        || PhilipsFolderDeliveryService::nonDicomEnabled())
             ));
-            $jobs = $repository->createJobs($outboxId, $tenantId, $estabelecimentoId, $eventKey, $destinations, $automaticDispatchDate);
+            if ($destinations !== []) {
+                $profiles = array_values(array_unique(array_map(
+                    fn(array $destination): string => $repository->deliveryProfileForDestination($destination),
+                    $destinations
+                )));
+                $repository->setOutboxDeliveryProfile(
+                    $outboxId,
+                    $tenantId,
+                    count($profiles) === 1 ? $profiles[0] : 'mixed'
+                );
+            }
+            $jobs = $repository->createJobs(
+                $outboxId,
+                $tenantId,
+                $estabelecimentoId,
+                $eventKey,
+                $destinations,
+                $automaticDispatchDate,
+                $reportId,
+                $reportVersion,
+                $reportHash
+            );
             if ($jobs === 0 && $reactivateDryRun && !empty($destinations)) {
                 $jobs = $repository->requeueDryRunJobs($outboxId, $tenantId);
             }
 
             if ($jobs > 0) {
                 $repository->markOutboxQueued($outboxId);
+                if (array_filter($destinations, static fn(array $destination): bool => in_array((string) ($destination['transport'] ?? ''), [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true))) {
+                    Logger::info('[PhilipsNonDicomDelivery] PHILIPS_EXPORT_QUEUED', [
+                        'tenant_id' => $tenantId,
+                        'outbox_id' => $outboxId,
+                        'job_count' => $jobs,
+                    ]);
+                }
             }
 
             if ($jobs === 0 && empty($destinations)) {
                 $repository->markOutboxWithoutDestination($outboxId);
                 Logger::warning('[ReportDeliveryOutbox] Nenhum destino associado à origem de devolução do estudo', [
                     'tenant_id' => $tenantId,
-                    'estudo_id' => $estudoId,
-                    'institution_name_received' => $rawInstitutionName,
-                    'institution_name_canonical' => $institutionName,
-                'issuer_of_patient_id_normalized' => $issuerNormalized,
-                'routing_basis' => $routingBasis,
-                'dispatch_mode' => $dispatchMode,
-            ]);
+                    'outbox_id' => $outboxId,
+                    'routing_basis' => $routingBasis,
+                    'dispatch_mode' => $dispatchMode,
+                ]);
             }
 
             return [

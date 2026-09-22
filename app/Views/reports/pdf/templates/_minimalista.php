@@ -32,27 +32,33 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     <title>Laudo — <?= $paciente ?></title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Arial', sans-serif; font-size: 12px; color: #333; background: #fff; }
+        body { font-family: 'Arial', sans-serif; font-size: 12px; line-height: 1.3; color: #333; background: #fff; }
         .pdf-page { max-width: 760px; margin: 0 auto; padding: 2.25rem 2rem; }
 
         .pdf-header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: .75rem; margin-bottom: 1.25rem; border-bottom: 1px solid #ddd; }
         .pdf-header-nome { font-size: 1rem; font-weight: 700; color: #111; }
         .pdf-header-contato { font-size: .68rem; color: #888; text-align: right; }
 
-        .pdf-patient-line { font-size: .78rem; color: #333; margin-bottom: 1.75rem; }
+        .pdf-patient-line { font-size: .78rem; color: #333; margin-bottom: .8rem; }
         .pdf-patient-line strong { color: #111; }
         .pdf-patient-line .sep { color: #ccc; margin: 0 .4rem; }
 
-        .pdf-section { margin-bottom: 1.6rem; }
-        .pdf-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; color: #555; letter-spacing: .8px; margin-bottom: .5rem; }
-        .pdf-section-content { font-size: .85rem; line-height: 1.8; color: #222; text-align: justify; }
+        .pdf-section { margin-bottom: .65rem; }
+        .pdf-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; color: #555; letter-spacing: .8px; margin-bottom: .2rem; }
+        .pdf-section-content { font-size: .85rem; line-height: 1.3; color: #222; text-align: justify; }
+        .pdf-section-content p { margin: 0 0 2px; }
+        .pdf-section-content p.ql-spacing-compact { margin-bottom: 0; }
+        .pdf-section-content p.ql-spacing-normal { margin-bottom: 6px; }
+        .pdf-section-content p.ql-spacing-medium { margin-bottom: 12px; }
+        .pdf-section-content p.ql-spacing-wide { margin-bottom: 20px; }
+        .pdf-section-content h1, .pdf-section-content h2, .pdf-section-content h3, .pdf-section-content h4, .pdf-section-content h5, .pdf-section-content h6 { margin: 8px 0 3px; line-height: 1.3; }
         .pdf-section-content .ql-align-center { text-align: center; }
         .pdf-section-content .ql-align-right { text-align: right; }
         .pdf-section-content .ql-align-justify { text-align: justify; }
         .pdf-section-content a { color: #075a9e; text-decoration: underline; word-break: break-word; }
         .pdf-section-content:empty::before { content: 'Não informado.'; color: #bbb; font-style: italic; }
 
-        .pdf-signature { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid #ddd; text-align: left; }
+        .pdf-signature { margin-top: 1rem; padding-top: .65rem; border-top: 1px solid #ddd; text-align: left; }
         .pdf-sig-img { max-width: 180px; max-height: 60px; display: block; margin-bottom: .3rem; }
         .pdf-sig-line { width: 180px; border-top: 1px solid #999; margin-bottom: .3rem; }
         .pdf-sig-info { font-size: .78rem; }
@@ -60,7 +66,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-sig-info span { color: #777; }
         .pdf-hash { font-size: .62rem; color: #bbb; word-break: break-all; margin-top: .4rem; }
 
-        .pdf-footer { margin-top: 2rem; font-size: .65rem; color: #aaa; line-height: 1.45; text-align: center; }
+        .pdf-footer { margin-top: 1rem; font-size: .65rem; color: #aaa; line-height: 1.3; text-align: center; }
         .pdf-footer-name { color: #666; font-weight: 700; }
         .pdf-footer-details { margin-top: .2rem; }
 
@@ -77,6 +83,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 <body>
 <div class="pdf-page">
 
+    <?php if (empty($snapshotPdf)): ?>
     <div class="pdf-actions">
         <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
         <a href="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/pdf?download=1" class="btn-back">⬇️ Baixar PDF</a>
@@ -84,6 +91,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             <a href="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>" class="btn-back" data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>">← Voltar ao Laudário</a>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="pdf-header">
         <div class="pdf-header-nome"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
@@ -110,8 +118,10 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     <?php endif; ?>
 
     <div class="pdf-signature">
-        <?php if (!empty($r['assinatura_caminho_arquivo'])): ?>
-        <img class="pdf-sig-img" src="/reports/r/<?= rawurlencode((string) ($r['public_token'] ?? '')) ?>/assinatura"
+        <?php $assinaturaSrc = (string) ($r['pdf_snapshot_signature_src'] ?? ''); ?>
+        <?php if ($assinaturaSrc === '' && empty($snapshotPdf) && !empty($r['assinatura_caminho_arquivo'])) $assinaturaSrc = '/reports/r/' . rawurlencode((string) ($r['public_token'] ?? '')) . '/assinatura'; ?>
+        <?php if ($assinaturaSrc !== ''): ?>
+        <img class="pdf-sig-img" src="<?= htmlspecialchars($assinaturaSrc, ENT_QUOTES) ?>"
              alt="Assinatura de <?= htmlspecialchars($r['medico_nome'] ?? '', ENT_QUOTES) ?>">
         <?php else: ?>
         <div class="pdf-sig-line"></div>

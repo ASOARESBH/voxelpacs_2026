@@ -1,4 +1,7 @@
 <?php
+// Materialização de runtime Philips Folder: formulário sem endpoint ou segredo remoto.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+// Materialização da apresentação local do resultado sanitizado do teste SMB.
 /** @var array<string,mixed> $tenant */
 /** @var array<int,array<string,mixed>> $destinations */
 /** @var array<int,array<string,mixed>> $jobs */
@@ -17,6 +20,8 @@ $transportLabels = [
     'hl7_oru' => 'HL7 ORU^R01',
     'https_webhook' => 'HTTPS Webhook/API',
     'sftp' => 'SFTP/FTPS',
+    'philips_folder' => t('philips_folder.nome_transporte'),
+    'philips_non_dicom' => t('philips_non_dicom.nome_transporte'),
 ];
 ?>
 
@@ -175,6 +180,49 @@ $transportLabels = [
                                 <div class="col-12"><label class="form-label" for="sftp-password">Senha ou chave privada</label><div class="input-group"><input class="form-control" id="sftp-password" data-secret-field="password" type="password" autocomplete="new-password" placeholder="Informe somente a credencial fornecida pelo cliente"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="sftp-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text">A credencial é cifrada. O conteúdo nunca é mostrado novamente.</div></div>
                             </div>
                         </div>
+                        <div class="destination-fields mt-3 d-none" data-transport-group="philips_folder">
+                            <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_folder.configuracao_titulo')) ?></h3>
+                            <div class="alert alert-info small mb-0" role="status">
+                                <p class="mb-2"><?= $escape(t('philips_folder.configuracao_ajuda')) ?></p>
+                                <ul class="mb-0 ps-3">
+                                    <li><?= $escape(t('philips_folder.pdf_only')) ?></li>
+                                    <li><?= $escape(t('philips_folder.sem_endpoint_publico')) ?></li>
+                                    <li><?= $escape(t('philips_folder.flag_desativada')) ?></li>
+                                </ul>
+                            </div>
+                            <input type="hidden" data-field="delivery_profile" value="pdf_only">
+                            <input type="hidden" data-field="gateway_bridge" value="1">
+                        </div>
+                        <div class="destination-fields mt-3 d-none" data-transport-group="philips_non_dicom">
+                            <h3 class="h6 border-bottom pb-2"><i class="fa fa-folder-tree me-1"></i><?= $escape(t('philips_non_dicom.configuracao_titulo')) ?></h3>
+                            <div class="alert alert-info small"><?= $escape(t('philips_non_dicom.configuracao_ajuda')) ?></div>
+                            <div class="row g-3">
+                                <div class="col-md-6"><label class="form-label" for="nondicom-delivery-profile"><?= $escape(t('philips_non_dicom.profile_label')) ?></label><select class="form-select" id="nondicom-delivery-profile" data-field="delivery_profile"><option value="pdf_only"><?= $escape(t('philips_non_dicom.profile_pdf_only')) ?></option><option value="submission_document"><?= $escape(t('philips_non_dicom.profile_submission_document')) ?></option></select><div class="form-text"><?= $escape(t('philips_non_dicom.profile_ajuda')) ?></div></div>
+                            </div>
+                            <input type="hidden" data-field="gateway_bridge" value="1">
+                            <input type="hidden" data-field="transport_protocol" value="smb">
+                            <div class="row g-3">
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-host"><?= $escape(t('philips_non_dicom.host_label')) ?></label><input class="form-control" id="nondicom-smb-host" data-field="host" data-required placeholder="IP privado do peer SMB"></div>
+                                <div class="col-md-3"><label class="form-label" for="nondicom-smb-port">Porta</label><input class="form-control" id="nondicom-smb-port" data-field="port" type="number" value="445" min="1" max="65535" data-required></div>
+                                <div class="col-md-3"><label class="form-label" for="nondicom-smb-share"><?= $escape(t('philips_non_dicom.share_label')) ?></label><input class="form-control" id="nondicom-smb-share" data-field="smb_share" data-required></div>
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-user"><?= $escape(t('philips_non_dicom.usuario_label')) ?></label><input class="form-control" id="nondicom-smb-user" data-field="smb_username" data-required autocomplete="off"></div>
+                                <div class="col-md-6"><label class="form-label" for="nondicom-smb-password"><?= $escape(t('philips_non_dicom.senha_label')) ?></label><div class="input-group"><input class="form-control" id="nondicom-smb-password" data-secret-field="smb_password" type="password" autocomplete="new-password" placeholder="Informe para salvar ou substituir"><button class="btn btn-outline-secondary toggle-secret" type="button" data-target="nondicom-smb-password" aria-label="Mostrar ou ocultar senha"><i class="fa fa-eye"></i></button></div><div class="form-text"><?= $escape(t('philips_non_dicom.senha_ajuda')) ?></div></div>
+                            </div>
+                            <div id="nondicom-submission-settings" class="border rounded p-3 mt-3 d-none" data-profile="submission_document">
+                                <h4 class="h6 mb-3"><?= $escape(t('philips_non_dicom.xml_titulo')) ?></h4>
+                                <div class="alert alert-warning small"><?= $escape(t('philips_non_dicom.xml_ajuda')) ?></div>
+                                <div class="row g-3">
+                                    <div class="col-12"><label class="form-label" for="nondicom-task-file-path"><?= $escape(t('philips_non_dicom.task_file_path_label')) ?></label><input class="form-control" id="nondicom-task-file-path" data-submission-field data-field="task_file_path" data-required placeholder="<?= $escape(t('philips_non_dicom.task_file_path_placeholder')) ?>"><div class="form-text"><?= $escape(t('philips_non_dicom.task_file_path_help')) ?></div></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required></div>
+                                    <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
+                                    <div class="col-12"><div class="form-text"><?= $escape(t('philips_non_dicom.task_author_source_help')) ?></div></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-type"><?= $escape(t('philips_non_dicom.task_document_type_label')) ?></label><input class="form-control" id="nondicom-task-type" data-submission-field data-field="task_document_type" value="11502-2"></div>
+                                    <div class="col-md-6"><label class="form-label" for="nondicom-task-delete-file"><?= $escape(t('philips_non_dicom.task_delete_file_label')) ?></label><select class="form-select" id="nondicom-task-delete-file" data-submission-field data-field="task_delete_file" data-required><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option></select><div class="form-text"><?= $escape(t('philips_non_dicom.task_delete_file_help')) ?></div></div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="row g-3 mt-0">
                             <div class="col-md-6"><label class="form-label" for="destination-timeout">Timeout (segundos)</label><input class="form-control" id="destination-timeout" type="number" name="timeout_seconds" min="5" max="120" value="30"></div>
                             <div class="col-md-6"><label class="form-label" for="destination-attempts">Tentativas máximas</label><input class="form-control" id="destination-attempts" type="number" name="max_attempts" min="1" max="10" value="5"></div>
@@ -194,6 +242,7 @@ $transportLabels = [
         <div class="col-xl-7">
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-white d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Destinos configurados</h2><span class="badge text-bg-secondary"><?= count($destinations) ?></span></div>
+                <div id="smb-test-feedback" class="d-none alert m-3 mb-0" role="alert" aria-live="polite"></div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead><tr><th>Nome</th><th>Origem e prioridade</th><th>Canal</th><th>Ambiente</th><th>Status</th><th class="text-end">Ação</th></tr></thead>
@@ -204,7 +253,7 @@ $transportLabels = [
                             <?php foreach ($destinations as $destination): ?>
                                 <?php $json = htmlspecialchars(json_encode($destination, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>
                                 <tr>
-                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div></td>
+                                    <td><strong><?= $escape($destination['nome']) ?></strong><div class="small text-muted">Timeout: <?= (int) $destination['timeout_seconds'] ?>s · <?= (int) $destination['max_attempts'] ?> tentativas</div><?php if (($destination['transport'] ?? '') === 'philips_non_dicom'): ?><div class="small mt-1"><?= !empty($destination['credential_configured']) ? '<span class="badge text-bg-success">' . $escape(t('philips_non_dicom.credencial_configurada')) . '</span>' : '<span class="badge text-bg-warning">' . $escape(t('philips_non_dicom.credencial_pendente')) . '</span>' ?></div><?php endif; ?></td>
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
@@ -215,7 +264,7 @@ $transportLabels = [
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
-                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button></td>
+                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -255,6 +304,8 @@ $transportLabels = [
                                     elseif ($routingState === 'manual_eligible') { $statusKey = 'delivery_hub.released.status_pronto_reenviar'; $statusClass = 'info'; }
                                     elseif ($routingState === 'automatic_only') { $statusKey = 'delivery_hub.released.status_automatico_liberacao'; $statusClass = 'info'; }
                                     else { $statusKey = 'delivery_hub.released.status_sem_destino'; $statusClass = 'secondary'; }
+                                    $manualRetryJobId = (int) ($delivery['manual_retry_job_id'] ?? 0);
+                                    $canManualHomologationRetry = $manualRetryJobId > 0;
                                     $canResend = $failed > 0 && in_array($routingState, ['manual_eligible', 'automatic_only'], true);
                                     $routingDestinations = trim((string) ($delivery['routing_destinations'] ?? ''));
                                     $destinationName = (string) ($delivery['destination_name'] ?? '');
@@ -268,7 +319,12 @@ $transportLabels = [
                                     <td><?= $escape($displayDestination !== '' ? $displayDestination : '—') ?><div class="small text-muted"><?= $escape($transportLabels[$delivery['transport'] ?? ''] ?? ($delivery['transport'] ?? '')) ?></div></td>
                                     <td><span class="badge text-bg-<?= $statusClass ?>"><?= $escape(t($statusKey)) ?></span><div class="small text-muted mt-1"><?= $escape(sprintf(t('delivery_hub.released.contagem_entregue'), $delivered, $total)) ?></div></td>
                                     <td class="text-end">
-                                        <?php if ($canResend): ?>
+                                        <?php if ($canManualHomologationRetry): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $manualRetryJobId ?>/retry-homologation" class="d-inline manual-homologation-retry-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_manual_homologation_retry" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar_teste')) ?></button>
+                                            </form>
+                                        <?php elseif ($canResend): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/<?= (int) $delivery['report_id'] ?>/resend" class="d-inline delivery-resend-form">
                                                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_resend" value="1">
                                                 <button type="submit" class="btn btn-sm btn-outline-primary"><?= $escape(t('delivery_hub.released.reenviar_falha')) ?></button>
@@ -301,6 +357,7 @@ $transportLabels = [
     const manualForm = document.getElementById('manual-delivery-form');
     const manualFeedback = document.getElementById('manual-delivery-feedback');
     const resendFeedback = document.getElementById('delivery-resend-feedback');
+    const smbTestFeedback = document.getElementById('smb-test-feedback');
     const title = document.getElementById('destination-form-title');
     const cancel = document.getElementById('destination-cancel');
     const feedback = document.getElementById('delivery-feedback');
@@ -312,18 +369,30 @@ $transportLabels = [
     const guide = document.getElementById('destination-guide');
     const configInput = document.getElementById('destination-config');
     const secretInput = document.getElementById('destination-secret');
+    const deliveryTokenFromWorklist = new URLSearchParams(window.location.search).get('report_public_token');
     const institutionSelectors = Array.from(form.querySelectorAll('.institution-selector'));
     const issuerSelectors = Array.from(form.querySelectorAll('.issuer-selector'));
     const baseAction = form.action;
-    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username'];
+    const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge', 'transport_protocol', 'smb_share', 'smb_username', 'philips_submission'];
+    const submissionSettings = document.getElementById('nondicom-submission-settings');
+    const submissionProfile = document.getElementById('nondicom-delivery-profile');
+    const philipsFolderFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::enabled() ? 'true' : 'false' ?>;
+    const philipsNonDicomFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::nonDicomEnabled() ? 'true' : 'false' ?>;
     const guideText = {
         dicom_pdf: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
         dicom_sr: 'Informe os dados de rede e os AE Titles fornecidos pelo administrador do PACS do cliente.',
         hl7_oru: 'Informe os dados da interface HL7/MLLP fornecidos pelo HIS ou RIS do cliente.',
         https_webhook: 'Informe a URL HTTPS fornecida pela equipe de integração do cliente.',
         sftp: 'Informe a pasta segura e as credenciais fornecidas pelo cliente. FTP simples não é aceito.',
+        philips_folder: <?= json_encode(t('philips_folder.guia'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        philips_non_dicom: <?= json_encode(t('philips_non_dicom.guia'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
     };
     let currentConfig = {};
+
+    if (deliveryTokenFromWorklist && /^[a-f0-9]{48}$/i.test(deliveryTokenFromWorklist)) {
+        const manualToken = document.getElementById('manual-report-token');
+        if (manualToken) manualToken.value = deliveryTokenFromWorklist.toLowerCase();
+    }
 
     function parseConfig(raw) {
         try {
@@ -345,6 +414,22 @@ $transportLabels = [
             group.querySelectorAll('[data-required]').forEach((input) => { input.required = active; });
         });
         guide.innerHTML = '<i class="fa fa-circle-info me-1"></i>' + (guideText[transport.value] || 'Preencha os dados fornecidos pelo cliente.');
+        const philipsFolderInactive = transport.value === 'philips_folder' && !philipsFolderFeatureEnabled;
+        const philipsNonDicomInactive = transport.value === 'philips_non_dicom' && !philipsNonDicomFeatureEnabled;
+        if (philipsFolderInactive || philipsNonDicomInactive) {
+            enabled.checked = false;
+            enabled.disabled = true;
+            document.getElementById('destination-release').checked = false;
+            document.getElementById('destination-release').disabled = true;
+        } else {
+            enabled.disabled = false;
+            document.getElementById('destination-release').disabled = false;
+        }
+        const submissionActive = transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document';
+        if (submissionSettings) {
+            submissionSettings.classList.toggle('d-none', !submissionActive);
+            submissionSettings.querySelectorAll('[data-required]').forEach((input) => { input.required = submissionActive; });
+        }
         populateActiveFields();
     }
 
@@ -352,7 +437,9 @@ $transportLabels = [
         document.querySelectorAll('.destination-fields').forEach((group) => {
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
-                const value = currentConfig[input.dataset.field];
+                if (input === submissionProfile) return;
+                const submission = currentConfig.philips_submission && typeof currentConfig.philips_submission === 'object' ? currentConfig.philips_submission : {};
+                const value = input.hasAttribute('data-submission-field') ? submission[input.dataset.field] : currentConfig[input.dataset.field];
                 if (value === undefined || value === null) return;
                 if (input.type === 'checkbox') input.checked = Boolean(value);
                 else input.value = value;
@@ -381,19 +468,29 @@ $transportLabels = [
     function serializeConfiguration() {
         const config = { ...currentConfig };
         knownKeys.forEach((key) => delete config[key]);
+        Object.keys(config).forEach((key) => {
+            if (key.startsWith('task_')) delete config[key];
+        });
         const secret = {};
+        const philipsSubmission = {};
         document.querySelectorAll('.destination-fields').forEach((group) => {
             if (!isActiveGroup(group)) return;
             group.querySelectorAll('[data-field]').forEach((input) => {
                 const key = input.dataset.field;
-                if (input.type === 'checkbox') config[key] = input.checked;
-                else if (input.type === 'number') config[key] = Number(input.value);
-                else if (input.value.trim() !== '') config[key] = input.value.trim();
+                const target = input.hasAttribute('data-submission-field')
+                    ? philipsSubmission
+                    : config;
+                if (input.type === 'checkbox') target[key] = input.checked;
+                else if (input.type === 'number') target[key] = Number(input.value);
+                else if (input.value.trim() !== '') target[key] = input.value.trim();
             });
             group.querySelectorAll('[data-secret-field]').forEach((input) => {
                 if (input.value.trim() !== '') secret[input.dataset.secretField] = input.value;
             });
         });
+        if (transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document') {
+            config.philips_submission = philipsSubmission;
+        }
         configInput.value = JSON.stringify(config);
         secretInput.value = Object.keys(secret).length ? JSON.stringify(secret) : '';
     }
@@ -454,7 +551,55 @@ $transportLabels = [
         });
     });
 
+    document.querySelectorAll('.manual-homologation-retry-form').forEach((retryForm) => {
+        retryForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('delivery_hub.released.confirmar_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = retryForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(retryForm.action, { method: 'POST', body: new FormData(retryForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.released.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || <?= json_encode(t('delivery_hub.released.erro_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = <?= json_encode(t('delivery_hub.released.erro_reenvio_homologacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.smb-test-form').forEach((smbTestForm) => {
+        smbTestForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('philips_non_dicom.confirmar_teste_smb'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = smbTestForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(smbTestForm.action, { method: 'POST', body: new FormData(smbTestForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('philips_non_dicom.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                smbTestFeedback.className = 'alert m-3 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                smbTestFeedback.textContent = result.message || <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (_) {
+                smbTestFeedback.className = 'alert m-3 mb-0 alert-danger';
+                smbTestFeedback.textContent = <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
+    if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
     environment.addEventListener('change', syncEnvironment);
     enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
@@ -480,6 +625,7 @@ $transportLabels = [
             document.getElementById('destination-attempts').value = item.max_attempts;
             document.getElementById('destination-release').checked = Number(item.disparar_na_liberacao) === 1;
             enabled.checked = Number(item.enabled) === 1;
+            if (submissionProfile) submissionProfile.value = currentConfig.delivery_profile === 'submission_document' ? 'submission_document' : 'pdf_only';
             setSelectedInstitutions(item.institution_names);
             setSelectedIssuers(item.issuers);
             cancel.classList.remove('d-none');
@@ -505,6 +651,42 @@ $transportLabels = [
             return;
         }
         serializeConfiguration();
+        if (new URLSearchParams(window.location.search).get('phase84') === 'capture') {
+            const capturedConfiguration = parseConfig(configInput.value);
+            const capturedSubmission = capturedConfiguration.philips_submission;
+            const allowedSubmissionFields = [
+                'task_file_path', 'task_site_id', 'task_document_name', 'task_author_id',
+                'task_document_type_applicable',
+                'task_document_type', 'task_modalities', 'task_document_mimetype', 'task_delete_file',
+            ];
+            const submissionValues = {};
+            if (capturedSubmission && typeof capturedSubmission === 'object') {
+                allowedSubmissionFields.forEach((key) => {
+                    if (Object.prototype.hasOwnProperty.call(capturedSubmission, key)) {
+                        submissionValues[key] = capturedSubmission[key];
+                    }
+                });
+            }
+            const capture = {
+                capture_only: true,
+                database_write: false,
+                delivery_action: false,
+                delivery_profile: capturedConfiguration.delivery_profile ?? null,
+                philips_submission_present: !!capturedSubmission,
+                philips_submission_values: submissionValues,
+                root_task_fields: Object.keys(capturedConfiguration).filter((key) => key.indexOf('task_') === 0),
+                configuration_secret_present: secretInput.value.trim() !== '',
+                transport: transport.value,
+                environment: environment.value,
+                enabled: enabled.checked,
+                auto_trigger: document.getElementById('destination-release').checked,
+            };
+            window.__phase84SaveCapture = capture;
+            feedback.className = 'alert alert-warning';
+            feedback.textContent = 'CAPTURE_ONLY ' + JSON.stringify(capture);
+            feedback.classList.remove('d-none');
+            return;
+        }
         const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
         const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
         feedback.className = 'alert ' + (result.success ? 'alert-success' : 'alert-danger');

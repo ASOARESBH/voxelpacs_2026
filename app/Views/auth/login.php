@@ -44,9 +44,9 @@
 
         <div class="field-wrap">
             <i class="fa fa-envelope field-icon"></i>
+            <!-- Não exibe identificador de conta em placeholder ou valor inicial. -->
             <input type="email" id="inputEmail" name="email" class="field-input"
-                   placeholder="admin@voxelpacs.com.br" required autofocus
-                   value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+                   autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
         </div>
     </div>
 

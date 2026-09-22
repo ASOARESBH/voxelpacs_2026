@@ -1,15 +1,24 @@
 <?php
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+
 declare(strict_types=1);
 
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
+use App\Services\ReportDeliveryGatewayBridgeClient;
+use App\Services\PhilipsFolderDeliveryException;
+use App\Services\PhilipsFolderDeliveryService;
+use App\Services\PdfNonDicomArtifactProducer;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 final class DeliveryWorkerFailure extends RuntimeException
 {
-    public function __construct(public readonly string $stage)
+    public function __construct(
+        public readonly string $stage,
+        public readonly ?string $reasonCategory = null
+    )
     {
         parent::__construct($stage);
     }
@@ -18,6 +27,34 @@ final class DeliveryWorkerFailure extends RuntimeException
 final class LocalDicomDeliveryWorker
 {
     private const SUPPORTED_TRANSPORTS = ['dicom_pdf'];
+    private const CSTORE_REASON_CATEGORIES = [
+        'timeout',
+        'connect_failed',
+        'association_rejected',
+        'tls_required',
+        'command_failed',
+    ];
+    // A bridge devolve somente categorias sanitizadas; nenhum detalhe de rota, credencial ou artefato é persistido.
+    private const PHILIPS_FOLDER_REASON_CATEGORIES = [
+        'feature_disabled',
+        'invalid_configuration',
+        'invalid_artifact',
+        'artifact_unreadable',
+        'gateway_policy_rejected',
+        'credentials_unavailable',
+        'gateway_unavailable',
+            'gateway_delivery_failed',
+            'gateway_smb_test_failed',
+        'remote_integrity_unconfirmed',
+        'connectivity',
+        'timeout',
+        'authentication',
+        'host_key',
+        'permission',
+        'remote_io',
+        'configuration',
+    ];
+    private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
 
     private ReportDeliveryWorkerRepository $repository;
     private ReportDeliveryArtifactService $artifactService;
@@ -44,6 +81,18 @@ final class LocalDicomDeliveryWorker
         return 0;
     }
 
+    public function runOne(int $jobId): int
+    {
+        $this->repository->enableOneShotForJob($jobId);
+        $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
+        if ($job === null) {
+            fwrite(STDERR, "controlled_job_not_eligible\n");
+            return 3;
+        }
+        $this->deliver($job);
+        return 0;
+    }
+
     public function run(): void
     {
         Logger::info('[ReportDeliveryWorker] Serviço local iniciado', ['worker_id' => $this->workerId]);
@@ -54,7 +103,7 @@ final class LocalDicomDeliveryWorker
                 if ($expired > 0) {
                     Logger::warning('[ReportDeliveryWorker] Pendências automáticas expiradas', ['count' => $expired]);
                 }
-                $job = $this->repository->claimNextJob($this->workerId, self::SUPPORTED_TRANSPORTS, $clinicalDate);
+                $job = $this->repository->claimNextJob($this->workerId, $this->supportedTransports(), $clinicalDate);
                 if ($job === null) {
                     sleep($this->idleSeconds);
                     continue;
@@ -63,7 +112,7 @@ final class LocalDicomDeliveryWorker
             } catch (Throwable $error) {
                 Logger::error('[ReportDeliveryWorker] Ciclo local interrompido', [
                     'worker_id' => $this->workerId,
-                    'error' => $error->getMessage(),
+                    'error_class' => get_class($error),
                 ]);
                 sleep($this->idleSeconds);
             }
@@ -75,43 +124,154 @@ final class LocalDicomDeliveryWorker
     {
         $jobId = (int) ($job['id'] ?? 0);
         try {
-            if ($jobId <= 0 || !in_array((string) ($job['transport'] ?? ''), self::SUPPORTED_TRANSPORTS, true)) {
+            $transport = (string) ($job['transport'] ?? '');
+            $deliveryProfile = (string) ($job['delivery_profile'] ?? PhilipsFolderDeliveryService::PROFILE_PDF_ONLY);
+            if ($jobId <= 0 || !in_array($transport, $this->supportedTransports(), true)) {
                 throw new DeliveryWorkerFailure('invalid_job');
+            }
+            if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                && !in_array($deliveryProfile, [PhilipsFolderDeliveryService::PROFILE_PDF_ONLY, PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT], true)) {
+                throw new DeliveryWorkerFailure('invalid_configuration');
             }
 
             $configuration = $this->decodeMap($job['configuration_json'] ?? null, 'invalid_configuration');
             $payload = $this->decodeMap($job['payload_json'] ?? null, 'invalid_payload');
-            $this->validateDestination($configuration, $payload);
+            if ($transport === 'dicom_pdf') {
+                $this->validateDestination($configuration, $payload);
+            }
 
-            $artifact = $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId);
-            $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
-            $this->repository->completeJob($jobId, $this->workerId, $result['reference'], [
-                'transport' => 'dicom_pdf',
+            $artifact = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                && $deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
+                ? []
+                : ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                    ? (new PdfNonDicomArtifactProducer($this->artifactService))->produce($jobId, $this->workerId)
+                    : $this->artifactService->buildPdfForLeasedJob($jobId, $this->workerId));
+            if ($transport === PhilipsFolderDeliveryService::TRANSPORT) {
+                Logger::info('[PhilipsFolderDelivery] PHILIPS_EXPORT_PROCESSING', ['job_id' => $jobId]);
+                $result = (new PhilipsFolderDeliveryService())->deliver($job, $configuration, $payload, $artifact);
+                $this->repository->recordArtifact(
+                    (int) $job['outbox_id'],
+                    (int) $job['tenant_id'],
+                    isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                    'philips_folder_pdf',
+                    (string) ($artifact['storage_path'] ?? ''),
+                    $result['sha256'],
+                    $result['size']
+                );
+            } elseif ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
+                Logger::info('[PhilipsNonDicomDelivery] PHILIPS_NON_DICOM_PROCESSING', ['job_id' => $jobId]);
+                if ($deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                    $result = (new PhilipsFolderDeliveryService())->deliverNonDicomSubmissionPackage(
+                        $job,
+                        $configuration,
+                        $payload,
+                        (string) ($job['configuration_secret'] ?? ''),
+                        $this->workerId
+                    );
+                    $pdfArtifact = is_array($result['pdf_artifact'] ?? null) ? $result['pdf_artifact'] : [];
+                    $xmlArtifact = is_array($result['xml_artifact'] ?? null) ? $result['xml_artifact'] : [];
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_non_dicom_pdf',
+                        (string) ($pdfArtifact['storage_path'] ?? ''),
+                        (string) ($pdfArtifact['sha256'] ?? ''),
+                        (int) ($pdfArtifact['size'] ?? 0)
+                    );
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_submission_xml',
+                        (string) ($xmlArtifact['storage_path'] ?? ''),
+                        (string) ($xmlArtifact['sha256'] ?? ''),
+                        (int) ($xmlArtifact['size'] ?? 0)
+                    );
+                } else {
+                    $result = (new PhilipsFolderDeliveryService())->deliverNonDicomPdf(
+                        $job,
+                        $configuration,
+                        $payload,
+                        $artifact,
+                        (string) ($job['configuration_secret'] ?? '')
+                    );
+                    $this->repository->recordArtifact(
+                        (int) $job['outbox_id'],
+                        (int) $job['tenant_id'],
+                        isset($job['estabelecimento_id']) ? (int) $job['estabelecimento_id'] : null,
+                        'philips_non_dicom_pdf',
+                        (string) ($artifact['storage_path'] ?? ''),
+                        $result['sha256'],
+                        $result['size']
+                    );
+                }
+            } else {
+                $result = $this->sendDicomPdf($job, $configuration, $payload, $artifact);
+            }
+            $completionMetadata = [
+                'transport' => $transport,
                 'environment' => (string) ($job['ambiente'] ?? ''),
+                'delivery_profile' => $deliveryProfile,
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
-            ]);
-            Logger::info('[ReportDeliveryWorker] Entrega DICOM concluída', [
+            ];
+            if ($deliveryProfile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
+                $completionMetadata['package_identity'] = (string) ($result['package_identity'] ?? '');
+                $completionMetadata['package_verified'] = (string) ($result['package_verified'] ?? 'FAIL');
+                if (array_key_exists('patient_name_components_omitted', $result)) {
+                    $completionMetadata['patient_name_components_omitted'] = (bool) $result['patient_name_components_omitted'];
+                }
+            }
+            if (!$this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata)) {
+                throw new DeliveryWorkerFailure('completion_not_confirmed');
+            }
+            Logger::info(
+                in_array($transport, [PhilipsFolderDeliveryService::TRANSPORT, PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT], true)
+                    ? '[PhilipsNonDicomDelivery] PHILIPS_EXPORT_SUCCESS'
+                    : '[ReportDeliveryWorker] Entrega DICOM concluída',
+                ['job_id' => $jobId, 'transport' => $transport, 'environment' => (string) ($job['ambiente'] ?? '')]
+            );
+        } catch (PhilipsFolderDeliveryException $error) {
+            Logger::warning('[PhilipsFolderDelivery] PHILIPS_EXPORT_FAILED', [
                 'job_id' => $jobId,
-                'transport' => 'dicom_pdf',
-                'environment' => (string) ($job['ambiente'] ?? ''),
+                'stage' => $error->stage,
+                'reason_category' => $error->reasonCategory,
             ]);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
-                'error' => $error->getMessage(),
+                'error_class' => get_class($error),
             ]);
             $this->failSafely($jobId, 'unexpected_error');
         }
     }
 
+    /** @return list<string> */
+    private function supportedTransports(): array
+    {
+        $transports = self::SUPPORTED_TRANSPORTS;
+        if (PhilipsFolderDeliveryService::enabled()) {
+            $transports[] = PhilipsFolderDeliveryService::TRANSPORT;
+        }
+        if (PhilipsFolderDeliveryService::nonDicomEnabled()) {
+            $transports[] = PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT;
+        }
+        return $transports;
+    }
+
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact @return array{reference:string,sha256:string,size:int} */
     private function sendDicomPdf(array $job, array $configuration, array $payload, array $artifact): array
     {
+        $jobId = (int) ($job['id'] ?? 0);
+        if ($jobId <= 0) {
+            throw new DeliveryWorkerFailure('invalid_job');
+        }
         if (!empty($configuration['use_tls'])) {
-            throw new DeliveryWorkerFailure('tls_profile_required');
+            throw new DeliveryWorkerFailure('tls_profile_required', 'tls_required');
         }
 
         $basePath = defined('BASE_PATH') ? rtrim((string) BASE_PATH, '/') : dirname(__DIR__);
@@ -141,23 +301,37 @@ final class LocalDicomDeliveryWorker
             }
             chmod($metadataDumpPath, 0600);
 
-            $this->runCommand(['/usr/bin/dump2dcm', '--quiet', $metadataDumpPath, $metadataDicomPath], 'metadata_conversion_failed');
-            $this->runCommand(['/usr/bin/pdf2dcm', '--quiet', '--study-from', $metadataDicomPath, '--instance-one', $pdfPath, $dicomPath], 'pdf_encapsulation_failed');
+            $this->runCommand(['/usr/bin/dump2dcm', '--quiet', $metadataDumpPath, $metadataDicomPath], 'metadata_conversion_failed', 45);
+            $pdf2dcmCommand = ['/usr/bin/pdf2dcm', '--quiet', '--study-from', $metadataDicomPath];
+            $issuerOfPatientId = $this->issuerOfPatientId($payload, $configuration);
+            if ($issuerOfPatientId !== '') {
+                $pdf2dcmCommand[] = '--key';
+                $pdf2dcmCommand[] = '0010,0021=' . $issuerOfPatientId;
+            }
+            $pdf2dcmCommand[] = '--instance-one';
+            $pdf2dcmCommand[] = $pdfPath;
+            $pdf2dcmCommand[] = $dicomPath;
+            $this->runCommand($pdf2dcmCommand, 'pdf_encapsulation_failed', 45);
             if (!is_file($dicomPath) || filesize($dicomPath) < 256) {
                 throw new DeliveryWorkerFailure('invalid_dicom_artifact');
             }
 
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-            $this->runCommand([
-                '/usr/bin/storescu', '--quiet', '--disable-tls',
-                '--aetitle', (string) $configuration['calling_ae'],
-                '--call', (string) $configuration['called_ae'],
-                '--timeout', (string) $timeout,
-                '--socket-timeout', (string) $timeout,
-                (string) $configuration['host'],
-                (string) $configuration['port'],
-                $dicomPath,
-            ], 'cstore_failed');
+            if (!empty($configuration['gateway_bridge'])) {
+                $deliveryResult = (new ReportDeliveryGatewayBridgeClient())->send($jobId, $configuration, $dicomPath, $timeout);
+            } else {
+                $this->runCommand([
+                    '/usr/bin/storescu', '--quiet', '--disable-tls',
+                    '--aetitle', (string) $configuration['calling_ae'],
+                    '--call', (string) $configuration['called_ae'],
+                    '--timeout', (string) $timeout,
+                    '--socket-timeout', (string) $timeout,
+                    (string) $configuration['host'],
+                    (string) $configuration['port'],
+                    $dicomPath,
+                ], 'cstore_failed', min(135, $timeout + 15));
+                $deliveryResult = ['reference' => '', 'sha256' => '', 'size' => 0];
+            }
 
             $finalPath = sprintf('%s/laudo-%d-v%d.dcm', $privateDirectory, (int) $job['report_id'], (int) $job['report_version']);
             if (!copy($dicomPath, $finalPath)) {
@@ -177,7 +351,7 @@ final class LocalDicomDeliveryWorker
             );
 
             return [
-                'reference' => 'dicom-cstore:' . substr($sha256, 0, 16),
+                'reference' => $deliveryResult['reference'] !== '' ? $deliveryResult['reference'] : 'dicom-cstore:' . substr($sha256, 0, 16),
                 'sha256' => $sha256,
                 'size' => $size,
             ];
@@ -211,6 +385,7 @@ final class LocalDicomDeliveryWorker
     private function metadataDump(array $payload, array $configuration): string
     {
         $patientId = $this->normalizedPatientId($payload, $configuration);
+        $issuerOfPatientId = $this->issuerOfPatientId($payload, $configuration);
         $studyDate = $this->dicomDate((string) ($payload['study_date'] ?? ''));
         $studyTime = $this->dicomTime((string) ($payload['study_time'] ?? ''));
         $birthDate = $this->dicomDate((string) ($payload['patient_birth_date'] ?? ''));
@@ -225,6 +400,7 @@ final class LocalDicomDeliveryWorker
             ['0008,0060', 'CS', 'DOC'],
             ['0010,0010', 'PN', (string) ($payload['patient_name'] ?? '')],
             ['0010,0020', 'LO', $patientId],
+            ['0010,0021', 'LO', $issuerOfPatientId],
             ['0010,0030', 'DA', $birthDate],
             ['0010,0040', 'CS', $sex],
             ['0020,000D', 'UI', (string) $payload['study_instance_uid']],
@@ -243,6 +419,15 @@ final class LocalDicomDeliveryWorker
             $patientId = trim(explode('$$$', $patientId, 2)[0]);
         }
         return mb_substr($patientId, 0, 64);
+    }
+
+    /** @param array<string,mixed> $payload @param array<string,mixed> $configuration */
+    private function issuerOfPatientId(array $payload, array $configuration): string
+    {
+        $configured = trim((string) ($configuration['issuer_of_patient_id'] ?? ''));
+        $payloadIssuer = trim((string) ($payload['issuer_of_patient_id'] ?? ''));
+        $issuer = $configured !== '' ? $configured : $payloadIssuer;
+        return mb_substr(str_replace(["\r", "\n", '[', ']'], [' ', ' ', '(', ')'], $issuer), 0, 64);
     }
 
     private function dicomText(string $value): string
@@ -267,22 +452,111 @@ final class LocalDicomDeliveryWorker
         return strlen($value) <= 64 && preg_match('/^(?:[0-9]+)(?:\.[0-9]+)*$/', $value) === 1;
     }
 
-    /** @param list<string> $command */
-    private function runCommand(array $command, string $stage): void
+    /**
+     * Executa somente binários allowlisted com watchdog local; nunca delega
+     * prazo de término exclusivamente ao processo externo.
+     *
+     * @param list<string> $command
+     */
+    private function runCommand(array $command, string $stage, int $timeoutSeconds = 60): void
     {
+        $timeoutSeconds = max(1, min(180, $timeoutSeconds));
         $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['PATH' => '/usr/bin:/bin']);
         if (!is_resource($process)) {
-            throw new DeliveryWorkerFailure($stage);
+            throw new DeliveryWorkerFailure($stage, $stage === 'cstore_failed' ? 'command_failed' : null);
         }
+
         foreach ($pipes as $pipe) {
             if (is_resource($pipe)) {
-                stream_get_contents($pipe);
-                fclose($pipe);
+                stream_set_blocking($pipe, false);
             }
         }
-        if (proc_close($process) !== 0) {
-            throw new DeliveryWorkerFailure($stage);
+
+        $deadline = microtime(true) + $timeoutSeconds;
+        $timedOut = false;
+        $exitCode = -1;
+        $cstoreStderr = $stage === 'cstore_failed' ? '' : null;
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $this->drainCommandPipes($pipes, $cstoreStderr);
+                if (!$status['running']) {
+                    $exitCode = (int) $status['exitcode'];
+                    break;
+                }
+                if (microtime(true) >= $deadline) {
+                    $timedOut = true;
+                    proc_terminate($process);
+                    usleep(250000);
+                    $afterTerminate = proc_get_status($process);
+                    if ($afterTerminate['running']) {
+                        proc_terminate($process, 9);
+                    }
+                    break;
+                }
+                usleep(50000);
+            }
+        } finally {
+            $this->drainCommandPipes($pipes, $cstoreStderr);
+            foreach ($pipes as $pipe) {
+                if (is_resource($pipe)) {
+                    fclose($pipe);
+                }
+            }
+            $closeCode = proc_close($process);
         }
+
+        if ($timedOut || ($exitCode !== 0 && $closeCode !== 0)) {
+            throw new DeliveryWorkerFailure(
+                $stage,
+                $stage === 'cstore_failed' ? $this->classifyCstoreFailure($timedOut, $cstoreStderr ?? '') : null
+            );
+        }
+    }
+
+    /**
+     * Drena stdout/stderr para não bloquear o subprocesso. Somente stderr de
+     * C-STORE fica em memória, limitado e efêmero, para classificação local.
+     * Nenhuma saída bruta é persistida, registrada ou devolvida pela API.
+     *
+     * @param array<int,resource> $pipes
+     */
+    private function drainCommandPipes(array $pipes, ?string &$cstoreStderr): void
+    {
+        foreach ($pipes as $descriptor => $pipe) {
+            if (!is_resource($pipe)) {
+                continue;
+            }
+            $output = stream_get_contents($pipe);
+            if ($descriptor !== 2 || $cstoreStderr === null || !is_string($output) || $output === '') {
+                continue;
+            }
+            $remaining = self::CSTORE_DIAGNOSTIC_MAX_BYTES - strlen($cstoreStderr);
+            if ($remaining > 0) {
+                $cstoreStderr .= substr($output, 0, $remaining);
+            }
+        }
+    }
+
+    private function classifyCstoreFailure(bool $timedOut, string $cstoreStderr): string
+    {
+        if ($timedOut) {
+            return 'timeout';
+        }
+
+        if (preg_match('/\b(?:connection refused|connection reset by peer|network is unreachable|no route to host|connection timed out)\b/i', $cstoreStderr) === 1) {
+            return 'connect_failed';
+        }
+
+        if (preg_match('/\bassociation(?: request)? rejected\b/i', $cstoreStderr) === 1) {
+            return 'association_rejected';
+        }
+
+        if (preg_match('/\b(?:tls|ssl)\b.*\b(?:required|handshake|certificate|protocol)\b|\b(?:required|handshake|certificate|protocol)\b.*\b(?:tls|ssl)\b/i', $cstoreStderr) === 1) {
+            return 'tls_required';
+        }
+
+        return 'command_failed';
     }
 
     /** @param array<string,mixed>|null $data */
@@ -295,17 +569,28 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage): void
+    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null): void
     {
         if ($jobId <= 0) {
             return;
         }
         try {
-            $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', ['stage' => $stage]);
+            $metadata = ['stage' => $stage];
+            if (in_array($reasonCategory, array_merge(self::CSTORE_REASON_CATEGORIES, self::PHILIPS_FOLDER_REASON_CATEGORIES), true)) {
+                $metadata['reason_category'] = $reasonCategory;
+            }
+            $recorded = $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
+            if (!$recorded) {
+                Logger::error('[ReportDeliveryWorker] Falha não registrada: lease ausente', [
+                    'job_id' => $jobId,
+                    'ledger_stage' => 'lock_job_not_found',
+                ]);
+            }
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,
-                'error' => $failure->getMessage(),
+                'error_class' => get_class($failure),
+                'ledger_stage' => $this->repository->lastLedgerFailureStage() ?? 'unknown',
             ]);
         }
     }
@@ -343,5 +628,10 @@ final class LocalDicomDeliveryWorker
 $worker = new LocalDicomDeliveryWorker();
 if (in_array('--check', $argv, true)) {
     exit($worker->check());
+}
+foreach ($argv as $argument) {
+    if (preg_match('/^--job-id=([1-9][0-9]*)$/', $argument, $matches) === 1) {
+        exit($worker->runOne((int) $matches[1]));
+    }
 }
 $worker->run();

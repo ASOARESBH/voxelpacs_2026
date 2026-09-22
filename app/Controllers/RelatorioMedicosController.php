@@ -56,6 +56,7 @@ final class RelatorioMedicosController extends Controller
             'total' => $result['total'],
             'totalizadores' => $result['totalizadores'],
             'porMedico' => $result['porMedico'],
+            'resumoLiberados' => $result['resumoLiberados'],
             'totalPaginas' => (int) ceil($result['total'] / $filters['por_pagina']),
             'medicoRestrito' => MedicoAccess::isRestricted(),
         ]);
@@ -93,6 +94,7 @@ final class RelatorioMedicosController extends Controller
                     'linhas' => $result['linhas'],
                     'porMedico' => $result['porMedico'],
                     'totalizadores' => $result['totalizadores'],
+                    'resumoLiberados' => $result['resumoLiberados'],
                     'resumo' => $resumo,
                     'tenantNome' => $tenantNome,
                     'usuarioNome' => $usuarioNome,
@@ -107,6 +109,7 @@ final class RelatorioMedicosController extends Controller
             $result['linhas'],
             $result['porMedico'],
             $result['totalizadores'],
+            $result['resumoLiberados'],
             $resumo,
             $tenantNome,
             $usuarioNome,

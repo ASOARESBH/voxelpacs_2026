@@ -24,7 +24,7 @@ Cada Unidade escolhe **um** layout visual entre um catálogo fixo de 4 modelos p
 
 ## Por que "tela + impressão + PDF" é um ponto único
 
-Confirmado na análise: este projeto **não gera PDF binário** (sem dompdf/wkhtmltopdf) — `reports/pdf.php` é uma página HTML com CSS de impressão (`@media print`) e um botão `window.print()`; "Baixar PDF" é a mesma rota com `?download=1`, que dispara `window.print()` automaticamente no load (o usuário escolhe "Salvar como PDF" no diálogo de impressão do navegador).
+Para rascunhos, `reports/pdf.php` continua sendo uma página HTML com CSS de impressão (`@media print`) e botão `window.print()`. Para versões assinadas/liberadas, a mesma rota serve o PDF binário canônico criado por Dompdf no ato da versão e persistido em storage privado; `?download=1` somente seleciona `Content-Disposition: attachment`. O delivery Philips Non-DICOM nunca renderiza novamente o report atual: lê esse snapshot por `tenant_id`, `report_id` e `report_version`, validando hash, tamanho e assinatura `%PDF`.
 
 A rota de edição (`reports/show.php`/`partials/_editor.php`) continua usando o Quill para preservar o fluxo de trabalho clínico. Entretanto, quando a Unidade seleciona **Moderno Lateral**, o formulário recebe o mesmo cabeçalho institucional, identificação do paciente, título de Máscara e hierarquia de TÉCNICA/ACHADOS/IMPRESSÃO usados na leitura e impressão. A barra de formatação permanece disponível apenas como ferramenta de edição; os demais templates mantêm o formulário convencional.
 

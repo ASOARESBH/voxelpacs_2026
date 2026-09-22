@@ -1,10 +1,13 @@
 <?php
+// Materialização de runtime do roteamento manual de homologação; não cria job nem ativa SMB, bridge, XML ou automação.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 
 namespace App\Repositories;
 
 use DomainException;
 use PDO;
 use App\Core\SqlHelper;
+use App\Helpers\DicomPersonName;
 
 /**
  * Persistência do VOXEL Report Delivery Hub.
@@ -24,6 +27,18 @@ class ReportDeliveryRepository
         return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
     }
 
+    /**
+     * Retorna somente destinos habilitados de homologação para uma solicitação
+     * manual explícita. A automação por liberação continua sendo requisito
+     * exclusivo do fluxo automático de produção.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    {
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function findConfiguredDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
     {
@@ -31,7 +46,14 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function findDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, bool $onlyEligible): array
+    private function findDestinations(
+        int $tenantId,
+        ?int $estabelecimentoId,
+        ?string $issuerNormalized,
+        ?string $institutionName,
+        bool $onlyEligible,
+        bool $requireReleaseTrigger = true
+    ): array
     {
         $issuerNormalized = trim((string) $issuerNormalized);
         $institutionName = trim((string) $institutionName);
@@ -51,9 +73,9 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
-        $eligibilityWhere = $onlyEligible
+        $eligibilityWhere = $onlyEligible && $requireReleaseTrigger
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
-            : '';
+            : ($onlyEligible ? 'AND d.enabled = 1' : '');
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
@@ -87,6 +109,7 @@ class ReportDeliveryRepository
             "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
+                    CASE WHEN COALESCE(d.configuration_secret, '') <> '' THEN 1 ELSE 0 END AS credential_configured,
                     COALESCE((SELECT {$institutionNamesSql}
                               FROM pacs_report_delivery_destination_institutions di
                               WHERE di.destination_id = d.id AND di.tenant_id = d.tenant_id), '') AS institution_names,
@@ -108,7 +131,8 @@ class ReportDeliveryRepository
         $columns = $includeSecret ? 'd.*' :
             'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
-             d.last_test_status, d.last_test_message, d.created_at, d.updated_at';
+             d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
+             CASE WHEN COALESCE(d.configuration_secret, \'\') <> \'\' THEN 1 ELSE 0 END AS credential_configured';
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
@@ -346,6 +370,29 @@ class ReportDeliveryRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * Publicação: lista somente servidores PACS ativos e vinculados ao negócio atual.
+     * O painel usa estes dados para apresentar a origem; a consulta não
+     * carrega dados DICOM, estudos, destinos ou parâmetros de conexão.
+     *
+     * @return array<int,array{id:int,nome:string}>
+     */
+    public function listTenantPacsServers(int $tenantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              ORDER BY s.nome ASC, s.id ASC"
+        );
+        $stmt->execute([':tenant_id' => $tenantId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function createOutboxIfAbsent(
         int $tenantId,
         ?int $estabelecimentoId,
@@ -354,19 +401,23 @@ class ReportDeliveryRepository
         int $reportVersion,
         string $eventType,
         string $idempotencyKey,
-        array $payload
+        array $payload,
+        ?string $deliveryProfile = null
     ): int {
+        if ($deliveryProfile !== null && !in_array($deliveryProfile, ['pdf_only', 'submission_document', 'mixed'], true)) {
+            throw new DomainException('Perfil de devolutiva inválido.');
+        }
         $sql = SqlHelper::isPostgres()
             ? "INSERT INTO pacs_report_delivery_outbox
-                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, delivery_profile, status)
                VALUES
-                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, :delivery_profile, 'queued')
                ON CONFLICT (idempotency_key) DO NOTHING
                RETURNING id"
             : "INSERT IGNORE INTO pacs_report_delivery_outbox
-                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, status)
+                   (tenant_id, estabelecimento_id, report_id, estudo_id, report_version, event_type, idempotency_key, payload_json, delivery_profile, status)
                VALUES
-                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, 'queued')";
+                   (:tenant_id, :estabelecimento_id, :report_id, :estudo_id, :report_version, :event_type, :idempotency_key, :payload_json, :delivery_profile, 'queued')";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':tenant_id' => $tenantId,
@@ -377,6 +428,7 @@ class ReportDeliveryRepository
             ':event_type' => $eventType,
             ':idempotency_key' => $idempotencyKey,
             ':payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':delivery_profile' => $deliveryProfile,
         ]);
 
         if (SqlHelper::isPostgres()) {
@@ -398,6 +450,28 @@ class ReportDeliveryRepository
         return (int) $lookup->fetchColumn();
     }
 
+    public function setOutboxDeliveryProfile(int $outboxId, int $tenantId, string $profile): void
+    {
+        if ($outboxId <= 0 || $tenantId <= 0 || !in_array($profile, ['pdf_only', 'submission_document', 'mixed'], true)) {
+            throw new DomainException('Perfil de devolutiva inválido.');
+        }
+        $stmt = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_outbox
+             SET delivery_profile = CASE
+                 WHEN delivery_profile IS NULL THEN :profile_new
+                 WHEN delivery_profile = :profile_same THEN delivery_profile
+                 ELSE 'mixed'
+             END
+             WHERE id = :id AND tenant_id = :tenant_id"
+        );
+        $stmt->execute([
+            ':profile_new' => $profile,
+            ':profile_same' => $profile,
+            ':id' => $outboxId,
+            ':tenant_id' => $tenantId,
+        ]);
+    }
+
     /** @param array<int, array<string, mixed>> $destinations */
     public function createJobs(
         int $outboxId,
@@ -405,30 +479,42 @@ class ReportDeliveryRepository
         ?int $estabelecimentoId,
         string $eventKey,
         array $destinations,
-        ?string $automaticDispatchDate = null
+        ?string $automaticDispatchDate = null,
+        int $reportId = 0,
+        int $reportVersion = 0,
+        string $artifactSignature = ''
     ): int
     {
         $created = 0;
         $sql = SqlHelper::isPostgres()
             ? "INSERT INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, delivery_profile, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, :delivery_profile, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)
                ON CONFLICT DO NOTHING"
             : "INSERT IGNORE INTO pacs_report_delivery_jobs
-                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
+                   (outbox_id, destination_id, tenant_id, estabelecimento_id, transport, delivery_profile, status, idempotency_key, worker_eligible_at, automatic_dispatch_date)
                VALUES
-                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)";
+                   (:outbox_id, :destination_id, :tenant_id, :estabelecimento_id, :transport, :delivery_profile, 'queued', :idempotency_key, NOW(), :automatic_dispatch_date)";
         $stmt = $this->pdo->prepare($sql);
 
         foreach ($destinations as $destination) {
-            $jobKey = hash('sha256', $eventKey . '|destination|' . (int) $destination['id']);
+            $profile = self::deliveryProfileIdentity($this->deliveryProfileForDestination($destination));
+            $jobKey = self::profileAwareJobIdempotencyKey(
+                $tenantId,
+                $reportId,
+                $reportVersion,
+                $artifactSignature !== '' ? $artifactSignature : $eventKey,
+                (int) $destination['id'],
+                $profile
+            );
             $stmt->execute([
                 ':outbox_id' => $outboxId,
                 ':destination_id' => (int) $destination['id'],
                 ':tenant_id' => $tenantId,
                 ':estabelecimento_id' => $estabelecimentoId,
                 ':transport' => (string) $destination['transport'],
+                ':delivery_profile' => $profile,
                 ':idempotency_key' => $jobKey,
                 ':automatic_dispatch_date' => $automaticDispatchDate,
             ]);
@@ -436,6 +522,60 @@ class ReportDeliveryRepository
         }
 
         return $created;
+    }
+
+    public static function profileAwareJobIdempotencyKey(
+        int $tenantId,
+        int $reportId,
+        int $reportVersion,
+        string $artifactSignature,
+        int $destinationId,
+        string $deliveryProfile
+    ): string {
+        if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0 || $destinationId <= 0
+            || trim($artifactSignature) === ''
+            || !in_array($deliveryProfile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Identidade de idempotência inválida.');
+        }
+        return hash('sha256', implode('|', [
+            'report-delivery-job-v2',
+            $tenantId,
+            $reportId,
+            $reportVersion,
+            $artifactSignature,
+            $destinationId,
+            $deliveryProfile,
+        ]));
+    }
+
+    public static function deliveryProfileIdentity(?string $deliveryProfile): string
+    {
+        $profile = trim((string) $deliveryProfile);
+        if ($profile === '') {
+            return 'pdf_only';
+        }
+        if (!in_array($profile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Identidade de profile inválida.');
+        }
+        return $profile;
+    }
+
+    /** @param array<string,mixed> $destination */
+    public function deliveryProfileForDestination(array $destination): string
+    {
+        $transport = (string) ($destination['transport'] ?? '');
+        $configuration = json_decode((string) ($destination['configuration_json'] ?? ''), true);
+        $profile = is_array($configuration) ? trim((string) ($configuration['delivery_profile'] ?? '')) : '';
+        if ($profile === '') {
+            return 'pdf_only';
+        }
+        if (!in_array($profile, ['pdf_only', 'submission_document'], true)) {
+            throw new DomainException('Perfil de devolutiva não suportado.');
+        }
+        if ($profile === 'submission_document' && $transport !== 'philips_non_dicom') {
+            throw new DomainException('Perfil de package incompatível com o transporte.');
+        }
+        return $profile;
     }
 
     /**
@@ -525,7 +665,9 @@ class ReportDeliveryRepository
                     e.id AS estudo_id,
                     e.unidade_id AS estabelecimento_id,
                     COALESCE(e.institution_name, '') AS institution_name,
-                    COALESCE(NULLIF(e.patient_name_display, ''), NULLIF(e.patient_name, ''), '—') AS patient_name,
+                    e.patient_name,
+                    e.patient_name_display,
+                    e.tags_raw,
                     COALESCE(e.modalities, '') AS modalities,
                     COALESCE(e.issuer_of_patient_id, '') AS issuer_of_patient_id,
                     COALESCE(e.issuer_of_patient_id_normalized, '') AS issuer_of_patient_id_normalized,
@@ -551,12 +693,27 @@ class ReportDeliveryRepository
                     (SELECT j.transport FROM pacs_report_delivery_jobs j
                        INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
                      WHERE o.report_id = r.id AND j.tenant_id = r.tenant_id
-                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport
+                     ORDER BY j.created_at DESC, j.id DESC LIMIT 1) AS transport,
+                    COALESCE((SELECT j.id FROM pacs_report_delivery_jobs j
+                       INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                       INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                       INNER JOIN pacs_report_delivery_artifacts a ON a.outbox_id = j.outbox_id
+                                                                      AND a.tenant_id = j.tenant_id
+                                                                      AND a.artifact_type = 'pdf'
+                      WHERE o.report_id = r.id
+                        AND j.tenant_id = r.tenant_id
+                        AND j.status IN ('failed', 'dead_letter')
+                        AND j.transport = 'philips_non_dicom'
+                        AND d.transport = 'philips_non_dicom'
+                        AND d.ambiente = 'homologacao'
+                        AND d.enabled = 1
+                      ORDER BY j.created_at DESC, j.id DESC LIMIT 1), 0) AS manual_retry_job_id
              FROM reports r
              INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
              WHERE r.tenant_id = :tenant_id
                AND r.situacao = 'liberado'
-               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, e.patient_name, '')) LIKE LOWER(:patient_like))
+               AND (:patient = '' OR LOWER(COALESCE(e.patient_name_display, '')) LIKE LOWER(:patient_display_like)
+                    OR LOWER(COALESCE(e.patient_name, '')) LIKE LOWER(:patient_raw_like))
                AND (:modality = '' OR LOWER(COALESCE(e.modalities, '')) LIKE LOWER(:modality_like))
                AND (:issuer = '' OR LOWER(COALESCE(e.issuer_of_patient_id, '')) LIKE LOWER(:issuer_like))
              ORDER BY (r.liberado_em IS NULL) ASC, r.liberado_em DESC, r.id DESC
@@ -564,7 +721,10 @@ class ReportDeliveryRepository
         );
         $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
         $stmt->bindValue(':patient', $patient, PDO::PARAM_STR);
-        $stmt->bindValue(':patient_like', '%' . $patient . '%', PDO::PARAM_STR);
+        // Publicação: PostgreSQL com prepared statements nativos não aceita o
+        // mesmo placeholder nomeado em posições distintas da consulta.
+        $stmt->bindValue(':patient_display_like', '%' . $patient . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':patient_raw_like', '%' . $patient . '%', PDO::PARAM_STR);
         $stmt->bindValue(':modality', $modality, PDO::PARAM_STR);
         $stmt->bindValue(':modality_like', '%' . $modality . '%', PDO::PARAM_STR);
         $stmt->bindValue(':issuer', $issuer, PDO::PARAM_STR);
@@ -572,7 +732,14 @@ class ReportDeliveryRepository
         $stmt->bindValue(':limit', max(1, min(200, $limit)), PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $deliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($deliveries as &$delivery) {
+            // Texto de painel somente; o job de entrega continua usando seus próprios metadados.
+            $delivery['patient_name'] = DicomPersonName::displayFromStudy($delivery) ?: '—';
+        }
+        unset($delivery);
+
+        return $deliveries;
     }
 
     /** Reenfileira manualmente somente tentativas terminais no tenant indicado. */
@@ -663,6 +830,117 @@ class ReportDeliveryRepository
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Reenfileira uma única entrega terminal de homologação Non-DICOM.
+     * Não depende de disparar_na_liberacao e não cria job ou tentativa.
+     *
+     * @return array{job_id:int,delivery_id:int,destination_id:int,previous_status:string,new_status:string,attempt_number:int}
+     */
+    public function retryManualHomologationJob(int $jobId, int $tenantId): array
+    {
+        if ($jobId <= 0 || $tenantId <= 0) {
+            throw new DomainException('Job de entrega inválido.', 422);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT j.id, j.outbox_id, j.destination_id, j.tenant_id, j.transport,
+                        j.status, j.attempt_count, j.locked_at, j.locked_by,
+                        d.enabled, d.ambiente, d.transport AS destination_transport
+                 FROM pacs_report_delivery_jobs j
+                 INNER JOIN pacs_report_delivery_outbox o
+                         ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_destinations d
+                         ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 WHERE j.id = :job_id
+                   AND j.tenant_id = :tenant_id
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $stmt->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$job) {
+                $this->pdo->rollBack();
+                throw new DomainException('Job de entrega não encontrado para este negócio.', 404);
+            }
+
+            $status = (string) ($job['status'] ?? '');
+            if (in_array($status, ['queued', 'retrying', 'processing'], true)) {
+                $this->pdo->rollBack();
+                throw new DomainException('Conflito: o job já está na fila ou em processamento.', 409);
+            }
+            if (!in_array($status, ['failed', 'dead_letter'], true)) {
+                $this->pdo->rollBack();
+                throw new DomainException('Job não está em falha terminal para reenvio manual.', 422);
+            }
+            if ((int) ($job['enabled'] ?? 0) !== 1
+                || (string) ($job['ambiente'] ?? '') !== 'homologacao'
+                || (string) ($job['transport'] ?? '') !== 'philips_non_dicom'
+                || (string) ($job['destination_transport'] ?? '') !== 'philips_non_dicom') {
+                $this->pdo->rollBack();
+                throw new DomainException('Job não é uma entrega Non-DICOM de homologação elegível.', 422);
+            }
+
+            $artifactStmt = $this->pdo->prepare(
+                "SELECT id, storage_path, sha256, file_size_bytes
+                 FROM pacs_report_delivery_artifacts
+                 WHERE outbox_id = :outbox_id
+                   AND tenant_id = :tenant_id
+                   AND artifact_type = 'pdf'
+                 LIMIT 1
+                 FOR UPDATE"
+            );
+            $artifactStmt->execute([':outbox_id' => (int) $job['outbox_id'], ':tenant_id' => $tenantId]);
+            $artifact = $artifactStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $storagePath = trim((string) ($artifact['storage_path'] ?? ''));
+            $storedHash = strtolower(trim((string) ($artifact['sha256'] ?? '')));
+            $storedSize = (int) ($artifact['file_size_bytes'] ?? 0);
+            $actualSize = $storagePath !== '' && is_file($storagePath) ? @filesize($storagePath) : false;
+            $actualHash = $storagePath !== '' && is_file($storagePath) ? @hash_file('sha256', $storagePath) : false;
+            if ((int) ($artifact['id'] ?? 0) <= 0
+                || !is_readable($storagePath)
+                || !is_int($actualSize)
+                || $storedSize <= 0
+                || $actualSize !== $storedSize
+                || !is_string($actualHash)
+                || !preg_match('/^[a-f0-9]{64}$/', $storedHash)
+                || !hash_equals($storedHash, strtolower($actualHash))) {
+                $this->pdo->rollBack();
+                throw new DomainException('Artefato PDF do job não está disponível ou íntegro.', 422);
+            }
+
+            $update = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'queued', next_attempt_at = NOW(), worker_eligible_at = NOW(),
+                     locked_at = NULL, locked_by = NULL
+                 WHERE id = :job_id
+                   AND tenant_id = :tenant_id
+                   AND status IN ('failed', 'dead_letter')"
+            );
+            $update->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            if ($update->rowCount() !== 1) {
+                $this->pdo->rollBack();
+                throw new DomainException('Conflito: o job mudou de estado durante o reenvio.', 409);
+            }
+
+            $this->pdo->commit();
+            return [
+                'job_id' => (int) $job['id'],
+                'delivery_id' => (int) $job['outbox_id'],
+                'destination_id' => (int) $job['destination_id'],
+                'previous_status' => $status,
+                'new_status' => 'queued',
+                'attempt_number' => (int) $job['attempt_count'] + 1,
+            ];
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**

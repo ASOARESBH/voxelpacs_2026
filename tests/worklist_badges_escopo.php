@@ -13,10 +13,16 @@ $regras = [
         $controller,
         'MedicoAccess::allowedInstitutionNames()'
     ),
-    'escopo preserva posse exclusiva do médico' => substr_count(
+    'escopo preserva posse normal e explicita Peer Review compartilhado' => str_contains(
         $controller,
-        "COALESCE(e.situacao, 'novo') IN ('novo', 'aberto') OR e.usuario_responsavel_id = ?"
-    ) === 1,
+        "COALESCE(e.situacao, 'novo') IN ('novo', 'aberto')"
+    ) && str_contains(
+        $controller,
+        'OR e.usuario_responsavel_id = ?'
+    ) && str_contains(
+        $controller,
+        'OR {$peerReviewClause})'
+    ),
     'consulta principal usa o escopo compartilhado' => str_contains(
         $controller,
         '$escopoWorklist  = $this->resolverEscopoWorklist($tenantId, $bypassGlobal, $usuarioLogadoId);'

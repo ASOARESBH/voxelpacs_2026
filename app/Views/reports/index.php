@@ -10,7 +10,8 @@ $reportId    = $r ? (int)$r->id : 0;
 $reportToken = $r ? (string)($r->public_token ?? '') : '';
 $estudoId    = (int)($e['id'] ?? 0);
 $studyUid    = htmlspecialchars($e['study_instance_uid'] ?? '', ENT_QUOTES);
-$paciente    = htmlspecialchars($e['patient_name_display'] ?? $e['patient_name'] ?? 'Paciente', ENT_QUOTES);
+// Cabeçalho do laudário: projeção de PN sem escrita no estudo.
+$paciente    = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($e) ?: 'Paciente', ENT_QUOTES);
 $modalidade  = '';
 foreach (array_filter(array_map('trim', explode('\\', $e['modalities'] ?? ''))) as $modItem) {
     $modalidade .= sprintf(
@@ -1166,6 +1167,12 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
         atualizarStatusLaudo('em_laudo', false);
     });
 
+    // Depois de uma pendência ser concluída neste próprio laudário, o estudo
+    // retorna da fila a_laudar para em_laudo sem trocar o médico responsável.
+    document.addEventListener('reports:chat-completed', function() {
+        atualizarStatusLaudo('em_laudo', false);
+    });
+
     // Ao fechar sem liberar: marca rascunho
     window.addEventListener('beforeunload', function() {
         if (!_laudoLiberado) {
@@ -1175,37 +1182,9 @@ $csrfToken   = htmlspecialchars($csrf ?? '', ENT_QUOTES);
 
     // Bind botão Liberar
     function bindBtnLiberar(btn) {
-        if (!btn) return;
-        btn.addEventListener('click', function() {
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Liberando...';
-            var payload = {
-                report_id: REPORT_ID_CICLO,
-                corpo_laudo: getEditorContent('corpo')
-            };
-            fetch('/api/reports/liberar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.ok) {
-                    _laudoLiberado = true;
-                    showToast('Laudo liberado! Fechando...', 'success');
-                    setTimeout(function() { window.close(); }, 1500);
-                } else {
-                    showToast('Erro: ' + (data.msg || 'Tente novamente.'), 'danger');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
-                }
-            })
-            .catch(function() {
-                showToast('Erro de conexão.', 'danger');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa fa-paper-plane"></i> Liberar';
-            });
-        });
+        // O fluxo canônico é ligado por reports-main.js, que abre a confirmação
+        // estruturada e faz uma única submissão tenant-scoped.
+        return btn;
     }
 
     document.addEventListener('DOMContentLoaded', function() {

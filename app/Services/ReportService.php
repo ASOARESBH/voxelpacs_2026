@@ -1,4 +1,5 @@
 <?php
+// Materialização de runtime para publicação restrita do Voxel Desktop.
 
 namespace App\Services;
 
@@ -9,6 +10,7 @@ use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Repositories\MedicoRepository;
 use App\Repositories\ReportRepository;
+use PDO;
 
 /**
  * Regras de negócio do módulo de Laudos: assumir estudo, editar/salvar,
@@ -119,11 +121,17 @@ class ReportService {
         // O pedido pertence ao estudo, não ao texto do laudo. Carregamos seus
         // metadados aqui para o médico consultar no report sem duplicar o arquivo.
         $pedido = null;
+        $examesComplementares = null;
         try {
             $tenantEstudo = (int) ($estudo->tenant_id ?? 0);
             $tokenReport = strtolower(trim((string) ($report->public_token ?? '')));
             if ($tenantEstudo > 0 && preg_match('/^[a-f0-9]{48}$/', $tokenReport) === 1) {
                 $pedido = (new PedidoMedicoService())->buscarPorEstudo(
+                    (int) $estudo->id,
+                    $tenantEstudo,
+                    $tokenReport
+                );
+                $examesComplementares = (new ExamesComplementaresService())->buscarPorEstudo(
                     (int) $estudo->id,
                     $tenantEstudo,
                     $tokenReport
@@ -180,6 +188,7 @@ class ReportService {
             'estudo' => $estudo,
             'report' => $report,
             'pedido' => $pedido,
+            'examesComplementares' => $examesComplementares,
             'chat' => $chat,
             'peerReview' => $peerReview,
             'readonly' => $readonly,
@@ -268,7 +277,19 @@ class ReportService {
         // estudo_id é o nome da FK no schema de produção.
         $estudoIdFK = (int) ($report->estudo_id ?? $report->bi_pacs_estudos_id ?? 0);
         $estudo = $estudoIdFK ? $this->repo->findEstudoById($estudoIdFK) : null;
-        if (!$estudo || (int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+        $peerReviewAberto = null;
+        if ($reportSituacao === 'peer_review') {
+            try {
+                $peerReviewAberto = (new ReportPeerReviewService())->contexto($reportId)['aberta'] ?? null;
+            } catch (\Throwable $e) {
+                $peerReviewAberto = null;
+            }
+        }
+        $sharedPeerReview = $reportSituacao === 'peer_review' && $peerReviewAberto !== null;
+        if (!$estudo || (
+            (int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId
+            && !$sharedPeerReview
+        )) {
             Logger::warning('[ReportService::salvar] tentativa de salvar laudo sem posse', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoIdFK,
@@ -425,7 +446,8 @@ class ReportService {
         if (!$estudo) {
             return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
         }
-        if ((int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId) {
+        $sharedPeerReview = $reportSituacao === 'peer_review' && $peerReviewAberto !== null;
+        if ((int) ($estudo->usuario_responsavel_id ?? 0) !== (int) $userId && !$sharedPeerReview) {
             Logger::warning('[ReportService::assinar] tentativa de assinatura sem posse', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoId,
@@ -436,6 +458,19 @@ class ReportService {
         }
         $user = Auth::user();
         $assinadoEm = date('Y-m-d H:i:s');
+        $patientName = null;
+        if ($modo === 'fechar') {
+            try {
+                $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
+            } catch (\InvalidArgumentException $e) {
+                Logger::warning('[ReportService::assinar] PatientName estruturado não resolvido', [
+                    'report_id' => $reportId,
+                    'tenant_id' => $tenantId,
+                    'error' => $e->getMessage(),
+                ]);
+                return ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
 
         $payload = json_encode([
             'report_id' => $reportId,
@@ -458,6 +493,7 @@ class ReportService {
             $pdo->beginTransaction();
 
             // Congela o layout personalizado publicado no momento da assinatura.
+            $pdfSnapshotPath = null;
             // A falha de schema pendente é registrada, mas não pode bloquear a assinatura.
             $this->congelarTemplatePersonalizadoAssinado($report, $estudo, $pdo);
 
@@ -477,7 +513,14 @@ class ReportService {
             }
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
-            $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero);
+            $this->repo->createVersion($reportId, $conteudoDecodificado, 'assinado', $userId, $versaoNumero, $patientName);
+            $pdfSnapshotPath = $this->persistPdfSnapshotForVersion(
+                $pdo,
+                (int) $tenantId,
+                $reportId,
+                $estudoId,
+                $versaoNumero
+            );
 
             // A outbox é gravada no mesmo commit clínico. A rotina não abre
             // conexões externas e permanece inativa enquanto a feature flag
@@ -494,6 +537,10 @@ class ReportService {
                     $assinadoEm,
                     $hash
                 );
+                (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
+                    (int) $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
+                    (int) $userId, $assinadoEm, $hash
+                );
             }
 
             if ($peerReviewAberto && $peerReviewService) {
@@ -507,6 +554,9 @@ class ReportService {
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            if (is_string($pdfSnapshotPath ?? null) && is_file($pdfSnapshotPath)) {
+                @unlink($pdfSnapshotPath);
+            }
             $erro = $e->getMessage();
             Logger::error('[ReportService::assinar] Persistência atômica falhou', [
                 'report_id' => $reportId,
@@ -623,6 +673,16 @@ class ReportService {
         }
 
         $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
+        try {
+            $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
+        } catch (\InvalidArgumentException $e) {
+            Logger::warning('[ReportService::liberarAssinado] PatientName estruturado não resolvido', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
         $pdo = Database::getInstance();
         try {
             $pdo->beginTransaction();
@@ -630,7 +690,14 @@ class ReportService {
             $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
 
             $versaoNumero = $this->repo->proximaVersao($reportId);
-            $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero);
+            $this->repo->createVersion($reportId, $conteudo, 'liberado', $userId, $versaoNumero, $patientName);
+            $pdfSnapshotPath = $this->persistPdfSnapshotForVersion(
+                $pdo,
+                $tenantId,
+                $reportId,
+                $estudoId,
+                $versaoNumero
+            );
             (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                 $tenantId,
                 $reportId,
@@ -642,9 +709,16 @@ class ReportService {
                 $liberadoEm,
                 $hash
             );
+            (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
+                $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
+                $userId, $liberadoEm, $hash
+            );
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            if (is_string($pdfSnapshotPath ?? null) && is_file($pdfSnapshotPath)) {
+                @unlink($pdfSnapshotPath);
+            }
             Logger::error('[ReportService::liberarAssinado] Persistência atômica falhou', [
                 'report_id' => $reportId,
                 'estudo_id' => $estudoId,
@@ -693,6 +767,24 @@ class ReportService {
             'liberado_em' => $liberadoEm,
             'pdf_url' => $this->urlPublica($report) . '/pdf',
         ];
+    }
+
+    /** Persiste o PDF visual imutável da versão recém-criada, dentro da transação. */
+    private function persistPdfSnapshotForVersion(PDO $pdo, int $tenantId, int $reportId, int $estudoId, int $version): ?string
+    {
+        $context = (new ReportPdfDeliveryContextService($pdo))->build([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'estudo_id' => $estudoId,
+            'report_version' => $version,
+        ]);
+        $snapshot = (new ReportVersionPdfSnapshotService($pdo))->createForVersion(
+            $tenantId,
+            $reportId,
+            $version,
+            $context
+        );
+        return !empty($snapshot['created_new_file']) ? (string) $snapshot['path'] : null;
     }
 
     /**

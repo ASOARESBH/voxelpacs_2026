@@ -1,4 +1,5 @@
 <?php
+// Sincronização de runtime da assinatura PDO de introspecção usada pelo control-plane Voxel Desktop.
 namespace App\Core;
 
 use PDO;
@@ -14,7 +15,23 @@ final class SqlHelper
 {
     public static function isPostgres(): bool
     {
-        return strtolower((string) ($_ENV['DB_DRIVER'] ?? 'mysql')) === 'pgsql';
+        return strtolower(self::environmentValue('DB_DRIVER', 'mysql')) === 'pgsql';
+    }
+
+    private static function environmentValue(string $key, string $default): string
+    {
+        $value = $_ENV[$key] ?? null;
+        if ($value !== null && $value !== '') {
+            return (string) $value;
+        }
+
+        $value = $_SERVER[$key] ?? null;
+        if ($value !== null && $value !== '') {
+            return (string) $value;
+        }
+
+        $value = getenv($key);
+        return $value === false || $value === '' ? $default : (string) $value;
     }
 
     /**

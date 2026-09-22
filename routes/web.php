@@ -1,4 +1,6 @@
 <?php
+// Sincronização de runtime das rotas autenticadas de busca manual de uso único do Router.
+// Materialização de runtime para publicação restrita do Voxel Desktop.
 use App\Core\Router;
 
 // ============================================================
@@ -43,6 +45,15 @@ Router::get('/api/pacs/estudo-copilot-status', 'EstudosController@apiEstudoCopil
 Router::post('/api/integracoes/imagiflow/v1/medicos/consultar', 'ImagiflowApiController@medico');
 Router::post('/api/integracoes/imagiflow/v1/apuracao/estudos', 'ImagiflowApiController@apuracao');
 
+// Voxel Desktop Router — API pull e status de leitura autenticados por token tenant-scoped; sem sessão de navegador.
+Router::get('/api/voxel-desktop/v1/status', 'VoxelDesktopRouterController@connectionStatus');
+Router::post('/api/voxel-desktop/v1/jobs/claim', 'VoxelDesktopRouterController@claim');
+Router::get('/api/voxel-desktop/v1/jobs/{id}/document', 'VoxelDesktopRouterController@document');
+Router::post('/api/voxel-desktop/v1/jobs/{id}/status', 'VoxelDesktopRouterController@status');
+Router::post('/api/voxel-desktop/v1/manual-tests/claim', 'VoxelDesktopRouterController@claimManualTest');
+Router::get('/api/voxel-desktop/v1/manual-tests/{id}/document', 'VoxelDesktopRouterController@manualTestDocument');
+Router::post('/api/voxel-desktop/v1/manual-tests/{id}/status', 'VoxelDesktopRouterController@manualTestStatus');
+
 // ============================================================
 // GESTÃO DE EXAMES — Pedido médico privado por estudo e Gerenciar
 // ============================================================
@@ -53,10 +64,14 @@ Router::post('/api/gestao-exames/estudos/{id}/descricao',       'GestaoExamesCon
 Router::post('/api/gestao-exames/estudos/{id}/descricao/previa-lote', 'GestaoExamesController@previaDescricaoLote');
 Router::post('/api/gestao-exames/estudos/{id}/descricao/lote',  'GestaoExamesController@alterarDescricaoLote');
 Router::post('/api/gestao-exames/estudos/{id}/prioridade',      'GestaoExamesController@alterarPrioridade');
-Router::post('/api/gestao-exames/estudos/{id}/medico-solicitante', 'GestaoExamesController@alterarMedicoSolicitante');
+Router::post('/api/gestao-exames/estudos/{id}/medico-solicitante', 'GestaoExamesController@alterarSolicitante');
+Router::post('/api/gestao-exames/estudos/{id}/informacoes',    'GestaoExamesController@alterarInformacoes');
 Router::post('/api/gestao-exames/estudos/{id}/pedido',          'GestaoExamesController@anexar');
 Router::post('/api/gestao-exames/estudos/{id}/pedido/remover',  'GestaoExamesController@remover');
 Router::get('/api/gestao-exames/pedidos/{id}/arquivo',         'GestaoExamesController@arquivo');
+Router::post('/api/gestao-exames/estudos/{id}/exames-complementares', 'ExamesComplementaresController@anexar');
+Router::post('/api/gestao-exames/estudos/{id}/exames-complementares/remover', 'ExamesComplementaresController@remover');
+Router::get('/api/gestao-exames/exames-complementares/{id}/arquivo', 'ExamesComplementaresController@arquivo');
 
 // ============================================================
 // API — Download em Lote (DICOM ZIP via Orthanc)
@@ -215,6 +230,11 @@ Router::get('/configuracoes',          'ConfiguracoesController@index');
 Router::post('/configuracoes/salvar',  'ConfiguracoesController@salvar');
 Router::post('/configuracoes/viewer-desktop/salvar', 'ConfiguracoesController@salvarViewerDesktop');
 
+// Central do sino: identificação de usuário e tenant é sempre derivada da sessão; runtime controlado.
+Router::get('/api/notificacoes',              'NotificationCenterController@list');
+Router::post('/api/notificacoes/{id}/visto',  'NotificationCenterController@viewed');
+Router::post('/api/notificacoes/{id}/confirmar', 'NotificationCenterController@confirm');
+
 // ============================================================
 // API — Orthanc ping (público, para status na tela de login)
 // ============================================================
@@ -248,6 +268,7 @@ Router::post('/reports/history/restore',   'ReportsController@restoreHistory');
 Router::get('/reports/r/{token}/pdf',         'ReportsController@pdfByToken');
 Router::get('/reports/r/{token}/assinatura',  'ReportsController@assinaturaImagemByToken');
 Router::get('/reports/r/{token}/pedido',      'ReportsController@pedidoByToken');
+Router::get('/reports/r/{token}/exames-complementares', 'ReportsController@examesComplementaresByToken');
 Router::get('/reports/templates',          'ReportsController@templates');
 Router::get('/reports/template',           'ReportsController@template');
 Router::get('/reports/autotext',           'ReportsController@autotextSearch');

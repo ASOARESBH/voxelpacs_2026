@@ -1,4 +1,9 @@
 <?php
+// Sincronização de runtime das rotas protegidas de edição, habilitação e preparo manual Voxel Desktop.
+// Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
+// Materialização de runtime para publicação restrita da separação de produtos no catálogo Downloads.
+// Materialização de runtime para publicação restrita do Voxel Desktop.
+// Materialização de runtime do catálogo Downloads para publicação restrita.
 use App\Core\Router;
 
 // ============================================================
@@ -12,6 +17,27 @@ Router::get('/platform/dashboard', 'Platform\PlatformDashboardController@index')
 Router::get('/platform/configuracao-modulos',                 'Platform\ModuloConfiguracoesController@index');
 Router::post('/platform/configuracao-modulos/salvar',         'Platform\ModuloConfiguracoesController@salvarGlobal');
 Router::post('/platform/configuracao-modulos/estudos/salvar', 'Platform\ModuloConfiguracoesController@salvarEstudos');
+
+// Comunicados da plataforma (superadmin; distinto das notificações operacionais por grupo; runtime controlado).
+Router::get('/platform/notificacoes',                         'Platform\NotificacoesController@index');
+Router::get('/platform/notificacoes/nova',                    'Platform\NotificacoesController@create');
+Router::post('/platform/notificacoes',                        'Platform\NotificacoesController@save');
+Router::get('/platform/notificacoes/{id}/editar',             'Platform\NotificacoesController@edit');
+Router::post('/platform/notificacoes/{id}/atualizar',         'Platform\NotificacoesController@update');
+Router::post('/platform/notificacoes/{id}/pausar',            'Platform\NotificacoesController@pause');
+Router::post('/platform/notificacoes/{id}/reativar',          'Platform\NotificacoesController@resume');
+Router::post('/platform/notificacoes/{id}/arquivar',          'Platform\NotificacoesController@archive');
+Router::post('/platform/notificacoes/prever-alcance',         'Platform\NotificacoesController@previewAudience');
+Router::get('/platform/notificacoes/{id}/estatisticas',       'Platform\NotificacoesController@stats');
+
+// Catálogo de instaladores VOXEL Desktop (somente superadmin, sem impersonação).
+Router::get('/platform/downloads',                            'Platform\DownloadsController@index');
+Router::get('/platform/downloads/new',                        'Platform\DownloadsController@create');
+Router::post('/platform/downloads',                           'Platform\DownloadsController@store');
+Router::post('/platform/downloads/{id}/publish',              'Platform\DownloadsController@publish');
+Router::post('/platform/downloads/{id}/archive',              'Platform\DownloadsController@archive');
+Router::post('/platform/downloads/{id}/delete',               'Platform\DownloadsController@delete');
+Router::get('/platform/downloads/{id}/statistics',            'Platform\DownloadsController@stats');
 
 // ============================================================
 // Negócios (Multi-Tenant)
@@ -47,10 +73,30 @@ Router::post('/platform/api/negocios/{id}/webhook-hub/retry/{evtId}',  'Platform
 Router::get('/platform/negocios/{id}/report-delivery',                'Platform\ReportDeliveryController@show');
 Router::post('/platform/negocios/{id}/report-delivery/destinations',  'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}', 'Platform\ReportDeliveryController@save');
+Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}/test-smb', 'Platform\ReportDeliveryController@testSmb');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
+Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry-homologation', 'Platform\ReportDeliveryController@retryManualHomologation');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
+
+// Delivery Request — control-plane aditivo; feature flag desligada por padrão.
+Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
+Router::post('/platform/negocios/{id}/report-delivery/requests/prepare', 'Platform\ReportDeliveryRequestController@prepare');
+Router::post('/platform/negocios/{id}/report-delivery/requests/recover', 'Platform\ReportDeliveryRequestController@recover');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/approve', 'Platform\ReportDeliveryRequestController@approve');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/materialize', 'Platform\ReportDeliveryRequestController@materialize');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/arm', 'Platform\ReportDeliveryRequestController@arm');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/cancel', 'Platform\ReportDeliveryRequestController@cancel');
+Router::post('/platform/negocios/{id}/report-delivery/requests/{requestId}/expire', 'Platform\ReportDeliveryRequestController@expire');
+
+// Voxel Desktop — pull não-DICOM por tenant; o destino nasce desativado.
+Router::get('/platform/negocios/{id}/voxel-desktop', 'Platform\VoxelDesktopController@show');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations', 'Platform\VoxelDesktopController@save');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}', 'Platform\VoxelDesktopController@save');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}/activate', 'Platform\VoxelDesktopController@activate');
+Router::post('/platform/negocios/{id}/voxel-desktop/destinations/{destinationId}/deactivate', 'Platform\VoxelDesktopController@deactivate');
+Router::post('/platform/negocios/{id}/voxel-desktop/manual-tests', 'Platform\VoxelDesktopController@prepareManualTest');
 
 // Imagiflow — integração de apuração por negócio (somente superadmin)
 Router::get('/platform/negocios/{id}/imagiflow',          'Platform\ImagiflowIntegrationController@show');

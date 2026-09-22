@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 
 namespace App\Services;
 
@@ -11,6 +12,8 @@ use App\Repositories\ReportChatRepository;
 /**
  * Regras de negócio do CHAT contextual do Report.
  * Destinatários e estados sempre são resolvidos dentro do tenant atual.
+ * A ação crítica é validada antes da mesma transação que abre a pendência.
+ * O médico autor ativo é apenas a sugestão inicial da resposta administrativa.
  */
 class ReportChatService
 {
@@ -81,6 +84,22 @@ class ReportChatService
             ));
         }
 
+        $chatPendente = $chat && ($chat['status'] ?? '') === 'pendente';
+        $autorOriginalId = (int) ($chat['criado_por'] ?? 0);
+        $destinatarioPreferencialUserId = null;
+        if ($chatPendente && $autorOriginalId > 0 && $autorOriginalId !== $currentUserId) {
+            $autorOriginal = $this->repo->findActiveUser($autorOriginalId, $tenantId);
+            if (($autorOriginal['perfil'] ?? '') === 'medico') {
+                $destinatarioPreferencialUserId = (int) $autorOriginal['id'];
+            }
+        }
+        $contraparteRespondeu = $chatPendente
+            && $currentUserId > 0
+            && $lastAuthorId !== null
+            && $lastAuthorId === $currentUserId
+            && $autorOriginalId > 0
+            && $autorOriginalId !== $currentUserId;
+
         return [
             'report_id' => $reportId,
             'estudo_id' => (int) $report['estudo_id'],
@@ -91,6 +110,9 @@ class ReportChatService
             'destinatario_grupo_id' => $selectedGroupId > 0 ? $selectedGroupId : null,
             'destinatario_grupo_nome' => (string) ($chat['destinatario_grupo'] ?? ($defaultGroup['nome'] ?? 'Administrativo')),
             'destinatario_user_id' => isset($chat['destinatario_user_id']) ? (int) $chat['destinatario_user_id'] : null,
+            // Somente sugestão de interface: o endpoint de envio mantém a validação
+            // de tenant, usuário ativo e impedimento de autor como destinatário.
+            'destinatario_preferencial_user_id' => $destinatarioPreferencialUserId,
             'assunto_codigo' => $chat['assunto_codigo'] ?? 'outro',
             'assunto' => $chat['assunto'] ?? '',
             'situacao_anterior' => $chat['situacao_anterior'] ?? null,
@@ -102,8 +124,10 @@ class ReportChatService
             'groups' => $groupOptions,
             'users' => $this->repo->listActiveUsers($tenantId, $currentUserId),
             'last_message_author_id' => $lastAuthorId,
-            'can_interact' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
-            'can_complete' => !($chat && ($chat['status'] ?? '') === 'pendente' && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
+            'can_interact' => !($chatPendente && $lastAuthorId !== null && $lastAuthorId === $currentUserId),
+            // A contraparte encerra somente depois de responder. O autor
+            // original não pode concluir a própria solicitação clínica.
+            'can_complete' => $contraparteRespondeu,
         ];
     }
 
@@ -162,6 +186,16 @@ class ReportChatService
         if (mb_strlen($assunto, 'UTF-8') > 180) $assunto = mb_substr($assunto, 0, 180, 'UTF-8');
 
         $isAchadoCritico = $assuntoCodigo === 'achado_critico';
+        $acao = (string) ($input['acao'] ?? 'enviar_interacao');
+        if (!in_array($acao, ['enviar_interacao', 'comunicar_achado_critico'], true)) {
+            return ['ok' => false, 'error' => 'acao_chat_invalida'];
+        }
+        if ($isAchadoCritico && $acao !== 'comunicar_achado_critico') {
+            return ['ok' => false, 'error' => 'achado_critico_acao_explicita'];
+        }
+        if (!$isAchadoCritico && $acao === 'comunicar_achado_critico') {
+            return ['ok' => false, 'error' => 'acao_chat_invalida'];
+        }
         if ($isAchadoCritico && Auth::perfilAtual() !== 'medico') {
             return ['ok' => false, 'error' => 'achado_critico_restrito_medico'];
         }
@@ -185,7 +219,9 @@ class ReportChatService
             }
             $situacaoAnterior = (string) ($chat['situacao_anterior'] ?? '');
             if (!$chat || ($chat['status'] ?? '') === 'concluido' || $situacaoAnterior === '') {
-                $situacaoAnterior = $situacaoAtual === 'pendente' ? 'em_laudo' : $situacaoAtual;
+                $situacaoAnterior = $situacaoAtual === 'pendente'
+                    ? ((int) ($context['usuario_responsavel_id'] ?? 0) > 0 ? 'a_laudar' : 'aberto')
+                    : $situacaoAtual;
             }
             $chatId = $this->repo->upsertPending(
                 $reportId,
@@ -239,6 +275,16 @@ class ReportChatService
                 (string) ($context['public_token'] ?? '')
             );
 
+        // O sino recebe apenas um resumo operacional; textos clínicos e tokens
+        // de acesso continuam restritos ao canal do CHAT e às autorizações já existentes.
+        (new PlatformNotificationService())->emitOperationalEvent(
+            $isAchadoCritico ? 'achado_critico' : 'chat_pendente',
+            $tenantId,
+            (array) ($notification['recipient_ids'] ?? []),
+            $userId,
+            (int) $messageId
+        );
+
         if ($isAchadoCritico) {
             AuditLogger::log('estudo.achado_critico_marcado', 'bi_pacs_estudos', (int) $context['estudo_id'], [
                 'usuario_id' => $userId,
@@ -259,6 +305,7 @@ class ReportChatService
             'destinatario_grupo_id' => $destinatarioGrupoId,
             'destinatario_user_id' => $destinatarioUserId,
             'achado_critico' => $isAchadoCritico,
+            'acao' => $acao,
         ], $tenantId, 'gestao_estudos');
 
         Logger::info('[ReportChatService::send] interação registrada', [
@@ -296,7 +343,12 @@ class ReportChatService
                 return ['ok' => false, 'error' => 'chat_sem_pendencia'];
             }
             $lastAuthorId = $this->repo->lastMessageAuthorId((int) $chat['id'], $tenantId);
-            if ($lastAuthorId !== null && $lastAuthorId === $userId) {
+            $autorOriginalId = (int) ($chat['criado_por'] ?? 0);
+            $contraparteRespondeu = $lastAuthorId !== null
+                && $lastAuthorId === $userId
+                && $autorOriginalId > 0
+                && $autorOriginalId !== $userId;
+            if (!$contraparteRespondeu) {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'aguardando_contraparte'];
             }
@@ -305,7 +357,10 @@ class ReportChatService
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_sem_pendencia'];
             }
-            $restore = $this->normalizarSituacaoRestaurada((string) ($chat['situacao_anterior'] ?? ''));
+            $restore = $this->normalizarSituacaoRestaurada(
+                (string) ($chat['situacao_anterior'] ?? ''),
+                (int) ($context['usuario_responsavel_id'] ?? 0) > 0
+            );
             $this->repo->updateStudySituation((int) $context['estudo_id'], $tenantId, $restore);
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -328,10 +383,25 @@ class ReportChatService
         return ['ok' => true, 'status' => 'concluido', 'situacao' => $restore];
     }
 
-    private function normalizarSituacaoRestaurada(string $situacao): string
+    private function normalizarSituacaoRestaurada(string $situacao, bool $hasMedicoResponsavel): string
     {
-        $permitidas = ['novo', 'aberto', 'a_laudar', 'em_laudo', 'rascunho', 'revisao', 'urgente', 'peer_review', 'assinado', 'liberado'];
-        return in_array($situacao, $permitidas, true) ? $situacao : 'em_laudo';
+        // Uma pendência clínica concluída não pode manter o estudo bloqueado em
+        // "pendente". Para fluxos ainda em edição, a fila volta a "a_laudar":
+        // a posse do médico responsável não é alterada e a abertura autorizada
+        // do laudário faz a transição normal para "em_laudo". Estados finais ou
+        // de revisão conservam seu significado e nunca são reabertos pelo CHAT.
+        if (in_array($situacao, ['assinado', 'liberado', 'peer_review'], true)) {
+            return $situacao;
+        }
+
+        if ($hasMedicoResponsavel) {
+            return 'a_laudar';
+        }
+
+        // Para qualquer fluxo sem posse médica, restaura-se o estado anterior
+        // permitido; um valor ausente ou inválido recai em aberto.
+        $administrativas = ['novo', 'aberto', 'urgente', 'a_laudar', 'em_laudo', 'rascunho', 'revisao'];
+        return in_array($situacao, $administrativas, true) ? $situacao : 'aberto';
     }
 
     private function canAccessStudyModalities(array $context, int $tenantId, int $userId): bool

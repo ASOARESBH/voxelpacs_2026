@@ -1,3 +1,4 @@
+<?php // Materialização de runtime para publicação restrita do Voxel Desktop. ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0 text-gray-800"><i class="fa fa-building me-2"></i><?= $title ?? (isset($negocio) ? 'Editar Negócio' : 'Novo Negócio') ?></h1>
     <a href="/platform/negocios" class="btn btn-outline-secondary shadow-sm">
@@ -46,6 +47,9 @@
                 </li>
                 <li class="nav-item" role="presentation">
                     <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/imagiflow"><i class="fa fa-link me-1"></i> Conector Imagiflow</a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link fw-bold" href="/platform/negocios/<?= (int) $negocio['id'] ?>/voxel-desktop"><i class="fa fa-desktop me-1"></i><?= htmlspecialchars(t('voxel_desktop.tab')) ?></a>
                 </li>
             <?php endif; ?>
         </ul>

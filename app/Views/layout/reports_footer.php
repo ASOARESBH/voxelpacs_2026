@@ -4,7 +4,9 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 
-<?php $v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
+<?php
+// Sincronização de publicação: manter os textos do CHAT reduzido disponíveis no runtime.
+$v = defined('ASSET_VERSION') ? ASSET_VERSION : '2.1.0'; ?>
 <script>
     window.VoxelReports = window.VoxelReports || {};
     window.VoxelReports.chatI18n = <?= json_encode([
@@ -15,6 +17,10 @@
         'required' => t('report_chat.mensagem') . ': ' . t('report_chat.erro_generico'),
         'error' => t('report_chat.erro_generico'),
         'confirm' => t('report_chat.confirmar_conclusao'),
+        'recipientRequired' => t('report_chat.destinatario_obrigatorio'),
+        'sent' => t('report_chat.interacao_enviada'),
+        'completed' => t('report_chat.pendencia_concluida'),
+        'criticalConfirm' => t('report_chat.confirmar_achado_critico'),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     window.VoxelReports.peerReviewI18n = <?= json_encode([
         'confirmar' => t('peer_review.confirmar'),

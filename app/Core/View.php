@@ -1,4 +1,5 @@
 <?php
+// Materialização controlada do runtime de notificações.
 namespace App\Core;
 
 class View {
@@ -7,7 +8,7 @@ class View {
      * Versão dos assets — incrementar ao alterar CSS/JS para forçar cache bust.
      * Nunca remover esta constante: ela blinda o CSS contra cache do browser.
      */
-    private const ASSET_VERSION = '2.3.12';
+    private const ASSET_VERSION = '2.3.14';
 
     /**
      * Renderiza uma view com layout.
