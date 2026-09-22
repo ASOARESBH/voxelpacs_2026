@@ -44,18 +44,49 @@ final class ReportVersionPdfSnapshotService
             return null;
         }
         $pdo = $this->pdo ?? Database::getInstance();
-        $stmt = $pdo->prepare(
-            'SELECT rv.versao
-              FROM report_versions rv
-               INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id
-              WHERE rv.report_id = :report_id
-                AND r.situacao IN (\'assinado\', \'liberado\')
-                AND rv.acao IN (\'assinado\', \'liberado\')
-              ORDER BY rv.versao DESC
-              LIMIT 1'
-        );
-        $stmt->execute([':tenant_id' => $tenantId, ':report_id' => $reportId]);
-        $version = (int) $stmt->fetchColumn();
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT rv.versao,
+                        rv.pdf_snapshot_path,
+                        rv.pdf_snapshot_sha256,
+                        rv.pdf_snapshot_size_bytes,
+                        rv.pdf_snapshot_renderer,
+                        rv.pdf_snapshot_schema_version
+                   FROM report_versions rv
+                   INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id
+                  WHERE rv.report_id = :report_id
+                    AND r.situacao IN (\'assinado\', \'liberado\')
+                    AND rv.acao IN (\'assinado\', \'liberado\')
+                  ORDER BY rv.versao DESC
+                  LIMIT 1'
+            );
+            $stmt->execute([':tenant_id' => $tenantId, ':report_id' => $reportId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            // Releases anteriores à introdução do snapshot podem ainda não ter
+            // as colunas aditivas. O PDF interativo conserva o fallback legado;
+            // jobs/artefatos continuam exigindo snapshot em readForJob().
+            $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+            if ($sqlState === '42703' || $sqlState === '42S22') {
+                return null;
+            }
+            throw $e;
+        }
+
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $hasSnapshotMetadata = trim((string) ($row['pdf_snapshot_path'] ?? '')) !== ''
+            || trim((string) ($row['pdf_snapshot_sha256'] ?? '')) !== ''
+            || (int) ($row['pdf_snapshot_size_bytes'] ?? 0) > 0
+            || trim((string) ($row['pdf_snapshot_renderer'] ?? '')) !== ''
+            || (int) ($row['pdf_snapshot_schema_version'] ?? 0) > 0;
+        if (!$hasSnapshotMetadata) {
+            return null;
+        }
+
+        $version = (int) ($row['versao'] ?? 0);
         return $version > 0 ? $this->readRow($tenantId, $reportId, $version) : null;
     }
 

@@ -110,5 +110,11 @@ A assinatura usa `ReportRepository::proximaVersao($reportId)` para obter o núme
 
 Em qualquer exceção de assinatura, `ReportService::assinar()` registra `report_id`, `estudo_id`, `tenant_id`, `modo`, `versao_report` e a mensagem original, sem registrar conteúdo clínico. O código `devolutiva_dados_insuficientes` é traduzido no modal para orientação operacional específica; outras exceções continuam no código genérico de persistência. Essa distinção não substitui rollback: toda falha anterior ao commit continua sem assinar nem liberar parcialmente o laudo.
 
+### PDF histórico e entrega Non-DICOM (2026-09-22)
+
+`ReportsController::pdfByToken()` resolve o token opaco e delega a renderização a `ReportsController::pdf()`. Laudos `assinado`/`liberado` com snapshot binário íntegro são servidos exclusivamente por `ReportVersionPdfSnapshotService`; o fluxo de artefato Non-DICOM usa `ReportDeliveryArtifactService` e permanece **fail-closed** quando a versão do job não possui snapshot válido.
+
+Para laudos históricos assinados/liberados que não têm nenhum metadado de snapshot, a visualização interativa usa fallback explícito do renderer legado, sem alterar a versão clínica. Metadado parcial, caminho ausente, hash inválido ou arquivo corrompido não recebe fallback silencioso e continua sendo erro operacional auditável. O layout `moderno_lateral` usa tabelas de geometria fixa e quebra segura de valores para que a coluna de identificação do exame permaneça dentro da largura útil A4 do dompdf.
+
 ## Última análise
-2026-08-14
+2026-09-22
