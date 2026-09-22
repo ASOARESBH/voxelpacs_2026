@@ -6,13 +6,15 @@ $root = dirname(__DIR__);
 $servicePath = $root . '/app/Services/ReportVersionPdfRevisionService.php';
 $contextPath = $root . '/app/Services/ReportPdfDeliveryContextService.php';
 $postgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_postgresql.sql';
+$privilegesPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_privileges_postgresql.sql';
 $mysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_mysql.sql';
 $service = file_get_contents($servicePath);
 $context = file_get_contents($contextPath);
 $postgres = file_get_contents($postgresPath);
+$privileges = file_get_contents($privilegesPath);
 $mysql = file_get_contents($mysqlPath);
 
-foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'mysql' => $mysql] as $name => $content) {
+foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'privileges' => $privileges, 'mysql' => $mysql] as $name => $content) {
     if (!is_string($content) || $content === '') {
         throw new RuntimeException($name . ' da revisão PDF não foi lido.');
     }
@@ -66,6 +68,17 @@ foreach ([
 foreach (['postgres' => $postgres, 'mysql' => $mysql] as $name => $migration) {
     if (preg_match('/reason_code.*visual_renderer_correction.*operational_replacement/is', $migration) !== 1) {
         throw new RuntimeException('reason_code sem valores controlados na migration ' . $name . '.');
+    }
+}
+
+foreach ([
+    'GRANT USAGE ON SCHEMA voxelpacs_mysql_source TO voxelpacs_homolog',
+    'GRANT SELECT, INSERT',
+    'GRANT USAGE, SELECT',
+    'Não conceder UPDATE/DELETE',
+] as $marker) {
+    if (!str_contains($privileges, $marker)) {
+        throw new RuntimeException('Privilégio ausente ou excessivo na migration da revisão PDF: ' . $marker);
     }
 }
 
