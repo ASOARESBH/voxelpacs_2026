@@ -62,5 +62,5 @@ As rotas são `GET /api/gestao-exames/descricoes-por-modalidade`, `POST /api/ges
 A migration `2026-08-14_bi_modalidade_descricoes_study_description_manual.sql` adiciona `bi_pacs_estudos.study_description_manual`. Quando marcado como `1`, `PacsSyncService::upsertEstudo()` remove `study_description` do payload de atualização do Orthanc, preservando a correção humana nas sincronizações seguintes. A migration deve ser executada antes do deploy do código que passa a consultar essa coluna.
 
 ## Última análise
-Paginação corrigida em 2026-09-23: `/gestao-exames` reutiliza `app/Views/estudos/index.php`, mas o helper `estudoUrl()` dependia de uma variável global que a view recebia apenas no escopo local. Por isso os links `wl-pag-btn` caíam no fallback `/estudos`. O helper agora recebe e valida explicitamente a rota base (`/gestao-exames` ou `/estudos`) em ordenação e paginação.
+Paginação e ordenação corrigidas em 2026-09-23: `/gestao-exames` reutiliza `app/Views/estudos/index.php`, mas os helpers `estudoUrl()` e `sortLink()` dependiam de `$urlWorklist` fora do escopo local. Por isso os links `wl-pag-btn` e os cabeçalhos ordenáveis podiam cair no fallback `/estudos`. Ambos agora recebem e validam explicitamente a rota base (`/gestao-exames` ou `/estudos`), preservando filtros e paginação nas duas telas.
 2026-09-23
