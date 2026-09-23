@@ -20,7 +20,9 @@ echo -e "${BOLD}======================================${RESET}"
 
 # 1. Instalar dependências de produção
 echo -e "\n${YELLOW}[1/3] Instalando dependências de produção...${RESET}"
+bash "$(dirname "$0")/verify-composer-tree.sh" --allow-missing-vendor
 composer install --no-dev --optimize-autoloader --no-interaction
+bash "$(dirname "$0")/verify-composer-tree.sh"
 echo -e "${GREEN}✔ Dependências de produção instaladas${RESET}"
 
 # 2. Gerar ZIP

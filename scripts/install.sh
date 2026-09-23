@@ -34,7 +34,9 @@ echo -e "${GREEN}✔ Composer encontrado${RESET}"
 
 # 3. Instalar dependências
 echo -e "\n${YELLOW}[3/5] Instalando dependências PHP...${RESET}"
+bash "$(dirname "$0")/verify-composer-tree.sh" --allow-missing-vendor
 composer install --no-dev --optimize-autoloader --no-interaction
+bash "$(dirname "$0")/verify-composer-tree.sh"
 echo -e "${GREEN}✔ Dependências instaladas${RESET}"
 
 # 4. Configurar .env
