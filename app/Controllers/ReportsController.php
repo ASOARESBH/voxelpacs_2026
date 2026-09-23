@@ -611,6 +611,30 @@ class ReportsController extends Controller
 
             $situacaoCanonica = (string) ($data['situacao'] ?? '');
             if (in_array($situacaoCanonica, ['assinado', 'liberado'], true)) {
+                $revisionPdf = (new \App\Services\ReportVersionPdfRevisionService($pdo))
+                    ->readLatestForViewer((int) ($data['tenant_id'] ?? 0), $reportId);
+                if (is_array($revisionPdf) && is_file((string) ($revisionPdf['path'] ?? ''))) {
+                    if (!$portalPatientPdf) {
+                        $userId = Auth::userId();
+                        $user = Auth::user();
+                        $this->reportRepo->logAction(
+                            $reportId, (int) $data['estudo_id'], (int) $data['tenant_id'],
+                            $userId, $user->name ?? $user->nome ?? '', 'pdf',
+                            $download ? 'Download PDF da revisão operacional' : 'Visualização PDF da revisão operacional'
+                        );
+                    }
+                    $filename = 'laudo-' . $reportId
+                        . '-v' . (int) ($revisionPdf['report_version'] ?? 0)
+                        . '-r' . (int) ($revisionPdf['revision_number'] ?? 0) . '.pdf';
+                    header('Content-Type: application/pdf');
+                    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
+                    header('Content-Length: ' . (string) ($revisionPdf['size'] ?? filesize((string) $revisionPdf['path'])));
+                    header('Cache-Control: private, no-store, max-age=0');
+                    header('X-Content-Type-Options: nosniff');
+                    readfile((string) $revisionPdf['path']);
+                    return;
+                }
+
                 $snapshotPdf = (new \App\Services\ReportVersionPdfSnapshotService($pdo))
                     ->readLatestForReport((int) ($data['tenant_id'] ?? 0), $reportId);
                 if (is_array($snapshotPdf) && is_file((string) ($snapshotPdf['path'] ?? ''))) {

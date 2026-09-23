@@ -277,6 +277,59 @@ final class ReportVersionPdfRevisionService
         return $this->readContent($row, $tenantId, $reportId, $version);
     }
 
+    /** @return array{content:string,sha256:string,size:int,path:string,revision_id:int,revision_number:int,report_version:int}|null */
+    public function readLatestForViewer(int $tenantId, int $reportId): ?array
+    {
+        if ($tenantId <= 0 || $reportId <= 0) {
+            return null;
+        }
+
+        $pdo = $this->pdo ?? Database::getInstance();
+        try {
+            $stmt = $pdo->prepare(
+                "SELECT rev.*
+                   FROM pacs_report_version_pdf_revisions rev
+                   INNER JOIN reports r
+                           ON r.id = rev.report_id
+                          AND r.tenant_id = rev.tenant_id
+                   INNER JOIN report_versions rv
+                           ON rv.id = rev.report_version_row_id
+                          AND rv.report_id = rev.report_id
+                          AND rv.versao = rev.report_version
+                  WHERE rev.tenant_id = :tenant_id
+                    AND rev.report_id = :report_id
+                    AND r.situacao IN ('assinado', 'liberado')
+                    AND rv.acao IN ('assinado', 'liberado')
+                  ORDER BY rev.report_version DESC,
+                           rev.revision_number DESC,
+                           rev.id DESC
+                  LIMIT 1"
+            );
+            $stmt->execute([
+                ':tenant_id' => $tenantId,
+                ':report_id' => $reportId,
+            ]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+            if (in_array($sqlState, ['42P01', '42703', '42S02', '42S22'], true)) {
+                return null;
+            }
+            throw $e;
+        }
+
+        if (!is_array($row)) {
+            return null;
+        }
+
+        return $this->readContent(
+            $row,
+            $tenantId,
+            (int) $row['report_id'],
+            (int) $row['report_version']
+        );
+    }
+
     /** @return array<string,mixed>|null */
     public function findById(int $tenantId, int $revisionId, int $reportId, int $version): ?array
     {
@@ -345,6 +398,7 @@ final class ReportVersionPdfRevisionService
             'path' => $pathReal,
             'revision_id' => (int) $row['id'],
             'revision_number' => (int) $row['revision_number'],
+            'report_version' => $version,
         ];
     }
 
