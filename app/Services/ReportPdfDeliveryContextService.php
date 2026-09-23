@@ -124,8 +124,7 @@ final class ReportPdfDeliveryContextService
                 $customTemplate = $customService->getById($snapshotId, $tenantId);
             }
             if ($customTemplate === null) {
-                $source = (int) ($report['institution_report_layout_id'] ?? 0)
-                    === (int) ($report['report_layout_template_id'] ?? 0)
+                $source = (string) ($report['report_layout_template_source'] ?? '') === 'institution_name'
                     ? ReportCustomTemplateService::SOURCE_INSTITUTION
                     : ReportCustomTemplateService::SOURCE_UNIDADE;
                 $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
