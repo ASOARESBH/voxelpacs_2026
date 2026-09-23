@@ -176,11 +176,11 @@ function slaClass(?string $inicio, ?string $fim = null): string {
 }
 
 /* ─── link de ordenação ──────────────────────────────────────────────────── */
-function sortLink(array $filtros, string $col, string $label): string {
+function sortLink(array $filtros, string $col, string $label, ?string $worklistPath = null): string {
     $ativo = $filtros['ordenar'] === $col;
     $dir   = $ativo && $filtros['direcao'] === 'DESC' ? 'ASC' : 'DESC';
     $icon  = $ativo ? ($filtros['direcao'] === 'DESC' ? 'fa-sort-down' : 'fa-sort-up') : 'fa-sort';
-    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]), 1, $urlWorklist);
+    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]), 1, $worklistPath);
     return "<a href=\"{$url}\" class=\"sort-link\">{$label} <i class=\"fa {$icon}\"></i></a>";
 }
 
@@ -440,18 +440,18 @@ $periodoLabel = [
     <thead>
         <tr>
             <th class="col-check"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
-            <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
-            <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente') ?></th>
-            <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
+            <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo', $urlWorklist) ?></th>
+            <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente', $urlWorklist) ?></th>
+            <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade', $urlWorklist) ?></th>
             <th class="col-modalidades">Modalidades</th>
             <th class="col-prioridade" title="Prioridade DICOM (0040,1003)">Prioridade</th>
             <th class="col-estudo">Estudo</th>
             <th class="col-medico-laudo" title="Médico responsável pelo laudo">
                 <i class="fa fa-user-doctor" style="font-size:.75rem;"></i> Médico
             </th>
-            <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
+            <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante', $urlWorklist) ?></th>
             <th class="col-pedido"><?= htmlspecialchars(t('pedido_medico.coluna')) ?></th>
-            <th class="col-sit"><?= sortLink($filtros,'situacao','Situação') ?></th>
+            <th class="col-sit"><?= sortLink($filtros,'situacao','Situação', $urlWorklist) ?></th>
             <th class="col-sla" title="SLA Padrão e SLA Médico"><i class="fa fa-clock"></i> SLA</th>
             <th class="col-acoes">Ações</th>
         </tr>

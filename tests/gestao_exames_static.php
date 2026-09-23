@@ -54,7 +54,9 @@ $expect(str_contains($controller, '$urlWorklist') && str_contains($controller, "
 $expect(str_contains($view, "t('pedido_medico.coluna')") , 'Coluna PEDIDO não está internacionalizada.');
 $expect(str_contains($view, 'function estudoUrl(array $filtros, int $pagina = 1, ?string $worklistPath = null): string'), 'Helper de URL da Worklist não recebe a rota base explicitamente.');
 $expect(str_contains($view, "in_array(\$worklistPath, ['/estudos', '/gestao-exames'], true)"), 'Helper de URL não limita a rota base a Worklist/ Gestão de Exames.');
-$expect(str_contains($view, "estudoUrl(array_merge(\$filtros, ['ordenar' => \$col, 'direcao' => \$dir]), 1, \$urlWorklist)"), 'Links de ordenação não preservam a rota atual da Worklist.');
+$expect(str_contains($view, 'function sortLink(array $filtros, string $col, string $label, ?string $worklistPath = null): string'), 'Helper de ordenação ainda não recebe a rota base explicitamente.');
+$expect(substr_count($view, 'sortLink($filtros,') >= 5 && substr_count($view, '$urlWorklist)') >= 10, 'Links de ordenação não preservam a rota atual da Worklist.');
+$expect(str_contains($view, "estudoUrl(array_merge(\$filtros, ['ordenar' => \$col, 'direcao' => \$dir]), 1, \$worklistPath)"), 'sortLink não encaminha a rota base recebida ao helper de URL.');
 $expect(substr_count($view, 'estudoUrl($filtros, ') >= 5 && substr_count($view, '$urlWorklist)') >= 5, 'Links de paginação não preservam a rota atual da Worklist.');
 $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi renderizada.');
 $expect(str_contains($view, 'gerenciar-trigger') && str_contains($view, "t('gestao_gerenciar.acao.gerenciar')"), 'Botão Gerenciar não está na Worklist ou não está internacionalizado.');
