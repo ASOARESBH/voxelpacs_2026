@@ -2,6 +2,8 @@
 
 > Preencha uma linha por rota (ou por grupo de rotas do mesmo recurso) assim que ela for tocada/analisada. Não tente preencher tudo de uma vez na primeira sessão — este índice cresce organicamente conforme o projeto é explorado.
 
+> **Escopo:** este é um índice de rotas analisadas, não uma lista completa de todas as definições em `routes/`. A cobertura total deve ser verificada diretamente no código e ampliada em mudanças documentais específicas.
+
 | Método | Rota | Controller/Handler | Autenticação | Propósito | Última verificação |
 |---|---|---|---|---|---|
 | GET | `/platform/servidor-pacs` | `Platform\ServidorPacsController@index` | Platform admin | Dashboard: status Orthanc, roteamentos ativos, card "InstitutionNames no PACS" (união estudos ∪ `bi_negocio_institution_names`) | 2026-07-10 |
@@ -29,7 +31,7 @@
 | GET | `/sla-regras/robo` | `SlaRegrasController@roboConfig` | idem acima | Tela de config do robô: URL pública, token, ativo/inativo, status do lock | 2026-07-18 |
 | POST | `/sla-regras/robo/gerar-token` | `SlaRegrasController@roboGerarToken` | idem acima | Gera novo token (`bin2hex(random_bytes(24))`), invalida o anterior | 2026-07-18 |
 | POST | `/sla-regras/robo/toggle` | `SlaRegrasController@roboToggle` | idem acima | Liga/desliga o robô | 2026-07-18 |
-| GET | `/api/sla-regras/executar` | `SlaRoboController@executar` | **Pública** (token via query string, `hash_equals()`) — precisa estar em `App\Core\Router::$publicRoutes` **e** `public/index.php::$rotasPublicas` (duas listas independentes; achado replicado do caso de `/api/orthanc/ping`) | Dispara `SlaRulesEngineService::executarParaTodosTenants()`; chamada por cron externo (ex: cron-job.org), já que o hosting não tem crontab real | 2026-07-18 |
+| GET | `/api/sla-regras/executar` | `SlaRoboController@executar` | **Pública** (token via query string, `hash_equals()`) — precisa estar em `App\Core\Router::$publicRoutes` **e** `public/index.php::$rotasPublicas` (duas listas independentes; achado replicado do caso de `/api/orthanc/ping`) | Rota HTTP legada que dispara `SlaRulesEngineService::executarParaTodosTenants()`. O mecanismo primário documentado é o cron interno `cron/sync-sla.php`, a cada 5 minutos, sem token na URL; a coexistência HTTP deve permanecer apenas durante a observação autorizada | 2026-09-23 |
 | GET | `/api/medicos/cep/{cep}` | `MedicosController@buscarCep` | Login normal (rota autenticada, não pública) | Busca endereço por CEP via ViaCEP (`https://viacep.com.br/ws/{cep}/json/`), usada por `fetch()` no form de Médicos para autopreencher logradouro/bairro/cidade/estado; primeira integração de CEP do projeto (mesmo padrão estrutural de `Platform\NegociosController::buscarCnpj()`, mas sem `CURLOPT_SSL_VERIFYPEER => false`) | 2026-07-19 |
 | GET/POST | `/usuarios/grupos[...]` (index/novo/store/editar/atualizar/excluir) | `GruposController` | Login normal, escopado por `TenantContext::id()` | CRUD de Grupos (Fase 1 — ver `modules/grupos.md`); `excluir` é toggle de `ativo` (soft delete), não DELETE físico | 2026-08-10 |
 | POST | `/usuarios/grupos/{id}/usuarios/adicionar` | `GruposController@adicionarUsuarios` | idem acima | Vincula 1+ usuários ao grupo (`usuario_ids[]`), guard `usuarioPertenceAoTenant()` contra IDOR | 2026-08-10 |
