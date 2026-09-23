@@ -13,6 +13,11 @@ foreach ([
     'report_versions rv',
     "rv.acao IN ('assinado', 'liberado')",
     'rv.corpo_laudo',
+    "\$report['conteudo'] = ''",
+    "\$report['mascara_conteudo_livre'] = ''",
+    "\$report['mascara_secoes'] = []",
+    "\$report['_historical_report_version_source'] = true",
+    'if (!$historicalSource)',
     'source_content_sha256',
     'DeliveryRequestIdentity::canonicalJson',
 ] as $marker) {

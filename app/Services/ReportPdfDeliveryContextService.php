@@ -104,7 +104,11 @@ final class ReportPdfDeliveryContextService
     /** @param array<string,mixed> $report @return array<string,mixed> */
     private function buildVisualContext(array $report, int $tenantId): array
     {
-        $report = $this->applyMask($report, $tenantId);
+        $historicalSource = (bool) ($report['_historical_report_version_source'] ?? false);
+        if (!$historicalSource) {
+            $report = $this->applyMask($report, $tenantId);
+        }
+        unset($report['_historical_report_version_source']);
         $report = $this->applyInstitutionalChannels($report, $tenantId);
         $report = $this->applyCompanyRegistration($report, $tenantId);
 
@@ -297,6 +301,10 @@ final class ReportPdfDeliveryContextService
         $report['patient_name_given'] = $versionRow['patient_name_given'] ?? null;
         $report['patient_name_middle'] = $versionRow['patient_name_middle'] ?? null;
         $report['patient_name_source'] = $versionRow['patient_name_source'] ?? null;
+        $report['conteudo'] = '';
+        $report['mascara_conteudo_livre'] = '';
+        $report['mascara_secoes'] = [];
+        $report['_historical_report_version_source'] = true;
 
         $sourceContentSha256 = hash('sha256', DeliveryRequestIdentity::canonicalJson([
             'schema_version' => 1,
