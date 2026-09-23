@@ -16,6 +16,10 @@ Existem **dois pares completos** de rota/controller-method/view/tabela para "Uni
 
 `unidades/index.php` lista as DUAS fontes lado a lado (`$unidades` = Sistema A, `$biUnidades` = Sistema B) — cada uma com seu próprio botão de editar apontando pra rota diferente (`/edit` vs `/editar`). Não presumir que uma suplantou a outra sem checar dado real.
 
+## Terceiro cadastro legado — unidades DICOM operacionais
+
+Existe ainda a tabela `bi_tenant_unidades_dicom`, criada pela migration `2026-07-10_negocios_unidades_dicom.sql`, com `tenant_id`, nome, `institution_name`, CNPJ, AE Title e dados de roteamento DICOM. Ela não possui `logo_path` nem `report_layout_template_id`. Na auditoria produtiva de 2026-09-23, o tenant 2 possuía 3 registros ativos nessa tabela; os 3 tinham correspondência por `InstitutionName` com cards visíveis, mas o `UnidadesController::index()` e o resolver visual de `ReportsController`/`ReportPdfDeliveryContextService` não consultam esse cadastro. Por isso esses registros não aparecem no bloco superior “Unidades Cadastradas” e não fornecem logo/template ao PDF. O bloco superior lê `bi_unidades`; os cards inferiores leem `bi_negocio_institution_names`.
+
 ## Arquivos principais
 | Arquivo | Papel |
 |---|---|
@@ -40,4 +44,4 @@ Ver `modules/report-templates.md` para o módulo completo. Resumo: `report_layou
 
 ## Última análise
 Auditoria produtiva do tenant 2 em 2026-09-23: o resolver efetivo prioriza `bi_unidades` quando o `InstitutionName` possui `unidade_id` válido; sem esse vínculo, usa logo/template diretamente de `bi_negocio_institution_names`. Os novos laudos percorrem a mesma resolução no viewer e na materialização do snapshot.
-2026-09-23
+2026-09-23 (reconciliação das fontes `bi_unidades`, `bi_negocio_institution_names` e `bi_tenant_unidades_dicom`)
