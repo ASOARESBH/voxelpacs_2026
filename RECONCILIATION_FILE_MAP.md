@@ -55,7 +55,7 @@ O `.gitignore` passa a bloquear, por padrão, extensões de chaves/certificados,
 
 O backup root-only `bck_git_v1` foi criado e verificado antes da reconciliação. A origem não foi alterada: não houve migration, deploy, reload/restart, mudança de permissão, alteração de banco, alteração de DICOM/Orthanc/WireGuard/Bridge ou transmissão.
 
-Estado final: `HEAD=24dfd97076dafc3cdc767b5a38a4ff3fefd5472d`, branch `reconcile/production-2026-09-23`, status `clean`, PR `#9` aberto com destino `main`; merge não executado. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`), portanto o resultado é inconclusivo; nenhum pacote foi instalado em produção. A suíte foi executada apenas após `composer install` no worktree local.
+Estado final: `HEAD=7d6579e7bbbbbf3405e58708ef3fdd73ec010398`, branch `reconcile/production-2026-09-23`, status `clean`, PR `#9` aberto com destino `main`; merge não executado. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`), portanto o resultado é inconclusivo; o check CI agora falha deliberadamente para impedir falso sucesso. Nenhum pacote foi instalado nesta correção. A suíte anterior foi executada após `composer install` somente no worktree local.
 
 ## Classificação final
 
@@ -65,4 +65,4 @@ Não há conflito funcional identificado na simulação. A view da Worklist pres
 
 A validação read-only encontrou um archive íntegro, com 2.959 entradas de arquivo e 411 diretórios, owner/grupo `root:root`, sem permissões de escrita/leitura mundial e sem symlinks. A release atualmente instalada contém 2.958 arquivos e 411 diretórios; a diferença de um arquivo e a falha dos dois manifestos SHA-256 quando comparados ao contexto atual impedem afirmar equivalência exata da release sem uma revisão adicional. A restauração técnica em staging isolado é possível, mas nenhuma restauração foi executada.
 
-O PHPUnit não descobriu testes (`No tests executed!`). O workflow CI foi endurecido para falhar quando a contagem descoberta for zero, evitando que esse estado seja reportado como sucesso.
+O PHPUnit não descobriu testes (`No tests executed!`). O workflow CI foi endurecido para falhar quando a contagem descoberta for zero, evitando que esse estado seja reportado como sucesso. Checks atuais do PR: PHP Lint `SUCCESS`, PDF A4/QR `SUCCESS`, PHPUnit `FAILURE` pela guarda de zero testes. Classificação atual: `REQUIRES_REVIEW`; o PR permanece aberto e não foi mergeado.
