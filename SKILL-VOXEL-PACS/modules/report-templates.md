@@ -56,13 +56,13 @@ A composição não inventa dados de responsável técnico e usa apenas os campo
 reports.estudo_id → bi_pacs_estudos.institution_name
   → bi_negocio_institution_names.institution_name (match case-insensitive, COLLATE utf8mb4_general_ci)
   → COALESCE(
-       bi_negocio_institution_names.report_layout_template_id,          -- Sistema A (prioridade — dado real)
-       bi_unidades.report_layout_template_id  (via unidade_id)          -- Sistema B (fallback)
+       bi_unidades.report_layout_template_id  (via unidade_id),         -- Unidade vinculada: fonte visual canônica
+       bi_negocio_institution_names.report_layout_template_id            -- Fallback legado do vínculo InstitutionName
      )
   → report_layout_templates.codigo
 ```
 
-Se qualquer elo da cadeia faltar (estudo sem `institution_name` cadastrado em Unidades, unidade sem template escolhido em nenhum dos dois sistemas, `report_layout_template_id` apontando pra um template desativado) **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide isso, chamada uma vez em `ReportsController::pdf()`.
+Os dados visuais seguem a mesma prioridade: logo, nome, CNPJ, endereço, telefone e canais da `bi_unidades` vinculada vencem valores legados preenchidos diretamente em `bi_negocio_institution_names`; estes continuam fallback para o Sistema A ainda não vinculado por `unidade_id`. Se qualquer elo da cadeia faltar (estudo sem `institution_name`, vínculo sem template escolhido, `report_layout_template_id` apontando para template desativado), **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide o código final do layout.
 
 ## Regra de acesso — médico não pode alterar (limitação conhecida)
 

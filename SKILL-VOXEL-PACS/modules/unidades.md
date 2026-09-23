@@ -27,7 +27,7 @@ Existem **dois pares completos** de rota/controller-method/view/tabela para "Uni
 
 ## Template de Laudo — implementado nos dois sistemas (2026-08-11)
 
-Ver `modules/report-templates.md` para o módulo completo. Resumo: `report_layout_template_id` foi adicionado em **ambas** as tabelas (`bi_negocio_institution_names` via `2026-08-11_report_layout_template_institution_names.sql`, `bi_unidades` via `2026-08-11_report_layout_templates.sql`), e o card de seleção existe nas duas views. `ReportsController::pdf()` resolve com `COALESCE(bnin.report_layout_template_id, un.report_layout_template_id)` — funciona independente de qual sistema a unidade em questão usa.
+Ver `modules/report-templates.md` para o módulo completo. Resumo: `report_layout_template_id` foi adicionado em **ambas** as tabelas (`bi_negocio_institution_names` via `2026-08-11_report_layout_template_institution_names.sql`, `bi_unidades` via `2026-08-11_report_layout_templates.sql`), e o card de seleção existe nas duas views. `ReportsController::pdf()` resolve por `InstitutionName` dentro do tenant, prioriza `bi_unidades` quando `unidade_id` está vinculado e usa `bi_negocio_institution_names` somente como fallback compatível; a mesma regra vale para logo, dados cadastrais e canais institucionais.
 
 ## Dependências
 - Depende de: `bi_tenants` (tenant_id), `CnpjLookupService` (busca de CNPJ), `report_layout_templates` (2026-08-11).

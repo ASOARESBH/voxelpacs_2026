@@ -948,7 +948,12 @@ class ReportService {
                 "SELECT bnin.id AS institution_unit_id, un.id AS rich_unit_id,
                         bnin.report_layout_template_id AS institution_report_layout_id,
                         un.report_layout_template_id AS rich_report_layout_id,
-                        COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS layout_id
+                        COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS layout_id,
+                        CASE
+                            WHEN NULLIF(un.report_layout_template_id, 0) IS NOT NULL THEN 'unidade'
+                            WHEN NULLIF(bnin.report_layout_template_id, 0) IS NOT NULL THEN 'institution_name'
+                            ELSE NULL
+                        END AS layout_source
                  FROM bi_negocio_institution_names bnin
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                  WHERE bnin.tenant_id = :tenant_id
@@ -963,7 +968,7 @@ class ReportService {
             if ($layoutService->resolverCodigo((int) ($unit['layout_id'] ?? 0)) !== 'personalizado') {
                 return;
             }
-            $source = ((int) ($unit['institution_report_layout_id'] ?? 0) === (int) ($unit['layout_id'] ?? 0))
+            $source = (string) ($unit['layout_source'] ?? '') === 'institution_name'
                 ? ReportCustomTemplateService::SOURCE_INSTITUTION
                 : ReportCustomTemplateService::SOURCE_UNIDADE;
             $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
