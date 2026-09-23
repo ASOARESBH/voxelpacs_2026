@@ -9,9 +9,11 @@
 $r = $report ?? [];
 $templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
 $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($r);
+$normalizarHtmlClinico = static fn(string $html): string =>
+    \App\Services\ReportClinicalHtmlSanitizer::sanitizeAndNormalize($html);
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
-$corpoLaudo = (string) ($r['corpo_laudo'] ?? '');
+$corpoLaudo = $normalizarHtmlClinico((string) ($r['corpo_laudo'] ?? ''));
 $corpoLaudoAtual = trim(strip_tags($corpoLaudo)) !== '';
 
 // O corpo atual persistido pelo editor é a fonte única de verdade do PDF.
@@ -30,7 +32,7 @@ $secoesPersistidas = [];
 foreach ($rotulosSecoesPdf as $chave => $rotulo) {
     $valor = (string) ($r['secao_' . $chave] ?? '');
     if (trim(strip_tags($valor)) !== '') {
-        $secoesPersistidas[$chave] = ['rotulo' => $rotulo, 'conteudo' => $valor];
+        $secoesPersistidas[$chave] = ['rotulo' => $rotulo, 'conteudo' => $normalizarHtmlClinico($valor)];
     }
 }
 $usarSecoesPersistidas = !$corpoLaudoAtual
@@ -139,20 +141,24 @@ if (!$corpoLaudoAtual && empty($secoesClinicasPdf) && empty($r['mascara_conteudo
             $valor = (string) $r['mascara_secoes'][$chave];
         }
         if (trim(strip_tags($valor)) !== '') {
-            $secoesClinicasPdf[$chave] = ['rotulo' => $rotulo, 'conteudo' => $valor];
+            $secoesClinicasPdf[$chave] = ['rotulo' => $rotulo, 'conteudo' => $normalizarHtmlClinico($valor)];
         }
     }
 }
 
 if (!$corpoLaudoAtual && trim($corpoLaudo) === '') {
     $blocosLegados = array_filter([
-        (string) ($r['secao_exame'] ?? ''),
-        (string) ($r['secao_tecnica'] ?? ''),
-        (string) ($r['secao_achados'] ?? ''),
-        (string) ($r['secao_conclusao'] ?? ''),
-        (string) ($r['secao_recomendacao'] ?? ''),
+        $normalizarHtmlClinico((string) ($r['secao_exame'] ?? '')),
+        $normalizarHtmlClinico((string) ($r['secao_tecnica'] ?? '')),
+        $normalizarHtmlClinico((string) ($r['secao_achados'] ?? '')),
+        $normalizarHtmlClinico((string) ($r['secao_conclusao'] ?? '')),
+        $normalizarHtmlClinico((string) ($r['secao_recomendacao'] ?? '')),
     ], static fn($valor) => trim(strip_tags($valor)) !== '');
-    $corpoLaudo = implode('<br><br>', $blocosLegados);
+    $corpoLaudo = $normalizarHtmlClinico(implode('<br>', $blocosLegados));
+}
+
+foreach ($secoesClinicasPdf as $chave => $secao) {
+    $secoesClinicasPdf[$chave]['conteudo'] = $normalizarHtmlClinico((string) ($secao['conteudo'] ?? ''));
 }
 // PDF consome o mesmo nome visual do laudário; a fonte clínica permanece preservada.
 $paciente = htmlspecialchars(\App\Helpers\DicomPersonName::displayFromStudy($r) ?: 'Paciente', ENT_QUOTES);
