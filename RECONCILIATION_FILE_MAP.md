@@ -55,7 +55,7 @@ O `.gitignore` passa a bloquear, por padrão, extensões de chaves/certificados,
 
 O backup root-only `bck_git_v1` foi criado e verificado antes da reconciliação. A origem não foi alterada: não houve migration, deploy, reload/restart, mudança de permissão, alteração de banco, alteração de DICOM/Orthanc/WireGuard/Bridge ou transmissão.
 
-Estado final: `HEAD=7d6579e7bbbbbf3405e58708ef3fdd73ec010398`, branch `reconcile/production-2026-09-23`, status `clean`, PR `#9` aberto com destino `main`; merge não executado. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`), portanto o resultado é inconclusivo; o check CI agora falha deliberadamente para impedir falso sucesso. Nenhum pacote foi instalado nesta correção. A suíte anterior foi executada após `composer install` somente no worktree local.
+Estado final: o SHA autoritativo é o resultado de `git rev-parse HEAD`; branch `reconcile/production-2026-09-23`, status `clean`, PR `#9` aberto com destino `main`; merge não executado. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`), portanto o resultado é inconclusivo; o check CI agora falha deliberadamente para impedir falso sucesso. Nenhum pacote foi instalado nesta correção. A suíte anterior foi executada após `composer install` somente no worktree local.
 
 ## Classificação final
 
