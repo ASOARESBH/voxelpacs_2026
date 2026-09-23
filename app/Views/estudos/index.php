@@ -8,8 +8,10 @@
  */
 
 /* ─── helpers de URL ─────────────────────────────────────────────────────── */
-function estudoUrl(array $filtros, int $pagina = 1): string {
-    global $urlWorklist;
+function estudoUrl(array $filtros, int $pagina = 1, ?string $worklistPath = null): string {
+    $basePath = in_array($worklistPath, ['/estudos', '/gestao-exames'], true)
+        ? $worklistPath
+        : '/estudos';
     $p = array_merge($filtros, ['pagina' => $pagina]);
     unset($p['situacao_rapida']);
     // Separar modalidades[] (array) dos demais campos escalares
@@ -23,7 +25,7 @@ function estudoUrl(array $filtros, int $pagina = 1): string {
             $query .= ($query ? '&' : '') . 'modalidades%5B%5D=' . rawurlencode($mod);
         }
     }
-    return ($urlWorklist ?? '/estudos') . '?' . $query;
+    return $basePath . '?' . $query;
 }
 
 /* ─── badge de prioridade DICOM (0040,1003) ─────────────────────────────── */
@@ -178,7 +180,7 @@ function sortLink(array $filtros, string $col, string $label): string {
     $ativo = $filtros['ordenar'] === $col;
     $dir   = $ativo && $filtros['direcao'] === 'DESC' ? 'ASC' : 'DESC';
     $icon  = $ativo ? ($filtros['direcao'] === 'DESC' ? 'fa-sort-down' : 'fa-sort-up') : 'fa-sort';
-    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]));
+    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]), 1, $urlWorklist);
     return "<a href=\"{$url}\" class=\"sort-link\">{$label} <i class=\"fa {$icon}\"></i></a>";
 }
 
@@ -858,21 +860,21 @@ $periodoLabel = [
     <?php if ($totalPages > 1): ?>
     <div class="wl-pag-links">
         <?php if ($currentPage > 1): ?>
-            <a href="<?= estudoUrl($filtros, 1) ?>" class="wl-pag-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
-            <a href="<?= estudoUrl($filtros, $currentPage-1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-left"></i></a>
+            <a href="<?= estudoUrl($filtros, 1, $urlWorklist) ?>" class="wl-pag-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage-1, $urlWorklist) ?>" class="wl-pag-btn"><i class="fa fa-chevron-left"></i></a>
         <?php endif; ?>
         <?php
         $start = max(1, $currentPage-2); $end = min($totalPages, $currentPage+2);
         if ($start > 1) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
         for ($pg = $start; $pg <= $end; $pg++):
         ?>
-            <a href="<?= estudoUrl($filtros, $pg) ?>" class="wl-pag-btn <?= $pg===$currentPage?'active':'' ?>"><?= $pg ?></a>
+            <a href="<?= estudoUrl($filtros, $pg, $urlWorklist) ?>" class="wl-pag-btn <?= $pg===$currentPage?'active':'' ?>"><?= $pg ?></a>
         <?php endfor;
         if ($end < $totalPages) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
         ?>
         <?php if ($currentPage < $totalPages): ?>
-            <a href="<?= estudoUrl($filtros, $currentPage+1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-right"></i></a>
-            <a href="<?= estudoUrl($filtros, $totalPages) ?>" class="wl-pag-btn" title="Última"><i class="fa fa-angles-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage+1, $urlWorklist) ?>" class="wl-pag-btn"><i class="fa fa-chevron-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $totalPages, $urlWorklist) ?>" class="wl-pag-btn" title="Última"><i class="fa fa-angles-right"></i></a>
         <?php endif; ?>
     </div>
     <span class="wl-pag-info">Página <?= $currentPage ?> de <?= $totalPages ?></span>

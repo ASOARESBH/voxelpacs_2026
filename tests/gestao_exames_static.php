@@ -50,7 +50,12 @@ $expect(str_contains($routes, "GestaoExamesController@remover") , 'Rota de remo�
 $expect(str_contains($routes, "GestaoExamesController@arquivo") , 'Rota do proxy ausente.');
 $expect(str_contains($controller, 'LEFT JOIN bi_pacs_estudos_pedidos') , 'Join do pedido não está na Worklist.');
 $expect(str_contains($controller, "public function gestao(): void") , 'Ação gestao() ausente no Controller de Estudos.');
+$expect(str_contains($controller, '$urlWorklist') && str_contains($controller, "'/gestao-exames' : '/estudos'"), 'Controller não define a rota base por modo da Worklist.');
 $expect(str_contains($view, "t('pedido_medico.coluna')") , 'Coluna PEDIDO não está internacionalizada.');
+$expect(str_contains($view, 'function estudoUrl(array $filtros, int $pagina = 1, ?string $worklistPath = null): string'), 'Helper de URL da Worklist não recebe a rota base explicitamente.');
+$expect(str_contains($view, "in_array(\$worklistPath, ['/estudos', '/gestao-exames'], true)"), 'Helper de URL não limita a rota base a Worklist/ Gestão de Exames.');
+$expect(str_contains($view, "estudoUrl(array_merge(\$filtros, ['ordenar' => \$col, 'direcao' => \$dir]), 1, \$urlWorklist)"), 'Links de ordenação não preservam a rota atual da Worklist.');
+$expect(substr_count($view, 'estudoUrl($filtros, ') >= 5 && substr_count($view, '$urlWorklist)') >= 5, 'Links de paginação não preservam a rota atual da Worklist.');
 $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi renderizada.');
 $expect(str_contains($view, 'gerenciar-trigger') && str_contains($view, "t('gestao_gerenciar.acao.gerenciar')"), 'Botão Gerenciar não está na Worklist ou não está internacionalizado.');
 $expect(str_contains($view, 'id="gerenciarModal"') && str_contains($view, 'id="gerenciarChatModal"') && str_contains($view, 'id="gerenciarPrioridadeModal"') && str_contains($view, 'id="gerenciarDescricaoModal"'), 'Modais do submenu Gerenciar incompletos.');
