@@ -42,6 +42,18 @@ class ReportPdfService
     }
 
     /**
+     * Incorpora assets institucionais locais no contexto do viewer e do PDF.
+     * Mantém o mesmo resolver usado pelo snapshot canônico.
+     *
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    public function prepareVisualAssets(array $report): array
+    {
+        return $this->prepareLocalAssets($report);
+    }
+
+    /**
      * Renderiza uma versão imutável do PDF sem ações de viewer e com assets
      * locais incorporados. Usado somente por callers que fornecem um snapshot.
      *
@@ -124,7 +136,17 @@ class ReportPdfService
     private function prepareLocalAssets(array $report): array
     {
         $logoPath = trim((string) ($report['unidade_logo_path'] ?? ''));
-        $logoAbsolute = $this->resolvePathWithinRoot($logoPath, $this->publicPath());
+        $logoAbsolute = null;
+        $normalizedLogoPath = ltrim($logoPath, '/');
+        if ($normalizedLogoPath !== ''
+            && str_starts_with($normalizedLogoPath, 'uploads/unidades/')
+            && !str_contains($normalizedLogoPath, '..')
+            && !str_contains($normalizedLogoPath, "\\")) {
+            $logoAbsolute = $this->resolvePathWithinRoot($normalizedLogoPath, $this->publicPath());
+            if ($logoAbsolute === null && defined('STORAGE_PATH')) {
+                $logoAbsolute = $this->resolvePathWithinRoot($normalizedLogoPath, (string) STORAGE_PATH);
+            }
+        }
         if ($logoAbsolute !== null) {
             $report['pdf_snapshot_logo_src'] = $this->dataUri($logoAbsolute);
         }
@@ -153,7 +175,7 @@ class ReportPdfService
 
     private function resolvePathWithinRoot(string $relativePath, string $root): ?string
     {
-        if ($relativePath === '' || str_contains($relativePath, "\0")) {
+        if ($relativePath === '' || $root === '' || str_contains($relativePath, "\0")) {
             return null;
         }
         $rootReal = realpath($root);

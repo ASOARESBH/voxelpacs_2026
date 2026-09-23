@@ -351,7 +351,9 @@ final class ReportCustomTemplateService
         if ($url === '' || !class_exists(QRCode::class) || !class_exists(QROptions::class)) return '';
         try {
             $options = new QROptions([
-                'outputType' => QRCode::OUTPUT_MARKUP_SVG,
+                // Dompdf incorpora PNG Base64 de forma confiável no snapshot;
+                // SVG Base64 permanece no HTML, mas não vira objeto de imagem.
+                'outputType' => QRCode::OUTPUT_IMAGE_PNG,
                 'imageBase64' => true,
                 'scale' => 3,
             ]);

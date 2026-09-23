@@ -53,10 +53,11 @@ mustNotContain('renderSnapshotBinary($visualContext)', $artifact, 'Delivery não
 mustContain('INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id', $snapshot, 'Leitura do snapshot deve ser tenant-scoped.');
 mustContain('hash_equals($expectedHash, strtolower($hash))', $snapshot, 'Leitura deve validar SHA-256.');
 mustContain("!str_starts_with(\$content, '%PDF')", $snapshot, 'Leitura deve validar assinatura PDF.');
-mustContain('storage/report_versions/%d/%d', $snapshot, 'Arquivo deve ficar no storage privado do tenant/report.');
+mustContain("sprintf('report_versions/%d/%d'", $snapshot, 'Arquivo deve ficar no storage privado do tenant/report.');
 
 mustContain('readLatestForReport', $controller, 'Viewer deve buscar o snapshot da versão liberada.');
-mustContain('PDF canônico indisponível.', $controller, 'Viewer deve falhar fechado sem snapshot.');
+mustContain('fallback legado sem snapshot canônico', $controller, 'Laudo histórico sem metadado deve usar somente o fallback explícito.');
+mustContain('Metadado parcial/inválido continua', $controller, 'Metadado parcial ou inválido não pode receber fallback silencioso.');
 mustContain("Content-Disposition: ' . (\$download ? 'attachment' : 'inline')", $controller, 'Viewer/download deve servir o PDF binário canônico.');
 
 fwrite(STDOUT, "Snapshot PDF canônico, conteúdo versionado, isolamento e fail-closed verificados.\n");

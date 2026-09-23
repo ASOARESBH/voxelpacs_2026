@@ -23,6 +23,13 @@ $unidadeEnderecoPartes = array_filter([
     trim((string) ($r['unidade_cidade'] ?? '') . (($r['unidade_estado'] ?? '') !== '' ? '/' . $r['unidade_estado'] : '')),
 ]);
 $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
+$logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? ''));
+if ($logoUnidade === '' && empty($snapshotPdf)) {
+    $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+}
+if ($logoUnidade !== '' && !str_starts_with($logoUnidade, 'data:') && !str_starts_with($logoUnidade, '/')) {
+    $logoUnidade = '/' . $logoUnidade;
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -36,6 +43,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-page { max-width: 760px; margin: 0 auto; padding: 2.25rem 2rem; }
 
         .pdf-header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: .75rem; margin-bottom: 1.25rem; border-bottom: 1px solid #ddd; }
+        .pdf-header-logo { display: block; max-width: 150px; max-height: 52px; object-fit: contain; object-position: left center; margin-bottom: .25rem; }
         .pdf-header-nome { font-size: 1rem; font-weight: 700; color: #111; }
         .pdf-header-contato { font-size: .68rem; color: #888; text-align: right; }
 
@@ -94,7 +102,12 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
     <?php endif; ?>
 
     <div class="pdf-header">
-        <div class="pdf-header-nome"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+        <div>
+            <?php if ($logoUnidade !== ''): ?>
+                <img class="pdf-header-logo" src="<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
+            <?php endif; ?>
+            <div class="pdf-header-nome"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+        </div>
         <div class="pdf-header-contato">
             <?= htmlspecialchars($r['unidade_telefone'] ?? '', ENT_QUOTES) ?>
             <?php if (!empty($r['unidade_telefone']) && !empty($r['unidade_email'])): ?> · <?php endif; ?>

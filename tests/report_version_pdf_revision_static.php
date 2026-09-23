@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $servicePath = $root . '/app/Services/ReportVersionPdfRevisionService.php';
+$resolverPath = $root . '/app/Services/PdfSnapshotPathResolver.php';
 $contextPath = $root . '/app/Services/ReportPdfDeliveryContextService.php';
 $postgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_postgresql.sql';
 $privilegesPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisions_privileges_postgresql.sql';
@@ -11,6 +12,7 @@ $mysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revisio
 $sourceKindPostgresPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revision_source_kind_postgresql.sql';
 $sourceKindMysqlPath = $root . '/database/migrations/2026-09-22_report_version_pdf_revision_source_kind_mysql.sql';
 $service = file_get_contents($servicePath);
+$resolver = file_get_contents($resolverPath);
 $context = file_get_contents($contextPath);
 $postgres = file_get_contents($postgresPath);
 $privileges = file_get_contents($privilegesPath);
@@ -18,7 +20,7 @@ $mysql = file_get_contents($mysqlPath);
 $sourceKindPostgres = file_get_contents($sourceKindPostgresPath);
 $sourceKindMysql = file_get_contents($sourceKindMysqlPath);
 
-foreach (['service' => $service, 'context' => $context, 'postgres' => $postgres, 'privileges' => $privileges, 'mysql' => $mysql, 'source_kind_postgres' => $sourceKindPostgres, 'source_kind_mysql' => $sourceKindMysql] as $name => $content) {
+foreach (['service' => $service, 'resolver' => $resolver, 'context' => $context, 'postgres' => $postgres, 'privileges' => $privileges, 'mysql' => $mysql, 'source_kind_postgres' => $sourceKindPostgres, 'source_kind_mysql' => $sourceKindMysql] as $name => $content) {
     if (!is_string($content) || $content === '') {
         throw new RuntimeException($name . ' da revisão PDF não foi lido.');
     }
@@ -32,7 +34,6 @@ foreach ([
     'SqlHelper::isPostgres()',
     'r.tenant_id = rev.tenant_id',
     'rev.tenant_id = :tenant_id',
-    'str_starts_with($pathReal, $storageRoot . DIRECTORY_SEPARATOR)',
     'hash_equals($expectedHash, strtolower($hash))',
     'str_starts_with($content, \'%PDF\')',
     'writeAtomicallyIfAbsent(',
@@ -45,6 +46,15 @@ foreach ([
 ] as $marker) {
     if (!str_contains($service, $marker)) {
         throw new RuntimeException('Marker ausente no serviço de revisão PDF: ' . $marker);
+    }
+}
+
+foreach ([
+    'self::isWithin($pathReal, $storageRoot)',
+    'str_starts_with($relative, self::normalizePrefix($expectedPrefix))',
+] as $marker) {
+    if (!str_contains($resolver, $marker)) {
+        throw new RuntimeException('Contrato de escopo ausente no resolvedor de paths: ' . $marker);
     }
 }
 

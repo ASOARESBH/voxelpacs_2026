@@ -11,6 +11,17 @@
  *
  * Variáveis recebidas do dispatcher (reports/pdf.php): $r, $paciente, $download.
  */
+$unidadeNome = trim((string) ($r['unidade_nome_fantasia'] ?? ''));
+if ($unidadeNome === '') {
+    $unidadeNome = trim((string) ($r['unidade_razao_social'] ?? $r['tenant_nome'] ?? 'Clínica'));
+}
+$logoUnidade = trim((string) ($r['pdf_snapshot_logo_src'] ?? ''));
+if ($logoUnidade === '' && empty($snapshotPdf)) {
+    $logoUnidade = trim((string) ($r['unidade_logo_path'] ?? ''));
+}
+if ($logoUnidade !== '' && !str_starts_with($logoUnidade, 'data:') && !str_starts_with($logoUnidade, '/')) {
+    $logoUnidade = '/' . $logoUnidade;
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -25,6 +36,7 @@
 
         /* Cabeçalho */
         .pdf-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #003366; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+        .pdf-logo { display: block; max-width: 180px; max-height: 70px; object-fit: contain; object-position: left center; margin-bottom: .35rem; }
         .pdf-logo-area h1 { font-size: 1.4rem; color: #003366; font-weight: 900; letter-spacing: 1px; }
         .pdf-logo-area p { font-size: .75rem; color: #666; }
         .pdf-header-info { text-align: right; font-size: .75rem; color: #555; }
@@ -95,8 +107,12 @@
     <!-- Cabeçalho -->
     <div class="pdf-header">
         <div class="pdf-logo-area">
-            <h1>VOXEL PACS</h1>
-            <p><?= htmlspecialchars($r['tenant_nome'] ?? 'Clínica', ENT_QUOTES) ?></p>
+            <?php if ($logoUnidade !== ''): ?>
+                <img class="pdf-logo" src="<?= htmlspecialchars($logoUnidade, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?>">
+            <?php else: ?>
+                <h1>VOXEL PACS</h1>
+            <?php endif; ?>
+            <p><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></p>
         </div>
         <div class="pdf-header-info">
             <strong>LAUDO MÉDICO</strong>

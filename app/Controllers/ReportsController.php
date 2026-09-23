@@ -15,6 +15,8 @@ class ReportsController extends Controller
     private ReportService $reportService;
     private ReportRepository $reportRepo;
     private EstudosRepository $estudosRepo;
+    private bool $portalPdfRequest = false;
+    private int $portalPdfTenantId = 0;
     public function __construct()
     {
         $this->reportService = new ReportService();
@@ -333,7 +335,8 @@ class ReportsController extends Controller
             $portalReport = $portalService->releasedReportByToken($token, $portalScope);
             if (!$portalReport) { http_response_code(404); echo 'Laudo não encontrado.'; return; }
             $_GET['report_id'] = (int) $portalReport['report_id'];
-            $_GET['portal_patient_pdf'] = '1';
+            $this->portalPdfRequest = true;
+            $this->portalPdfTenantId = (int) ($portalReport['tenant_id'] ?? $portalScope['tenant_id'] ?? 0);
             $portalService->auditLaudoAberto((int) $portalReport['report_id'], $portalScope, $token);
             $this->pdf();
             return;
@@ -437,14 +440,19 @@ class ReportsController extends Controller
     /** Geração interna de PDF; não é exposta diretamente por rota pública. */
     public function pdf(): void
     {
-        $portalPatientPdf = ($_GET['portal_patient_pdf'] ?? '') === '1';
+        $portalPatientPdf = $this->portalPdfRequest;
         if (!$portalPatientPdf && !Auth::check()) {
             $this->redirect('/login');
             return;
         }
         $reportId = (int) ($_GET['report_id'] ?? 0);
         $download = ($_GET['download'] ?? '0') === '1';
-        $tenantId = Auth::tenantId();
+        $tenantId = $portalPatientPdf ? $this->portalPdfTenantId : Auth::tenantId();
+        if ($tenantId <= 0) {
+            http_response_code(404);
+            echo 'Laudo não encontrado.';
+            return;
+        }
 
         if (!$portalPatientPdf && !(new ReportAccessService())->findAuthorizedReport($reportId)) {
             http_response_code(404);
@@ -489,7 +497,7 @@ class ReportsController extends Controller
                         COALESCE(NULLIF(bnin.cidade, ''), un.cidade)                 AS unidade_cidade,
                         COALESCE(NULLIF(bnin.estado, ''), un.estado)                 AS unidade_estado
                  FROM reports r
-                                  JOIN bi_pacs_estudos e ON e.id = r.estudo_id
+                                  JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
@@ -502,10 +510,10 @@ class ReportsController extends Controller
                                               AND {$institutionJoinSql}
 
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = r.tenant_id
-                                  WHERE r.id = :id
+                                  WHERE r.id = :id AND r.tenant_id = :tenant_id
                  LIMIT 1"
             );
-            $stmt->execute([':id' => $reportId]);
+            $stmt->execute([':id' => $reportId, ':tenant_id' => $tenantId]);
             $data = $stmt->fetch(\PDO::FETCH_ASSOC);
             if (!$data) {
                 http_response_code(404);
@@ -645,6 +653,7 @@ class ReportsController extends Controller
                     $download ? 'Download PDF' : 'Visualização PDF'
                 );
             }
+            $data = (new \App\Services\ReportPdfService())->prepareVisualAssets($data);
             // Template visual (camada de apresentação — ver App\Services\ReportLayoutService).
             // Unidade resolvida via institution_name; sem unidade vinculada ou sem
             // template escolhido, cai no padrão (classico_centralizado).
@@ -1314,7 +1323,7 @@ class ReportsController extends Controller
             $pdo = \App\Core\Database::getInstance();
             $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
-                "SELECT bnin.report_layout_template_id,
+                "SELECT COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
                         COALESCE(NULLIF(bnin.nome_fantasia, ''), NULLIF(bnin.razao_social, ''), un.nome_fantasia, un.razao_social) AS unidade_nome,
                         COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path) AS unidade_logo_path
                  FROM bi_negocio_institution_names bnin
