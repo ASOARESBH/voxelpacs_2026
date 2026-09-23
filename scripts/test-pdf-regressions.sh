@@ -12,6 +12,7 @@ tests=(
   tests/report_pdf_snapshot_static.php
   tests/reports_pdf_legacy_snapshot_static.php
   tests/report_version_pdf_snapshot_static.php
+  tests/report_version_pdf_snapshot_metadata_static.php
   tests/report_version_pdf_revision_static.php
   tests/report_version_pdf_historical_source_static.php
   tests/report_pdf_revision_viewer_static.php
