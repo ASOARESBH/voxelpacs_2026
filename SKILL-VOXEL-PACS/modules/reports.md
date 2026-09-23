@@ -120,6 +120,8 @@ O link público `/reports/r/{token}/pdf` resolve primeiro o token no escopo do p
 
 QR institucional de snapshot é gerado localmente como PNG Base64. SVG Base64 pode permanecer no HTML sem ser incorporado como objeto de imagem pelo Dompdf; por isso, o teste de renderização deve confirmar simultaneamente `PAGES=1`, texto dentro de `595,28 pt` e pelo menos um objeto de imagem. O QR de validação digital legado é um fluxo separado e não é incluído automaticamente no Moderno Lateral por esta regra.
 
+O gate de CI/CD `scripts/test-pdf-regressions.sh` deve ser executado com `poppler-utils` instalado e falhar fechado. Ele valida os contratos estáticos, renderiza fixtures controlados em Dompdf, exige uma página A4 (`595,28 x 841,89 pt`), rejeita texto fora da largura da página e confirma que o QR institucional PNG foi incorporado como objeto de imagem. O workflow não deve usar `continue-on-error` para lint, PHPUnit ou regressões PDF.
+
 Os campos `pdf_snapshot_path` de `report_versions` e `pacs_report_version_pdf_revisions` persistem caminhos relativos ao `STORAGE_PATH`, como `report_versions/{tenant_id}/{report_id}/...`. `PdfSnapshotPathResolver` resolve o caminho no ambiente atual e exige que o arquivo permaneça dentro do prefixo tenant/report/version esperado. Caminhos absolutos legados só são aceitos quando ainda apontam para o storage atual e para o mesmo escopo; não há fallback para caminho absoluto de outra release ou de produção.
 
 ## Última análise
