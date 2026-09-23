@@ -124,5 +124,7 @@ O gate de CI/CD `scripts/test-pdf-regressions.sh` deve ser executado com `popple
 
 Os campos `pdf_snapshot_path` de `report_versions` e `pacs_report_version_pdf_revisions` persistem caminhos relativos ao `STORAGE_PATH`, como `report_versions/{tenant_id}/{report_id}/...`. `PdfSnapshotPathResolver` resolve o caminho no ambiente atual e exige que o arquivo permaneça dentro do prefixo tenant/report/version esperado. Caminhos absolutos legados só são aceitos quando ainda apontam para o storage atual e para o mesmo escopo; não há fallback para caminho absoluto de outra release ou de produção.
 
+Para versões assinadas/liberadas sem snapshot canônico, a correção histórica usa `ReportVersionPdfRevisionService::createFromHistoricalReportVersion()`. Essa origem lê exclusivamente `report_versions` da mesma `tenant_id`/report/version, calcula `source_content_sha256` sobre a linha histórica e grava a revisão com `source_kind=historical_report_version`; `reports.corpo_laudo` não é fonte de conteúdo. `reports`, `bi_pacs_estudos` e os cadastros de unidade entram apenas como metadados tenant-scoped de estudo, template, logo e canais institucionais. A migration é aditiva e não faz backfill automático; qualquer lote deve ser pré-auditado, limitado por tenant, idempotente por `revision_key` e bloqueado quando a versão histórica não tiver conteúdo clínico válido.
+
 ## Última análise
 2026-09-22

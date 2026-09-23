@@ -13,6 +13,7 @@ tests=(
   tests/reports_pdf_legacy_snapshot_static.php
   tests/report_version_pdf_snapshot_static.php
   tests/report_version_pdf_revision_static.php
+  tests/report_version_pdf_historical_source_static.php
   tests/report_pdf_revision_viewer_static.php
   tests/report_pdf_unit_branding_static.php
   tests/report_delivery_pdf_visual_static.php

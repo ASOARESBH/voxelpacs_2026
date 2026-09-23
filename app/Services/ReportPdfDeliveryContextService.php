@@ -61,6 +61,33 @@ final class ReportPdfDeliveryContextService
         return $this->buildVisualContext($report, $tenantId);
     }
 
+    /**
+     * Constrói uma revisão histórica usando somente o conteúdo da linha
+     * report_versions indicada. O report atual fornece apenas metadados de
+     * estudo/unidade necessários à apresentação e é sempre filtrado por tenant.
+     *
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    public function buildFromHistoricalVersion(array $job): array
+    {
+        [$tenantId, $reportId, $studyId, $version] = $this->validateJob($job);
+        $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
+        [$report, $sourceContentSha256] = $this->applyHistoricalVersion(
+            $report,
+            $tenantId,
+            $reportId,
+            $version
+        );
+        if (!ReportClinicalContentService::hasReportContent($report)) {
+            throw new RuntimeException('Versão histórica do PDF sem conteúdo clínico válido.');
+        }
+
+        $context = $this->buildVisualContext($report, $tenantId);
+        $context['source_content_sha256'] = $sourceContentSha256;
+        return $context;
+    }
+
     /** @param array<string,mixed> $job @return array{0:int,1:int,2:int,3:int} */
     private function validateJob(array $job): array
     {
@@ -234,6 +261,68 @@ final class ReportPdfDeliveryContextService
     }
 
     /** @param array<string,mixed> $report @return array<string,mixed> */
+    /** @param array<string,mixed> $report @return array{0:array<string,mixed>,1:string} */
+    private function applyHistoricalVersion(array $report, int $tenantId, int $reportId, int $version): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT rv.id AS report_version_row_id, rv.versao, rv.acao, rv.created_at,
+                    rv.corpo_laudo, rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
+                    rv.secao_conclusao, rv.secao_recomendacao,
+                    rv.patient_name_family, rv.patient_name_given,
+                    rv.patient_name_middle, rv.patient_name_source
+               FROM report_versions rv
+               INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id
+              WHERE rv.report_id = :report_id
+                AND rv.versao = :version
+                AND rv.acao IN ('assinado', 'liberado')
+                AND r.situacao IN ('assinado', 'liberado')"
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'version' => $version,
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== 1 || !is_array($rows[0])) {
+            throw new RuntimeException('Versão histórica do PDF não é única ou não está liberada.');
+        }
+
+        $versionRow = $rows[0];
+        $report['report_version_row_id'] = (int) $versionRow['report_version_row_id'];
+        $report['corpo_laudo'] = (string) ($versionRow['corpo_laudo'] ?? '');
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
+            $report['secao_' . $section] = (string) ($versionRow['secao_' . $section] ?? '');
+        }
+        $report['patient_name_family'] = $versionRow['patient_name_family'] ?? null;
+        $report['patient_name_given'] = $versionRow['patient_name_given'] ?? null;
+        $report['patient_name_middle'] = $versionRow['patient_name_middle'] ?? null;
+        $report['patient_name_source'] = $versionRow['patient_name_source'] ?? null;
+
+        $sourceContentSha256 = hash('sha256', DeliveryRequestIdentity::canonicalJson([
+            'schema_version' => 1,
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $version,
+            'report_version_row_id' => (int) $versionRow['report_version_row_id'],
+            'acao' => (string) $versionRow['acao'],
+            'created_at' => (string) $versionRow['created_at'],
+            'content' => [
+                'corpo_laudo' => (string) ($versionRow['corpo_laudo'] ?? ''),
+                'secao_exame' => (string) ($versionRow['secao_exame'] ?? ''),
+                'secao_tecnica' => (string) ($versionRow['secao_tecnica'] ?? ''),
+                'secao_achados' => (string) ($versionRow['secao_achados'] ?? ''),
+                'secao_conclusao' => (string) ($versionRow['secao_conclusao'] ?? ''),
+                'secao_recomendacao' => (string) ($versionRow['secao_recomendacao'] ?? ''),
+                'patient_name_family' => $versionRow['patient_name_family'] ?? null,
+                'patient_name_given' => $versionRow['patient_name_given'] ?? null,
+                'patient_name_middle' => $versionRow['patient_name_middle'] ?? null,
+                'patient_name_source' => $versionRow['patient_name_source'] ?? null,
+            ],
+        ]));
+
+        return [$report, $sourceContentSha256];
+    }
+
     private function applyMask(array $report, int $tenantId): array
     {
         $templateId = (int) ($report['template_id'] ?? 0);

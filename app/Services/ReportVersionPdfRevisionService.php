@@ -39,7 +39,36 @@ final class ReportVersionPdfRevisionService
         string $reasonCode = 'visual_renderer_correction',
         ?int $createdBy = null
     ): array {
-        return $this->createWithContextSource($tenantId, $reportId, $version, $reasonCode, $createdBy, false);
+        return $this->createWithContextSource(
+            $tenantId,
+            $reportId,
+            $version,
+            $reasonCode,
+            $createdBy,
+            'canonical_snapshot'
+        );
+    }
+
+    /**
+     * Cria uma revisão operacional a partir exclusivamente dos campos da
+     * report_versions histórica indicada. Nunca usa reports.corpo_laudo.
+     *
+     * @return array<string,mixed>
+     */
+    public function createFromHistoricalReportVersion(
+        int $tenantId,
+        int $reportId,
+        int $version,
+        ?int $createdBy = null
+    ): array {
+        return $this->createWithContextSource(
+            $tenantId,
+            $reportId,
+            $version,
+            'visual_renderer_correction',
+            $createdBy,
+            'historical_report_version'
+        );
     }
 
     /**
@@ -60,7 +89,7 @@ final class ReportVersionPdfRevisionService
             $version,
             'operational_replacement',
             $createdBy,
-            true
+            'current_report_body'
         );
     }
 
@@ -73,49 +102,63 @@ final class ReportVersionPdfRevisionService
         int $version,
         string $reasonCode,
         ?int $createdBy,
-        bool $useCurrentReportBody
+        string $sourceKind
     ): array {
         $reasonCode = trim($reasonCode);
         if (!in_array($reasonCode, ['visual_renderer_correction', 'operational_replacement'], true)) {
             throw new RuntimeException('Motivo de revisão PDF inválido.');
+        }
+        if (!in_array($sourceKind, ['canonical_snapshot', 'current_report_body', 'historical_report_version'], true)) {
+            throw new RuntimeException('Fonte da revisão PDF inválida.');
         }
         if ($tenantId <= 0 || $reportId <= 0 || $version <= 0 || ($createdBy !== null && $createdBy <= 0)) {
             throw new RuntimeException('Identidade inválida para revisão PDF.');
         }
 
         $identity = $this->loadVersionIdentity($tenantId, $reportId, $version);
-        $sourceKind = $useCurrentReportBody ? 'current_report_body' : 'canonical_snapshot';
-        $sourceHash = null;
-        if (!$useCurrentReportBody) {
+        $sourcePdfSnapshotSha256 = null;
+        if ($sourceKind === 'canonical_snapshot') {
             $source = (new ReportVersionPdfSnapshotService($this->pdo))->readForJob([
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
                 'report_version' => $version,
             ]);
-            $sourceHash = strtolower((string) $source['sha256']);
+            $sourcePdfSnapshotSha256 = strtolower((string) $source['sha256']);
         }
         $contextBuilder = new ReportPdfDeliveryContextService($this->pdo);
-        $context = $useCurrentReportBody
-            ? $contextBuilder->buildFromCurrentReport([
+        $context = match ($sourceKind) {
+            'current_report_body' => $contextBuilder->buildFromCurrentReport([
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
                 'estudo_id' => (int) $identity['estudo_id'],
                 'report_version' => $version,
-            ])
-            : $contextBuilder->build([
+            ]),
+            'historical_report_version' => $contextBuilder->buildFromHistoricalVersion([
+                'tenant_id' => $tenantId,
+                'report_id' => $reportId,
+                'estudo_id' => (int) $identity['estudo_id'],
+                'report_version' => $version,
+            ]),
+            default => $contextBuilder->build([
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
             'estudo_id' => (int) $identity['estudo_id'],
             'report_version' => $version,
-            ]);
+            ]),
+        };
+        $sourceContentSha256 = $sourceKind === 'historical_report_version'
+            ? strtolower((string) ($context['source_content_sha256'] ?? ''))
+            : null;
         $binary = (new ReportPdfService())->renderSnapshotBinary($context);
         $this->assertPdf($binary);
 
         $pdfHash = strtolower(hash('sha256', $binary));
         $pdfSize = strlen($binary);
-        $sourceHash ??= $pdfHash;
-        if (!preg_match('/^[0-9a-f]{64}$/', $sourceHash)) {
-            throw new RuntimeException('Hash da fonte da revisão PDF inválido.');
+        if ($sourceKind === 'canonical_snapshot' && !preg_match('/^[0-9a-f]{64}$/', (string) $sourcePdfSnapshotSha256)) {
+            throw new RuntimeException('Hash do snapshot-fonte da revisão PDF inválido.');
+        }
+        if ($sourceKind === 'historical_report_version' && !preg_match('/^[0-9a-f]{64}$/', (string) $sourceContentSha256)) {
+            throw new RuntimeException('Hash do conteúdo histórico da revisão PDF inválido.');
         }
         $revisionKey = hash('sha256', DeliveryRequestIdentity::canonicalJson([
             'schema_version' => self::SCHEMA_VERSION,
@@ -124,7 +167,8 @@ final class ReportVersionPdfRevisionService
             'report_version' => $version,
             'report_version_row_id' => (int) $identity['report_version_row_id'],
             'source_kind' => $sourceKind,
-            'source_pdf_snapshot_sha256' => $sourceHash,
+            'source_pdf_snapshot_sha256' => $sourcePdfSnapshotSha256,
+            'source_content_sha256' => $sourceContentSha256,
             'pdf_snapshot_sha256' => $pdfHash,
             'pdf_snapshot_size_bytes' => $pdfSize,
             'renderer' => self::RENDERER,
@@ -179,12 +223,14 @@ final class ReportVersionPdfRevisionService
 
             $insertSql = 'INSERT INTO pacs_report_version_pdf_revisions
                     (tenant_id, report_id, report_version, report_version_row_id, revision_number,
-                     revision_key, source_kind, source_pdf_snapshot_sha256, pdf_snapshot_path, pdf_snapshot_sha256,
+                     revision_key, source_kind, source_pdf_snapshot_sha256, source_content_sha256,
+                     pdf_snapshot_path, pdf_snapshot_sha256,
                      pdf_snapshot_size_bytes, pdf_snapshot_renderer, pdf_snapshot_schema_version,
                      reason_code, created_by)
                  VALUES
                     (:tenant_id, :report_id, :report_version, :report_version_row_id, :revision_number,
-                     :revision_key, :source_kind, :source_pdf_snapshot_sha256, :pdf_snapshot_path, :pdf_snapshot_sha256,
+                     :revision_key, :source_kind, :source_pdf_snapshot_sha256, :source_content_sha256,
+                     :pdf_snapshot_path, :pdf_snapshot_sha256,
                      :pdf_snapshot_size_bytes, :pdf_snapshot_renderer, :pdf_snapshot_schema_version,
                      :reason_code, :created_by)';
             $insertSql .= SqlHelper::isPostgres()
@@ -199,7 +245,8 @@ final class ReportVersionPdfRevisionService
                 ':revision_number' => $revisionNumber,
                 ':revision_key' => $revisionKey,
                 ':source_kind' => $sourceKind,
-                ':source_pdf_snapshot_sha256' => $sourceHash,
+                ':source_pdf_snapshot_sha256' => $sourcePdfSnapshotSha256,
+                ':source_content_sha256' => $sourceContentSha256,
                      ':pdf_snapshot_path' => $relativePath,
                 ':pdf_snapshot_sha256' => $pdfHash,
                 ':pdf_snapshot_size_bytes' => $pdfSize,
@@ -241,7 +288,8 @@ final class ReportVersionPdfRevisionService
             'revision_number' => $revisionNumber,
             'revision_key' => $revisionKey,
             'source_kind' => $sourceKind,
-            'source_pdf_snapshot_sha256' => $sourceHash,
+            'source_pdf_snapshot_sha256' => $sourcePdfSnapshotSha256,
+            'source_content_sha256' => $sourceContentSha256,
             'pdf_snapshot_path' => $path,
             'pdf_snapshot_sha256' => $pdfHash,
             'pdf_snapshot_size_bytes' => $pdfSize,
@@ -450,7 +498,12 @@ final class ReportVersionPdfRevisionService
             'revision_number' => (int) $row['revision_number'],
             'revision_key' => (string) $row['revision_key'],
             'source_kind' => (string) $row['source_kind'],
-            'source_pdf_snapshot_sha256' => (string) $row['source_pdf_snapshot_sha256'],
+            'source_pdf_snapshot_sha256' => $row['source_pdf_snapshot_sha256'] !== null
+                ? (string) $row['source_pdf_snapshot_sha256']
+                : null,
+            'source_content_sha256' => $row['source_content_sha256'] !== null
+                ? (string) $row['source_content_sha256']
+                : null,
             'pdf_snapshot_path' => (string) $row['pdf_snapshot_path'],
             'pdf_snapshot_sha256' => (string) $row['pdf_snapshot_sha256'],
             'pdf_snapshot_size_bytes' => (int) $row['pdf_snapshot_size_bytes'],
