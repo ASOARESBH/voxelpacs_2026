@@ -240,7 +240,7 @@ class ReportService {
      * POST /reports/save — autosave (modo=auto), salvar rascunho ou salvar explícito.
      */
     public function salvar(int $reportId, array $secoes, string $modo, ?int $templateId = null): array {
-        $secoes = ReportClinicalHtmlSanitizer::sanitizeSections($secoes);
+        $secoes = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections($secoes);
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
@@ -393,7 +393,9 @@ class ReportService {
         // O schema operacional guarda as cinco seções em colunas secao_*;
         // versões legadas podem ter JSON em conteudo. A assinatura deve usar o
         // mesmo conteúdo que o editor e o PDF exibem, nunca somente o JSON.
-        $secoesAtuais = $this->extrairSecoesDoReport($report);
+        $secoesAtuais = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections(
+            $this->extrairSecoesDoReport($report)
+        );
         if (!$this->secoesTemConteudo($secoesAtuais)) {
             Logger::warning('[ReportService::assinar] laudo vazio após leitura do report', [
                 'report_id' => $reportId,
@@ -676,7 +678,9 @@ class ReportService {
             return ['ok' => false, 'error' => 'assinatura_persistencia_falhou'];
         }
 
-        $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
+        $conteudo = ['secoes' => ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections(
+            $this->extrairSecoesDoReport($report)
+        )];
         try {
             $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
         } catch (\InvalidArgumentException $e) {
@@ -851,6 +855,7 @@ class ReportService {
                 $conteudo['secoes'][$chave] = property_exists($version, $campo) ? (string) ($version->{$campo} ?? '') : '';
             }
         }
+        $conteudo = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections($conteudo);
         $userId = Auth::userId();
 
         $this->repo->atualizarConteudo($reportId, $conteudo, 'rascunho');
@@ -948,7 +953,12 @@ class ReportService {
                 "SELECT bnin.id AS institution_unit_id, un.id AS rich_unit_id,
                         bnin.report_layout_template_id AS institution_report_layout_id,
                         un.report_layout_template_id AS rich_report_layout_id,
-                        COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS layout_id
+                        COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS layout_id,
+                        CASE
+                            WHEN NULLIF(un.report_layout_template_id, 0) IS NOT NULL THEN 'unidade'
+                            WHEN NULLIF(bnin.report_layout_template_id, 0) IS NOT NULL THEN 'institution_name'
+                            ELSE NULL
+                        END AS layout_source
                  FROM bi_negocio_institution_names bnin
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                  WHERE bnin.tenant_id = :tenant_id
@@ -963,7 +973,7 @@ class ReportService {
             if ($layoutService->resolverCodigo((int) ($unit['layout_id'] ?? 0)) !== 'personalizado') {
                 return;
             }
-            $source = ((int) ($unit['institution_report_layout_id'] ?? 0) === (int) ($unit['layout_id'] ?? 0))
+            $source = (string) ($unit['layout_source'] ?? '') === 'institution_name'
                 ? ReportCustomTemplateService::SOURCE_INSTITUTION
                 : ReportCustomTemplateService::SOURCE_UNIDADE;
             $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION

@@ -49,6 +49,10 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 `ReportsController::pdf()` + `app/Views/reports/pdf.php` mantêm a visualização HTML e a impressão do rascunho. Para versões `assinado`/`liberado`, a rota serve o PDF binário canônico privado criado uma única vez no ato da assinatura/liberação por `ReportVersionPdfSnapshotService`; `?download=1` apenas muda a disposição para download. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
 
+### Normalização estrutural do HTML clínico (2026-09-23)
+
+`ReportClinicalHtmlSanitizer::sanitizeAndNormalize()` separa segurança de apresentação: remove parágrafos vazios consecutivos, quebras redundantes, `&nbsp;`, caracteres invisíveis e margens inline coladas, mas preserva texto, ênfase, alinhamento, listas, tabelas, headings e links HTTPS. `sanitizeAndNormalizeSections()` é aplicada em `ReportService::salvar()`, `restoreVersion()`, `assinar()` e `liberarAssinado()` como defesa de persistência. O editor Quill aplica a mesma compactação na carga, colagem e extração; `pdf.php` e o template personalizado normalizam novamente antes do renderer. Snapshots binários já persistidos não são reescritos automaticamente: a regra vale para novos snapshots, revisões operacionais e fallback legado renderizado.
+
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 
 A coluna esquerda de `app/Views/reports/show.php` é uma sequência clínica única, em largura integral: **Paciente → Exame → Medidas disponíveis do viewer → Chat do laudo → Peer Review (condicional) → Histórico do Paciente → ações DICOM/Timeline/Comparativos**. O card de Equipamento não existe no checkout atual e não deve ser recriado sem requisito clínico específico.
@@ -120,7 +124,17 @@ O link público `/reports/r/{token}/pdf` resolve primeiro o token no escopo do p
 
 QR institucional de snapshot é gerado localmente como PNG Base64. SVG Base64 pode permanecer no HTML sem ser incorporado como objeto de imagem pelo Dompdf; por isso, o teste de renderização deve confirmar simultaneamente `PAGES=1`, texto dentro de `595,28 pt` e pelo menos um objeto de imagem. O QR de validação digital legado é um fluxo separado e não é incluído automaticamente no Moderno Lateral por esta regra.
 
+O gate de CI/CD `scripts/test-pdf-regressions.sh` deve ser executado com `poppler-utils` instalado e falhar fechado. Ele valida os contratos estáticos, renderiza fixtures controlados em Dompdf, exige uma página A4 (`595,28 x 841,89 pt`), rejeita texto fora da largura da página e confirma que o QR institucional PNG foi incorporado como objeto de imagem. O workflow não deve usar `continue-on-error` para lint, PHPUnit ou regressões PDF.
+
 Os campos `pdf_snapshot_path` de `report_versions` e `pacs_report_version_pdf_revisions` persistem caminhos relativos ao `STORAGE_PATH`, como `report_versions/{tenant_id}/{report_id}/...`. `PdfSnapshotPathResolver` resolve o caminho no ambiente atual e exige que o arquivo permaneça dentro do prefixo tenant/report/version esperado. Caminhos absolutos legados só são aceitos quando ainda apontam para o storage atual e para o mesmo escopo; não há fallback para caminho absoluto de outra release ou de produção.
 
+Para versões assinadas/liberadas sem snapshot canônico, a correção histórica usa `ReportVersionPdfRevisionService::createFromHistoricalReportVersion()`. Essa origem lê exclusivamente `report_versions` da mesma `tenant_id`/report/version, calcula `source_content_sha256` sobre a linha histórica e grava a revisão com `source_kind=historical_report_version`; `reports.corpo_laudo` não é fonte de conteúdo. `reports`, `bi_pacs_estudos` e os cadastros de unidade entram apenas como metadados tenant-scoped de estudo, template, logo e canais institucionais. A migration é aditiva e não faz backfill automático; qualquer lote deve ser pré-auditado, limitado por tenant, idempotente por `revision_key` e bloqueado quando a versão histórica não tiver conteúdo clínico válido.
+
+Na origem `historical_report_version`, os campos `conteudo`, `mascara_conteudo_livre` e `mascara_secoes` herdados do report atual são neutralizados e a máscara atual não é reaplicada. Assim, nenhum conteúdo clínico ou template de outra versão pode contaminar a revisão histórica.
+
+Quando uma versão bloqueada não tem snapshot nem conteúdo histórico, mas existe um PDF já entregue e comprovadamente vinculado ao mesmo `tenant_id`/report/version, `ReportVersionPdfRevisionService::createFromDeliveredPdfArtifact()` pode recuperar esse binário sem regenerá-lo. A revisão usa `source_kind=delivery_artifact`, registra o ID/hash/tamanho do artifact entregue, exige Job `delivered`, preserva o artifact original e nunca o promove a snapshot canônico. Sem vínculo exato e validação de `%PDF`, hash, tamanho e storage, a versão permanece bloqueada.
+
+Lotes de correção visual devem selecionar somente a versão assinada/liberada mais recente com `versao > 0` e conteúdo histórico clínico válido. Registros legados com `versao = 0`, conteúdo ausente ou versão histórica não única permanecem bloqueados; não se deve inferir a versão nem substituir o conteúdo sem autorização operacional explícita. A materialização em lote cria apenas revisões operacionais idempotentes, preservando `report_versions`, snapshots canônicos e artifacts de delivery.
+
 ## Última análise
-2026-09-22
+2026-09-23

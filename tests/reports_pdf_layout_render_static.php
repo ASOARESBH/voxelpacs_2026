@@ -42,6 +42,12 @@ $html = (string) ob_get_clean();
 if (strpos($html, '.pdf-header, .pdf-patient { width: 174mm; max-width: 174mm; min-width: 0; }') === false) {
     throw new RuntimeException('O cabeçalho print não está limitado à largura útil A4.');
 }
+if (preg_match('/<img[^>]+class="voxel-institutional-qr"[^>]+src="data:image\/png;base64,[A-Za-z0-9+\/=]+"/s', $html) !== 1) {
+    throw new RuntimeException('O QR institucional não foi materializado como PNG Base64 no HTML do snapshot.');
+}
+if (str_contains($html, 'data:image/svg+xml;base64,')) {
+    throw new RuntimeException('O QR institucional não pode depender de SVG Base64 no snapshot.');
+}
 
 $dompdf = new Dompdf\Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true]);
 $dompdf->getOptions()->setDefaultMediaType('print');
@@ -64,6 +70,12 @@ try {
         $failures[] = 'pdfinfo não retornou o número de páginas.';
     } elseif ((int) $pagesMatch[1] !== 1) {
         $failures[] = 'O snapshot visual deve ocupar uma única página no caso controlado.';
+    }
+    if (preg_match('/^Page size:\s*([0-9.]+)\s+x\s+([0-9.]+)/m', $pageText, $sizeMatch) !== 1
+        || abs((float) $sizeMatch[1] - 595.28) > 0.20
+        || abs((float) $sizeMatch[2] - 841.89) > 0.20
+    ) {
+        $failures[] = 'O PDF não foi materializado nas dimensões A4 esperadas.';
     }
 
     $bboxPath = $path . '.bbox';
