@@ -49,14 +49,20 @@ A comparação de trees remotos foi feita sem atualizar o clone local por conte�
 
 ## Regra de segurança aplicada
 
-O `.gitignore` passa a bloquear, por padrão, extensões de chaves/certificados, dumps, SQL, backups e a árvore de storage. Há exceções explícitas somente para `database/migrations/**/*.sql`, `database/seeds/**/*.sql` e o exemplo público de ambiente. Nenhum segredo ou arquivo clínico foi adicionado ao staging.
+O `.gitignore` passa a bloquear, por padrão, extensões de chaves/certificados, dumps, backups, diretórios de infraestrutura e a árvore de storage. SQL e Markdown legítimos permanecem versionáveis; nenhum segredo ou arquivo clínico foi adicionado ao staging.
 
 ## Estado operacional
 
 O backup root-only `bck_git_v1` foi criado e verificado antes da reconciliação. A origem não foi alterada: não houve migration, deploy, reload/restart, mudança de permissão, alteração de banco, alteração de DICOM/Orthanc/WireGuard/Bridge ou transmissão.
 
-A branch está em merge sem commit para permitir revisão de diff, secret scan, lint, validação de migrations e testes. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`); nenhum pacote foi instalado em produção. A suíte foi executada apenas após `composer install` no worktree local.
+Estado final: `HEAD=24dfd97076dafc3cdc767b5a38a4ff3fefd5472d`, branch `reconcile/production-2026-09-23`, status `clean`, PR `#9` aberto com destino `main`; merge não executado. Composer validate passou, o lint PHP não encontrou falhas, as regressões estáticas passaram e o gate PDF passou com 17/17 testes. O PHPUnit foi executado, mas não encontrou testes PHPUnit nesse projeto (`No tests executed!`), portanto o resultado é inconclusivo; nenhum pacote foi instalado em produção. A suíte foi executada apenas após `composer install` no worktree local.
 
 ## Classificação final
 
-Não há conflito funcional identificado na simulação. A view da Worklist preserva `target="_blank"` e `rel="noopener noreferrer"`; as quatro migrations são aditivas, com rollback documentado e não foram aplicadas; o `.gitignore` não ignora migrations, seeds ou `.env.example`. O commit de reconciliação ainda depende da revisão final do diff staged e do secret scan; a `main` não será alterada diretamente.
+Não há conflito funcional identificado na simulação. A view da Worklist preserva `target="_blank"` e `rel="noopener noreferrer"`; as quatro migrations são aditivas, com rollback documentado e não foram aplicadas; o `.gitignore` mantém `.env.example`, migrations, seeds, documentação e SQL legítimo versionáveis, enquanto protege ambientes e artefatos operacionais. A `main` não foi alterada diretamente.
+
+## Backup e PHPUnit
+
+A validação read-only encontrou um archive íntegro, com 2.959 entradas de arquivo e 411 diretórios, owner/grupo `root:root`, sem permissões de escrita/leitura mundial e sem symlinks. A release atualmente instalada contém 2.958 arquivos e 411 diretórios; a diferença de um arquivo e a falha dos dois manifestos SHA-256 quando comparados ao contexto atual impedem afirmar equivalência exata da release sem uma revisão adicional. A restauração técnica em staging isolado é possível, mas nenhuma restauração foi executada.
+
+O PHPUnit não descobriu testes (`No tests executed!`). O workflow CI foi endurecido para falhar quando a contagem descoberta for zero, evitando que esse estado seja reportado como sucesso.
