@@ -39,4 +39,5 @@ Ver `modules/report-templates.md` para o módulo completo. Resumo: `report_layou
 `UnidadesController` não checa perfil/role em nenhum método (nos dois sistemas) — só `Auth::check()` (global) e escopo de tenant. Qualquer usuário autenticado do tenant (médico incluso) pode criar/editar/excluir Unidade, incluindo CNPJ, endereço, logo e template de laudo. O link "Unidades" no menu também não é condicionado por perfil. Corrigir exige checagem explícita de perfil dentro do controller — mudança de controle de acesso mais ampla que qualquer campo específico, fora do escopo de qualquer tarefa que só mexeu num campo desta tela até agora. Ver `docs/PENDENCIAS_CONHECIDAS.md`.
 
 ## Última análise
-2026-08-11
+Auditoria produtiva do tenant 2 em 2026-09-23: o resolver efetivo prioriza `bi_unidades` quando o `InstitutionName` possui `unidade_id` válido; sem esse vínculo, usa logo/template diretamente de `bi_negocio_institution_names`. Os novos laudos percorrem a mesma resolução no viewer e na materialização do snapshot.
+2026-09-23
