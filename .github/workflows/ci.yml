@@ -32,6 +32,9 @@ jobs:
       - name: Verify Composer tree after install
         run: bash scripts/verify-composer-tree.sh
 
+      - name: Validate deployment runtime permission contract
+        run: php tests/deploy_runtime_permissions_static.php
+
       - name: PHP Lint (syntax check)
         run: find app/ public/ routes/ config/ tests/ -name "*.php" -print0 | xargs -0 -n1 php -l
 
