@@ -41,16 +41,21 @@ phpunit.result.cache
 /logs/
 /tmp/*
 /cache/*
+/public/uploads/
 
 # Manter a estrutura de diretórios vazios
 !/storage/logs/
+/storage/logs/*
 !/storage/logs/.gitkeep
 !/storage/uploads/
+/storage/uploads/*
 !/storage/uploads/.gitkeep
 !/storage/uploads/.htaccess
 !/storage/sessions/
+/storage/sessions/*
 !/storage/sessions/.gitkeep
 !/storage/cache/
+/storage/cache/*
 !/storage/cache/.gitkeep
 
 # ------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ Mesmas regras permanentes do projeto de sempre:
 2. Rode `git log`/`git status` para confirmar o que mudou desde 2026-08-26 e se há trabalho em andamento nos mesmos arquivos (`UsuariosController`, `AuthController`, `Router.php`, `pacs_header.php`).
 3. Abra e leia de fato os arquivos citados abaixo antes de alterá-los.
 4. Responda no formato obrigatório do projeto **antes** de implementar: Diagnóstico → Causa raiz → Impacto → Solução proposta → Arquivos afetados → Riscos → Validação.
-5. Ao terminar, atualize o `SKILL-VOXEL-PACS` (`modules/usuarios-regras-acesso.md` novo, `indexes/tabelas-banco.md`, `indexes/rotas-api.md`, `architecture/auth-e-permissoes.md`).
+5. Ao terminar, atualize o `SKILL-VOXEL-PACS` (`indexes/tabelas-banco.md`, `indexes/rotas-api.md`, `architecture/auth-e-permissoes.md`); documentação específica de regras de acesso por usuário: **Não localizado no código analisado.**
 6. **Segurança em primeiro lugar**: esta tarefa é, por definição, uma feature de segurança (controle de sessão, IP, horário). Trate qualquer ambiguidade optando pelo lado que falha fechado (nega acesso), nunca pelo lado que abre uma brecha "pra não incomodar o usuário".
 7. Não reative/duplique sem necessidade: existem hoje **pelo menos 4 mecanismos de "permissão/restrição por usuário" não unificados** no projeto (ver seção 2.3) — não crie um quinto sem justificar por que os existentes não servem para este caso específico.
 
@@ -188,4 +188,4 @@ Uma linha por `(user_id, tenant_id)`, seguindo o padrão de `bi_user_two_factor_
 - [ ] i18n das novas strings/aba nos 3 idiomas.
 - [ ] Testes manuais ponta a ponta: usuário sem regra (sem regressão), usuário com timeout curto (sessão expira e mostra aviso), usuário com IP restrito (acesso de IP permitido funciona, de IP não permitido é bloqueado e vira log), usuário com horário restrito (login dentro da janela funciona, fora da janela é recusado com aviso na tela de login), superadmin (comportamento decidido na pergunta 3).
 - [ ] Achado do item 6 registrado em `diagnostics/pendencias-conhecidas.md` e comunicado ao usuário.
-- [ ] Atualização do `SKILL-VOXEL-PACS` (novo `modules/usuarios-regras-acesso.md`, índices de tabelas/rotas, `architecture/auth-e-permissoes.md`).
+- [ ] Atualização do `SKILL-VOXEL-PACS` (índices de tabelas/rotas, `architecture/auth-e-permissoes.md`); módulo específico de regras de acesso: **Não localizado no código analisado.**
