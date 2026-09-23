@@ -190,6 +190,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             .pdf-signature { margin-top: auto; padding-top: 50px; }
             .pdf-footer { margin-top: 12px; }
             /* Dompdf calcula a largura do flex item sem descontar o padding do A4. */
+            .pdf-header, .pdf-patient { width: 174mm; max-width: 174mm; min-width: 0; }
             .pdf-report-content, .pdf-clinical-section-content { width: 174mm; max-width: 174mm; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }

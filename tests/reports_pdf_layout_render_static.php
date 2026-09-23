@@ -39,6 +39,9 @@ $templatePath = $root . '/app/Views/reports/pdf/templates/_moderno_lateral.php';
 ob_start();
 require $templatePath;
 $html = (string) ob_get_clean();
+if (strpos($html, '.pdf-header, .pdf-patient { width: 174mm; max-width: 174mm; min-width: 0; }') === false) {
+    throw new RuntimeException('O cabeçalho print não está limitado à largura útil A4.');
+}
 
 $dompdf = new Dompdf\Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true]);
 $dompdf->getOptions()->setDefaultMediaType('print');
