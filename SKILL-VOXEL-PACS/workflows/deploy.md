@@ -80,7 +80,7 @@ O payload de runtime não deve apagar ou substituir:
 - DICOM, PDFs ou XML clínicos;
 - configurações de infraestrutura, certificados e chaves.
 
-O mecanismo versionado `scripts/deploy.sh` existe, mas a auditoria identificou que ele faz extração in-place, executa `composer install`, aplica permissões amplas em `storage/` e trata a falha do health check apenas como aviso. Portanto, ele é **mecanismo documentado, mas não prova um deploy atômico nem rollback reproduzível**. Não tratar essas propriedades como implementadas sem validação independente.
+O mecanismo versionado `scripts/deploy.sh` faz extração in-place e executa `composer install`, mas aplica somente o contrato explícito de entrada: raiz da aplicação `0751` e `public/` `0755`, validando a travessia/leitura pelo usuário web antes de continuar. Ele não aplica `chmod` recursivo em `storage/`, uploads, logs ou arquivos clínicos. O smoke test bloqueia tanto em `/health` quanto no front controller `/login`; `/health` isoladamente não é evidência suficiente. O mecanismo continua **sem prova de deploy atômico nem rollback reproduzível** até existir implementação e teste independentes dessas propriedades.
 
 ## 6. Validação pós-deploy
 
@@ -88,11 +88,12 @@ Após a promoção:
 
 1. confirmar hashes do payload no destino;
 2. confirmar que `.env`, storage, uploads e drift preservado não mudaram;
-3. executar health check HTTPS bloqueante;
-4. validar PHP-FPM, Nginx e workers conforme o escopo autorizado;
-5. executar smoke tests dos fluxos impactados;
-6. confirmar que não houve migration ou alteração de banco não autorizada;
-7. registrar timestamp, ambiente, SHA, resultado dos gates, backup e resultado do smoke test.
+3. executar `/health` e uma rota real atendida pelo front controller, como `/login`, como checks HTTPS bloqueantes;
+4. confirmar o contrato de permissões: `app=0751`, `public=0755`, usuário web capaz de atravessar o app e ler `public/index.php`;
+5. validar PHP-FPM, Nginx e workers conforme o escopo autorizado;
+6. executar smoke tests dos fluxos impactados;
+7. confirmar que não houve migration ou alteração de banco não autorizada;
+8. registrar timestamp, ambiente, SHA, resultado dos gates, backup e resultado do smoke test.
 
 Não imprimir PHI, segredos, tokens, cookies, chaves ou conteúdo de laudos na evidência.
 
