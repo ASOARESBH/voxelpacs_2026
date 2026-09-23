@@ -130,5 +130,7 @@ Na origem `historical_report_version`, os campos `conteudo`, `mascara_conteudo_l
 
 Quando uma versão bloqueada não tem snapshot nem conteúdo histórico, mas existe um PDF já entregue e comprovadamente vinculado ao mesmo `tenant_id`/report/version, `ReportVersionPdfRevisionService::createFromDeliveredPdfArtifact()` pode recuperar esse binário sem regenerá-lo. A revisão usa `source_kind=delivery_artifact`, registra o ID/hash/tamanho do artifact entregue, exige Job `delivered`, preserva o artifact original e nunca o promove a snapshot canônico. Sem vínculo exato e validação de `%PDF`, hash, tamanho e storage, a versão permanece bloqueada.
 
+Lotes de correção visual devem selecionar somente a versão assinada/liberada mais recente com `versao > 0` e conteúdo histórico clínico válido. Registros legados com `versao = 0`, conteúdo ausente ou versão histórica não única permanecem bloqueados; não se deve inferir a versão nem substituir o conteúdo sem autorização operacional explícita. A materialização em lote cria apenas revisões operacionais idempotentes, preservando `report_versions`, snapshots canônicos e artifacts de delivery.
+
 ## Última análise
-2026-09-22
+2026-09-23
