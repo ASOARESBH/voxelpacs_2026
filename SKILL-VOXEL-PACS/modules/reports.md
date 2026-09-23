@@ -126,5 +126,7 @@ Os campos `pdf_snapshot_path` de `report_versions` e `pacs_report_version_pdf_re
 
 Para versões assinadas/liberadas sem snapshot canônico, a correção histórica usa `ReportVersionPdfRevisionService::createFromHistoricalReportVersion()`. Essa origem lê exclusivamente `report_versions` da mesma `tenant_id`/report/version, calcula `source_content_sha256` sobre a linha histórica e grava a revisão com `source_kind=historical_report_version`; `reports.corpo_laudo` não é fonte de conteúdo. `reports`, `bi_pacs_estudos` e os cadastros de unidade entram apenas como metadados tenant-scoped de estudo, template, logo e canais institucionais. A migration é aditiva e não faz backfill automático; qualquer lote deve ser pré-auditado, limitado por tenant, idempotente por `revision_key` e bloqueado quando a versão histórica não tiver conteúdo clínico válido.
 
+Na origem `historical_report_version`, os campos `conteudo`, `mascara_conteudo_livre` e `mascara_secoes` herdados do report atual são neutralizados e a máscara atual não é reaplicada. Assim, nenhum conteúdo clínico ou template de outra versão pode contaminar a revisão histórica.
+
 ## Última análise
 2026-09-22
