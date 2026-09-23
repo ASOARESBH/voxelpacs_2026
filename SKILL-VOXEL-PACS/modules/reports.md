@@ -128,5 +128,7 @@ Para versões assinadas/liberadas sem snapshot canônico, a correção históric
 
 Na origem `historical_report_version`, os campos `conteudo`, `mascara_conteudo_livre` e `mascara_secoes` herdados do report atual são neutralizados e a máscara atual não é reaplicada. Assim, nenhum conteúdo clínico ou template de outra versão pode contaminar a revisão histórica.
 
+Quando uma versão bloqueada não tem snapshot nem conteúdo histórico, mas existe um PDF já entregue e comprovadamente vinculado ao mesmo `tenant_id`/report/version, `ReportVersionPdfRevisionService::createFromDeliveredPdfArtifact()` pode recuperar esse binário sem regenerá-lo. A revisão usa `source_kind=delivery_artifact`, registra o ID/hash/tamanho do artifact entregue, exige Job `delivered`, preserva o artifact original e nunca o promove a snapshot canônico. Sem vínculo exato e validação de `%PDF`, hash, tamanho e storage, a versão permanece bloqueada.
+
 ## Última análise
 2026-09-22

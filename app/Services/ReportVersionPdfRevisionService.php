@@ -72,6 +72,208 @@ final class ReportVersionPdfRevisionService
     }
 
     /**
+     * Recupera uma revisão operacional do PDF já entregue, sem regenerá-lo e
+     * sem promover o artifact a snapshot canônico.
+     *
+     * @return array<string,mixed>
+     */
+    public function createFromDeliveredPdfArtifact(
+        int $tenantId,
+        int $reportId,
+        int $version,
+        int $artifactId,
+        ?int $createdBy = null
+    ): array {
+        if ($tenantId <= 0 || $reportId <= 0 || $version <= 0 || $artifactId <= 0) {
+            throw new RuntimeException('Identidade inválida para recuperação do artifact PDF.');
+        }
+
+        $identity = $this->loadVersionIdentity($tenantId, $reportId, $version);
+        $pdo = $this->pdo ?? Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT a.id, a.storage_path, a.sha256, a.file_size_bytes
+               FROM pacs_report_delivery_artifacts a
+               INNER JOIN pacs_report_delivery_outbox o
+                       ON o.id = a.outbox_id
+                      AND o.tenant_id = a.tenant_id
+              WHERE a.id = :artifact_id
+                AND a.tenant_id = :tenant_id
+                AND lower(a.artifact_type) = :artifact_type
+                AND o.report_id = :report_id
+                AND o.report_version = :report_version
+                AND o.tenant_id = :tenant_id_outbox
+                AND EXISTS (
+                    SELECT 1
+                      FROM pacs_report_delivery_jobs j
+                     WHERE j.outbox_id = o.id
+                       AND j.tenant_id = o.tenant_id
+                       AND j.status = \'delivered\'
+                )
+              LIMIT 1'
+        );
+        $stmt->execute([
+            ':artifact_id' => $artifactId,
+            ':tenant_id' => $tenantId,
+            ':artifact_type' => 'pdf',
+            ':report_id' => $reportId,
+            ':report_version' => $version,
+            ':tenant_id_outbox' => $tenantId,
+        ]);
+        $artifact = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($artifact)) {
+            throw new RuntimeException('Artifact PDF entregue não localizado para a versão.');
+        }
+
+        $artifactPath = $this->resolveArtifactPath((string) ($artifact['storage_path'] ?? ''));
+        if ($artifactPath === null || !is_readable($artifactPath)) {
+            throw new RuntimeException('Artifact PDF entregue inacessível ou fora do storage.');
+        }
+        $binary = file_get_contents($artifactPath);
+        $actualHash = hash_file('sha256', $artifactPath);
+        $actualSize = (int) filesize($artifactPath);
+        $expectedHash = strtolower(trim((string) ($artifact['sha256'] ?? '')));
+        $expectedSize = (int) ($artifact['file_size_bytes'] ?? 0);
+        if (!is_string($binary) || !is_string($actualHash)
+            || !preg_match('/^[0-9a-f]{64}$/', $expectedHash)
+            || !hash_equals($expectedHash, strtolower($actualHash))
+            || $actualSize !== $expectedSize
+        ) {
+            throw new RuntimeException('Integridade do artifact PDF entregue não confirmada.');
+        }
+        $this->assertPdf($binary);
+
+        $revisionKey = hash('sha256', DeliveryRequestIdentity::canonicalJson([
+            'schema_version' => self::SCHEMA_VERSION,
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $version,
+            'report_version_row_id' => (int) $identity['report_version_row_id'],
+            'source_kind' => 'delivery_artifact',
+            'source_delivery_artifact_id' => $artifactId,
+            'source_delivery_artifact_sha256' => $expectedHash,
+            'source_delivery_artifact_size_bytes' => $expectedSize,
+            'pdf_snapshot_sha256' => strtolower($actualHash),
+            'pdf_snapshot_size_bytes' => $actualSize,
+            'renderer' => self::RENDERER,
+            'reason_code' => 'historical_artifact_recovery',
+        ]));
+
+        $storageBase = PdfSnapshotPathResolver::storageBasePath();
+        $directory = sprintf('%s/report_version_pdf_revisions/%d/%d/v%d', $storageBase, $tenantId, $reportId, $version);
+        if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('Não foi possível criar o storage privado da revisão PDF.');
+        }
+        @chmod($directory, 0700);
+        $path = $directory . '/revision-' . strtolower($actualHash) . '.pdf';
+        $createdNewFile = $this->writeAtomicallyIfAbsent($path, $binary, strtolower($actualHash));
+        $relativePath = PdfSnapshotPathResolver::relativePathFor(
+            $path,
+            sprintf('report_version_pdf_revisions/%d/%d/v%d', $tenantId, $reportId, $version)
+        );
+
+        try {
+            $pdo->beginTransaction();
+            $existing = $this->findByKey($tenantId, $revisionKey);
+            if ($existing !== null) {
+                $pdo->commit();
+                if ($createdNewFile) {
+                    @unlink($path);
+                }
+                return $this->readMetadata($existing, false);
+            }
+
+            $numberStmt = $pdo->prepare(
+                'SELECT COALESCE(MAX(revision_number), 0) + 1
+                   FROM pacs_report_version_pdf_revisions
+                  WHERE tenant_id = :tenant_id AND report_id = :report_id AND report_version = :report_version'
+            );
+            $numberStmt->execute([
+                ':tenant_id' => $tenantId,
+                ':report_id' => $reportId,
+                ':report_version' => $version,
+            ]);
+            $revisionNumber = (int) $numberStmt->fetchColumn();
+            $insertSql = 'INSERT INTO pacs_report_version_pdf_revisions
+                    (tenant_id, report_id, report_version, report_version_row_id, revision_number,
+                     revision_key, source_kind, source_pdf_snapshot_sha256, source_content_sha256,
+                     source_delivery_artifact_id, source_delivery_artifact_sha256, source_delivery_artifact_size_bytes,
+                     pdf_snapshot_path, pdf_snapshot_sha256, pdf_snapshot_size_bytes,
+                     pdf_snapshot_renderer, pdf_snapshot_schema_version, reason_code, created_by)
+                 VALUES
+                    (:tenant_id, :report_id, :report_version, :report_version_row_id, :revision_number,
+                     :revision_key, :source_kind, NULL, NULL,
+                     :source_delivery_artifact_id, :source_delivery_artifact_sha256, :source_delivery_artifact_size_bytes,
+                     :pdf_snapshot_path, :pdf_snapshot_sha256, :pdf_snapshot_size_bytes,
+                     :pdf_snapshot_renderer, :pdf_snapshot_schema_version, :reason_code, :created_by)
+                 ON CONFLICT DO NOTHING RETURNING id';
+            $insert = $pdo->prepare($insertSql);
+            $insert->execute([
+                ':tenant_id' => $tenantId,
+                ':report_id' => $reportId,
+                ':report_version' => $version,
+                ':report_version_row_id' => (int) $identity['report_version_row_id'],
+                ':revision_number' => $revisionNumber,
+                ':revision_key' => $revisionKey,
+                ':source_kind' => 'delivery_artifact',
+                ':source_delivery_artifact_id' => $artifactId,
+                ':source_delivery_artifact_sha256' => $expectedHash,
+                ':source_delivery_artifact_size_bytes' => $expectedSize,
+                ':pdf_snapshot_path' => $relativePath,
+                ':pdf_snapshot_sha256' => strtolower($actualHash),
+                ':pdf_snapshot_size_bytes' => $actualSize,
+                ':pdf_snapshot_renderer' => self::RENDERER,
+                ':pdf_snapshot_schema_version' => self::SCHEMA_VERSION,
+                ':reason_code' => 'historical_artifact_recovery',
+                ':created_by' => $createdBy,
+            ]);
+            $id = (int) ($insert->fetchColumn() ?: 0);
+            if ($id <= 0) {
+                $existing = $this->findByKey($tenantId, $revisionKey);
+                if ($existing === null) {
+                    throw new RuntimeException('Recuperação do artifact não foi persistida.');
+                }
+                $pdo->commit();
+                if ($createdNewFile) {
+                    @unlink($path);
+                }
+                return $this->readMetadata($existing, false);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($createdNewFile) {
+                @unlink($path);
+            }
+            throw $e;
+        }
+
+        return [
+            'id' => $id,
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $version,
+            'revision_number' => $revisionNumber,
+            'revision_key' => $revisionKey,
+            'source_kind' => 'delivery_artifact',
+            'source_delivery_artifact_id' => $artifactId,
+            'source_delivery_artifact_sha256' => $expectedHash,
+            'source_delivery_artifact_size_bytes' => $expectedSize,
+            'source_pdf_snapshot_sha256' => null,
+            'source_content_sha256' => null,
+            'pdf_snapshot_path' => $path,
+            'pdf_snapshot_sha256' => strtolower($actualHash),
+            'pdf_snapshot_size_bytes' => $actualSize,
+            'pdf_snapshot_renderer' => self::RENDERER,
+            'pdf_snapshot_schema_version' => self::SCHEMA_VERSION,
+            'reason_code' => 'historical_artifact_recovery',
+            'created_by' => $createdBy,
+            'created_new_file' => $createdNewFile,
+        ];
+    }
+
+    /**
      * Cria uma revisão operacional usando explicitamente o corpo atual do
      * report liberado. Não altera report_versions nem o snapshot canônico.
      *
@@ -504,6 +706,15 @@ final class ReportVersionPdfRevisionService
             'source_content_sha256' => $row['source_content_sha256'] !== null
                 ? (string) $row['source_content_sha256']
                 : null,
+            'source_delivery_artifact_id' => $row['source_delivery_artifact_id'] !== null
+                ? (int) $row['source_delivery_artifact_id']
+                : null,
+            'source_delivery_artifact_sha256' => $row['source_delivery_artifact_sha256'] !== null
+                ? (string) $row['source_delivery_artifact_sha256']
+                : null,
+            'source_delivery_artifact_size_bytes' => $row['source_delivery_artifact_size_bytes'] !== null
+                ? (int) $row['source_delivery_artifact_size_bytes']
+                : null,
             'pdf_snapshot_path' => (string) $row['pdf_snapshot_path'],
             'pdf_snapshot_sha256' => (string) $row['pdf_snapshot_sha256'],
             'pdf_snapshot_size_bytes' => (int) $row['pdf_snapshot_size_bytes'],
@@ -513,6 +724,24 @@ final class ReportVersionPdfRevisionService
             'created_by' => $row['created_by'] !== null ? (int) $row['created_by'] : null,
             'created_new_file' => $createdNewFile,
         ];
+    }
+
+    private function resolveArtifactPath(string $storedPath): ?string
+    {
+        $storageRoot = realpath(PdfSnapshotPathResolver::storageBasePath());
+        if ($storageRoot === false || trim($storedPath) === '') {
+            return null;
+        }
+        $candidate = str_starts_with($storedPath, '/')
+            ? $storedPath
+            : $storageRoot . '/' . ltrim(str_replace('\\', '/', $storedPath), '/');
+        $pathReal = realpath($candidate);
+        if ($pathReal === false || !is_file($pathReal)) {
+            return null;
+        }
+        return $pathReal === $storageRoot || str_starts_with($pathReal, $storageRoot . DIRECTORY_SEPARATOR)
+            ? $pathReal
+            : null;
     }
 
     private function writeAtomicallyIfAbsent(string $path, string $binary, string $expectedHash): bool
