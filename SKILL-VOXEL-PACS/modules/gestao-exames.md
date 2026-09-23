@@ -61,6 +61,11 @@ As rotas são `GET /api/gestao-exames/descricoes-por-modalidade`, `POST /api/ges
 
 A migration `2026-08-14_bi_modalidade_descricoes_study_description_manual.sql` adiciona `bi_pacs_estudos.study_description_manual`. Quando marcado como `1`, `PacsSyncService::upsertEstudo()` remove `study_description` do payload de atualização do Orthanc, preservando a correção humana nas sincronizações seguintes. A migration deve ser executada antes do deploy do código que passa a consultar essa coluna.
 
+## Abertura do Laudo em nova aba
+
+O botão `.wl-btn-laudo` da Gestão de Exames reutiliza a Worklist compartilhada (`app/Views/estudos/index.php`). Quando há laudo disponível, o link administrativo `/reports/r/{token}/pdf?origem=gestao` usa `target="_blank"` e `rel="noopener noreferrer"`, preservando a tela da Gestão aberta. O mesmo contrato vale para links criados dinamicamente após assumir um estudo e para a recuperação segura de tokens antigos. O alvo nomeado `voxel-laudario` não deve ser usado nesses botões, pois reutiliza ou substitui a aba anterior.
+
 ## Última análise
 Paginação e ordenação corrigidas em 2026-09-23: `/gestao-exames` reutiliza `app/Views/estudos/index.php`, mas os helpers `estudoUrl()` e `sortLink()` dependiam de `$urlWorklist` fora do escopo local. Por isso os links `wl-pag-btn` e os cabeçalhos ordenáveis podiam cair no fallback `/estudos`. Ambos agora recebem e validam explicitamente a rota base (`/gestao-exames` ou `/estudos`), preservando filtros e paginação nas duas telas.
+Botão `.wl-btn-laudo` corrigido em 2026-09-23 para abrir o PDF em nova aba, sem fechar ou navegar a Gestão de Exames.
 2026-09-23
