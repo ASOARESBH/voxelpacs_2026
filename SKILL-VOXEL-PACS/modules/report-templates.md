@@ -45,7 +45,7 @@ O partial `_moderno_lateral.php` é a fonte única de `Imprimir` e de `Baixar PD
 
 - Se o report possuir `template_id`, o título centralizado em negrito vem da Máscara vinculada (`reports.template_id` → `report_templates.nome` ou `titulo`). Sem vínculo, o fallback é `Study Description`, depois procedimento solicitado, parte do corpo e, por último, modalidade.
 - A aplicação ativa de Máscara coloca somente **TÉCNICA**, **ACHADOS** e **IMPRESSÃO** no editor. As chaves internas permanecem `secao_tecnica`, `secao_achados` e `secao_conclusao`; no Moderno Lateral, `conclusao` é apresentado como **IMPRESSÃO**.
-- O título usa 17px e o corpo clínico usa 13px com entrelinha 1.62, inclusive em `@media print`, para leitura confortável sem alterar o conteúdo, a assinatura ou a auditoria do report.
+- O título usa 17px e o corpo clínico usa 13px com entrelinha controlada, inclusive em `@media print`, para leitura confortável sem alterar o conteúdo, a assinatura ou a auditoria do report. A normalização central remove vazios e margens coladas antes do render; os templates mantêm apenas respiro mínimo entre parágrafos, headings, listas e tabelas.
 - As regras `@page` mantêm a mesma geometria A4 entre pré-visualização e impressão. Seções vazias são omitidas, e documentos extensos podem continuar em nova página sem sobreposição.
 
 A composição não inventa dados de responsável técnico e usa apenas os campos já resolvidos por `ReportsController::pdf()`.

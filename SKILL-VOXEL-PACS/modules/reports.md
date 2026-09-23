@@ -49,6 +49,10 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 `ReportsController::pdf()` + `app/Views/reports/pdf.php` mantêm a visualização HTML e a impressão do rascunho. Para versões `assinado`/`liberado`, a rota serve o PDF binário canônico privado criado uma única vez no ato da assinatura/liberação por `ReportVersionPdfSnapshotService`; `?download=1` apenas muda a disposição para download. Desde 2026-08-11, `pdf.php` é um dispatcher fino que escolhe entre 4 templates visuais conforme a Unidade do estudo (`App\Services\ReportLayoutService`) — detalhe completo em `modules/report-templates.md`. A tela de edição (`show.php`/`_editor.php`, Quill) é uma ferramenta de trabalho separada, não afetada por template visual.
 
+### Normalização estrutural do HTML clínico (2026-09-23)
+
+`ReportClinicalHtmlSanitizer::sanitizeAndNormalize()` separa segurança de apresentação: remove parágrafos vazios consecutivos, quebras redundantes, `&nbsp;`, caracteres invisíveis e margens inline coladas, mas preserva texto, ênfase, alinhamento, listas, tabelas, headings e links HTTPS. `sanitizeAndNormalizeSections()` é aplicada em `ReportService::salvar()`, `restoreVersion()`, `assinar()` e `liberarAssinado()` como defesa de persistência. O editor Quill aplica a mesma compactação na carga, colagem e extração; `pdf.php` e o template personalizado normalizam novamente antes do renderer. Snapshots binários já persistidos não são reescritos automaticamente: a regra vale para novos snapshots, revisões operacionais e fallback legado renderizado.
+
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 
 A coluna esquerda de `app/Views/reports/show.php` é uma sequência clínica única, em largura integral: **Paciente → Exame → Medidas disponíveis do viewer → Chat do laudo → Peer Review (condicional) → Histórico do Paciente → ações DICOM/Timeline/Comparativos**. O card de Equipamento não existe no checkout atual e não deve ser recriado sem requisito clínico específico.

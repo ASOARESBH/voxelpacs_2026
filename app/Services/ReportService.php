@@ -240,7 +240,7 @@ class ReportService {
      * POST /reports/save — autosave (modo=auto), salvar rascunho ou salvar explícito.
      */
     public function salvar(int $reportId, array $secoes, string $modo, ?int $templateId = null): array {
-        $secoes = ReportClinicalHtmlSanitizer::sanitizeSections($secoes);
+        $secoes = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections($secoes);
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
 
@@ -393,7 +393,9 @@ class ReportService {
         // O schema operacional guarda as cinco seções em colunas secao_*;
         // versões legadas podem ter JSON em conteudo. A assinatura deve usar o
         // mesmo conteúdo que o editor e o PDF exibem, nunca somente o JSON.
-        $secoesAtuais = $this->extrairSecoesDoReport($report);
+        $secoesAtuais = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections(
+            $this->extrairSecoesDoReport($report)
+        );
         if (!$this->secoesTemConteudo($secoesAtuais)) {
             Logger::warning('[ReportService::assinar] laudo vazio após leitura do report', [
                 'report_id' => $reportId,
@@ -676,7 +678,9 @@ class ReportService {
             return ['ok' => false, 'error' => 'assinatura_persistencia_falhou'];
         }
 
-        $conteudo = ['secoes' => $this->extrairSecoesDoReport($report)];
+        $conteudo = ['secoes' => ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections(
+            $this->extrairSecoesDoReport($report)
+        )];
         try {
             $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
         } catch (\InvalidArgumentException $e) {
@@ -851,6 +855,7 @@ class ReportService {
                 $conteudo['secoes'][$chave] = property_exists($version, $campo) ? (string) ($version->{$campo} ?? '') : '';
             }
         }
+        $conteudo = ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections($conteudo);
         $userId = Auth::userId();
 
         $this->repo->atualizarConteudo($reportId, $conteudo, 'rascunho');
