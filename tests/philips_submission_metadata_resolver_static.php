@@ -43,8 +43,36 @@ expect_resolver($resolved['task_author_humanname_family'] === 'Solicitante', 'Au
 expect_resolver($resolved['task_author_humanname_given'] === 'Paulo', 'Author given must come from Referring Physician');
 expect_resolver($resolved['task_author_humanname_middle'] === 'Vitor', 'Author middle must come from Referring Physician');
 $flatReferring = $resolver->resolve(['referring_physician_name' => 'Plain Requesting Physician']);
-expect_resolver($flatReferring['task_author_humanname_family'] === null, 'Flat Referring Physician must not be split heuristically');
-expect_resolver($flatReferring['task_author_humanname_given'] === null, 'Flat Referring Physician given must remain unresolved');
+expect_resolver($flatReferring['task_author_humanname_family'] === 'Plain Requesting Physician', 'Flat Referring Physician must remain integral in family');
+expect_resolver($flatReferring['task_author_humanname_given'] === '', 'Flat Referring Physician given must be empty');
+expect_resolver($flatReferring['task_author_humanname_middle'] === '', 'Flat Referring Physician middle must be empty');
+expect_resolver($flatReferring['author_humanname_flat'] === true, 'Flat Referring Physician must carry the contextual flat-author marker');
+
+$twoComponentReferring = $resolver->resolve(['referring_physician_name' => 'Family^Given']);
+expect_resolver($twoComponentReferring['task_author_humanname_family'] === 'Family', 'Two-component Referring Physician family must be preserved');
+expect_resolver($twoComponentReferring['task_author_humanname_given'] === 'Given', 'Two-component Referring Physician given must be preserved');
+expect_resolver($twoComponentReferring['task_author_humanname_middle'] === '', 'Two-component Referring Physician middle must remain empty');
+expect_resolver($twoComponentReferring['author_humanname_flat'] === false, 'Structured Referring Physician must not use the flat-author marker');
+
+$emptyGivenReferring = $resolver->resolve(['referring_physician_name' => 'Family^^Middle']);
+expect_resolver($emptyGivenReferring['task_author_humanname_family'] === 'Family', 'Empty-given Referring Physician family must be preserved');
+expect_resolver($emptyGivenReferring['task_author_humanname_given'] === '', 'Empty-given Referring Physician given position must be preserved');
+expect_resolver($emptyGivenReferring['task_author_humanname_middle'] === 'Middle', 'Empty-given Referring Physician middle must be preserved');
+
+$conflictingSources = $resolver->resolve([
+    'referring_physician_name' => 'Original Requesting Physician',
+    'released_by' => 'Released Physician',
+    'report_author' => 'Report Author',
+    'medico_solicitante_manual' => 'Manual Physician',
+    'philips_submission' => [
+        'task_author_id' => 'TECHNICAL-AUTHOR-ID',
+        'task_author_humanname_family' => 'Wrong Configured Family',
+        'task_author_humanname_given' => 'Wrong Configured Given',
+    ],
+]);
+expect_resolver($conflictingSources['task_author_humanname_family'] === 'Original Requesting Physician', 'Configured or administrative sources must not replace Referring Physician family');
+expect_resolver($conflictingSources['task_author_humanname_given'] === '', 'Flat Referring Physician must keep given empty despite conflicting sources');
+expect_resolver($conflictingSources['task_author_id'] === 'TECHNICAL-AUTHOR-ID', 'Technical author ID may remain independently configured');
 expect_resolver($resolved['task_document_mimetype'] === 'application/pdf', 'MIME must be fixed to PDF');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
 

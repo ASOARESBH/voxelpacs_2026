@@ -28,9 +28,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_site_id` | Valor explícito configurado no destino | Obrigatório |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
-| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName) | Obrigatório |
-| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name` | Obrigatório |
-| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; ausente vira vazio | Opcional |
+| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); quando o nome é plano, preserva o valor integral | Obrigatório |
+| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name`; nome plano usa nó vazio | Obrigatório para PN estruturado; vazio permitido para autor plano |
+| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; nome plano e componente ausente viram vazio | Opcional |
 | `task_modalities` | `modalities` do estudo no snapshot, sem conversão heurística de separadores | Obrigatório |
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
@@ -41,7 +41,7 @@ Depois de assinatura/liberação, os quatro campos estruturados são imutáveis.
 
 `task_document_date` representa a data/hora clínica do exame, usando `bi_pacs_estudos.study_date` e `study_time`, correspondentes a StudyDate/StudyTime. A data sem horário é completada com `00:00:00`; `reports.liberado_em` e `released_by` não participam da resolução.
 
-Os três componentes `task_author_humanname_*` são resolvidos exclusivamente do ReferringPhysicianName estruturado do estudo. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. Nome plano, componente ausente obrigatório ou fonte não estruturada falha fechado; o sistema não divide nomes por espaços.
+Os três componentes `task_author_humanname_*` são resolvidos exclusivamente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName). Quando o valor possui `^`, os componentes DICOM são preservados. Quando o valor é plano, o nome integral é preservado em `task_author_humanname_family`, enquanto `given` e `middle` ficam vazios; essa representação é marcada internamente como autor plano e não reutiliza `patient_name_as_family`. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. O sistema não divide nomes por espaços; a ausência do nome original continua falhando fechado.
 
 ### Override request-scoped de PatientName
 
