@@ -16,12 +16,14 @@ $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliver
 $view = file_get_contents($root . '/app/Views/platform/negocios/report_delivery.php');
 $producer = file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
 $resolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
+$generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
+$dicomPersonName = file_get_contents($root . '/app/Helpers/DicomPersonName.php');
 $snapshot = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
 $versionName = file_get_contents($root . '/app/Services/ReportVersionPatientNameService.php');
 $versionMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
+expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
 
 foreach ([
     'PROFILE_PDF_ONLY',
@@ -90,6 +92,9 @@ expect_profile(str_contains($resolver, 'versionPatientName'), 'Resolver must pri
 expect_profile(str_contains($resolver, 'studyDocumentDate'), 'Resolver must derive document date from StudyDate/StudyTime');
 expect_profile(str_contains($resolver, 'referring_physician_name'), 'Resolver must derive author names from Referring Physician');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
+expect_profile(str_contains($resolver, 'author_humanname_flat') && str_contains($resolver, 'referringPhysicianRaw'), 'Resolver must mark flat Referring Physician names without reusing PatientName-as-family');
+expect_profile(str_contains($generator, 'author_humanname_flat') && str_contains($generator, 'optionalText($input, \'task_author_humanname_given\')'), 'Generator must allow empty author given only for the explicit flat-author context');
+expect_profile(!str_contains($dicomPersonName, 'PhilipsSubmission') && !str_contains($dicomPersonName, 'author_humanname_flat'), 'Generic DICOM PN helper must not contain Philips-specific author rules');
 expect_profile(str_contains($versionName, 'DicomPersonName::components') && str_contains($versionName, 'patient_name_fallback'), 'Version service must parse DICOM PN and persist flat names automatically as the fallback source');
 expect_profile(str_contains($versionMigration, 'patient_name_family') && str_contains($versionMigration, 'report_versions_patient_name_immutable'), 'Migration must add structured fields and immutability');
 expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not split names on spaces');
@@ -97,6 +102,7 @@ expect_profile(str_contains($contract, 'pdf_only'), 'Contract must document back
 expect_profile(str_contains($contract, 'task_document_type'), 'Contract must document conditional document type');
 expect_profile(str_contains($contract, 'PatientName-as-family'), 'Contract must document the scoped PatientName family exception');
 expect_profile(str_contains($contract, 'ReferringPhysicianName') && str_contains($contract, 'StudyDate/StudyTime'), 'Contract must document clinical XML sources');
+expect_profile(str_contains($contract, 'Quando o valor é plano') && str_contains($contract, 'não reutiliza `patient_name_as_family`'), 'Contract must distinguish flat Referring Physician names from PatientName-as-family');
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = file_get_contents($root . '/lang/' . ($locale === 'pt_BR' ? 'pt_BR' : $locale) . '.php');
