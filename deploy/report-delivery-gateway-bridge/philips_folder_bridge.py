@@ -780,40 +780,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise BridgeTransferError("remote_io")
 
             for _label, final_path, _temporary_path, _path, _expected_hash, _expected_size in missing:
-                try:
-                    final_listing = self._smb_command(
-                        credentials,
-                        f"ls {self._smb_arg(final_path)}",
-                    )
-                except BridgeTransferError as error:
-                    self._log_smb_stage(
-                        job_id,
-                        "LIST",
-                        classification=error.category,
-                        remote_target="final",
-                    )
-                    raise
-                if final_listing.returncode != 0:
-                    classification = classify_transport_error(
-                        final_listing.stdout + final_listing.stderr
-                    )
-                    if self._smb_missing(final_listing):
-                        classification = "remote_io"
-                    self._log_smb_stage(
-                        job_id,
-                        "LIST",
-                        final_listing,
-                        classification,
-                        remote_target="final",
-                    )
-                    raise BridgeTransferError(classification)
-                self._log_smb_stage(
-                    job_id,
-                    "LIST",
-                    final_listing,
-                    "none",
-                    remote_target="final",
-                )
+                self._observe_final_list(job_id, credentials, final_path)
             LOG.info("event=philips_smb_package_success job_id=%s", job_id)
             return "smb"
         finally:
@@ -1362,6 +1329,58 @@ class Handler(BaseHTTPRequestHandler):
             # LIST diagnostics are best-effort and must never affect delivery.
             pass
 
+    def _observe_final_list(
+        self,
+        job_id: int,
+        credentials: Path,
+        final_path: str,
+    ) -> None:
+        """Observe post-rename visibility without overriding VERIFY_FINAL."""
+        try:
+            result = self._smb_command(
+                credentials,
+                f"ls {self._smb_arg(final_path)}",
+            )
+        except BridgeTransferError as error:
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                classification=error.category,
+                remote_target="final",
+            )
+            LOG.warning(
+                "event=philips_smb_final_list_observation job_id=%s "
+                "outcome=error classification=%s",
+                job_id,
+                error.category,
+            )
+            return
+
+        if result.returncode != 0:
+            classification = classify_transport_error(result.stdout + result.stderr)
+            if self._smb_missing(result):
+                classification = "remote_io"
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                result,
+                classification,
+                remote_target="final",
+            )
+            LOG.warning(
+                "event=philips_smb_final_list_observation job_id=%s "
+                "outcome=nonzero classification=%s",
+                job_id,
+                classification,
+            )
+            return
+
+        self._log_smb_stage(job_id, "LIST", result, "none", remote_target="final")
+        LOG.info(
+            "event=philips_smb_final_list_observation job_id=%s outcome=pass",
+            job_id,
+        )
+
     @staticmethod
     def _smb_missing(result: subprocess.CompletedProcess[str]) -> bool:
         output = (result.stdout + result.stderr).lower()
@@ -1650,32 +1669,7 @@ class Handler(BaseHTTPRequestHandler):
         ):
             raise BridgeTransferError("remote_io")
 
-        try:
-            final_listing = self._smb_command(
-                credentials,
-                f"ls {self._smb_arg(final_path)}",
-            )
-        except BridgeTransferError as error:
-            self._log_smb_stage(
-                job_id,
-                "LIST",
-                classification=error.category,
-                remote_target="final",
-            )
-            raise
-        if final_listing.returncode != 0:
-            classification = classify_transport_error(final_listing.stdout + final_listing.stderr)
-            if self._smb_missing(final_listing):
-                classification = "remote_io"
-            self._log_smb_stage(
-                job_id,
-                "LIST",
-                final_listing,
-                classification,
-                remote_target="final",
-            )
-            raise BridgeTransferError(classification)
-        self._log_smb_stage(job_id, "LIST", final_listing, "none", remote_target="final")
+        self._observe_final_list(job_id, credentials, final_path)
         LOG.info("event=philips_smb_success job_id=%s", job_id)
 
     @staticmethod
