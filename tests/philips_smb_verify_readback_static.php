@@ -27,18 +27,25 @@ expect_verify_contract(substr_count($bridge, 'remote_target="temporary"') >= 2, 
 expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 6, 'final target telemetry missing for preflight, final VERIFY and LIST');
 expect_verify_contract(str_contains($bridge, 'f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}"'), 'GET arguments are not quoted');
 expect_verify_contract(str_contains($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"'), 'RENAME arguments are not quoted');
-expect_verify_contract(str_contains($bridge, 'final_listing = self._smb_command('), 'final path visibility check missing');
+expect_verify_contract(str_contains($bridge, 'def _observe_final_list('), 'final LIST observation helper missing');
+expect_verify_contract(substr_count($bridge, 'self._observe_final_list(job_id, credentials, final_path)') >= 2, 'final LIST observation missing from one or both flows');
 expect_verify_contract(str_contains($bridge, 'xml_verification = label == "xml"'), 'package temporary VERIFY missing');
 expect_verify_contract(substr_count($bridge, "temporary_path,\n") >= 2, 'temporary VERIFY argument missing');
 expect_verify_contract(substr_count($bridge, 'smb_remote_matches(') >= 7, 'final VERIFY call missing from one or both flows');
 
 $renamePosition = strpos($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"');
 $temporaryVerifyPosition = strpos($bridge, 'remote_target="temporary"');
-$finalListingPosition = strpos($bridge, 'final_listing = self._smb_command(');
+$finalObservationPosition = strpos($bridge, 'self._observe_final_list(job_id, credentials, final_path)');
 expect_verify_contract($temporaryVerifyPosition !== false, 'temporary VERIFY position unavailable');
 expect_verify_contract($renamePosition !== false, 'RENAME position unavailable');
 expect_verify_contract($temporaryVerifyPosition < $renamePosition, 'temporary VERIFY must precede RENAME');
-expect_verify_contract($finalListingPosition > $renamePosition, 'final visibility check must follow RENAME');
+expect_verify_contract($finalObservationPosition !== false && $finalObservationPosition > $renamePosition, 'final LIST observation must follow RENAME');
+
+$observerStart = strpos($bridge, 'def _observe_final_list(');
+$observerEnd = strpos($bridge, "    @staticmethod\n    def _smb_missing", $observerStart);
+expect_verify_contract($observerStart !== false && $observerEnd !== false, 'final LIST observation boundaries unavailable');
+$observerBody = substr($bridge, $observerStart, $observerEnd - $observerStart);
+expect_verify_contract(!str_contains($observerBody, 'raise BridgeTransferError'), 'final LIST observation must not block delivery');
 
 $packageRenamePosition = strpos($bridge, 'for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:');
 $packageFinalVerifyPosition = strpos($bridge, 'for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:');

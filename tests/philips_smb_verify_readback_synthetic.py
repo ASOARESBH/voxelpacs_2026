@@ -52,6 +52,7 @@ def load_real_methods(namespace: dict[str, object]) -> type:
         "_smb_missing",
         "smb_remote_matches",
         "_validate_submission_xml",
+        "_observe_final_list",
         "transfer_smb",
         "deliver_submission_package_remote",
     }
@@ -127,12 +128,19 @@ def main() -> None:
         Handler = load_real_methods(namespace)
         handler = Handler.__new__(Handler)
         namespace["POLICY"] = SimpleNamespace(smb={"remote_path": ""})
-        namespace["LOG"] = SimpleNamespace(info=lambda *_args, **_kwargs: None)
+        namespace["LOG"] = SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        )
 
         remote_store: dict[str, bytes] = {}
         commands: list[str] = []
         stages: list[tuple[str, str, str]] = []
         corrupt_final = {"name": None}
+        renamed_paths: set[str] = set()
+        final_list_mode: dict[str, str] = {}
+        initial_list_failure = {"classification": None}
+        rename_failure = {"enabled": False}
 
         def record_stage(
             _job_id: int,
@@ -154,6 +162,20 @@ def main() -> None:
             parts = shlex.split(command)
             operation = parts[0]
             if operation == "ls":
+                remote_path = parts[1]
+                if remote_path not in renamed_paths and initial_list_failure["classification"]:
+                    return subprocess.CompletedProcess(
+                        [],
+                        1,
+                        "",
+                        "ACCESS_DENIED",
+                    )
+                if remote_path in renamed_paths:
+                    mode = final_list_mode.get(remote_path)
+                    if mode == "return_1":
+                        return subprocess.CompletedProcess([], 1, "", "NT_STATUS_NO_SUCH_FILE")
+                    if mode == "raise":
+                        raise BridgeTransferError("timeout")
                 exists = parts[1] in remote_store
                 return subprocess.CompletedProcess([], 0 if exists else 1, "", "" if exists else "NT_STATUS_NO_SUCH_FILE")
             if operation == "put":
@@ -169,7 +191,10 @@ def main() -> None:
                 local_path.write_bytes(payload)
                 return subprocess.CompletedProcess([], 0, "", "")
             if operation == "rename":
+                if rename_failure["enabled"]:
+                    return subprocess.CompletedProcess([], 1, "", "ACCESS_DENIED")
                 remote_store[parts[2]] = remote_store.pop(parts[1])
+                renamed_paths.add(parts[2])
                 return subprocess.CompletedProcess([], 0, "", "")
             if operation == "del":
                 remote_store.pop(parts[1], None)
@@ -216,6 +241,90 @@ def main() -> None:
         remote_store.clear()
         commands.clear()
         stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        final_list_mode[pdf_path.name] = "return_1"
+        handler.transfer_smb(
+            9005,
+            pdf_path.name,
+            pdf_path,
+            sha256_file(pdf_path),
+            pdf_path.stat().st_size,
+            credentials,
+        )
+        assert remote_store[pdf_path.name] == pdf_payload
+        assert stages[-1] == ("LIST", "final", "remote_io")
+        assert not any(path.name.endswith(".part") for path in state_root.iterdir())
+        print("PDF_ONLY_FINAL_LIST_NONBLOCKING=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        final_list_mode[pdf_path.name] = "raise"
+        handler.transfer_smb(
+            9006,
+            pdf_path.name,
+            pdf_path,
+            sha256_file(pdf_path),
+            pdf_path.stat().st_size,
+            credentials,
+        )
+        assert remote_store[pdf_path.name] == pdf_payload
+        assert stages[-1] == ("LIST", "final", "timeout")
+        assert not any(path.name.endswith(".part") for path in state_root.iterdir())
+        print("FINAL_LIST_EXCEPTION_NONBLOCKING=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        initial_list_failure["classification"] = "permission"
+        try:
+            handler.transfer_smb(
+                9007,
+                pdf_path.name,
+                pdf_path,
+                sha256_file(pdf_path),
+                pdf_path.stat().st_size,
+                credentials,
+            )
+        except BridgeTransferError as error:
+            assert error.category == "permission"
+        else:
+            raise AssertionError("initial LIST failure must remain fail-closed")
+        assert stages[-1] == ("LIST", "final", "permission")
+        initial_list_failure["classification"] = None
+        print("INITIAL_LIST_FAILURE_FAIL_CLOSED=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        rename_failure["enabled"] = True
+        try:
+            handler.transfer_smb(
+                9010,
+                pdf_path.name,
+                pdf_path,
+                sha256_file(pdf_path),
+                pdf_path.stat().st_size,
+                credentials,
+            )
+        except BridgeTransferError as error:
+            assert error.category == "permission"
+        else:
+            raise AssertionError("RENAME failure must remain fail-closed")
+        assert stages[-1] == ("RENAME", "unknown", "permission")
+        rename_failure["enabled"] = False
+        print("RENAME_FAILURE_FAIL_CLOSED=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
         corrupt_final["name"] = None
         xml_path = root / "VOXEL_SYNTHETIC.xml"
         xml_payload = synthetic_xml(pdf_path.name)
@@ -252,6 +361,85 @@ def main() -> None:
             ],
         )
         assert not any(path.name.endswith(".part") for path in state_root.iterdir())
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        final_list_mode[pdf_path.name] = "return_1"
+        final_list_mode[xml_path.name] = "return_1"
+        result = handler.deliver_submission_package_remote(
+            9008,
+            pdf_path.name,
+            pdf_path,
+            xml_path.name,
+            xml_path,
+            xml_task_file_path_hash,
+            False,
+            credentials,
+        )
+        assert result == "smb"
+        assert remote_store[pdf_path.name] == pdf_payload
+        assert remote_store[xml_path.name] == xml_payload
+        assert stages[-2:] == [
+            ("LIST", "final", "remote_io"),
+            ("LIST", "final", "remote_io"),
+        ]
+        assert not any(path.name.endswith(".part") for path in state_root.iterdir())
+        print("PDF_XML_FINAL_LIST_NONBLOCKING=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        remote_store[pdf_path.name] = pdf_payload
+        remote_store[xml_path.name] = xml_payload
+        result = handler.deliver_submission_package_remote(
+            9009,
+            pdf_path.name,
+            pdf_path,
+            xml_path.name,
+            xml_path,
+            xml_task_file_path_hash,
+            False,
+            credentials,
+        )
+        assert result == "smb"
+        assert not any(command.startswith("put ") for command in commands)
+        assert not any(command.startswith("rename ") for command in commands)
+        assert remote_store[pdf_path.name] == pdf_payload
+        assert remote_store[xml_path.name] == xml_payload
+        print("IDEMPOTENT_EXISTING_ARTIFACTS_NO_DUPLICATE_WRITE=PASS")
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        corrupt_final["name"] = None
+        invalid_xml_path = root / "VOXEL_INVALID.xml"
+        invalid_xml_path.write_bytes(b"<submission>")
+        invalid_xml_task_file_path_hash = hashlib.sha256(pdf_path.name.encode("utf-8")).hexdigest()
+        try:
+            handler.deliver_submission_package_remote(
+                9011,
+                pdf_path.name,
+                pdf_path,
+                invalid_xml_path.name,
+                invalid_xml_path,
+                invalid_xml_task_file_path_hash,
+                False,
+                credentials,
+            )
+        except BridgeTransferError as error:
+            assert error.category == "invalid_artifact"
+        else:
+            raise AssertionError("invalid XML must fail closed")
+        assert stages[-1] == ("VERIFY", "temporary", "invalid_artifact")
+        assert not any(path.name.endswith(".part") for path in state_root.iterdir())
+        print("FINAL_XML_INVALID_FAIL_CLOSED=PASS")
 
         remote_store.clear()
         commands.clear()
