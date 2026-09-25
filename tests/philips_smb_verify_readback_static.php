@@ -24,12 +24,13 @@ expect_verify_contract(str_contains($bridge, 'directory = str(POLICY.smb["remote
 expect_verify_contract(str_contains($bridge, 'return filename, f".voxel-{secrets.token_hex(12)}.part"'), 'root share must use a relative path');
 expect_verify_contract(str_contains($bridge, 'SMB_REMOTE_TARGET=%s'), 'VERIFY target telemetry missing');
 expect_verify_contract(substr_count($bridge, 'remote_target="temporary"') >= 2, 'temporary VERIFY target missing for PDF and package flows');
-expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 2, 'final target telemetry missing');
+expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 6, 'final target telemetry missing for preflight, final VERIFY and LIST');
 expect_verify_contract(str_contains($bridge, 'f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}"'), 'GET arguments are not quoted');
 expect_verify_contract(str_contains($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"'), 'RENAME arguments are not quoted');
 expect_verify_contract(str_contains($bridge, 'final_listing = self._smb_command('), 'final path visibility check missing');
 expect_verify_contract(str_contains($bridge, 'xml_verification = label == "xml"'), 'package temporary VERIFY missing');
 expect_verify_contract(substr_count($bridge, "temporary_path,\n") >= 2, 'temporary VERIFY argument missing');
+expect_verify_contract(substr_count($bridge, 'smb_remote_matches(') >= 7, 'final VERIFY call missing from one or both flows');
 
 $renamePosition = strpos($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"');
 $temporaryVerifyPosition = strpos($bridge, 'remote_target="temporary"');
@@ -38,6 +39,18 @@ expect_verify_contract($temporaryVerifyPosition !== false, 'temporary VERIFY pos
 expect_verify_contract($renamePosition !== false, 'RENAME position unavailable');
 expect_verify_contract($temporaryVerifyPosition < $renamePosition, 'temporary VERIFY must precede RENAME');
 expect_verify_contract($finalListingPosition > $renamePosition, 'final visibility check must follow RENAME');
+
+$packageRenamePosition = strpos($bridge, 'for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:');
+$packageFinalVerifyPosition = strpos($bridge, 'for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:');
+expect_verify_contract($packageRenamePosition !== false, 'package RENAME loop unavailable');
+expect_verify_contract($packageFinalVerifyPosition !== false, 'package VERIFY_FINAL loop unavailable');
+expect_verify_contract($packageFinalVerifyPosition > $packageRenamePosition, 'package VERIFY_FINAL must follow package RENAME');
+expect_verify_contract(strpos($bridge, 'remote_target="final"', $packageFinalVerifyPosition) !== false, 'package VERIFY_FINAL target missing');
+
+$pdfRenamePosition = strrpos($bridge, 'self._log_smb_stage(job_id, "RENAME", renamed, "none")');
+$pdfFinalVerifyPosition = strpos($bridge, 'if not self.smb_remote_matches(', $pdfRenamePosition ?: 0);
+expect_verify_contract($pdfRenamePosition !== false, 'PDF-only RENAME unavailable');
+expect_verify_contract($pdfFinalVerifyPosition !== false && $pdfFinalVerifyPosition > $pdfRenamePosition, 'PDF-only VERIFY_FINAL must follow RENAME');
 
 $normalizeRemotePath = static function (string $directory, string $filename): array {
     $directory = trim($directory, '/');

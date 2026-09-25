@@ -762,6 +762,23 @@ class Handler(BaseHTTPRequestHandler):
                     raise BridgeTransferError(classification)
                 self._log_smb_stage(job_id, "RENAME", renamed, "none")
 
+            for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:
+                xml_verification = label == "xml"
+                if not self.smb_remote_matches(
+                    job_id,
+                    credentials,
+                    final_path,
+                    expected_hash,
+                    expected_size,
+                    pdf_filename if xml_verification else None,
+                    xml_task_file_path_hash if xml_verification else None,
+                    xml_document_type_applicable if xml_verification else None,
+                    allow_missing_patient_name_components if xml_verification else False,
+                    allow_patient_name_as_family if xml_verification else False,
+                    remote_target="final",
+                ):
+                    raise BridgeTransferError("remote_io")
+
             for _label, final_path, _temporary_path, _path, _expected_hash, _expected_size in missing:
                 try:
                     final_listing = self._smb_command(
@@ -1623,6 +1640,15 @@ class Handler(BaseHTTPRequestHandler):
             self._log_smb_stage(job_id, "RENAME", renamed, classification)
             raise BridgeTransferError(classification)
         self._log_smb_stage(job_id, "RENAME", renamed, "none")
+        if not self.smb_remote_matches(
+            job_id,
+            credentials,
+            final_path,
+            expected_hash,
+            length,
+            remote_target="final",
+        ):
+            raise BridgeTransferError("remote_io")
 
         try:
             final_listing = self._smb_command(
