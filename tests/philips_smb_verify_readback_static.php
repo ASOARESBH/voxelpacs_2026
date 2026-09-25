@@ -21,7 +21,7 @@ function expect_verify_contract(bool $condition, string $message): void
 expect_verify_contract(str_contains($bridge, 'def _smb_arg(value: str | Path) -> str:'), 'smbclient argument helper missing');
 expect_verify_contract(str_contains($bridge, 'return \'"\' + text.replace(\'"\', \'\\\\"\') + \'"\''), 'smbclient command quoting missing');
 expect_verify_contract(str_contains($bridge, 'directory = str(POLICY.smb["remote_path"]).strip("/")'), 'remote path normalization missing');
-expect_verify_contract(str_contains($bridge, 'return filename, f".voxel-{secrets.token_hex(12)}.part"'), 'root share must not generate a double-slash path');
+expect_verify_contract(str_contains($bridge, 'return filename, f".voxel-{secrets.token_hex(12)}.part"'), 'root share must use a relative path');
 expect_verify_contract(str_contains($bridge, 'SMB_REMOTE_TARGET=%s'), 'VERIFY target telemetry missing');
 expect_verify_contract(substr_count($bridge, 'remote_target="temporary"') >= 2, 'temporary VERIFY target missing for PDF and package flows');
 expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 2, 'final target telemetry missing');
@@ -50,6 +50,8 @@ $normalizeRemotePath = static function (string $directory, string $filename): ar
 [$rootFinal, $rootTemporary] = $normalizeRemotePath('/', 'VOXEL_SYNTHETIC.pdf');
 expect_verify_contract($rootFinal === 'VOXEL_SYNTHETIC.pdf', 'root final path must be relative to share root');
 expect_verify_contract($rootTemporary === '.voxel-test.part', 'root temporary path must be relative to share root');
+expect_verify_contract($rootFinal === '' || $rootFinal[0] !== '/', 'root final path must not have a leading slash');
+expect_verify_contract($rootTemporary === '' || $rootTemporary[0] !== '/', 'root temporary path must not have a leading slash');
 expect_verify_contract(!str_contains($rootFinal, '//'), 'root final path must not contain a double slash');
 
 [$nestedFinal, $nestedTemporary] = $normalizeRemotePath('/PDF/', 'VOXEL_SYNTHETIC.pdf');
