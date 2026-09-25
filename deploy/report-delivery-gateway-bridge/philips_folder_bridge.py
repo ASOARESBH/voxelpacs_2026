@@ -688,25 +688,39 @@ class Handler(BaseHTTPRequestHandler):
             for entry in entries:
                 _label, final_path, _temporary_path, _local_path, expected_hash, expected_size = entry
                 try:
-                    existing = self._smb_command(credentials, f"ls {final_path}")
+                    existing = self._smb_command(credentials, f"ls {self._smb_arg(final_path)}")
                 except BridgeTransferError as error:
-                    self._log_smb_stage(job_id, "LIST", classification=error.category)
+                    self._log_smb_stage(
+                        job_id,
+                        "LIST",
+                        classification=error.category,
+                        remote_target="final",
+                    )
                     raise
                 if existing.returncode == 0:
-                    self._log_smb_stage(job_id, "LIST", existing, "none")
+                    self._log_smb_stage(job_id, "LIST", existing, "none", remote_target="final")
                     if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, expected_size):
                         continue
                     raise BridgeTransferError("remote_io")
                 if not self._smb_missing(existing):
                     classification = classify_transport_error(existing.stdout + existing.stderr)
-                    self._log_smb_stage(job_id, "LIST", existing, classification)
+                    self._log_smb_stage(
+                        job_id,
+                        "LIST",
+                        existing,
+                        classification,
+                        remote_target="final",
+                    )
                     raise BridgeTransferError(classification)
-                self._log_smb_stage(job_id, "LIST", existing, "not_found")
+                self._log_smb_stage(job_id, "LIST", existing, "not_found", remote_target="final")
                 missing.append(entry)
 
             for label, _final_path, temporary_path, path, _expected_hash, _expected_size in missing:
                 try:
-                    uploaded = self._smb_command(credentials, f"put {path} {temporary_path}")
+                    uploaded = self._smb_command(
+                        credentials,
+                        f"put {self._smb_arg(path)} {self._smb_arg(temporary_path)}",
+                    )
                 except BridgeTransferError as error:
                     self._log_smb_stage(job_id, "WRITE", classification=error.category)
                     raise
@@ -716,9 +730,29 @@ class Handler(BaseHTTPRequestHandler):
                     raise BridgeTransferError(classification)
                 self._log_smb_stage(job_id, "WRITE", uploaded, "none")
 
+            for label, _final_path, temporary_path, _path, expected_hash, expected_size in missing:
+                xml_verification = label == "xml"
+                if not self.smb_remote_matches(
+                    job_id,
+                    credentials,
+                    temporary_path,
+                    expected_hash,
+                    expected_size,
+                    pdf_filename if xml_verification else None,
+                    xml_task_file_path_hash if xml_verification else None,
+                    xml_document_type_applicable if xml_verification else None,
+                    allow_missing_patient_name_components if xml_verification else False,
+                    allow_patient_name_as_family if xml_verification else False,
+                    remote_target="temporary",
+                ):
+                    raise BridgeTransferError("remote_io")
+
             for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:
                 try:
-                    renamed = self._smb_command(credentials, f"rename {temporary_path} {final_path}")
+                    renamed = self._smb_command(
+                        credentials,
+                        f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}",
+                    )
                 except BridgeTransferError as error:
                     self._log_smb_stage(job_id, "RENAME", classification=error.category)
                     raise
@@ -728,21 +762,58 @@ class Handler(BaseHTTPRequestHandler):
                     raise BridgeTransferError(classification)
                 self._log_smb_stage(job_id, "RENAME", renamed, "none")
 
-            pdf_ok = self.smb_remote_matches(job_id, credentials, pdf_final, entries[0][4], entries[0][5])
-            xml_ok = self.smb_remote_matches(
-                job_id,
-                credentials,
-                xml_final,
-                entries[1][4],
-                entries[1][5],
-                pdf_filename,
-                xml_task_file_path_hash,
-                xml_document_type_applicable,
-                allow_missing_patient_name_components,
-                allow_patient_name_as_family,
-            )
-            if not pdf_ok or not xml_ok:
-                raise BridgeTransferError("remote_io")
+            for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:
+                xml_verification = label == "xml"
+                if not self.smb_remote_matches(
+                    job_id,
+                    credentials,
+                    final_path,
+                    expected_hash,
+                    expected_size,
+                    pdf_filename if xml_verification else None,
+                    xml_task_file_path_hash if xml_verification else None,
+                    xml_document_type_applicable if xml_verification else None,
+                    allow_missing_patient_name_components if xml_verification else False,
+                    allow_patient_name_as_family if xml_verification else False,
+                    remote_target="final",
+                ):
+                    raise BridgeTransferError("remote_io")
+
+            for _label, final_path, _temporary_path, _path, _expected_hash, _expected_size in missing:
+                try:
+                    final_listing = self._smb_command(
+                        credentials,
+                        f"ls {self._smb_arg(final_path)}",
+                    )
+                except BridgeTransferError as error:
+                    self._log_smb_stage(
+                        job_id,
+                        "LIST",
+                        classification=error.category,
+                        remote_target="final",
+                    )
+                    raise
+                if final_listing.returncode != 0:
+                    classification = classify_transport_error(
+                        final_listing.stdout + final_listing.stderr
+                    )
+                    if self._smb_missing(final_listing):
+                        classification = "remote_io"
+                    self._log_smb_stage(
+                        job_id,
+                        "LIST",
+                        final_listing,
+                        classification,
+                        remote_target="final",
+                    )
+                    raise BridgeTransferError(classification)
+                self._log_smb_stage(
+                    job_id,
+                    "LIST",
+                    final_listing,
+                    "none",
+                    remote_target="final",
+                )
             LOG.info("event=philips_smb_package_success job_id=%s", job_id)
             return "smb"
         finally:
@@ -751,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
             # para o Auto Ingestion; em caso de falha, preservá-los é fail-closed.
             for path in [pdf_temporary, xml_temporary]:
                 try:
-                    self._smb_command(credentials, f"del {path}")
+                    self._smb_command(credentials, f"del {self._smb_arg(path)}")
                 except BridgeTransferError:
                     pass
 
@@ -1178,6 +1249,14 @@ class Handler(BaseHTTPRequestHandler):
             raise BridgeTransferError("remote_io")
         LOG.info("event=philips_sftp_success job_id=%s", job_id)
 
+    @staticmethod
+    def _smb_arg(value: str | Path) -> str:
+        """Quote one smbclient argument using its documented command syntax."""
+        text = str(value)
+        if any(character in text for character in ("\x00", "\r", "\n")):
+            raise BridgeTransferError("configuration")
+        return '"' + text.replace('"', '\\"') + '"'
+
     def _smb_command(self, credentials: Path, command: str) -> subprocess.CompletedProcess[str]:
         if not isinstance(POLICY.smb, dict) or not shutil.which("smbclient"):
             raise BridgeTransferError("configuration")
@@ -1201,6 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
         classification: str = "unknown",
         remote_size: int | None = None,
         remote_hash_match: bool | None = None,
+        remote_target: str = "unknown",
     ) -> None:
         """Log only bounded SMB telemetry; never log command, output, path, or content."""
         if not smb_diagnostics_enabled():
@@ -1218,11 +1298,13 @@ class Handler(BaseHTTPRequestHandler):
             "NO" if remote_hash_match is False else
             "UNKNOWN"
         )
+        safe_remote_target = remote_target if remote_target in {"final", "temporary", "unknown"} else "unknown"
         try:
             LOG.info(
                 "event=philips_smb_stage job_id=%s SMB_STAGE=%s SMB_RETURN_CODE=%s "
                 "SMB_CLASSIFICATION=%s SMB_STDOUT_PRESENT=%s SMB_STDERR_PRESENT=%s "
-                "SMB_STDOUT_SIZE=%s SMB_STDERR_SIZE=%s REMOTE_SIZE=%s REMOTE_HASH_MATCH=%s",
+                "SMB_STDOUT_SIZE=%s SMB_STDERR_SIZE=%s REMOTE_SIZE=%s REMOTE_HASH_MATCH=%s "
+                "SMB_REMOTE_TARGET=%s",
                 job_id,
                 safe_stage,
                 return_code,
@@ -1233,6 +1315,7 @@ class Handler(BaseHTTPRequestHandler):
                 stderr_size,
                 safe_remote_size,
                 safe_hash_match,
+                safe_remote_target,
             )
         except Exception:
             # Telemetry is best-effort and must never change the transport result.
@@ -1287,8 +1370,10 @@ class Handler(BaseHTTPRequestHandler):
     def _smb_remote_path(self, filename: str) -> tuple[str, str]:
         if not isinstance(POLICY.smb, dict):
             raise BridgeTransferError("configuration")
-        directory = str(POLICY.smb["remote_path"])
-        return f"{directory}/{filename}", f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+        directory = str(POLICY.smb["remote_path"]).strip("/")
+        if directory:
+            return f"{directory}/{filename}", f"{directory}/.voxel-{secrets.token_hex(12)}.part"
+        return filename, f".voxel-{secrets.token_hex(12)}.part"
 
     def smb_remote_matches(
         self,
@@ -1302,6 +1387,7 @@ class Handler(BaseHTTPRequestHandler):
         xml_document_type_applicable: bool | None = None,
         allow_missing_patient_name_components: bool = False,
         allow_patient_name_as_family: bool = False,
+        remote_target: str = "final",
     ) -> bool:
         descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
         os.close(descriptor)
@@ -1309,13 +1395,21 @@ class Handler(BaseHTTPRequestHandler):
         downloaded.unlink(missing_ok=True)
         try:
             try:
-                result = self._smb_command(credentials, f"get {remote_path} {downloaded}")
+                result = self._smb_command(
+                    credentials,
+                    f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}",
+                )
             except BridgeTransferError as error:
-                self._log_smb_stage(job_id, "VERIFY", classification=error.category)
+                self._log_smb_stage(
+                    job_id,
+                    "VERIFY",
+                    classification=error.category,
+                    remote_target=remote_target,
+                )
                 raise
             if result.returncode != 0:
                 classification = classify_transport_error(result.stdout + result.stderr)
-                self._log_smb_stage(job_id, "VERIFY", result, classification)
+                self._log_smb_stage(job_id, "VERIFY", result, classification, remote_target=remote_target)
                 raise BridgeTransferError(classification)
             remote_size = downloaded.stat().st_size if downloaded.is_file() else None
             remote_hash_match = (
@@ -1339,7 +1433,15 @@ class Handler(BaseHTTPRequestHandler):
                         allow_patient_name_as_family,
                     )
                 except BridgeTransferError as error:
-                    self._log_smb_stage(job_id, "VERIFY", result, error.category, remote_size, False)
+                    self._log_smb_stage(
+                        job_id,
+                        "VERIFY",
+                        result,
+                        error.category,
+                        remote_size,
+                        False,
+                        remote_target,
+                    )
                     raise
             self._log_smb_stage(
                 job_id,
@@ -1348,6 +1450,7 @@ class Handler(BaseHTTPRequestHandler):
                 "none" if remote_hash_match else "remote_io",
                 remote_size,
                 remote_hash_match,
+                remote_target,
             )
             return remote_hash_match
         finally:
@@ -1448,14 +1551,19 @@ class Handler(BaseHTTPRequestHandler):
                 output.write(b"VOXEL_SMB_CONNECTIVITY_PROBE\n")
                 output.flush()
                 os.fsync(output.fileno())
-            remote = str(POLICY.smb["remote_path"]) + "/.voxel-probe-" + secrets.token_hex(12) + ".tmp"
-            result = self._smb_command(credentials, f"put {probe} {remote}; del {remote}")
+            directory = str(POLICY.smb["remote_path"]).strip("/")
+            remote_name = ".voxel-probe-" + secrets.token_hex(12) + ".tmp"
+            remote = f"{directory}/{remote_name}" if directory else remote_name
+            result = self._smb_command(
+                credentials,
+                f"put {self._smb_arg(probe)} {self._smb_arg(remote)}; del {self._smb_arg(remote)}",
+            )
             if result.returncode != 0:
                 raise BridgeTransferError(classify_transport_error(result.stdout + result.stderr))
         finally:
             if remote:
                 try:
-                    self._smb_command(credentials, f"del {remote}")
+                    self._smb_command(credentials, f"del {self._smb_arg(remote)}")
                 except BridgeTransferError:
                     pass
             probe.unlink(missing_ok=True)
@@ -1465,12 +1573,17 @@ class Handler(BaseHTTPRequestHandler):
             raise BridgeTransferError("credentials_unavailable")
         final_path, temporary_path = self._smb_remote_path(filename)
         try:
-            existing = self._smb_command(credentials, f"ls {final_path}")
+            existing = self._smb_command(credentials, f"ls {self._smb_arg(final_path)}")
         except BridgeTransferError as error:
-            self._log_smb_stage(job_id, "LIST", classification=error.category)
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                classification=error.category,
+                remote_target="final",
+            )
             raise
         if existing.returncode == 0:
-            self._log_smb_stage(job_id, "LIST", existing, "none")
+            self._log_smb_stage(job_id, "LIST", existing, "none", remote_target="final")
             self._diagnose_smb_list_result(job_id, filename, existing, "none")
             if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, length):
                 LOG.info("event=philips_smb_success job_id=%s", job_id)
@@ -1478,14 +1591,23 @@ class Handler(BaseHTTPRequestHandler):
             raise BridgeTransferError("remote_io")
         if not self._smb_missing(existing):
             classification = classify_transport_error(existing.stdout + existing.stderr)
-            self._log_smb_stage(job_id, "LIST", existing, classification)
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                existing,
+                classification,
+                remote_target="final",
+            )
             self._diagnose_smb_list_result(job_id, filename, existing, classification)
             raise BridgeTransferError(classification)
-        self._log_smb_stage(job_id, "LIST", existing, "not_found")
+        self._log_smb_stage(job_id, "LIST", existing, "not_found", remote_target="final")
         self._diagnose_smb_list_result(job_id, filename, existing, "not_found")
 
         try:
-            uploaded = self._smb_command(credentials, f"put {staged} {temporary_path}")
+            uploaded = self._smb_command(
+                credentials,
+                f"put {self._smb_arg(staged)} {self._smb_arg(temporary_path)}",
+            )
         except BridgeTransferError as error:
             self._log_smb_stage(job_id, "WRITE", classification=error.category)
             raise
@@ -1495,8 +1617,21 @@ class Handler(BaseHTTPRequestHandler):
             raise BridgeTransferError(classification)
         self._log_smb_stage(job_id, "WRITE", uploaded, "none")
 
+        if not self.smb_remote_matches(
+            job_id,
+            credentials,
+            temporary_path,
+            expected_hash,
+            length,
+            remote_target="temporary",
+        ):
+            raise BridgeTransferError("remote_io")
+
         try:
-            renamed = self._smb_command(credentials, f"rename {temporary_path} {final_path}")
+            renamed = self._smb_command(
+                credentials,
+                f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}",
+            )
         except BridgeTransferError as error:
             self._log_smb_stage(job_id, "RENAME", classification=error.category)
             raise
@@ -1505,9 +1640,42 @@ class Handler(BaseHTTPRequestHandler):
             self._log_smb_stage(job_id, "RENAME", renamed, classification)
             raise BridgeTransferError(classification)
         self._log_smb_stage(job_id, "RENAME", renamed, "none")
-
-        if not self.smb_remote_matches(job_id, credentials, final_path, expected_hash, length):
+        if not self.smb_remote_matches(
+            job_id,
+            credentials,
+            final_path,
+            expected_hash,
+            length,
+            remote_target="final",
+        ):
             raise BridgeTransferError("remote_io")
+
+        try:
+            final_listing = self._smb_command(
+                credentials,
+                f"ls {self._smb_arg(final_path)}",
+            )
+        except BridgeTransferError as error:
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                classification=error.category,
+                remote_target="final",
+            )
+            raise
+        if final_listing.returncode != 0:
+            classification = classify_transport_error(final_listing.stdout + final_listing.stderr)
+            if self._smb_missing(final_listing):
+                classification = "remote_io"
+            self._log_smb_stage(
+                job_id,
+                "LIST",
+                final_listing,
+                classification,
+                remote_target="final",
+            )
+            raise BridgeTransferError(classification)
+        self._log_smb_stage(job_id, "LIST", final_listing, "none", remote_target="final")
         LOG.info("event=philips_smb_success job_id=%s", job_id)
 
     @staticmethod

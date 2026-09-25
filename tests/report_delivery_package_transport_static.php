@@ -48,10 +48,10 @@ $checks = [
     ['bridge', 'extracted_submission_package', 'package extraction'],
     ['bridge', 'deliver_submission_package_remote', 'package SMB dispatch'],
     ['bridge', 'valid_package_filename', 'package filename validation'],
-    ['bridge', 'put {path} {temporary_path}', 'package SMB write'],
-    ['bridge', 'rename {temporary_path} {final_path}', 'package SMB atomic rename'],
-    ['bridge', 'pdf_ok', 'PDF verification'],
-    ['bridge', 'xml_ok', 'XML verification'],
+    ['bridge', 'put {self._smb_arg(path)} {self._smb_arg(temporary_path)}', 'package SMB write'],
+    ['bridge', 'rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}', 'package SMB atomic rename'],
+    ['bridge', 'xml_verification', 'PDF/XML verification'],
+    ['bridge', 'remote_target="temporary"', 'temporary remote verification'],
     ['bridge', '_validate_submission_xml', 'XML semantic verification'],
     ['bridge', 'package_verified', 'verified package state'],
     ['bridge', 'task_file_path_sha256', 'package replay path binding'],
@@ -79,7 +79,7 @@ if (!str_contains($contents['service'], 'sodium_memzero($password)')) {
     fwrite(STDERR, "PASSWORD_MEMORY_CLEAR_MISSING\n");
     exit(1);
 }
-if (substr_count($contents['bridge'], 'smb_remote_matches(job_id') < 3) {
+if (substr_count($contents['bridge'], 'smb_remote_matches(') < 5) {
     fwrite(STDERR, "PACKAGE_VERIFY_CONTRACT_INCOMPLETE\n");
     exit(1);
 }
