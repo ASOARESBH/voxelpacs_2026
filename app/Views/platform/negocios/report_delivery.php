@@ -39,6 +39,66 @@ $transportLabels = [
         <strong>Modo seguro:</strong> destinos novos iniciam desativados e em homologação. A configuração não envia laudos por si só; a ativação depende do worker e de homologação técnica por cliente.
     </div>
 
+    <div class="card border-primary shadow-sm mb-4" id="delivery-request-card">
+        <div class="card-header bg-primary-subtle"><h2 class="h5 mb-0"><i class="fa fa-list-check me-1"></i> <?= $escape(t('delivery_hub.request.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.request.ajuda')) ?></p>
+            <form id="delivery-request-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="destination_id" value="6">
+                <input type="hidden" name="delivery_profile" value="submission_document">
+                <input type="hidden" name="dispatch_mode" value="manual_homologation">
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-id"><?= $escape(t('delivery_hub.request.report_id')) ?></label>
+                    <input class="form-control" id="delivery-request-report-id" name="report_id" type="number" min="1" value="348" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-version"><?= $escape(t('delivery_hub.request.report_version')) ?></label>
+                    <input class="form-control" id="delivery-request-report-version" name="report_version" type="number" min="1" value="4" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-pdf-revision"><?= $escape(t('delivery_hub.request.pdf_revision')) ?></label>
+                    <input class="form-control" id="delivery-request-pdf-revision" name="pdf_revision_id" type="number" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.destination')) ?></label>
+                    <div class="form-control-plaintext"><code>6</code> — <?= $escape(t('delivery_hub.request.destination_value')) ?></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.profile')) ?></label>
+                    <div class="form-control-plaintext"><code>submission_document</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.transport')) ?></label>
+                    <div class="form-control-plaintext"><code>philips_non_dicom</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.environment')) ?></label>
+                    <div class="form-control-plaintext"><code>homologacao</code></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="delivery-request-reason"><?= $escape(t('delivery_hub.request.reason')) ?></label>
+                    <input class="form-control" id="delivery-request-reason" name="request_reason" maxlength="120" value="<?= $escape(t('delivery_hub.request.reason_default')) ?>" required>
+                </div>
+                <div class="col-12">
+                    <div class="small text-muted" id="delivery-request-state"><?= $escape(t('delivery_hub.request.status_initial')) ?></div>
+                    <div class="small text-muted d-flex flex-wrap gap-3 mt-1" id="delivery-request-identifiers">
+                        <span><?= $escape(t('delivery_hub.request.request_id')) ?>: <code id="delivery-request-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.outbox_id')) ?>: <code id="delivery-request-outbox-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.job_id')) ?>: <code id="delivery-request-job-id">—</code></span>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary" data-request-stage="prepare"><?= $escape(t('delivery_hub.request.prepare')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="approve" disabled><?= $escape(t('delivery_hub.request.approve')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="materialize" disabled><?= $escape(t('delivery_hub.request.materialize')) ?></button>
+                    <button type="button" class="btn btn-outline-danger" data-request-stage="arm" disabled><?= $escape(t('delivery_hub.request.arm')) ?></button>
+                </div>
+            </form>
+            <div id="delivery-request-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
+        </div>
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Total de jobs</div><div class="h3 mb-0"><?= (int) ($stats['total'] ?? 0) ?></div></div></div></div>
         <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Na fila</div><div class="h3 mb-0 text-primary"><?= (int) ($stats['queued'] ?? 0) ?></div></div></div></div>
@@ -507,6 +567,105 @@ $transportLabels = [
         cancel.classList.add('d-none');
         renderTransportFields();
         syncEnvironment();
+    }
+
+    const requestForm = document.getElementById('delivery-request-form');
+    if (requestForm) {
+        const requestButtons = Array.from(requestForm.querySelectorAll('[data-request-stage]'));
+        const requestFeedback = document.getElementById('delivery-request-feedback');
+        const requestState = document.getElementById('delivery-request-state');
+        const requestIdOutput = document.getElementById('delivery-request-id');
+        const outboxIdOutput = document.getElementById('delivery-request-outbox-id');
+        const jobIdOutput = document.getElementById('delivery-request-job-id');
+        const requestStages = ['prepare', 'approve', 'materialize', 'arm'];
+        const requestPaths = { approve: 'approve', materialize: 'materialize', arm: 'arm' };
+        const requestStatusLabels = {
+            prepared: <?= json_encode(t('delivery_hub.request.status_prepared'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            approved: <?= json_encode(t('delivery_hub.request.status_approved'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            materialized: <?= json_encode(t('delivery_hub.request.status_materialized'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            armed: <?= json_encode(t('delivery_hub.request.status_armed'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+        const requestConfirmations = {
+            prepare: <?= json_encode(t('delivery_hub.request.confirm_prepare'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            approve: <?= json_encode(t('delivery_hub.request.confirm_approve'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            materialize: <?= json_encode(t('delivery_hub.request.confirm_materialize'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            arm: <?= json_encode(t('delivery_hub.request.confirm_arm'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+        const requestBase = '/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/requests';
+        let requestId = 0;
+        let requestStageIndex = 0;
+        let requestBusy = false;
+
+        const updateRequestButtons = () => {
+            requestButtons.forEach((button, index) => {
+                button.disabled = requestBusy || index !== requestStageIndex;
+            });
+        };
+
+        const uuidV4 = () => {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+            if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') return '';
+            const bytes = new Uint8Array(16);
+            window.crypto.getRandomValues(bytes);
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+        };
+
+        requestButtons.forEach((button) => {
+            button.addEventListener('click', async () => {
+                const stage = button.dataset.requestStage;
+                if (!stage || requestBusy || requestStages[requestStageIndex] !== stage) return;
+                if (stage !== 'prepare' && requestId <= 0) return;
+                if (!window.confirm(requestConfirmations[stage])) return;
+
+                requestBusy = true;
+                updateRequestButtons();
+                requestFeedback.className = 'alert alert-info mt-3 mb-0';
+                requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.processing'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                requestFeedback.classList.remove('d-none');
+
+                try {
+                    const body = stage === 'prepare' ? new FormData(requestForm) : new FormData();
+                    if (stage !== 'prepare') body.append('_csrf_token', requestForm.querySelector('[name="_csrf_token"]').value);
+                    body.set('confirm_' + stage, '1');
+                    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+                    if (stage === 'prepare') {
+                        const idempotencyKey = uuidV4();
+                        if (!idempotencyKey) throw new Error(<?= json_encode(t('delivery_hub.request.uuid_unavailable'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+                        headers['Idempotency-Key'] = idempotencyKey;
+                    }
+                    const endpoint = stage === 'prepare'
+                        ? requestBase + '/prepare'
+                        : requestBase + '/' + encodeURIComponent(String(requestId)) + '/' + requestPaths[stage];
+                    const response = await fetch(endpoint, { method: 'POST', headers, body, credentials: 'same-origin' });
+                    const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.request.invalid_response'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                    if (!response.ok || !result.success) throw new Error(result.message || <?= json_encode(t('delivery_hub.request.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+
+                    const request = result.request || {};
+                    if (stage === 'prepare') {
+                        requestId = Number(request.id || 0);
+                        if (requestId <= 0) throw new Error(<?= json_encode(t('delivery_hub.request.missing_id'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+                    }
+                    requestIdOutput.textContent = requestId > 0 ? String(requestId) : '—';
+                    if (Number(request.outbox_id || 0) > 0) outboxIdOutput.textContent = String(Number(request.outbox_id));
+                    if (Number(request.job_id || 0) > 0) jobIdOutput.textContent = String(Number(request.job_id));
+                    requestStageIndex += 1;
+                    requestState.textContent = requestStatusLabels[request.status] || String(request.status || stage);
+                    requestFeedback.className = 'alert alert-success mt-3 mb-0';
+                    requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                    requestFeedback.classList.remove('d-none');
+                } catch (error) {
+                    requestFeedback.className = 'alert alert-danger mt-3 mb-0';
+                    requestFeedback.textContent = error instanceof Error && error.message ? error.message : <?= json_encode(t('delivery_hub.request.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                    requestFeedback.classList.remove('d-none');
+                } finally {
+                    requestBusy = false;
+                    updateRequestButtons();
+                }
+            });
+        });
+        updateRequestButtons();
     }
 
     manualForm.addEventListener('submit', async (event) => {
