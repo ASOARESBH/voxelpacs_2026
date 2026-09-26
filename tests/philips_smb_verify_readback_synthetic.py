@@ -14,7 +14,9 @@ import secrets
 import shlex
 import subprocess
 import tempfile
+import time
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -50,6 +52,8 @@ def load_real_methods(namespace: dict[str, object]) -> type:
         "_smb_arg",
         "_smb_remote_path",
         "_smb_missing",
+        "_diagnostic_stage",
+        "_log_stage_diagnostic",
         "smb_remote_matches",
         "_validate_submission_xml",
         "_observe_final_list",
@@ -114,6 +118,8 @@ def main() -> None:
         namespace: dict[str, object] = {
             "Path": Path,
             "ET": ET,
+            "contextmanager": contextmanager,
+            "time": time,
             "subprocess": subprocess,
             "hashlib": hashlib,
             "hmac": hmac,
@@ -124,6 +130,19 @@ def main() -> None:
             "STATE_ROOT": state_root,
             "sha256_file": sha256_file,
             "classify_transport_error": classify_transport_error,
+            "STAGE_DIAGNOSTIC_STAGES": (
+                "STAGE_ENTER", "STAGE_EXIT", "PACKAGE_OPEN", "MANIFEST", "PDF", "XML",
+                "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY",
+            ),
+            "STAGE_DIAGNOSTIC_NAMES": {
+                "PACKAGE_OPEN", "MANIFEST", "PDF", "XML",
+                "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY", "unknown",
+            },
+            "STAGE_DIAGNOSTIC_OUTCOMES": ("START", "PASS", "FAIL"),
+            "SMB_DIAGNOSTIC_CLASSIFICATIONS": (
+                "none", "not_found", "authentication", "permission", "connectivity",
+                "timeout", "remote_io", "invalid_artifact", "configuration", "host_key", "unknown",
+            ),
         }
         Handler = load_real_methods(namespace)
         handler = Handler.__new__(Handler)
@@ -136,6 +155,7 @@ def main() -> None:
         remote_store: dict[str, bytes] = {}
         commands: list[str] = []
         stages: list[tuple[str, str, str]] = []
+        diagnostic_lines: list[str] = []
         corrupt_final = {"name": None}
         renamed_paths: set[str] = set()
         final_list_mode: dict[str, str] = {}
@@ -201,9 +221,13 @@ def main() -> None:
                 return subprocess.CompletedProcess([], 0, "", "")
             raise AssertionError(f"unexpected synthetic command: {command}")
 
+        def record_diagnostic(message: str, *args: object, **_kwargs: object) -> None:
+            diagnostic_lines.append(message % args)
+
         Handler._log_smb_stage = staticmethod(record_stage)
         Handler._diagnose_smb_list_result = staticmethod(lambda *_args, **_kwargs: None)
         Handler._smb_command = fake_smb_command
+        namespace["LOG"] = SimpleNamespace(info=record_diagnostic, warning=lambda *_args, **_kwargs: None)
 
         pdf_payload = b"SYNTHETIC_PDF_PAYLOAD\n"
         pdf_path = root / "VOXEL_SYNTHETIC.pdf"
@@ -339,6 +363,7 @@ def main() -> None:
             xml_task_file_path_hash,
             False,
             credentials,
+            stage_diagnostics=True,
         )
         assert result == "smb"
         assert remote_store[final_path] == pdf_payload
@@ -360,6 +385,15 @@ def main() -> None:
                 ("LIST", "final"),
             ],
         )
+        for stage_name in (
+            "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY",
+        ):
+            assert any(
+                f"STAGE_NAME={stage_name}" in line
+                for line in diagnostic_lines
+            ), f"missing sanitized diagnostic stage: {stage_name}"
+        assert all("stdout" not in line.lower() and "stderr" not in line.lower() for line in diagnostic_lines)
+        print("STAGE_DIAGNOSTICS_SYNTHETIC=PASS")
         assert not any(path.name.endswith(".part") for path in state_root.iterdir())
 
         remote_store.clear()
