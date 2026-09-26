@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, development ]
+    branches: [ main, development, 'versao/**' ]
   pull_request:
     branches: [ main, development ]
 
@@ -23,12 +23,44 @@ jobs:
       - name: Validate composer.json
         run: composer validate --strict
 
+      - name: Verify test tree before Composer install
+        run: bash scripts/verify-composer-tree.sh --allow-missing-vendor
+
       - name: Install dependencies
         run: composer install --no-dev --prefer-dist --no-progress
 
+      - name: Verify Composer tree after install
+        run: bash scripts/verify-composer-tree.sh
+
       - name: PHP Lint (syntax check)
-        run: find app/ public/ routes/ config/ -name "*.php" -exec php -l {} \; | grep -v "No syntax errors"
-        continue-on-error: true
+        run: find app/ public/ routes/ config/ tests/ -name "*.php" -print0 | xargs -0 -n1 php -l
+
+  pdf-regression:
+    name: PDF A4 and QR regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, gd, zip, mbstring, xml, opcache
+          coverage: none
+
+      - name: Install Poppler utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Verify Composer tree after install
+        run: bash scripts/verify-composer-tree.sh
+
+      - name: Run PDF regression suite
+        run: bash scripts/test-pdf-regressions.sh
 
   test:
     name: PHPUnit Tests
@@ -46,6 +78,17 @@ jobs:
       - name: Install dependencies (with dev)
         run: composer install --prefer-dist --no-progress
 
+      - name: Verify Composer tree after install
+        run: bash scripts/verify-composer-tree.sh
+
       - name: Run tests
-        run: composer test
-        continue-on-error: true
+        run: |
+          test_count=$(vendor/bin/phpunit tests --list-tests | awk '/^[[:space:]]*-[[:space:]]+/ {count++} END {print count+0}')
+          echo "PHPUNIT_DISCOVERED_TESTS=$test_count"
+          if [ "$test_count" -eq 0 ]; then
+            echo "::warning::PHPUNIT=NOT_CONCLUSIVE; zero tests were discovered."
+            echo "PHPUNIT=NOT_CONCLUSIVE"
+            exit 0
+          fi
+          vendor/bin/phpunit tests --no-coverage
+          echo "PHPUNIT=PASS"

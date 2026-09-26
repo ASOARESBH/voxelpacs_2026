@@ -3,7 +3,8 @@
  *
  * O editor é um documento clínico único. A máscara apenas importa um conteúdo
  * inicial; a fonte de verdade passa a ser sempre o HTML atual do Quill, incluindo
- * palavras, medidas, formatação e espaçamento inseridos pelo médico.
+ * palavras, medidas e formatação inseridos pelo médico; o espaçamento
+ * estrutural redundante é compactado antes do autosave e da geração de PDF.
  */
 window.VoxelReports = window.VoxelReports || {};
 
@@ -24,6 +25,11 @@ window.VoxelReports.editor = (function () {
             readOnly: !!config.readonly,
             toolbarSelector: '#editor-toolbar',
         });
+
+        normalizeCurrentContent();
+        if (quill?.root?.addEventListener) {
+            quill.root.addEventListener('paste', () => window.setTimeout(normalizeCurrentContent, 0));
+        }
 
         if (config.readonly) {
             const toolbar = document.getElementById('editor-toolbar');
@@ -46,6 +52,7 @@ window.VoxelReports.editor = (function () {
             html += conteudo;
         });
         if (html === '') html = '<p><br></p>';
+        html = normalizeClinicalHtml(html) || '<p><br></p>';
         quill.setText('');
         quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
     }
@@ -56,12 +63,31 @@ window.VoxelReports.editor = (function () {
      * texto e toda formatação adicionados pelo médico até o PDF.
      */
     function extractSecoes() {
-        return { corpo: quill?.root?.innerHTML || '<p><br></p>' };
+        const html = normalizeClinicalHtml(quill?.root?.innerHTML || '');
+        return { corpo: html || '<p><br></p>' };
     }
 
     function loadConteudoLivre(html) {
+        html = normalizeClinicalHtml(html || '') || '<p><br></p>';
         quill.setText('');
-        quill.clipboard.dangerouslyPasteHTML(0, html || '<p><br></p>', 'silent');
+        quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
+    }
+
+    function normalizeClinicalHtml(html) {
+        const normalizer = window.VoxelQuill?.factory?.normalizeClinicalHtml;
+        return typeof normalizer === 'function' ? normalizer(html) : String(html || '').trim();
+    }
+
+    function normalizeCurrentContent() {
+        if (!quill?.root) return;
+        const current = quill.root.innerHTML || '';
+        const normalized = normalizeClinicalHtml(current);
+        if (!normalized || normalized === current || !quill.clipboard?.dangerouslyPasteHTML) return;
+        const selection = typeof quill.getSelection === 'function' ? quill.getSelection() : null;
+        quill.clipboard.dangerouslyPasteHTML(0, normalized, 'silent');
+        if (selection && typeof quill.setSelection === 'function') {
+            quill.setSelection(Math.min(selection.index, Math.max(0, quill.getLength() - 1)), 0, 'silent');
+        }
     }
 
     function getQuill() { return quill; }

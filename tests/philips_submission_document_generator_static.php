@@ -66,6 +66,35 @@ expect_true(str_contains($first->content, '<task_patient_birthday>19800102</task
 expect_true(str_contains($first->content, '<task_document_mimetype>application/pdf</task_document_mimetype>'), 'MIME must be PDF');
 expect_true(str_contains($first->content, '<task_document_type>11502-2</task_document_type>'), 'Document type must be serialized');
 
+$flatAuthorInput = $input;
+$flatAuthorInput['task_author_humanname_family'] = 'Full Requesting Physician Name';
+$flatAuthorInput['task_author_humanname_given'] = '';
+$flatAuthorInput['task_author_humanname_middle'] = '';
+$flatAuthorInput['author_humanname_flat'] = true;
+$flatAuthorDocument = $generator->generate($flatAuthorInput);
+expect_true(str_contains($flatAuthorDocument->content, '<task_author_humanname_family>Full Requesting Physician Name</task_author_humanname_family>'), 'Flat author must preserve the complete Referring Physician in family');
+expect_true(str_contains($flatAuthorDocument->content, '<task_author_humanname_given></task_author_humanname_given>'), 'Flat author must serialize an empty given');
+expect_true(str_contains($flatAuthorDocument->content, '<task_author_humanname_middle></task_author_humanname_middle>'), 'Flat author must serialize an empty middle');
+expect_true(!str_contains($flatAuthorDocument->content, 'author_humanname_flat'), 'Internal flat-author marker must not be serialized');
+
+$structuredAuthorMissingGiven = $input;
+$structuredAuthorMissingGiven['task_author_humanname_given'] = '';
+try {
+    $generator->generate($structuredAuthorMissingGiven);
+    expect_true(false, 'Structured author without given must remain fail-closed');
+} catch (PhilipsXmlFieldUnresolvedException $error) {
+    expect_true($error->field === 'task_author_humanname_given', 'Structured author failure must identify the given field');
+}
+
+$flatAuthorMissingFamily = $flatAuthorInput;
+$flatAuthorMissingFamily['task_author_humanname_family'] = '';
+try {
+    $generator->generate($flatAuthorMissingFamily);
+    expect_true(false, 'Flat author without family must fail closed');
+} catch (PhilipsXmlFieldUnresolvedException $error) {
+    expect_true($error->field === 'task_author_humanname_family', 'Flat author failure must identify the family field');
+}
+
 $flatInput = $input;
 $flatInput['task_patient_humanname_family'] = 'Flat Patient Name';
 $flatInput['task_patient_humanname_given'] = '';

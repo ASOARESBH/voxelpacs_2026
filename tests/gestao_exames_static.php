@@ -50,7 +50,14 @@ $expect(str_contains($routes, "GestaoExamesController@remover") , 'Rota de remo�
 $expect(str_contains($routes, "GestaoExamesController@arquivo") , 'Rota do proxy ausente.');
 $expect(str_contains($controller, 'LEFT JOIN bi_pacs_estudos_pedidos') , 'Join do pedido não está na Worklist.');
 $expect(str_contains($controller, "public function gestao(): void") , 'Ação gestao() ausente no Controller de Estudos.');
+$expect(str_contains($controller, '$urlWorklist') && str_contains($controller, "'/gestao-exames' : '/estudos'"), 'Controller não define a rota base por modo da Worklist.');
 $expect(str_contains($view, "t('pedido_medico.coluna')") , 'Coluna PEDIDO não está internacionalizada.');
+$expect(str_contains($view, 'function estudoUrl(array $filtros, int $pagina = 1, ?string $worklistPath = null): string'), 'Helper de URL da Worklist não recebe a rota base explicitamente.');
+$expect(str_contains($view, "in_array(\$worklistPath, ['/estudos', '/gestao-exames'], true)"), 'Helper de URL não limita a rota base a Worklist/ Gestão de Exames.');
+$expect(str_contains($view, 'function sortLink(array $filtros, string $col, string $label, ?string $worklistPath = null): string'), 'Helper de ordenação ainda não recebe a rota base explicitamente.');
+$expect(substr_count($view, 'sortLink($filtros,') >= 5 && substr_count($view, '$urlWorklist)') >= 10, 'Links de ordenação não preservam a rota atual da Worklist.');
+$expect(str_contains($view, "estudoUrl(array_merge(\$filtros, ['ordenar' => \$col, 'direcao' => \$dir]), 1, \$worklistPath)"), 'sortLink não encaminha a rota base recebida ao helper de URL.');
+$expect(substr_count($view, 'estudoUrl($filtros, ') >= 5 && substr_count($view, '$urlWorklist)') >= 5, 'Links de paginação não preservam a rota atual da Worklist.');
 $expect(str_contains($view, 'id="pedidoModal"') , 'Modal do pedido não foi renderizada.');
 $expect(str_contains($view, 'gerenciar-trigger') && str_contains($view, "t('gestao_gerenciar.acao.gerenciar')"), 'Botão Gerenciar não está na Worklist ou não está internacionalizado.');
 $expect(str_contains($view, 'id="gerenciarModal"') && str_contains($view, 'id="gerenciarChatModal"') && str_contains($view, 'id="gerenciarPrioridadeModal"') && str_contains($view, 'id="gerenciarDescricaoModal"'), 'Modais do submenu Gerenciar incompletos.');
@@ -77,7 +84,8 @@ $managementBranch = ($branchStart !== false && $branchEnd !== false)
 $expect($managementBranch !== '', 'Não foi possível delimitar o branch da Gestão.');
 $expect(!str_contains($managementBranch, 'wl-btn-assumir'), 'Gestão expõe botão Assumir.');
 $expect(str_contains($managementBranch, 'wl-btn-laudo-gestao'), 'Gestão não expõe o botão Laudo administrativo.');
-$expect(str_contains($managementBranch, 'target="_self"') && str_contains($managementBranch, 'rawurlencode($reportTokenGestao)') && str_contains($managementBranch, '/pdf?origem=gestao'), 'Laudo administrativo não abre o PDF opaco no contexto da Gestão.');
+$expect(str_contains($managementBranch, 'target="_blank"') && str_contains($managementBranch, 'rel="noopener noreferrer"') && str_contains($managementBranch, 'rawurlencode($reportTokenGestao)') && str_contains($managementBranch, '/pdf?origem=gestao'), 'Laudo administrativo não abre o PDF opaco em nova aba no contexto da Gestão.');
+$expect(!str_contains($managementBranch, 'target="_self"'), 'Laudo administrativo ainda usa a aba da Gestão de Exames.');
 $expect(str_contains($managementBranch, 'aria-disabled="true"') && str_contains($managementBranch, 'is-disabled'), 'Laudo administrativo indisponível não possui estado desabilitado acessível.');
 $expect(!str_contains($managementBranch, 'wl-btn-abrir'), 'Gestão expõe botão Abrir.');
 $expect(!str_contains($managementBranch, '/abrir'), 'Gestão expõe rota de abertura.');
@@ -85,7 +93,9 @@ $expect(str_contains($view, '$podeConsultarLaudoGestao = $modoGestao') && str_co
 $expect(str_contains($view, '$podeGerenciarPedido') && str_contains($view, 'preg_match(\'/^[a-f0-9]{48}$/\', $reportTokenGestao)'), 'Laudo administrativo não exige permissão e token opaco válido.');
 $expect(str_contains($view, '<?php if (!$modoGestao): ?>'), 'Duplo clique do viewer não está condicionado ao modo médico.');
 $expect(!str_contains($view, '<?php if ($modoGestao && $podeGerenciarPedido): ?>\n<script>'), 'Modal do pedido contém script aninhado dentro do bloco principal.');
-$expect(substr_count($view, '<script>') === 1 && substr_count($view, '</script>') === 2, 'Worklist possui quantidade inconsistente de tags script.');
+$scriptOpenCount = preg_match_all('/<script(?:\s[^>]*)?>/', $view);
+$scriptCloseCount = substr_count($view, '</script>');
+$expect($scriptOpenCount === 3 && $scriptCloseCount === 3 && substr_count($view, '<script>') === 1, 'Worklist possui quantidade inconsistente de tags script.');
 
 $expect(str_contains($migration, 'CREATE TABLE IF NOT EXISTS `bi_pacs_estudos_pedidos`'), 'Migration sem CREATE TABLE idempotente.');
 $expect(str_contains($migration, 'UNIQUE KEY `uq_pedido_tenant_estudo`'), 'Migration sem unicidade tenant/estudo.');

@@ -153,5 +153,5 @@ Arquivos: `app/Controllers/EstudosController.php` (~82KB, PDO direto, sem Servic
 - [ ] Refresh automático da tabela de estudos implementado com os cuidados de UX da seção 2.5.
 - [ ] Auditoria (`AuditLogger`) das alterações de visibilidade/permissão.
 - [ ] Testes manuais ponta a ponta: superadmin (com e sem impersonação), admin de tenant, médico restrito, analista, viewer — confirmando que ocultar um módulo também bloqueia acesso direto por URL.
-- [ ] Atualização do `SKILL-VOXEL-PACS` (`indexes/tabelas-banco.md`, `indexes/rotas-api.md`, novo `modules/configuracao-modulos.md`, `architecture/auth-e-permissoes.md`).
+- [ ] Atualização do `SKILL-VOXEL-PACS` (`indexes/tabelas-banco.md`, `indexes/rotas-api.md`, `architecture/auth-e-permissoes.md`); documentação específica de configuração de módulos: **Não localizado no código analisado.**
 - [ ] Nenhuma regressão nos fluxos que hoje dependem de `location.reload()` manual (assumir estudo, download em lote) nem na seleção de linhas da Worklist durante o auto-refresh.

@@ -2,7 +2,7 @@
 
 ## ⚠️ Correção 2026-08-11 (mesmo dia): implementado nos DOIS sistemas de Unidade
 
-A primeira versão desta feature foi implementada só em `bi_unidades`/`unidades/nova.php` — presumido, sem confirmar contra a tela real, que fosse o sistema em uso. Um print de produção real (`server.voxelpacs.com.br/unidades/33/edit`) mostrou que a tela ativa é outra (`unidades/edit.php`, tabela `bi_negocio_institution_names`). Corrigido no mesmo dia: a seleção de template agora existe **nos dois sistemas** (`unidades/edit.php` E `unidades/nova.php`), cada um com sua própria coluna `report_layout_template_id` na respectiva tabela, e `ReportsController::pdf()` lê das duas com `COALESCE` (prioriza `bi_negocio_institution_names`, que é onde há dado real hoje). Ver `modules/unidades.md` para o mapa completo dos dois sistemas — **leia aquele arquivo antes de mexer em qualquer tela de Unidade de novo**.
+A primeira versão desta feature foi implementada só em `bi_unidades`/`unidades/nova.php` — presumido, sem confirmar contra a tela real, que fosse o sistema em uso. Um print de produção real (`server.voxelpacs.com.br/unidades/33/edit`) mostrou que a tela ativa é outra (`unidades/edit.php`, tabela `bi_negocio_institution_names`). Corrigido no mesmo dia: a seleção de template agora existe **nos dois sistemas** (`unidades/edit.php` E `unidades/nova.php`), cada um com sua própria coluna `report_layout_template_id` na respectiva tabela. No resolver produtivo, a unidade vinculada (`bi_unidades`, via `unidade_id`) tem prioridade; `bi_negocio_institution_names` é o fallback compatível quando não há unidade vinculada ou o campo da unidade está vazio. Ver `modules/unidades.md` para o mapa completo dos dois sistemas — **leia aquele arquivo antes de mexer em qualquer tela de Unidade de novo**.
 
 ## Propósito
 Cada Unidade escolhe **um** layout visual entre um catálogo fixo de 4 modelos profissionais, aplicado automaticamente à tela/impressão/PDF do laudo. É camada de **apresentação** — reorganiza/estiliza os mesmos dados do laudo já existentes (paciente, exame, seções, assinatura), não altera nenhum dado clínico nem toca no fluxo de edição/assinatura/autosave.
@@ -16,7 +16,7 @@ Cada Unidade escolhe **um** layout visual entre um catálogo fixo de 4 modelos p
 | `app/Controllers/UnidadesController.php` | `edit()` (Sistema A, ativo) e `novaUnidade()`/`editarUnidade()` (Sistema B) passam o catálogo pra view; `update()`/`criarUnidade()`/`atualizarUnidade()` persistem `report_layout_template_id` (mesmo padrão `$campos`/array dinâmico já usado pros outros campos), cada um na sua tabela. |
 | `app/Views/unidades/edit.php` | **Sistema A (ativo em produção)**. Card "Template de Laudo" na coluna direita, logo após "InstitutionName DICOM" — lista vertical de cards selecionáveis (`.template-laudo-card-sm`), sem preview visual (coluna estreita, `col-lg-4`). |
 | `app/Views/unidades/nova.php` | Sistema B. Card "Template de Laudo" (grade de 4 cards com preview CSS, `.template-laudo-card`), entre "Vínculos com InstitutionName DICOM" e "Configurações". |
-| `app/Controllers/ReportsController.php` (`pdf()`) | `SELECT` ganhou `LEFT JOIN bi_negocio_institution_names` (bnin) → `LEFT JOIN bi_unidades` (un, via `bnin.unidade_id`) — mesmo padrão de match case-insensitive de `institution_name` já usado em `UnidadesController`. Cada campo de unidade (nome, CNPJ, logo, endereço, telefone, `report_layout_template_id`) é `COALESCE(NULLIF(bnin.campo,''), un.campo)` — prioriza Sistema A (dado real), cai pro B se faltar. Resolve o código via `ReportLayoutService` e passa pra view. A consulta exige `r.tenant_id` e `e.tenant_id` iguais ao tenant autenticado ou ao tenant obtido da sessão do portal; o link público não aceita `portal_patient_pdf` como parâmetro de confiança. |
+| `app/Controllers/ReportsController.php` (`pdf()`) | `SELECT` usa `LEFT JOIN bi_negocio_institution_names` (bnin) → `LEFT JOIN bi_unidades` (un, via `bnin.unidade_id`) — match case-insensitive de `institution_name` dentro do tenant. Para logo e `report_layout_template_id`, a unidade vinculada tem prioridade por `COALESCE(NULLIF(un.campo,''), bnin.campo)`; o registro direto de InstitutionName permanece fallback. Resolve o código via `ReportLayoutService` e passa pra view. A consulta exige `r.tenant_id` e `e.tenant_id` iguais ao tenant autenticado ou ao tenant obtido da sessão do portal; o link público não aceita `portal_patient_pdf` como parâmetro de confiança. |
 | `app/Views/reports/pdf.php` | Virou dispatcher fino: monta `$r`/`$paciente`/`$download` (igual antes) e só decide qual partial `require`. Nenhuma lógica de dado aqui. |
 | `app/Views/reports/pdf/templates/_*.php` | Os 4 templates — cada um é um documento HTML completo e autocontido (própria `<style>`), não fragmentos combinados num CSS compartilhado. |
 | `database/migrations/2026-08-11_report_layout_templates.sql` | Tabela `report_layout_templates` + coluna em `bi_unidades` (Sistema B) + seed dos 4 templates. |
@@ -45,7 +45,7 @@ O partial `_moderno_lateral.php` é a fonte única de `Imprimir` e de `Baixar PD
 
 - Se o report possuir `template_id`, o título centralizado em negrito vem da Máscara vinculada (`reports.template_id` → `report_templates.nome` ou `titulo`). Sem vínculo, o fallback é `Study Description`, depois procedimento solicitado, parte do corpo e, por último, modalidade.
 - A aplicação ativa de Máscara coloca somente **TÉCNICA**, **ACHADOS** e **IMPRESSÃO** no editor. As chaves internas permanecem `secao_tecnica`, `secao_achados` e `secao_conclusao`; no Moderno Lateral, `conclusao` é apresentado como **IMPRESSÃO**.
-- O título usa 17px e o corpo clínico usa 13px com entrelinha 1.62, inclusive em `@media print`, para leitura confortável sem alterar o conteúdo, a assinatura ou a auditoria do report.
+- O título usa 17px e o corpo clínico usa 13px com entrelinha controlada, inclusive em `@media print`, para leitura confortável sem alterar o conteúdo, a assinatura ou a auditoria do report. A normalização central remove vazios e margens coladas antes do render; os templates mantêm apenas respiro mínimo entre parágrafos, headings, listas e tabelas.
 - As regras `@page` mantêm a mesma geometria A4 entre pré-visualização e impressão. Seções vazias são omitidas, e documentos extensos podem continuar em nova página sem sobreposição.
 
 A composição não inventa dados de responsável técnico e usa apenas os campos já resolvidos por `ReportsController::pdf()`.
@@ -56,13 +56,13 @@ A composição não inventa dados de responsável técnico e usa apenas os campo
 reports.estudo_id → bi_pacs_estudos.institution_name
   → bi_negocio_institution_names.institution_name (match case-insensitive, COLLATE utf8mb4_general_ci)
   → COALESCE(
-       bi_negocio_institution_names.report_layout_template_id,          -- Sistema A (prioridade — dado real)
-       bi_unidades.report_layout_template_id  (via unidade_id)          -- Sistema B (fallback)
+       bi_unidades.report_layout_template_id  (via unidade_id),         -- Unidade vinculada: fonte visual canônica
+       bi_negocio_institution_names.report_layout_template_id            -- Fallback legado do vínculo InstitutionName
      )
   → report_layout_templates.codigo
 ```
 
-Se qualquer elo da cadeia faltar (estudo sem `institution_name` cadastrado em Unidades, unidade sem template escolhido em nenhum dos dois sistemas, `report_layout_template_id` apontando pra um template desativado) **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide isso, chamada uma vez em `ReportsController::pdf()`.
+Os dados visuais seguem a mesma prioridade: logo, nome, CNPJ, endereço, telefone e canais da `bi_unidades` vinculada vencem valores legados preenchidos diretamente em `bi_negocio_institution_names`; estes continuam fallback para o Sistema A ainda não vinculado por `unidade_id`. Se qualquer elo da cadeia faltar (estudo sem `institution_name`, vínculo sem template escolhido, `report_layout_template_id` apontando para template desativado), **cai no padrão silenciosamente** — nunca quebra a geração do laudo. `ReportLayoutService::resolverCodigo()` é a única função que decide o código final do layout.
 
 ## Regra de acesso — médico não pode alterar (limitação conhecida)
 
@@ -79,4 +79,5 @@ O requisito "médico não pode escolher o template, só Administrador" é satisf
 - **Não validado**: navegador real, PDO/banco de dados real (sem acesso a banco neste ambiente — nenhuma das duas migrations foi executada), fluxo completo `/unidades/{id}/edit` → salvar → `/reports/pdf` ao vivo.
 
 ## Última análise
-2026-08-11
+Auditoria produtiva do tenant 2 em 2026-09-23: existem 0 unidades em `bi_unidades`; os 8 `InstitutionName` não possuem `unidade_id`. Entre os laudos liberados, a resolução atual encontra logo direta em 270 casos e template direto em 270 casos, usando o registro de InstitutionName como fallback compatível. O fluxo de liberação chama o mesmo contexto visual antes de persistir o snapshot, portanto novos laudos seguirão essa regra; quando uma unidade for vinculada, ela terá prioridade.
+2026-09-23

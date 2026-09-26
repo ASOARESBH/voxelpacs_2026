@@ -30,6 +30,93 @@ window.VoxelQuill.factory = (function () {
         }
     }
 
+    function normalizeClinicalHtml(rawHtml) {
+        const html = String(rawHtml || '').trim();
+        if (!html) return '';
+
+        if (typeof document === 'undefined' || !document.createElement) {
+            return normalizeClinicalHtmlFallback(html);
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        normalizeDomChildren(template.content);
+        return template.innerHTML.trim();
+    }
+
+    function normalizeDomChildren(parent) {
+        const children = Array.from(parent.childNodes || []);
+        let previousBreak = false;
+
+        children.forEach((child) => {
+            if (child.nodeType === 3) {
+                child.nodeValue = normalizeText(child.nodeValue || '');
+                if (child.nodeValue.trim() !== '') previousBreak = false;
+                return;
+            }
+            if (child.nodeType !== 1) return;
+
+            child.removeAttribute('style');
+            const allowedClasses = ['ql-align-center', 'ql-align-right', 'ql-align-justify'];
+            const classes = Array.from(child.classList || []).filter((className) => allowedClasses.includes(className));
+            if (classes.length) child.className = classes.join(' ');
+            else child.removeAttribute('class');
+            normalizeDomChildren(child);
+            const tag = String(child.tagName || '').toLowerCase();
+            if (tag === 'br') {
+                if (previousBreak) child.remove();
+                else previousBreak = true;
+                return;
+            }
+
+            trimDomBoundaries(child);
+            if (tag === 'p' && isEmptyParagraph(child)) {
+                const previous = child.previousElementSibling;
+                if (previous && String(previous.tagName || '').toLowerCase() === 'p' && isEmptyParagraph(previous)) {
+                    child.remove();
+                    return;
+                }
+            }
+            previousBreak = false;
+        });
+    }
+
+    function normalizeText(value) {
+        return String(value || '')
+            .replace(/[\u00a0\u200b\ufeff]/g, ' ')
+            .replace(/\s+/g, ' ');
+    }
+
+    function trimDomBoundaries(element) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        let node = walker.nextNode();
+        while (node) {
+            nodes.push(node);
+            node = walker.nextNode();
+        }
+        if (!nodes.length) return;
+        nodes[0].nodeValue = nodes[0].nodeValue.replace(/^\s+/, '');
+        nodes[nodes.length - 1].nodeValue = nodes[nodes.length - 1].nodeValue.replace(/\s+$/, '');
+    }
+
+    function isEmptyParagraph(element) {
+        if (String(element.textContent || '').trim() !== '') return false;
+        return Array.from(element.querySelectorAll('*')).every((node) => String(node.tagName || '').toLowerCase() === 'br');
+    }
+
+    function normalizeClinicalHtmlFallback(html) {
+        let normalized = html
+            .replace(/[\u00a0\u200b\ufeff]/g, ' ')
+            .replace(/\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+            .replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>');
+        normalized = normalized.replace(/(?:<p\b[^>]*>\s*(?:(?:<br\s*\/?>)\s*)?<\/p>\s*){2,}/gi, '<p><br></p>');
+        normalized = normalized
+            .replace(/(<(?:p|h[1-6]|li|th|td)\b[^>]*>)\s+/gi, '$1')
+            .replace(/\s+(<\/(?:p|h[1-6]|li|th|td)>)/gi, '$1');
+        return normalized.trim();
+    }
+
     function insertSecureLink(quill, enabled) {
         const range = quill.getSelection(true);
         if (!range) return;
@@ -81,7 +168,7 @@ window.VoxelQuill.factory = (function () {
         return quill;
     }
 
-    return { create, insertBasicTable, normalizeHttpsUrl };
+    return { create, insertBasicTable, normalizeHttpsUrl, normalizeClinicalHtml };
 })();
 
 window.createVoxelQuillEditor = function (target, options) {

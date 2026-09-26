@@ -8,8 +8,10 @@
  */
 
 /* ─── helpers de URL ─────────────────────────────────────────────────────── */
-function estudoUrl(array $filtros, int $pagina = 1): string {
-    global $urlWorklist;
+function estudoUrl(array $filtros, int $pagina = 1, ?string $worklistPath = null): string {
+    $basePath = in_array($worklistPath, ['/estudos', '/gestao-exames'], true)
+        ? $worklistPath
+        : '/estudos';
     $p = array_merge($filtros, ['pagina' => $pagina]);
     unset($p['situacao_rapida']);
     // Separar modalidades[] (array) dos demais campos escalares
@@ -23,7 +25,7 @@ function estudoUrl(array $filtros, int $pagina = 1): string {
             $query .= ($query ? '&' : '') . 'modalidades%5B%5D=' . rawurlencode($mod);
         }
     }
-    return ($urlWorklist ?? '/estudos') . '?' . $query;
+    return $basePath . '?' . $query;
 }
 
 /* ─── badge de prioridade DICOM (0040,1003) ─────────────────────────────── */
@@ -174,11 +176,11 @@ function slaClass(?string $inicio, ?string $fim = null): string {
 }
 
 /* ─── link de ordenação ──────────────────────────────────────────────────── */
-function sortLink(array $filtros, string $col, string $label): string {
+function sortLink(array $filtros, string $col, string $label, ?string $worklistPath = null): string {
     $ativo = $filtros['ordenar'] === $col;
     $dir   = $ativo && $filtros['direcao'] === 'DESC' ? 'ASC' : 'DESC';
     $icon  = $ativo ? ($filtros['direcao'] === 'DESC' ? 'fa-sort-down' : 'fa-sort-up') : 'fa-sort';
-    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]));
+    $url   = estudoUrl(array_merge($filtros, ['ordenar' => $col, 'direcao' => $dir]), 1, $worklistPath);
     return "<a href=\"{$url}\" class=\"sort-link\">{$label} <i class=\"fa {$icon}\"></i></a>";
 }
 
@@ -438,18 +440,18 @@ $periodoLabel = [
     <thead>
         <tr>
             <th class="col-check"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"></th>
-            <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo') ?></th>
-            <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente') ?></th>
-            <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade') ?></th>
+            <th class="col-dt"><?= sortLink($filtros,'study_date','Dt Estudo', $urlWorklist) ?></th>
+            <th class="col-paciente"><?= sortLink($filtros,'patient_name','Paciente', $urlWorklist) ?></th>
+            <th class="col-unidade"><?= sortLink($filtros,'institution_name','Unidade', $urlWorklist) ?></th>
             <th class="col-modalidades">Modalidades</th>
             <th class="col-prioridade" title="Prioridade DICOM (0040,1003)">Prioridade</th>
             <th class="col-estudo">Estudo</th>
             <th class="col-medico-laudo" title="Médico responsável pelo laudo">
                 <i class="fa fa-user-doctor" style="font-size:.75rem;"></i> Médico
             </th>
-            <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante') ?></th>
+            <th class="col-solicitante"><?= sortLink($filtros,'especialidade','Solicitante', $urlWorklist) ?></th>
             <th class="col-pedido"><?= htmlspecialchars(t('pedido_medico.coluna')) ?></th>
-            <th class="col-sit"><?= sortLink($filtros,'situacao','Situação') ?></th>
+            <th class="col-sit"><?= sortLink($filtros,'situacao','Situação', $urlWorklist) ?></th>
             <th class="col-sla" title="SLA Padrão e SLA Médico"><i class="fa fa-clock"></i> SLA</th>
             <th class="col-acoes">Ações</th>
         </tr>
@@ -721,7 +723,7 @@ $periodoLabel = [
                         <?php if ($podeConsultarLaudoGestao): ?>
                         <a class="wl-btn-laudo wl-btn-laudo-gestao"
                            href="/reports/r/<?= rawurlencode($reportTokenGestao) ?>/pdf?origem=gestao"
-                           target="_self"
+                           target="_blank" rel="noopener noreferrer"
                            title="<?= htmlspecialchars(t('gestao_gerenciar.menu.ver_laudo_desc'), ENT_QUOTES) ?>">
                             <i class="fa fa-file-medical"></i> <?= htmlspecialchars(t('gestao_gerenciar.js.laudo')) ?>
                         </a>
@@ -758,7 +760,7 @@ $periodoLabel = [
                         <?php elseif ($podeLaudar): ?>
                         <?php if (!$workspaceLaudoHabilitado && !empty($e['report_public_token'])): ?>
                         <!-- Laudário Interno: URL pública usa somente token opaco -->
-                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="voxel-laudario"
+                        <a href="/reports/r/<?= rawurlencode($e['report_public_token']) ?>" target="_blank" rel="noopener noreferrer"
                            class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS">
                             <i class="fa fa-file-medical"></i> Laudo
                         </a>
@@ -858,21 +860,21 @@ $periodoLabel = [
     <?php if ($totalPages > 1): ?>
     <div class="wl-pag-links">
         <?php if ($currentPage > 1): ?>
-            <a href="<?= estudoUrl($filtros, 1) ?>" class="wl-pag-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
-            <a href="<?= estudoUrl($filtros, $currentPage-1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-left"></i></a>
+            <a href="<?= estudoUrl($filtros, 1, $urlWorklist) ?>" class="wl-pag-btn" title="Primeira"><i class="fa fa-angles-left"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage-1, $urlWorklist) ?>" class="wl-pag-btn"><i class="fa fa-chevron-left"></i></a>
         <?php endif; ?>
         <?php
         $start = max(1, $currentPage-2); $end = min($totalPages, $currentPage+2);
         if ($start > 1) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
         for ($pg = $start; $pg <= $end; $pg++):
         ?>
-            <a href="<?= estudoUrl($filtros, $pg) ?>" class="wl-pag-btn <?= $pg===$currentPage?'active':'' ?>"><?= $pg ?></a>
+            <a href="<?= estudoUrl($filtros, $pg, $urlWorklist) ?>" class="wl-pag-btn <?= $pg===$currentPage?'active':'' ?>"><?= $pg ?></a>
         <?php endfor;
         if ($end < $totalPages) echo '<span class="wl-pag-btn" style="pointer-events:none;opacity:.4;">…</span>';
         ?>
         <?php if ($currentPage < $totalPages): ?>
-            <a href="<?= estudoUrl($filtros, $currentPage+1) ?>" class="wl-pag-btn"><i class="fa fa-chevron-right"></i></a>
-            <a href="<?= estudoUrl($filtros, $totalPages) ?>" class="wl-pag-btn" title="Última"><i class="fa fa-angles-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $currentPage+1, $urlWorklist) ?>" class="wl-pag-btn"><i class="fa fa-chevron-right"></i></a>
+            <a href="<?= estudoUrl($filtros, $totalPages, $urlWorklist) ?>" class="wl-pag-btn" title="Última"><i class="fa fa-angles-right"></i></a>
         <?php endif; ?>
     </div>
     <span class="wl-pag-info">Página <?= $currentPage ?> de <?= $totalPages ?></span>
@@ -1845,7 +1847,7 @@ document.addEventListener('click', function(e) {
             let novoBotao;
             if (!wlHabilitado && reportUrl) {
                 // Laudário Interno: endpoint retorna URL com token opaco.
-                novoBotao = `<a href="${reportUrl}" target="voxel-laudario" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
+                novoBotao = `<a href="${reportUrl}" target="_blank" rel="noopener noreferrer" class="wl-btn-laudo" title="Abrir Laudário Interno VOXEL PACS"><i class="fa fa-file-medical"></i> Laudo</a>`;
             } else if (!wlHabilitado) {
                 // Falha segura: mantém a ação disponível para recuperar o token
                 // do report já assumido, em vez de fazer o botão desaparecer.
@@ -1889,7 +1891,7 @@ document.addEventListener('click', function(e) {
     const estudoId = parseInt(btn.dataset.id || '0', 10);
     if (!estudoId) return;
 
-    const aba = window.open('', 'voxel-laudario');
+    const aba = window.open('', '_blank');
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Preparando...';
 
