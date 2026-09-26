@@ -71,6 +71,17 @@ SMB_DIAGNOSTIC_CLASSIFICATIONS = (
     "none", "not_found", "authentication", "permission", "connectivity",
     "timeout", "remote_io", "invalid_artifact", "configuration", "host_key", "unknown",
 )
+STAGE_DIAGNOSTICS_ENV = "PHILIPS_FOLDER_STAGE_DIAGNOSTICS"
+STAGE_DIAGNOSTIC_STAGES = (
+    "STAGE_ENTER", "STAGE_EXIT",
+    "PACKAGE_OPEN", "MANIFEST", "PDF", "XML",
+    "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY",
+)
+STAGE_DIAGNOSTIC_NAMES = {
+    "PACKAGE_OPEN", "MANIFEST", "PDF", "XML",
+    "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY", "unknown",
+}
+STAGE_DIAGNOSTIC_OUTCOMES = ("START", "PASS", "FAIL")
 
 
 def setting(name: str) -> str:
@@ -122,6 +133,24 @@ def envelope_diagnostics_enabled() -> bool:
 def smb_diagnostics_enabled() -> bool:
     """SMB diagnostics are opt-in; the safe default is disabled (value 0)."""
     return os.environ.get(SMB_DIAGNOSTICS_ENV, "0").strip() == "1"
+
+
+def stage_diagnostics_enabled(
+    job_id: int,
+    environment: str,
+    delivery_profile: str,
+    transport: str,
+) -> bool:
+    """Enable stage telemetry only for one signed homologation single-test job."""
+    return (
+        os.environ.get(STAGE_DIAGNOSTICS_ENV, "0").strip() == "1"
+        and environment == "homologacao"
+        and delivery_profile == "submission_document"
+        and transport == "philips_non_dicom"
+        and POLICY.mode == "single_test"
+        and job_id > 0
+        and POLICY.allowed_job_id == job_id
+    )
 
 
 class Policy:
@@ -509,6 +538,12 @@ class Handler(BaseHTTPRequestHandler):
         if not envelope or POLICY.envelope_private_key is None or POLICY.transport != "smb":
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
+        stage_diagnostics = stage_diagnostics_enabled(
+            job_id,
+            environment_header,
+            delivery_profile_header,
+            transport_header,
+        )
         previous = read_state(job_id)
         if (previous.get("sha256") == package_hash
                 and previous.get("state") == "delivered"
@@ -532,6 +567,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with self.extracted_submission_package(
                 staged,
+                job_id,
+                stage_diagnostics,
                 pdf_filename,
                 pdf_hash,
                 pdf_length,
@@ -555,6 +592,7 @@ class Handler(BaseHTTPRequestHandler):
                         credentials,
                         allow_missing_patient_name_components,
                         allow_patient_name_as_family,
+                        stage_diagnostics,
                     )
         except BridgeTransferError as error:
             LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
@@ -583,6 +621,8 @@ class Handler(BaseHTTPRequestHandler):
     def extracted_submission_package(
         self,
         staged: Path,
+        job_id: int,
+        stage_diagnostics: bool,
         pdf_filename: str,
         pdf_hash: str,
         pdf_length: int,
@@ -597,38 +637,44 @@ class Handler(BaseHTTPRequestHandler):
         pdf_path: Path | None = None
         xml_path: Path | None = None
         try:
-            with staged.open("rb") as source:
-                manifest_line = source.readline(16385)
-                if len(manifest_line) > 16384 or not manifest_line.endswith(b"\n"):
-                    raise BridgeTransferError("remote_io")
-                try:
-                    manifest = json.loads(manifest_line[:-1].decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError):
-                    raise BridgeTransferError("remote_io") from None
-                if not isinstance(manifest, dict) or manifest.get("v") != 1:
-                    raise BridgeTransferError("remote_io")
-                expected_entries = {
-                    "pdf": {"filename": pdf_filename, "sha256": pdf_hash, "size": pdf_length},
-                    "xml": {"filename": xml_filename, "sha256": xml_hash, "size": xml_length},
-                }
-                for kind, expected in expected_entries.items():
-                    entry = manifest.get(kind)
-                    if not isinstance(entry, dict) or entry != expected:
+            source = None
+            with self._diagnostic_stage(job_id, "PACKAGE_OPEN", stage_diagnostics):
+                source = staged.open("rb")
+            with source:
+                with self._diagnostic_stage(job_id, "MANIFEST", stage_diagnostics):
+                    manifest_line = source.readline(16385)
+                    if len(manifest_line) > 16384 or not manifest_line.endswith(b"\n"):
                         raise BridgeTransferError("remote_io")
-                pdf_path = self._extract_package_entry(source, pdf_filename, pdf_hash, pdf_length, b"%PDF")
+                    try:
+                        manifest = json.loads(manifest_line[:-1].decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        raise BridgeTransferError("remote_io") from None
+                    if not isinstance(manifest, dict) or manifest.get("v") != 1:
+                        raise BridgeTransferError("remote_io")
+                    expected_entries = {
+                        "pdf": {"filename": pdf_filename, "sha256": pdf_hash, "size": pdf_length},
+                        "xml": {"filename": xml_filename, "sha256": xml_hash, "size": xml_length},
+                    }
+                    for kind, expected in expected_entries.items():
+                        entry = manifest.get(kind)
+                        if not isinstance(entry, dict) or entry != expected:
+                            raise BridgeTransferError("remote_io")
+                with self._diagnostic_stage(job_id, "PDF", stage_diagnostics):
+                    pdf_path = self._extract_package_entry(source, pdf_filename, pdf_hash, pdf_length, b"%PDF")
                 if source.read(1) != b"\n":
                     raise BridgeTransferError("remote_io")
-                xml_path = self._extract_package_entry(source, xml_filename, xml_hash, xml_length, b"<?xml")
-                if source.read(1) != b"":
-                    raise BridgeTransferError("remote_io")
-            self._validate_submission_xml(
-                xml_path,
-                pdf_filename,
-                xml_task_file_path_hash,
-                xml_document_type_applicable,
-                allow_missing_patient_name_components,
-                allow_patient_name_as_family,
-            )
+                with self._diagnostic_stage(job_id, "XML", stage_diagnostics):
+                    xml_path = self._extract_package_entry(source, xml_filename, xml_hash, xml_length, b"<?xml")
+                    if source.read(1) != b"":
+                        raise BridgeTransferError("remote_io")
+                    self._validate_submission_xml(
+                        xml_path,
+                        pdf_filename,
+                        xml_task_file_path_hash,
+                        xml_document_type_applicable,
+                        allow_missing_patient_name_components,
+                        allow_patient_name_as_family,
+                    )
             yield pdf_path, xml_path
         finally:
             if pdf_path is not None:
@@ -674,6 +720,7 @@ class Handler(BaseHTTPRequestHandler):
         credentials: Path | None,
         allow_missing_patient_name_components: bool = False,
         allow_patient_name_as_family: bool = False,
+        stage_diagnostics: bool = False,
     ) -> str:
         if credentials is None or not isinstance(POLICY.smb, dict):
             raise BridgeTransferError("credentials_unavailable")
@@ -687,48 +734,63 @@ class Handler(BaseHTTPRequestHandler):
         try:
             for entry in entries:
                 _label, final_path, _temporary_path, _local_path, expected_hash, expected_size = entry
-                try:
-                    existing = self._smb_command(credentials, f"ls {self._smb_arg(final_path)}")
-                except BridgeTransferError as error:
-                    self._log_smb_stage(
-                        job_id,
-                        "LIST",
-                        classification=error.category,
-                        remote_target="final",
-                    )
-                    raise
+                with self._diagnostic_stage(job_id, "SMB_LIST", stage_diagnostics) as set_return_code:
+                    try:
+                        existing = self._smb_command(credentials, f"ls {self._smb_arg(final_path)}")
+                    except BridgeTransferError as error:
+                        self._log_smb_stage(
+                            job_id,
+                            "LIST",
+                            classification=error.category,
+                            remote_target="final",
+                        )
+                        raise
+                    set_return_code(existing.returncode)
+                    if existing.returncode == 0:
+                        self._log_smb_stage(job_id, "LIST", existing, "none", remote_target="final")
+                    elif not self._smb_missing(existing):
+                        classification = classify_transport_error(existing.stdout + existing.stderr)
+                        self._log_smb_stage(
+                            job_id,
+                            "LIST",
+                            existing,
+                            classification,
+                            remote_target="final",
+                        )
+                        raise BridgeTransferError(classification)
+                    else:
+                        self._log_smb_stage(
+                            job_id,
+                            "LIST",
+                            existing,
+                            "not_found",
+                            remote_target="final",
+                        )
                 if existing.returncode == 0:
-                    self._log_smb_stage(job_id, "LIST", existing, "none", remote_target="final")
-                    if self.smb_remote_matches(job_id, credentials, final_path, expected_hash, expected_size):
+                    if self.smb_remote_matches(
+                        job_id, credentials, final_path, expected_hash, expected_size,
+                        stage_diagnostics=stage_diagnostics,
+                    ):
                         continue
                     raise BridgeTransferError("remote_io")
-                if not self._smb_missing(existing):
-                    classification = classify_transport_error(existing.stdout + existing.stderr)
-                    self._log_smb_stage(
-                        job_id,
-                        "LIST",
-                        existing,
-                        classification,
-                        remote_target="final",
-                    )
-                    raise BridgeTransferError(classification)
-                self._log_smb_stage(job_id, "LIST", existing, "not_found", remote_target="final")
                 missing.append(entry)
 
             for label, _final_path, temporary_path, path, _expected_hash, _expected_size in missing:
-                try:
-                    uploaded = self._smb_command(
-                        credentials,
-                        f"put {self._smb_arg(path)} {self._smb_arg(temporary_path)}",
-                    )
-                except BridgeTransferError as error:
-                    self._log_smb_stage(job_id, "WRITE", classification=error.category)
-                    raise
-                if uploaded.returncode != 0:
-                    classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
-                    self._log_smb_stage(job_id, "WRITE", uploaded, classification)
-                    raise BridgeTransferError(classification)
-                self._log_smb_stage(job_id, "WRITE", uploaded, "none")
+                with self._diagnostic_stage(job_id, "SMB_WRITE", stage_diagnostics) as set_return_code:
+                    try:
+                        uploaded = self._smb_command(
+                            credentials,
+                            f"put {self._smb_arg(path)} {self._smb_arg(temporary_path)}",
+                        )
+                    except BridgeTransferError as error:
+                        self._log_smb_stage(job_id, "WRITE", classification=error.category)
+                        raise
+                    set_return_code(uploaded.returncode)
+                    if uploaded.returncode != 0:
+                        classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
+                        self._log_smb_stage(job_id, "WRITE", uploaded, classification)
+                        raise BridgeTransferError(classification)
+                    self._log_smb_stage(job_id, "WRITE", uploaded, "none")
 
             for label, _final_path, temporary_path, _path, expected_hash, expected_size in missing:
                 xml_verification = label == "xml"
@@ -744,23 +806,26 @@ class Handler(BaseHTTPRequestHandler):
                     allow_missing_patient_name_components if xml_verification else False,
                     allow_patient_name_as_family if xml_verification else False,
                     remote_target="temporary",
+                    stage_diagnostics=stage_diagnostics,
                 ):
                     raise BridgeTransferError("remote_io")
 
             for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:
-                try:
-                    renamed = self._smb_command(
-                        credentials,
-                        f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}",
-                    )
-                except BridgeTransferError as error:
-                    self._log_smb_stage(job_id, "RENAME", classification=error.category)
-                    raise
-                if renamed.returncode != 0:
-                    classification = classify_transport_error(renamed.stdout + renamed.stderr)
-                    self._log_smb_stage(job_id, "RENAME", renamed, classification)
-                    raise BridgeTransferError(classification)
-                self._log_smb_stage(job_id, "RENAME", renamed, "none")
+                with self._diagnostic_stage(job_id, "SMB_RENAME", stage_diagnostics) as set_return_code:
+                    try:
+                        renamed = self._smb_command(
+                            credentials,
+                            f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}",
+                        )
+                    except BridgeTransferError as error:
+                        self._log_smb_stage(job_id, "RENAME", classification=error.category)
+                        raise
+                    set_return_code(renamed.returncode)
+                    if renamed.returncode != 0:
+                        classification = classify_transport_error(renamed.stdout + renamed.stderr)
+                        self._log_smb_stage(job_id, "RENAME", renamed, classification)
+                        raise BridgeTransferError(classification)
+                    self._log_smb_stage(job_id, "RENAME", renamed, "none")
 
             for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:
                 xml_verification = label == "xml"
@@ -776,6 +841,7 @@ class Handler(BaseHTTPRequestHandler):
                     allow_missing_patient_name_components if xml_verification else False,
                     allow_patient_name_as_family if xml_verification else False,
                     remote_target="final",
+                    stage_diagnostics=stage_diagnostics,
                 ):
                     raise BridgeTransferError("remote_io")
 
@@ -1239,6 +1305,94 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as error:
             raise BridgeTransferError("configuration") from error
 
+    @contextmanager
+    def _diagnostic_stage(self, job_id: int, stage_name: str, enabled: bool):
+        if not enabled:
+            yield lambda _value: None
+            return
+        self._log_stage_diagnostic(
+            job_id, "STAGE_ENTER", "START", enabled=True, stage_name=stage_name
+        )
+        outcome = "PASS"
+        error_category = "none"
+        return_code: int | str = "unknown"
+
+        def set_return_code(value: int | str) -> None:
+            nonlocal return_code
+            return_code = value if isinstance(value, int) else "unknown"
+
+        try:
+            yield set_return_code
+            self._log_stage_diagnostic(
+                job_id, stage_name, "PASS", return_code=return_code,
+                enabled=True, stage_name=stage_name,
+            )
+        except BridgeTransferError as error:
+            outcome = "FAIL"
+            error_category = error.category
+            self._log_stage_diagnostic(
+                job_id, stage_name, "FAIL", error_category=error.category,
+                return_code=return_code, enabled=True, stage_name=stage_name,
+            )
+            raise
+        except Exception:
+            outcome = "FAIL"
+            error_category = "remote_io"
+            self._log_stage_diagnostic(
+                job_id, stage_name, "FAIL", error_category=error_category,
+                return_code=return_code, enabled=True, stage_name=stage_name,
+            )
+            raise
+        finally:
+            self._log_stage_diagnostic(
+                job_id, "STAGE_EXIT", outcome, error_category=error_category,
+                return_code=return_code, enabled=True, stage_name=stage_name,
+            )
+
+    @staticmethod
+    def _log_stage_diagnostic(
+        job_id: int,
+        stage: str,
+        outcome: str,
+        return_code: int | str = "unknown",
+        error_category: str = "none",
+        enabled: bool = False,
+        stage_name: str = "unknown",
+    ) -> None:
+        """Log bounded homologation stage telemetry without raw subprocess output."""
+        if (
+            not enabled
+            or stage not in STAGE_DIAGNOSTIC_STAGES
+            or outcome not in STAGE_DIAGNOSTIC_OUTCOMES
+            or stage_name not in STAGE_DIAGNOSTIC_NAMES
+        ):
+            return
+        safe_return_code = (
+            str(return_code) if isinstance(return_code, int) or str(return_code).isdigit() else "unknown"
+        )
+        safe_error = (
+            error_category
+            if error_category in SMB_DIAGNOSTIC_CLASSIFICATIONS or error_category == "none"
+            else "unknown"
+        )
+        try:
+            LOG.info(
+                "event=philips_stage_diagnostic job_id=%s TIMESTAMP_EPOCH_MS=%s "
+                "STAGE=%s STAGE_NAME=%s OUTCOME=%s RETURN_CODE=%s "
+                "ERROR_CATEGORY=%s SANITIZED_ERROR=%s",
+                job_id,
+                int(time.time() * 1000),
+                stage,
+                stage_name,
+                outcome,
+                safe_return_code,
+                safe_error,
+                safe_error,
+            )
+        except Exception:
+            # Diagnostics are best-effort and must never change delivery behavior.
+            pass
+
     @staticmethod
     def _log_smb_stage(
         job_id: int,
@@ -1407,71 +1561,76 @@ class Handler(BaseHTTPRequestHandler):
         allow_missing_patient_name_components: bool = False,
         allow_patient_name_as_family: bool = False,
         remote_target: str = "final",
+        stage_diagnostics: bool = False,
     ) -> bool:
         descriptor, raw_path = tempfile.mkstemp(prefix="smb-verify-", suffix=".part", dir=STATE_ROOT)
         os.close(descriptor)
         downloaded = Path(raw_path)
         downloaded.unlink(missing_ok=True)
         try:
-            try:
-                result = self._smb_command(
-                    credentials,
-                    f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}",
-                )
-            except BridgeTransferError as error:
-                self._log_smb_stage(
-                    job_id,
-                    "VERIFY",
-                    classification=error.category,
-                    remote_target=remote_target,
-                )
-                raise
-            if result.returncode != 0:
-                classification = classify_transport_error(result.stdout + result.stderr)
-                self._log_smb_stage(job_id, "VERIFY", result, classification, remote_target=remote_target)
-                raise BridgeTransferError(classification)
-            remote_size = downloaded.stat().st_size if downloaded.is_file() else None
-            remote_hash_match = (
-                downloaded.is_file()
-                and remote_size == expected_size
-                and hmac.compare_digest(sha256_file(downloaded), expected_hash)
-            )
-            if (
-                remote_hash_match
-                and xml_pdf_filename is not None
-                and xml_task_file_path_hash is not None
-                and xml_document_type_applicable is not None
-            ):
+            with self._diagnostic_stage(job_id, "SMB_VERIFY", stage_diagnostics) as set_return_code:
                 try:
-                    self._validate_submission_xml(
-                        downloaded,
-                        xml_pdf_filename,
-                        xml_task_file_path_hash,
-                        xml_document_type_applicable,
-                        allow_missing_patient_name_components,
-                        allow_patient_name_as_family,
+                    result = self._smb_command(
+                        credentials,
+                        f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}",
                     )
                 except BridgeTransferError as error:
                     self._log_smb_stage(
                         job_id,
                         "VERIFY",
-                        result,
-                        error.category,
-                        remote_size,
-                        False,
-                        remote_target,
+                        classification=error.category,
+                        remote_target=remote_target,
                     )
                     raise
-            self._log_smb_stage(
-                job_id,
-                "VERIFY",
-                result,
-                "none" if remote_hash_match else "remote_io",
-                remote_size,
-                remote_hash_match,
-                remote_target,
-            )
-            return remote_hash_match
+                set_return_code(result.returncode)
+                if result.returncode != 0:
+                    classification = classify_transport_error(result.stdout + result.stderr)
+                    self._log_smb_stage(job_id, "VERIFY", result, classification, remote_target=remote_target)
+                    raise BridgeTransferError(classification)
+                remote_size = downloaded.stat().st_size if downloaded.is_file() else None
+                remote_hash_match = (
+                    downloaded.is_file()
+                    and remote_size == expected_size
+                    and hmac.compare_digest(sha256_file(downloaded), expected_hash)
+                )
+                if (
+                    remote_hash_match
+                    and xml_pdf_filename is not None
+                    and xml_task_file_path_hash is not None
+                    and xml_document_type_applicable is not None
+                ):
+                    try:
+                        self._validate_submission_xml(
+                            downloaded,
+                            xml_pdf_filename,
+                            xml_task_file_path_hash,
+                            xml_document_type_applicable,
+                            allow_missing_patient_name_components,
+                            allow_patient_name_as_family,
+                        )
+                    except BridgeTransferError as error:
+                        self._log_smb_stage(
+                            job_id,
+                            "VERIFY",
+                            result,
+                            error.category,
+                            remote_size,
+                            False,
+                            remote_target,
+                        )
+                        raise
+                self._log_smb_stage(
+                    job_id,
+                    "VERIFY",
+                    result,
+                    "none" if remote_hash_match else "remote_io",
+                    remote_size,
+                    remote_hash_match,
+                    remote_target,
+                )
+                if not remote_hash_match:
+                    raise BridgeTransferError("remote_io")
+                return True
         finally:
             downloaded.unlink(missing_ok=True)
 

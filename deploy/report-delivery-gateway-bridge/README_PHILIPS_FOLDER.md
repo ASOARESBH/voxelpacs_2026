@@ -29,6 +29,12 @@ Este componente entrega **somente PDF imutável de laudo** por meio da bridge pr
 4. O worker processa o job já reservado, gera o PDF oficial uma vez e o envia à bridge. A bridge confirma checksum e retorna referência de integridade.
 5. Desabilitar novamente a feature flag e registrar o resultado sanitizado. O disparo automático requer uma decisão independente de arquitetura e segurança.
 
+## Instrumentação temporária de homologação
+
+`PHILIPS_FOLDER_STAGE_DIAGNOSTICS=1` é uma flag root-only, default-off, destinada somente a uma janela `single_test` de homologação com `PHILIPS_FOLDER_ALLOW_JOB_ID` igual ao Job autorizado. A Bridge ainda exige os headers assinados `homologacao`, `submission_document` e `philips_non_dicom`; fora dessa combinação, nenhuma telemetria de estágio é emitida.
+
+Quando habilitada, a Bridge registra apenas `STAGE_ENTER`, `STAGE_EXIT`, `PACKAGE_OPEN`, `MANIFEST`, `PDF`, `XML`, `SMB_LIST`, `SMB_WRITE`, `SMB_RENAME` e `SMB_VERIFY`, com Job ID, timestamp, resultado, return code quando disponível e categoria de erro sanitizada. Não registra stdout, stderr, comandos, nomes de arquivo, caminhos, hashes, credenciais, tokens ou conteúdo clínico. A flag deve ser restaurada para `0` após a janela e não pode ser habilitada em produção ou em modo `destination`.
+
 ## Rollback
 
 Para parar a capacidade de entrega sem perder a auditoria: desabilitar a feature flag no aplicativo, pausar a bridge pelo procedimento root-owned e manter jobs/artefatos para investigação. Nunca apagar artefatos clínicos ou registros de tentativa como forma de rollback.
