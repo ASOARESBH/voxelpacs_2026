@@ -131,3 +131,4 @@ $RECYCLE.BIN/
 *.tar.gz
 /voxelpacs_deploy_*.zip
 Claude outputs/PROMPT_MANUS_FASE1_AUDITORIA_PHILIPS_PDF_XML.md
+Claude outputs/PROMPT_MANUS_FASE1R_RETOMADA_HOSTKEY.md
