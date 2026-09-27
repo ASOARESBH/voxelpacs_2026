@@ -78,9 +78,9 @@ class ReportDeliveryRepository
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
             : ($onlyEligible ? 'AND d.enabled = 1' : '');
         $serverRoutingWhere = $onlyEligible
-            ? "AND (d.servidor_pacs_id IS NULL
-                    OR (:source_server_id_guard IS NOT NULL
-                        AND d.servidor_pacs_id = :source_server_id_value))"
+            ? ($sourceServerId === null
+                ? 'AND d.servidor_pacs_id IS NULL'
+                : 'AND d.servidor_pacs_id = :source_server_id')
             : '';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
@@ -102,14 +102,8 @@ class ReportDeliveryRepository
         } else {
             $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, PDO::PARAM_INT);
         }
-        if ($onlyEligible) {
-            if ($sourceServerId === null) {
-                $stmt->bindValue(':source_server_id_guard', null, PDO::PARAM_NULL);
-                $stmt->bindValue(':source_server_id_value', null, PDO::PARAM_NULL);
-            } else {
-                $stmt->bindValue(':source_server_id_guard', $sourceServerId, PDO::PARAM_INT);
-                $stmt->bindValue(':source_server_id_value', $sourceServerId, PDO::PARAM_INT);
-            }
+        if ($onlyEligible && $sourceServerId !== null) {
+            $stmt->bindValue(':source_server_id', $sourceServerId, PDO::PARAM_INT);
         }
         $stmt->execute();
 

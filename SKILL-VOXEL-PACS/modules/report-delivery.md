@@ -61,6 +61,8 @@ Aplica `padrao-sql.md`, `padrao-i18n.md` e o fluxo Controller/Repository existen
 
 A reativação manual torna o job elegível para o worker e pode iniciar transporte externo quando o worker for executado. Por isso a UI não oferece a ação para produção, DICOM, jobs concluídos, jobs ativos ou destinos desabilitados. Falhas posteriores do transporte devem seguir a máquina de estados e o limite de tentativas configurado no destino.
 
+O roteamento automático por servidor PACS deve permanecer fail-closed: quando o estudo não possui `servidor_id`, a consulta usa `d.servidor_pacs_id IS NULL`; quando possui, compara com um parâmetro inteiro tipado. Não usar binds nulos em expressões de guarda PostgreSQL, pois isso pode gerar `SQLSTATE 42P18` no carregamento do painel e na liberação do laudo.
+
 No CLI do runtime PostgreSQL, as variáveis carregadas pelo `.env` podem estar disponíveis via `getenv()`/`$_SERVER`, não apenas em `$_ENV`. `App\Core\SqlHelper::isPostgres()` deve usar a mesma precedência de fontes do `App\Core\Database`; caso contrário, o control-plane gera funções MySQL como `DATABASE()` e falha com SQLSTATE 42883 antes de criar a Delivery Request.
 
 Após a primeira execução real `submission_document` do fluxo controlado, o ledger confirmou `delivered`, `package_verified=PASS` e tentativa única, com evidências sanitizadas de `LIST`, `WRITE`, `RENAME` e `VERIFY` para o mesmo Job. A Bridge preservou um arquivo residual não vazio no staging depois do `VERIFY`; ele não deve ser removido ou reutilizado sem correlação e autorização próprias. Portanto, staging vazio é pré-condição de entrada e também uma verificação pós-entrega independente. A confirmação de chegada física no Windows e de ingestão Philips permanece `UNKNOWN` sem canal read-only autorizado.
