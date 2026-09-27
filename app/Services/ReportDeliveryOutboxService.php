@@ -54,6 +54,7 @@ class ReportDeliveryOutboxService
             : null;
 
         $estabelecimentoId = (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null;
+        $sourceServerId = (int) ($estudo->servidor_id ?? 0) ?: null;
         $rawInstitutionName = trim((string) ($estudo->institution_name ?? ''));
         $institutionName = InstitutionResolverService::canonicalForTenant($tenantId, $rawInstitutionName);
         $issuer = DicomIssuerService::sanitizeIssuer($estudo->issuer_of_patient_id ?? null);
@@ -76,6 +77,7 @@ class ReportDeliveryOutboxService
             'report_id' => $reportId,
             'report_version' => $reportVersion,
             'estudo_id' => $estudoId,
+            'source_server_id' => $sourceServerId,
             'institution_name' => $institutionName,
             'institution_name_received' => $rawInstitutionName,
             'issuer_of_patient_id' => $issuer,
@@ -111,8 +113,8 @@ class ReportDeliveryOutboxService
                 $payload
             );
             $eligibleDestinations = $dispatchMode === 'manual_homologation'
-                ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName)
-                : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName);
+                ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId)
+                : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId);
             $destinations = array_values(array_filter(
                 $eligibleDestinations,
                 static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)

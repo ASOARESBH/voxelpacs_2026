@@ -31,6 +31,9 @@ foreach ([
     'bsp.tenant_id = :tenant_id',
     'bsp.ativo = 1',
     'SELECT s.id, s.nome',
+    'd.servidor_pacs_id',
+    ':source_server_id_guard',
+    ':source_server_id_value',
 ] as $contract) {
     if (!str_contains($source, $contract)) {
         throw new RuntimeException('Contrato tenant-scoped de servidores PACS ausente no Delivery Hub.');

@@ -22,9 +22,9 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $sourceServerId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, true, $sourceServerId);
     }
 
     /**
@@ -34,9 +34,9 @@ class ReportDeliveryRepository
      *
      * @return array<int, array<string, mixed>>
      */
-    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $sourceServerId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false, $sourceServerId);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -52,7 +52,8 @@ class ReportDeliveryRepository
         ?string $issuerNormalized,
         ?string $institutionName,
         bool $onlyEligible,
-        bool $requireReleaseTrigger = true
+        bool $requireReleaseTrigger = true,
+        ?int $sourceServerId = null
     ): array
     {
         $issuerNormalized = trim((string) $issuerNormalized);
@@ -76,15 +77,21 @@ class ReportDeliveryRepository
         $eligibilityWhere = $onlyEligible && $requireReleaseTrigger
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
             : ($onlyEligible ? 'AND d.enabled = 1' : '');
+        $serverRoutingWhere = $onlyEligible
+            ? "AND (d.servidor_pacs_id IS NULL
+                    OR (:source_server_id_guard IS NOT NULL
+                        AND d.servidor_pacs_id = :source_server_id_value))"
+            : '';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
                     d.configuration_json{$secretColumn}
              FROM pacs_report_delivery_destinations d
              {$sourceJoin}
              WHERE d.tenant_id = :tenant_id
                AND {$sourceWhere}
                {$eligibilityWhere}
+               {$serverRoutingWhere}
                AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id = :estabelecimento_id)
              ORDER BY d.id ASC"
         );
@@ -94,6 +101,15 @@ class ReportDeliveryRepository
             $stmt->bindValue(':estabelecimento_id', null, PDO::PARAM_NULL);
         } else {
             $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, PDO::PARAM_INT);
+        }
+        if ($onlyEligible) {
+            if ($sourceServerId === null) {
+                $stmt->bindValue(':source_server_id_guard', null, PDO::PARAM_NULL);
+                $stmt->bindValue(':source_server_id_value', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':source_server_id_guard', $sourceServerId, PDO::PARAM_INT);
+                $stmt->bindValue(':source_server_id_value', $sourceServerId, PDO::PARAM_INT);
+            }
         }
         $stmt->execute();
 
@@ -106,7 +122,7 @@ class ReportDeliveryRepository
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
                     CASE WHEN COALESCE(d.configuration_secret, '') <> '' THEN 1 ELSE 0 END AS credential_configured,
@@ -129,7 +145,7 @@ class ReportDeliveryRepository
     public function findDestination(int $destinationId, int $tenantId, bool $includeSecret = false): ?array
     {
         $columns = $includeSecret ? 'd.*' :
-            'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            'd.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
              CASE WHEN COALESCE(d.configuration_secret, \'\') <> \'\' THEN 1 ELSE 0 END AS credential_configured';
@@ -153,6 +169,49 @@ class ReportDeliveryRepository
         return $row ?: null;
     }
 
+    /** @param array<string,mixed> $data */
+    private function validateDestinationPacsServer(int $tenantId, array $data): ?int
+    {
+        $rawServerId = $data['servidor_pacs_id'] ?? null;
+        if ($rawServerId === null || $rawServerId === '') {
+            $serverId = null;
+        } elseif (is_int($rawServerId) || (is_string($rawServerId) && ctype_digit($rawServerId))) {
+            $serverId = (int) $rawServerId;
+            if ($serverId <= 0) {
+                $serverId = null;
+            }
+        } else {
+            throw new DomainException('Selecione um servidor PACS autorizado para este negócio.');
+        }
+
+        $requiresBinding = (string) ($data['transport'] ?? '') === 'philips_non_dicom'
+            && (string) ($data['ambiente'] ?? '') === 'producao';
+        if ($requiresBinding && $serverId === null) {
+            throw new DomainException('Selecione um servidor PACS autorizado para destinos Philips Non-DICOM de produção.');
+        }
+        if ($serverId === null) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT s.id
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1'
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        if ($stmt->fetchColumn() === false) {
+            throw new DomainException('O servidor PACS selecionado não está autorizado para este negócio.');
+        }
+
+        return $serverId;
+    }
+
     /** @param array<string, mixed> $data */
     public function saveDestination(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
@@ -173,6 +232,7 @@ class ReportDeliveryRepository
     private function saveDestinationWithinTransaction(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
         $name = trim((string) $data['nome']);
+        $serverPacsId = $this->validateDestinationPacsServer($tenantId, $data);
         if ($destinationId) {
             $existing = $this->findDestination($destinationId, $tenantId, true);
             if (!$existing) {
@@ -192,6 +252,7 @@ class ReportDeliveryRepository
             $stmt = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_destinations SET
                     nome = :nome,
+                    servidor_pacs_id = :servidor_pacs_id,
                     transport = :transport,
                     ambiente = :ambiente,
                     enabled = :enabled,
@@ -208,6 +269,7 @@ class ReportDeliveryRepository
             );
             $stmt->execute([
                 ':nome' => $name,
+                ':servidor_pacs_id' => $serverPacsId,
                 ':transport' => $data['transport'],
                 ':ambiente' => $data['ambiente'],
                 ':enabled' => (int) $data['enabled'],
@@ -237,15 +299,16 @@ class ReportDeliveryRepository
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_destinations
-                (tenant_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
+                (tenant_id, nome, servidor_pacs_id, transport, ambiente, enabled, disparar_na_liberacao,
                  configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by)
              VALUES
-                (:tenant_id, :nome, :transport, :ambiente, :enabled, :disparar_na_liberacao,
+                (:tenant_id, :nome, :servidor_pacs_id, :transport, :ambiente, :enabled, :disparar_na_liberacao,
                  :configuration_json, :configuration_secret, :timeout_seconds, :max_attempts, :created_by)"
         );
         $stmt->execute([
             ':tenant_id' => $tenantId,
             ':nome' => $name,
+            ':servidor_pacs_id' => $serverPacsId,
             ':transport' => $data['transport'],
             ':ambiente' => $data['ambiente'],
             ':enabled' => (int) $data['enabled'],
@@ -381,10 +444,11 @@ class ReportDeliveryRepository
     {
         $stmt = $this->pdo->prepare(
             "SELECT s.id, s.nome
-               FROM bi_pacs_servidor s
+              FROM bi_pacs_servidor s
                INNER JOIN bi_negocio_servidor_pacs bsp
                        ON bsp.servidor_id = s.id
-              WHERE bsp.tenant_id = :tenant_id
+              WHERE s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
                 AND bsp.ativo = 1
               ORDER BY s.nome ASC, s.id ASC"
         );
@@ -663,6 +727,7 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare(
             "SELECT r.id AS report_id, r.liberado_em, r.public_token,
                     e.id AS estudo_id,
+                    e.servidor_id,
                     e.unidade_id AS estabelecimento_id,
                     COALESCE(e.institution_name, '') AS institution_name,
                     e.patient_name,

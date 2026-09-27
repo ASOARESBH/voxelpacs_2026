@@ -75,6 +75,7 @@ class ReportDeliveryController extends Controller
             'stats' => $this->repository->stats($tenantId),
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
+            'pacsServers' => $this->repository->listTenantPacsServers($tenantId),
             'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
             'issuers' => $this->repository->listTenantIssuers($tenantId),
         ], 'platform');
@@ -92,6 +93,7 @@ class ReportDeliveryController extends Controller
     {
         foreach ($deliveries as &$delivery) {
             $estabelecimentoId = (int) ($delivery['estabelecimento_id'] ?? 0) ?: null;
+            $sourceServerId = (int) ($delivery['servidor_id'] ?? 0) ?: null;
             $issuerNormalized = trim((string) ($delivery['issuer_of_patient_id_normalized'] ?? ''));
             $institutionName = $issuerNormalized === ''
                 ? InstitutionResolverService::canonicalForTenant($tenantId, (string) ($delivery['institution_name'] ?? ''))
@@ -106,7 +108,8 @@ class ReportDeliveryController extends Controller
                 $tenantId,
                 $estabelecimentoId,
                 $issuerNormalized,
-                $institutionName
+                $institutionName,
+                $sourceServerId
             );
             $eligible = array_values(array_filter($eligible, static fn(array $destination): bool =>
                 ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
@@ -535,6 +538,7 @@ class ReportDeliveryController extends Controller
                     'configuration_secret' => array_key_exists('configuration_secret', $_POST),
                     'institution_names' => array_key_exists('institution_names', $_POST),
                     'issuer_of_patient_ids' => array_key_exists('issuer_of_patient_ids', $_POST),
+                    'servidor_pacs_id' => array_key_exists('servidor_pacs_id', $_POST),
                 ],
                 'configuration_json_state' => $this->saveDiagnosticJsonState($rawConfiguration, $configuration),
                 'delivery_profile' => $profileState,
@@ -605,6 +609,14 @@ class ReportDeliveryController extends Controller
         $environment = (string) ($_POST['ambiente'] ?? 'homologacao');
         $configuration = trim((string) ($_POST['configuration_json'] ?? ''));
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
+        $serverPacsInput = trim((string) ($_POST['servidor_pacs_id'] ?? ''));
+        if ($serverPacsInput !== '' && !ctype_digit($serverPacsInput)) {
+            throw new DomainException('Selecione um servidor PACS válido.');
+        }
+        $serverPacsId = $serverPacsInput === '' ? null : (int) $serverPacsInput;
+        if ($serverPacsId !== null && $serverPacsId <= 0) {
+            throw new DomainException('Selecione um servidor PACS válido.');
+        }
         $enabled = !empty($_POST['enabled']) ? 1 : 0;
         $producaoConfirmada = (string) ($_POST['confirm_production_activation'] ?? '') === '1';
         $requestedInstitutions = $_POST['institution_names'] ?? [];
@@ -652,6 +664,11 @@ class ReportDeliveryController extends Controller
         if (!in_array($environment, ['homologacao', 'producao'], true)) {
             throw new DomainException('Ambiente inválido.');
         }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && $environment === 'producao'
+            && $serverPacsId === null) {
+            throw new DomainException('Selecione um servidor PACS autorizado para destinos Philips Non-DICOM de produção.');
+        }
         if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
             throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
         }
@@ -683,6 +700,7 @@ class ReportDeliveryController extends Controller
 
         return [
             'nome' => $name,
+            'servidor_pacs_id' => $serverPacsId,
             'transport' => $transport,
             'ambiente' => $environment,
             'enabled' => $enabled,
