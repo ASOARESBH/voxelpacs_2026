@@ -25,7 +25,7 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_mimetype` | Constante `application/pdf` | Obrigatório |
 | `task_patient_birthday` | `patient_birth_date` do snapshot | Obrigatório |
 | `task_patient_gender` | `patient_sex` do snapshot, normalizado pelo gerador | Obrigatório |
-| `task_site_id` | Valor explícito configurado no destino | Obrigatório |
+| `task_site_id` | Nome do servidor PACS ativo e vinculado ao tenant, quando `servidor_pacs_id` está selecionado; destinos legados sem vínculo mantêm o valor explícito já configurado | Obrigatório |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
 | `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); quando o nome é plano, preserva o valor integral | Obrigatório |
@@ -67,7 +67,9 @@ O package marca apenas `patient_name_components_omitted=true` em metadata saniti
 
 ## Configuração administrativa
 
-A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, identificador técnico do autor, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. Os nomes humanos do autor não são editáveis nesse destino: vêm do ReferringPhysicianName do estudo. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
+A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, identificador técnico do autor, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. Quando o destino está vinculado a um servidor PACS, o campo SITE_ID é somente leitura na UI e o controller substitui qualquer valor enviado pelo nome do servidor PACS autorizado ao tenant. Os nomes humanos do autor não são editáveis nesse destino: vêm do ReferringPhysicianName do estudo. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
+
+O tenant não é gravado como um campo clínico do XML. Ele é derivado da rota administrativa e validado contra `tenant_id` do destino, outbox e job; esse mesmo contexto tenant-scoped é o que autoriza o dispatch. A UI o exibe ao lado do identificador técnico do autor para evitar configuração visual em outro negócio, mas não aceita tenant arbitrário no payload.
 
 O Controller valida o profile, o transporte SMB, a bridge privada, os campos obrigatórios, os booleanos, o tipo documental `11502-2` e a ausência de tipo quando ele não é aplicável. A credencial continua passando pelo fluxo existente de criptografia e preservação; nenhum segredo é incluído no XML, logs, snapshot ou documentação.
 

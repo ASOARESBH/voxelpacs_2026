@@ -689,6 +689,19 @@ class ReportDeliveryController extends Controller
         if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             throw new DomainException('A configuração pública deve ser um JSON válido.');
         }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
+            && $serverPacsId !== null) {
+            $server = $this->repository->findTenantPacsServer($tenantId, $serverPacsId);
+            $serverName = trim((string) ($server['nome'] ?? ''));
+            if ($server === null || $serverName === '') {
+                throw new DomainException('O servidor PACS selecionado não possui um nome válido para o SITE_ID Philips.');
+            }
+            if (!is_array($decoded['philips_submission'] ?? null)) {
+                throw new DomainException('Configure o contrato Philips XML antes de vincular o servidor PACS.');
+            }
+            $decoded['philips_submission']['task_site_id'] = $serverName;
+        }
         $this->validateTransportConfiguration($transport, $decoded);
         if ($secret !== '') {
             $decodedSecret = json_decode($secret, true);

@@ -451,6 +451,26 @@ class ReportDeliveryRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** @return array{id:int,nome:string}|null */
+    public function findTenantPacsServer(int $tenantId, int $serverId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1"
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
+    }
+
     public function createOutboxIfAbsent(
         int $tenantId,
         ?int $estabelecimentoId,
