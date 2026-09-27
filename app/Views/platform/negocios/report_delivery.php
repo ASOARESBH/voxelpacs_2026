@@ -10,10 +10,15 @@
 /** @var array<string,int> $stats */
 /** @var string $csrfToken */
 /** @var array<int,string> $transports */
+/** @var array<int,array{id:int,nome:string}> $pacsServers */
 /** @var array<int,string> $institutionNames */
 /** @var array<int,array{issuer:string,normalized:string}> $issuers */
 
 $escape = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$pacsServerNames = [];
+foreach ($pacsServers as $pacsServer) {
+    $pacsServerNames[(int) ($pacsServer['id'] ?? 0)] = (string) ($pacsServer['nome'] ?? '');
+}
 $transportLabels = [
     'dicom_pdf' => 'DICOM Encapsulated PDF',
     'dicom_sr' => 'DICOM Structured Report',
@@ -152,6 +157,16 @@ $transportLabels = [
                                     <option value="producao">Produção</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label class="form-label" for="destination-server-pacs"><?= $escape(t('delivery_hub.destination.servidor_pacs')) ?></label>
+                            <select class="form-select" id="destination-server-pacs" name="servidor_pacs_id">
+                                <option value=""><?= $escape(t('delivery_hub.destination.servidor_pacs_sem_vinculo')) ?></option>
+                                <?php foreach ($pacsServers as $pacsServer): ?>
+                                    <option value="<?= (int) $pacsServer['id'] ?>"><?= $escape($pacsServer['nome']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text"><?= $escape(t('delivery_hub.destination.servidor_pacs_ajuda')) ?></div>
                         </div>
                         <div class="border rounded-3 bg-light-subtle p-3 mt-3" id="institution-routing">
                             <h3 class="h6 mb-1"><i class="fa fa-fingerprint me-1"></i> Issuers dos servidores PACS</h3>
@@ -317,9 +332,11 @@ $transportLabels = [
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
+                                        <?php $destinationServerId = (int) ($destination['servidor_pacs_id'] ?? 0); ?>
+                                        <?php if ($destinationServerId > 0 && isset($pacsServerNames[$destinationServerId])): ?><div><strong><?= $escape(t('delivery_hub.destination.servidor_pacs_curto')) ?>:</strong> <?= $escape($pacsServerNames[$destinationServerId]) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers !== ''): ?><div><strong>Issuer:</strong> <?= $escape($destinationIssuers) ?></div><?php endif; ?>
                                         <?php if ($destinationInstitutions !== ''): ?><div><strong>Fallback:</strong> <?= $escape($destinationInstitutions) ?></div><?php endif; ?>
-                                        <?php if ($destinationIssuers === '' && $destinationInstitutions === ''): ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?>
+                                        <?php if ($destinationIssuers === '' && $destinationInstitutions === '' && $destinationServerId <= 0): ?><span class="text-warning"><?= $escape(t('delivery_hub.destination.sem_origem_vinculada')) ?></span><?php endif; ?>
                                     </td>
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
@@ -423,6 +440,7 @@ $transportLabels = [
     const feedback = document.getElementById('delivery-feedback');
     const transport = document.getElementById('destination-transport');
     const environment = document.getElementById('destination-environment');
+    const serverPacs = document.getElementById('destination-server-pacs');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -523,6 +541,12 @@ $transportLabels = [
         productionConfirmationBox.classList.toggle('d-none', !confirmationRequired);
         productionConfirmation.required = confirmationRequired;
         if (!production) productionConfirmation.checked = false;
+        syncServerPacsRequirement();
+    }
+
+    function syncServerPacsRequirement() {
+        if (!serverPacs) return;
+        serverPacs.required = environment.value === 'producao' && transport.value === 'philips_non_dicom';
     }
 
     function serializeConfiguration() {
@@ -561,6 +585,7 @@ $transportLabels = [
         form.action = baseAction;
         configInput.value = '{}';
         secretInput.value = '';
+        if (serverPacs) serverPacs.value = '';
         setSelectedInstitutions('');
         setSelectedIssuers('');
         title.textContent = 'Novo destino';
@@ -757,7 +782,7 @@ $transportLabels = [
         });
     });
 
-    transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
+    transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); syncServerPacsRequirement(); });
     if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
     environment.addEventListener('change', syncEnvironment);
     enabled.addEventListener('change', syncEnvironment);
@@ -778,6 +803,7 @@ $transportLabels = [
             document.getElementById('destination-name').value = item.nome;
             transport.value = item.transport;
             environment.value = item.ambiente;
+            if (serverPacs) serverPacs.value = item.servidor_pacs_id ? String(item.servidor_pacs_id) : '';
             secretInput.value = '';
             document.querySelectorAll('[data-secret-field]').forEach((input) => { input.value = ''; });
             document.getElementById('destination-timeout').value = item.timeout_seconds;
@@ -837,6 +863,7 @@ $transportLabels = [
                 configuration_secret_present: secretInput.value.trim() !== '',
                 transport: transport.value,
                 environment: environment.value,
+                server_pacs_id: serverPacs && serverPacs.value !== '' ? Number(serverPacs.value) : null,
                 enabled: enabled.checked,
                 auto_trigger: document.getElementById('destination-release').checked,
             };
