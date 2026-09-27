@@ -61,6 +61,8 @@ return [
     'philips_non_dicom.task_site_id_label' => 'Nome do Servidor / SITE_ID',
     'philips_non_dicom.task_site_id_help' => 'Quando houver servidor PACS selecionado, o SITE_ID é derivado automaticamente do Nome do Servidor cadastrado em Servidor PACS.',
     'philips_non_dicom.task_site_id_server_title' => 'SITE_ID derivado do servidor PACS selecionado.',
+    'philips_non_dicom.task_site_id_select_placeholder' => 'Selecione um servidor PACS acima',
+    'philips_non_dicom.task_site_id_server_required' => 'Vincule um servidor PACS autorizado para derivar o SITE_ID do submission XML.',
     'philips_non_dicom.task_document_name_label' => 'Nome do documento',
     'philips_non_dicom.task_author_id_label' => 'ID do autor',
     'philips_non_dicom.tenant_label' => 'Tenant Non-DICOM',

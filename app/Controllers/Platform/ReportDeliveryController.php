@@ -689,9 +689,12 @@ class ReportDeliveryController extends Controller
         if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             throw new DomainException('A configuração pública deve ser um JSON válido.');
         }
-        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-            && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
-            && $serverPacsId !== null) {
+        $isPhilipsSubmissionDocument = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
+        if ($isPhilipsSubmissionDocument && $serverPacsId === null) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_server_required'));
+        }
+        if ($isPhilipsSubmissionDocument) {
             $server = $this->repository->findTenantPacsServer($tenantId, $serverPacsId);
             $serverName = trim((string) ($server['nome'] ?? ''));
             if ($server === null || $serverName === '') {

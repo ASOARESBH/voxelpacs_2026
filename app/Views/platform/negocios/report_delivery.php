@@ -288,7 +288,18 @@ $transportLabels = [
                                 <div class="alert alert-warning small"><?= $escape(t('philips_non_dicom.xml_ajuda')) ?></div>
                                 <div class="row g-3">
                                     <div class="col-12"><label class="form-label" for="nondicom-task-file-path"><?= $escape(t('philips_non_dicom.task_file_path_label')) ?></label><input class="form-control" id="nondicom-task-file-path" data-submission-field data-field="task_file_path" data-required placeholder="<?= $escape(t('philips_non_dicom.task_file_path_placeholder')) ?>"><div class="form-text"><?= $escape(t('philips_non_dicom.task_file_path_help')) ?></div></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required readonly><div class="form-text"><?= $escape(t('philips_non_dicom.task_site_id_help')) ?></div></div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label>
+                                        <select class="form-select" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required disabled aria-describedby="nondicom-task-site-id-help">
+                                            <option value=""><?= $escape(t('philips_non_dicom.task_site_id_select_placeholder')) ?></option>
+                                            <?php foreach ($pacsServers as $pacsServer): ?>
+                                                <?php $pacsServerName = trim((string) ($pacsServer['nome'] ?? '')); ?>
+                                                <?php if ($pacsServerName === ''): continue; endif; ?>
+                                                <option value="<?= $escape($pacsServerName) ?>" data-server-pacs-id="<?= (int) ($pacsServer['id'] ?? 0) ?>"><?= $escape($pacsServerName) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="form-text" id="nondicom-task-site-id-help"><?= $escape(t('philips_non_dicom.task_site_id_help')) ?></div>
+                                    </div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-tenant-context"><?= $escape(t('philips_non_dicom.tenant_label')) ?></label><input class="form-control" id="nondicom-tenant-context" value="<?= $escape(($tenant['nome'] ?? $tenant['razao_social'] ?? '') . ' (#' . (int) ($tenant['id'] ?? 0) . ')') ?>" readonly><div class="form-text"><?= $escape(t('philips_non_dicom.tenant_help')) ?></div></div>
@@ -534,11 +545,12 @@ $transportLabels = [
         const serverName = serverPacs.value !== '' ? String(serverPacsNames[serverPacs.value] || '') : '';
         if (serverName !== '') {
             siteIdField.value = serverName;
-            siteIdField.readOnly = true;
+            siteIdField.disabled = true;
             siteIdField.title = <?= json_encode(t('philips_non_dicom.task_site_id_server_title'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
             return;
         }
-        siteIdField.readOnly = false;
+        siteIdField.value = '';
+        siteIdField.disabled = true;
         siteIdField.removeAttribute('title');
     }
 
