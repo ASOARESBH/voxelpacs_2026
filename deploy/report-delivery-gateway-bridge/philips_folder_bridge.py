@@ -301,7 +301,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.wfile.write(payload)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            LOG.warning(
+                "event=philips_http_response_failed status=%s response_bytes=%s error_category=connection_closed",
+                int(status),
+                len(payload),
+            )
 
     def log_envelope_diagnostics(
         self,
@@ -334,6 +342,13 @@ class Handler(BaseHTTPRequestHandler):
         }
         fields.update({stage: states.get(stage, "NOT_REACHED") for stage in ENVELOPE_DIAGNOSTIC_STAGES})
         LOG.info("%s", " ".join(f"{key}={value}" for key, value in fields.items()))
+
+    def do_GET(self) -> None:  # noqa: N802
+        state_match = re.fullmatch(r"/v1/philips-folder/package/([0-9]+)/state", self.path)
+        if state_match is None:
+            self.respond(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        self.reconcile_submission_package_state(int(state_match.group(1)))
 
     def do_POST(self) -> None:  # noqa: N802
         package_prefix = "/v1/philips-folder/package/"
@@ -415,6 +430,77 @@ class Handler(BaseHTTPRequestHandler):
         write_state(job_id, {"state": "delivered", "sha256": supplied_hash, "reference": reference, "transport": transport})
         LOG.info("event=philips_export_success job_id=%s transport=%s sha256_16=%s", job_id, transport, supplied_hash[:16])
         self.respond(HTTPStatus.CREATED, {"reference": reference, "sha256": supplied_hash})
+
+    def reconcile_submission_package_state(self, job_id: int) -> None:
+        supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        tenant_id = self.headers.get("X-VOXEL-Tenant-ID", "")
+        destination_id = self.headers.get("X-VOXEL-Destination-ID", "")
+        package_hash = self.headers.get("X-VOXEL-SHA256", "").lower()
+        timestamp = self.headers.get("X-VOXEL-Timestamp", "")
+        signature = self.headers.get("X-VOXEL-Signature", "")
+        try:
+            request_time = int(timestamp)
+        except ValueError:
+            self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
+            return
+        if (
+            supplied_job_id != str(job_id)
+            or not tenant_id.isdigit()
+            or int(tenant_id) <= 0
+            or destination_id != str(POLICY.destination_id)
+            or re.fullmatch(r"[a-f0-9]{64}", package_hash) is None
+            or (POLICY.mode != "destination" and job_id != POLICY.allowed_job_id)
+        ):
+            self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
+            return
+        if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
+            return
+        signature_base = "\n".join([
+            "GET",
+            self.path,
+            str(job_id),
+            tenant_id,
+            destination_id,
+            package_hash,
+            timestamp,
+        ])
+        expected = hmac.new(POLICY.secret, signature_base.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
+            return
+        state = read_state(job_id)
+        if not state:
+            self.respond(HTTPStatus.NOT_FOUND, {"state": "not_found"})
+            return
+        state_destination = str(state.get("destination_id", ""))
+        state_tenant = str(state.get("tenant_id", ""))
+        if state_destination not in {"", destination_id} or state_tenant not in {"", tenant_id}:
+            self.respond(HTTPStatus.CONFLICT, {"state": "conflict"})
+            return
+        state_identity = str(state.get("package_identity", "")).lower()
+        if (
+            state.get("state") != "delivered"
+            or state_identity != package_hash
+            or state.get("package_verified") != "PASS"
+        ):
+            self.respond(HTTPStatus.CONFLICT, {"state": "conflict"})
+            return
+        reference = str(state.get("reference", ""))
+        if re.fullmatch(r"gateway-philips-folder:[a-f0-9]{16}", reference) is None:
+            self.respond(HTTPStatus.CONFLICT, {"state": "conflict"})
+            return
+        LOG.info(
+            "event=philips_package_reconciliation job_id=%s state=delivered package_verified=PASS",
+            job_id,
+        )
+        self.respond(HTTPStatus.OK, {
+            "state": "delivered",
+            "reference": reference,
+            "sha256": package_hash,
+            "package_identity": package_hash,
+            "package_verified": "PASS",
+        })
 
     def receive_submission_package(self, job_id: int) -> None:
         supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
@@ -604,6 +690,8 @@ class Handler(BaseHTTPRequestHandler):
             "sha256": package_hash,
             "package_identity": package_hash,
             "package_verified": "PASS",
+            "tenant_id": tenant_id_header,
+            "destination_id": destination_id_header,
             "task_file_path_sha256": xml_task_file_path_hash,
             "document_type_applicable": xml_document_type_applicable,
             "reference": reference,

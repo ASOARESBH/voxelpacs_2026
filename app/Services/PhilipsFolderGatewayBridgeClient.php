@@ -139,7 +139,7 @@ final class PhilipsFolderGatewayBridgeClient
 
     /**
      * @param array<string,mixed>|null $homologationContext
-     * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string,package_identity:string,package_verified:string}
+     * @return array{reference:string,sha256:string,size:int,pdf_sha256:string,pdf_size:int,xml_sha256:string,xml_size:int,filename:string,package_identity:string,package_verified:string,confirmation_source?:string}
      */
     public function sendSubmissionPackage(
         int $jobId,
@@ -356,7 +356,12 @@ final class PhilipsFolderGatewayBridgeClient
                 curl_close($curl);
             }
             if ($errno !== 0 || !is_string($body) || $httpCode !== 201) {
-                throw new PhilipsFolderDeliveryException('gateway_delivery_failed', $this->responseReasonCategory(is_string($body) ? $body : '') ?? 'gateway_delivery_failed');
+                throw new PhilipsFolderDeliveryException(
+                    'gateway_delivery_failed',
+                    $this->responseReasonCategory(is_string($body) ? $body : '') ?? 'gateway_delivery_failed',
+                    $packageSha256,
+                    $packageSize
+                );
             }
             $response = json_decode($body, true);
             $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
@@ -367,7 +372,7 @@ final class PhilipsFolderGatewayBridgeClient
                 || !hash_equals($packageSha256, $remoteSha256)
                 || !hash_equals($packageSha256, $remoteIdentity)
                 || $packageVerified !== 'PASS') {
-                throw new PhilipsFolderDeliveryException('gateway_invalid_response', 'remote_integrity_unconfirmed');
+                throw new PhilipsFolderDeliveryException('gateway_invalid_response', 'remote_integrity_unconfirmed', $packageSha256, $packageSize);
             }
             return [
                 'reference' => $reference,
@@ -386,6 +391,108 @@ final class PhilipsFolderGatewayBridgeClient
             fclose($pdfInput);
             fclose($xmlInput);
         }
+    }
+
+    /** @return array{reference:string,sha256:string,package_identity:string,package_verified:string} */
+    public function reconcileSubmissionPackage(
+        int $jobId,
+        int $tenantId,
+        int $destinationId,
+        string $packageIdentity,
+        int $timeout
+    ): array {
+        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0
+            || preg_match('/\A[a-f0-9]{64}\z/i', $packageIdentity) !== 1) {
+            throw new PhilipsFolderDeliveryException('gateway_reconciliation_failed', 'invalid_artifact');
+        }
+        $baseUrl = rtrim(trim((string) getenv('PHILIPS_FOLDER_BRIDGE_BASE_URL')), '/');
+        $url = $baseUrl . '/v1/philips-folder/package/' . $jobId . '/state';
+        if (!$this->allowedPackageStateUrl($baseUrl, $url, $jobId)) {
+            throw new PhilipsFolderDeliveryException('gateway_reconciliation_failed', 'gateway_policy_rejected');
+        }
+        $secret = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_HMAC'));
+        $caFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CA_FILE'));
+        $certFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_CERT_FILE'));
+        $keyFile = trim((string) getenv('PHILIPS_FOLDER_BRIDGE_KEY_FILE'));
+        if ($secret === '' || !is_file($caFile) || !is_file($certFile) || !is_file($keyFile)) {
+            throw new PhilipsFolderDeliveryException('gateway_reconciliation_failed', 'credentials_unavailable');
+        }
+        $timestamp = (string) time();
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+        $signatureBase = implode("\n", [
+            'GET', $path, (string) $jobId, (string) $tenantId, (string) $destinationId,
+            strtolower($packageIdentity), $timestamp,
+        ]);
+        $signature = hash_hmac('sha256', $signatureBase, $secret);
+        $curl = curl_init($url);
+        if ($curl === false) {
+            throw new PhilipsFolderDeliveryException('gateway_reconciliation_failed', 'gateway_unavailable');
+        }
+        try {
+            curl_setopt_array($curl, [
+                CURLOPT_CUSTOMREQUEST => 'GET',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HEADER => false,
+                CURLOPT_CONNECTTIMEOUT => min(15, $timeout),
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_CAINFO => $caFile,
+                CURLOPT_SSLCERT => $certFile,
+                CURLOPT_SSLKEY => $keyFile,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json',
+                    'X-VOXEL-Job-ID: ' . $jobId,
+                    'X-VOXEL-Tenant-ID: ' . $tenantId,
+                    'X-VOXEL-Destination-ID: ' . $destinationId,
+                    'X-VOXEL-SHA256: ' . strtolower($packageIdentity),
+                    'X-VOXEL-Timestamp: ' . $timestamp,
+                    'X-VOXEL-Signature: ' . $signature,
+                ],
+            ]);
+            $body = curl_exec($curl);
+            $errno = curl_errno($curl);
+            $curlError = '';
+            try {
+                $curlError = curl_error($curl);
+            } catch (\Throwable) {
+            }
+            $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            try {
+                $curlInfo = curl_getinfo($curl);
+                $this->logCurlDiagnostics($jobId, $destinationId, $body, $errno, $curlError, is_array($curlInfo) ? $curlInfo : [], 0);
+            } catch (\Throwable) {
+            }
+        } finally {
+            curl_close($curl);
+        }
+        if ($errno !== 0 || !is_string($body) || $httpCode !== 200) {
+            throw new PhilipsFolderDeliveryException(
+                'gateway_reconciliation_failed',
+                $httpCode === 404 ? 'remote_state_not_found' : 'remote_integrity_unconfirmed'
+            );
+        }
+        $response = json_decode($body, true);
+        $reference = is_array($response) ? (string) ($response['reference'] ?? '') : '';
+        $remoteSha256 = is_array($response) ? (string) ($response['sha256'] ?? '') : '';
+        $remoteIdentity = is_array($response) ? (string) ($response['package_identity'] ?? '') : '';
+        $packageVerified = is_array($response) ? (string) ($response['package_verified'] ?? '') : '';
+        if ((string) ($response['state'] ?? '') !== 'delivered'
+            || preg_match('/\Agateway-philips-folder:[a-f0-9]{16}\z/', $reference) !== 1
+            || !hash_equals(strtolower($packageIdentity), strtolower($remoteSha256))
+            || !hash_equals(strtolower($packageIdentity), strtolower($remoteIdentity))
+            || $packageVerified !== 'PASS') {
+            throw new PhilipsFolderDeliveryException('gateway_reconciliation_failed', 'remote_integrity_unconfirmed');
+        }
+        return [
+            'reference' => $reference,
+            'sha256' => strtolower($packageIdentity),
+            'package_identity' => strtolower($packageIdentity),
+            'package_verified' => 'PASS',
+        ];
     }
 
     /** @param array<string,mixed> $configuration @param array{envelope:string,sha256:string} $secretEnvelope */
@@ -699,6 +806,20 @@ final class PhilipsFolderGatewayBridgeClient
             && ($parts['host'] ?? '') === ($base['host'] ?? '')
             && (int) ($parts['port'] ?? 443) === (int) ($base['port'] ?? 443)
             && ($parts['path'] ?? '') === '/v1/philips-folder/package/' . $jobId
+            && !isset($base['query'], $base['fragment'], $base['user'], $base['pass'])
+            && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
+    }
+
+    private function allowedPackageStateUrl(string $baseUrl, string $url, int $jobId): bool
+    {
+        $base = parse_url($baseUrl);
+        $parts = parse_url($url);
+        return is_array($base) && is_array($parts)
+            && ($base['scheme'] ?? '') === 'https'
+            && ($parts['scheme'] ?? '') === 'https'
+            && ($parts['host'] ?? '') === ($base['host'] ?? '')
+            && (int) ($parts['port'] ?? 443) === (int) ($base['port'] ?? 443)
+            && ($parts['path'] ?? '') === '/v1/philips-folder/package/' . $jobId . '/state'
             && !isset($base['query'], $base['fragment'], $base['user'], $base['pass'])
             && !isset($parts['query'], $parts['fragment'], $parts['user'], $parts['pass']);
     }

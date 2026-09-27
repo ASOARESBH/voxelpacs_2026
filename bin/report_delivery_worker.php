@@ -222,6 +222,9 @@ final class LocalDicomDeliveryWorker
                 if (array_key_exists('patient_name_components_omitted', $result)) {
                     $completionMetadata['patient_name_components_omitted'] = (bool) $result['patient_name_components_omitted'];
                 }
+                if (($result['confirmation_source'] ?? null) === 'bridge_state') {
+                    $completionMetadata['confirmation_source'] = 'bridge_state';
+                }
             }
             if (!$this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata)) {
                 throw new DeliveryWorkerFailure('completion_not_confirmed');
