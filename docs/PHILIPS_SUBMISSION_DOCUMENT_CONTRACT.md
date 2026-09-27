@@ -87,6 +87,8 @@ A ausência de qualquer campo obrigatório gera `PhilipsXmlFieldUnresolvedExcept
 
 A serialização também rejeita bytes de controle, incluindo NUL, e exige a declaração ISO-8859-1 e um XML bem-formado antes de o `PhilipsSubmissionDocument` ser entregue ao produtor de artifacts. O `ReportDeliveryPackage` repete a rejeição como defesa independente. Falhas do ledger registram somente a classe e o estágio técnico (`lock_job`, `create_attempt`, `update_job`, `refresh_outbox`, `sync_request` ou `commit`); SQL, parâmetros, payload, PHI e segredos não entram no log.
 
+Quando o POST do package termina sem uma confirmação HTTP utilizável, o cliente não retransmite o package nem executa SMB novamente. Ele faz uma única consulta GET autenticada ao state do mesmo Job na Bridge. A reconciliação só pode retornar sucesso se o state for `delivered`, a `package_identity`/SHA-256 coincidir, `package_verified=PASS` e a referência remota tiver o formato validado. Nessa situação, o Worker conclui o Job e registra `confirmation_source=bridge_state`; se qualquer evidência faltar, a falha original permanece e o Job segue as regras normais de terminalidade. A consulta é mTLS/HMAC, tenant/destination-scoped, allowlisted e não expõe conteúdo de artefato, credencial, stdout ou stderr.
+
 A migration de profile é aditiva e deve ser aplicada pelo procedimento de migrations do projeto. O rollback de banco deve remover apenas a coluna nova depois de confirmar que nenhum destino ou job ativo depende dela; não se deve apagar artifacts, jobs, outboxes ou arquivos remotos como parte do rollback.
 
 ## Referências
