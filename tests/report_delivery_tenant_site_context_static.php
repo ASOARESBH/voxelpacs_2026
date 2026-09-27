@@ -22,6 +22,8 @@ foreach ([
     "'task_site_id'] = \$serverName",
     "findTenantPacsServer(\$tenantId, \$serverPacsId)",
     "'servidor_pacs_id' => \$serverPacsId",
+    "\$isPhilipsSubmissionDocument && \$serverPacsId === null",
+    "philips_non_dicom.task_site_id_server_required",
 ] as $needle) {
     if (!str_contains($controller, $needle)) {
         throw new RuntimeException('Derivação autoritativa do SITE_ID ausente no controller.');
@@ -31,8 +33,10 @@ foreach ([
 foreach ([
     "t('philips_non_dicom.tenant_label')",
     'id="nondicom-tenant-context"',
-    'id="nondicom-task-site-id"',
-    'readonly',
+    '<select class="form-select" id="nondicom-task-site-id"',
+    'data-server-pacs-id=',
+    'id="nondicom-task-site-id-help"',
+    'siteIdField.disabled = true',
     'const serverPacsNames =',
     'function syncSiteIdFromServer()',
     'serverPacs.addEventListener(\'change\', syncSiteIdFromServer)',
@@ -45,6 +49,8 @@ foreach ([
 foreach ([
     'philips_non_dicom.task_site_id_help',
     'philips_non_dicom.task_site_id_server_title',
+    'philips_non_dicom.task_site_id_select_placeholder',
+    'philips_non_dicom.task_site_id_server_required',
     'philips_non_dicom.tenant_label',
     'philips_non_dicom.tenant_help',
 ] as $key) {
