@@ -288,9 +288,10 @@ $transportLabels = [
                                 <div class="alert alert-warning small"><?= $escape(t('philips_non_dicom.xml_ajuda')) ?></div>
                                 <div class="row g-3">
                                     <div class="col-12"><label class="form-label" for="nondicom-task-file-path"><?= $escape(t('philips_non_dicom.task_file_path_label')) ?></label><input class="form-control" id="nondicom-task-file-path" data-submission-field data-field="task_file_path" data-required placeholder="<?= $escape(t('philips_non_dicom.task_file_path_placeholder')) ?>"><div class="form-text"><?= $escape(t('philips_non_dicom.task_file_path_help')) ?></div></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required readonly><div class="form-text"><?= $escape(t('philips_non_dicom.task_site_id_help')) ?></div></div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-tenant-context"><?= $escape(t('philips_non_dicom.tenant_label')) ?></label><input class="form-control" id="nondicom-tenant-context" value="<?= $escape(($tenant['nome'] ?? $tenant['razao_social'] ?? '') . ' (#' . (int) ($tenant['id'] ?? 0) . ')') ?>" readonly><div class="form-text"><?= $escape(t('philips_non_dicom.tenant_help')) ?></div></div>
                                     <div class="col-12"><div class="form-text"><?= $escape(t('philips_non_dicom.task_author_source_help')) ?></div></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type"><?= $escape(t('philips_non_dicom.task_document_type_label')) ?></label><input class="form-control" id="nondicom-task-type" data-submission-field data-field="task_document_type" value="11502-2"></div>
@@ -441,6 +442,7 @@ $transportLabels = [
     const transport = document.getElementById('destination-transport');
     const environment = document.getElementById('destination-environment');
     const serverPacs = document.getElementById('destination-server-pacs');
+    const siteIdField = document.getElementById('nondicom-task-site-id');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -454,6 +456,7 @@ $transportLabels = [
     const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge', 'transport_protocol', 'smb_share', 'smb_username', 'philips_submission'];
     const submissionSettings = document.getElementById('nondicom-submission-settings');
     const submissionProfile = document.getElementById('nondicom-delivery-profile');
+    const serverPacsNames = <?= json_encode($pacsServerNames, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const philipsFolderFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::enabled() ? 'true' : 'false' ?>;
     const philipsNonDicomFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::nonDicomEnabled() ? 'true' : 'false' ?>;
     const guideText = {
@@ -523,6 +526,20 @@ $transportLabels = [
                 else input.value = value;
             });
         });
+        syncSiteIdFromServer();
+    }
+
+    function syncSiteIdFromServer() {
+        if (!serverPacs || !siteIdField) return;
+        const serverName = serverPacs.value !== '' ? String(serverPacsNames[serverPacs.value] || '') : '';
+        if (serverName !== '') {
+            siteIdField.value = serverName;
+            siteIdField.readOnly = true;
+            siteIdField.title = <?= json_encode(t('philips_non_dicom.task_site_id_server_title'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            return;
+        }
+        siteIdField.readOnly = false;
+        siteIdField.removeAttribute('title');
     }
 
     function setSelectedInstitutions(rawNames) {
@@ -783,6 +800,7 @@ $transportLabels = [
     });
 
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); syncServerPacsRequirement(); });
+    if (serverPacs) serverPacs.addEventListener('change', syncSiteIdFromServer);
     if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
     environment.addEventListener('change', syncEnvironment);
     enabled.addEventListener('change', syncEnvironment);
