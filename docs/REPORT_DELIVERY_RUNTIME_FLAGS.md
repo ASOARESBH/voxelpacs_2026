@@ -4,7 +4,7 @@
 
 `app/Config/ReportDeliveryRuntimeConfig.php` é a fonte única de leitura das flags operacionais do Report Delivery. A classe não grava configuração, não acessa banco e não contém credenciais.
 
-O bootstrap do VOXEL PACS carrega as fontes de ambiente aprovadas antes dos consumidores. A precedência de leitura é a mesma usada pelo `Database`: `$_ENV`, `$_SERVER` e, por fim, `getenv()`.
+O bootstrap do VOXEL PACS carrega as fontes de ambiente aprovadas antes dos consumidores. A fonte canônica das flags gerenciadas é o `.env` da raiz do runtime (`BASE_PATH/.env`, em produção `/var/www/voxelpacs/.env`). Quando essa fonte existe, uma chave ausente significa **OFF**; `app/.env` e `EnvironmentFile` secundários não podem sobrescrever essa decisão. Somente em desenvolvimento sem o arquivo canônico há fallback para `$_ENV`, `$_SERVER` e `getenv()`.
 
 A ausência de qualquer flag é segura: **OFF**. Valores booleanos aceitos são `1/true/yes/on` e `0/false/no/off`.
 
@@ -35,6 +35,7 @@ O kill switch é fail-closed: valor inválido também impede o processamento. O 
 - `--dry-run` valida o arquivo, chaves, valores e duplicidades sem gravar.
 - `--apply` exige root, cria backup root-only, preserva owner/group/mode e altera somente as chaves informadas.
 - `--rollback` exige root e restaura somente um backup criado pelo próprio mecanismo.
+- O aplicador aponta para o mesmo `.env` canônico lido por `ReportDeliveryRuntimeConfig`; não há override de caminho para `app/.env`.
 - Nenhuma opção executa reload/restart, acessa banco, Bridge, SMB, Windows ou Philips.
 - O mecanismo não imprime valores de secrets e não aceita chaves fora da allowlist.
 
@@ -58,3 +59,12 @@ A configuração de produção de Hub, Requests e Non-DICOM permanece uma decis�
 7. revalidar flags e manter Worker/Bridge no estado operacional previamente autorizado.
 
 Esta implementação não altera o runtime atual. A existência do mecanismo versionado não prova que a configuração foi aplicada em produção.
+
+## Lease stale
+
+Um Job em `processing` com `locked_at` há pelo menos dez minutos não é recuperado automaticamente. O painel administrativo oferece duas ações separadas, ambas protegidas por autenticação, CSRF, confirmação e tenant:
+
+- **Recuperar lease**: requeue controlado, somente quando a entrega remota desconhecida foi descartada pelo operador.
+- **Quarentenar lease stale**: marca falha terminal, limpa a elegibilidade e não cria attempt, retry ou requeue.
+
+Jobs históricos, inclusive o Job 39 classificado como stale, permanecem sem alteração até uma ação administrativa explícita no runtime da release que contenha este contrato.

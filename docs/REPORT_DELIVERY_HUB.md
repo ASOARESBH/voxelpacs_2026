@@ -78,7 +78,7 @@ O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da
 
 Nas falhas de C-STORE direto, o worker mantém uma parcela limitada do `stderr` somente em memória para classificá-la e descartá-la imediatamente. A tentativa persiste somente `reason_category`, sem saída bruta, comando, argumentos, parâmetros de rede ou atributos DICOM. As categorias permitidas são `timeout`, `connect_failed`, `association_rejected`, `tls_required` e `command_failed`. A classificação não altera o lease, o backoff, a DLQ nem a política de retentativa.
 
-> O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada.
+> O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada. O painel também pode colocar um lease comprovadamente stale em quarentena terminal, sem criar attempt, retry ou requeue; essa ação é distinta de recuperar o lease.
 
 ### Identidade DICOM no retorno de laudo
 

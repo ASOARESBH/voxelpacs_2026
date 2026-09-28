@@ -4,7 +4,7 @@
 # não cria jobs e não executa qualquer transporte externo.
 set -Eeuo pipefail
 
-readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/app/.env'
+readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'
 readonly DEFAULT_BACKUP_ROOT='/var/backups/voxelpacs/config'
 readonly MANAGED_KEYS=(
   VOXEL_REPORT_DELIVERY_HUB_ENABLED
@@ -18,7 +18,7 @@ readonly MANAGED_KEYS=(
 
 mode=''
 rollback_dir=''
-env_file="${VOXEL_RUNTIME_ENV_FILE:-$DEFAULT_ENV_FILE}"
+env_file="$DEFAULT_ENV_FILE"
 backup_root="${VOXEL_RUNTIME_FLAGS_BACKUP_ROOT:-$DEFAULT_BACKUP_ROOT}"
 declare -a requested=()
 declare -a normalized=()
