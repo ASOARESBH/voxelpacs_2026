@@ -2,7 +2,7 @@
 // Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 
 declare(strict_types=1);
-
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
@@ -83,6 +83,10 @@ final class LocalDicomDeliveryWorker
 
     public function runOne(int $jobId): int
     {
+        if (ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+            fwrite(STDERR, "worker_kill_switch_enabled\n");
+            return 78;
+        }
         $this->repository->enableOneShotForJob($jobId);
         $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
         if ($job === null) {
@@ -95,6 +99,12 @@ final class LocalDicomDeliveryWorker
 
     public function run(): void
     {
+        if (ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+            Logger::warning('[ReportDeliveryWorker] Worker bloqueado pelo kill switch', [
+                'worker_kill_switch_enabled' => true,
+            ]);
+            return;
+        }
         Logger::info('[ReportDeliveryWorker] Serviço local iniciado', ['worker_id' => $this->workerId]);
         while (true) {
             try {
@@ -627,9 +637,13 @@ final class LocalDicomDeliveryWorker
         @rmdir($directory);
     }
 }
-
+$checkRequested = in_array('--check', $argv, true);
+if (!$checkRequested && ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+    fwrite(STDERR, "worker_kill_switch_enabled\n");
+    exit(78);
+}
 $worker = new LocalDicomDeliveryWorker();
-if (in_array('--check', $argv, true)) {
+if ($checkRequested) {
     exit($worker->check());
 }
 foreach ($argv as $argument) {

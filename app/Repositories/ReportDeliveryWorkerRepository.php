@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\SqlHelper;
 use App\Core\Logger;
 use App\Services\DeliveryRequestIdentity;
@@ -382,7 +383,7 @@ class ReportDeliveryWorkerRepository
 
     private function requestsFeatureEnabled(): bool
     {
-        return filter_var(getenv('VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::requestsEnabled();
     }
 
     private function destinationSelectorValues(int $destinationId, int $tenantId, string $table, string $column): string

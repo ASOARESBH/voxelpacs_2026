@@ -26,7 +26,7 @@
 | Eventos / Listeners | `[A preencher]` | Nada encontrado nesta sessão — projeto parece não ter barramento de eventos |
 | Filas (queue definitions) | `[A preencher]` | N/A aparente — sincronização Orthanc é síncrona via HTTP request (`ServidorPacsController::sincronizar()`), não fila assíncrona |
 | Workers / Jobs assíncronos | N/A — não existe no projeto (sync é request-driven, ver `sincronizar()`) | |
-| Configuração (env, config files) | `.env` (ver `.env.example`), `app/Config/` | |
+| Configuração (env, config files) | `.env` (ver `.env.example`), `app/Config/ReportDeliveryRuntimeConfig.php`, `scripts/configure-report-delivery-runtime.sh` | Flags do Report Delivery são lidas centralmente; aplicação runtime é allowlisted, reversível e não reinicia serviços |
 | Autenticação (login, JWT, OAuth) | `App\Core\Auth` (usado em `Router::dispatch()`) | Detalhe completo não analisado nesta sessão |
 | Upload de arquivos / DICOM ingest | Ingest via `OrthancService::importAllStudies()`, chamado por `ServidorPacsController::sincronizar()` | Grava em `bi_pacs_estudos` |
 | Logs / Auditoria | `error_log()` direto (prefixo `[PACS]`, `[NegociosController::...]`) + `App\Core\Logger` (erros não tratados no Router) | Não há tabela de auditoria dedicada confirmada |
