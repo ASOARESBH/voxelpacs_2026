@@ -22,6 +22,7 @@ function platformReportsRequire(string $source, string $needle, string $message)
 }
 
 $controller = platformReportsSource('app/Controllers/Platform/PlatformReportsController.php');
+$sqlHelper = platformReportsSource('app/Core/SqlHelper.php');
 $view = platformReportsSource('app/Views/platform/reports/index.php');
 $css = platformReportsSource('public/assets/css/platform-reports.css');
 $routes = platformReportsSource('routes/platform.php');
@@ -39,7 +40,9 @@ platformReportsRequire($view, 'platform-reports-title', 'View estratégica de Pl
 platformReportsRequire($controller, 'LEFT JOIN bi_plans p ON p.id = t.plan_id', 'Relatório ainda pode excluir tenant sem plano.');
 platformReportsRequire($controller, 'GROUP BY t.id, t.nome, t.status, p.nome', 'Relatório por tenant não é compatível com ONLY_FULL_GROUP_BY.');
 platformReportsRequire($controller, 'periodo_ref >= :periodo_inicial', 'Evolução mensal não usa filtro indexável por período.');
-platformReportsRequire($controller, "DATE_FORMAT(created_at, '%Y-%m')", 'Crescimento de negócios não é agregado por mês.');
+platformReportsRequire($controller, "SqlHelper::dateFormat('created_at', '%Y-%m')", 'Crescimento de negócios não usa o helper de data multi-driver.');
+platformReportsRequire($sqlHelper, 'DATE_FORMAT({$expression}', 'SqlHelper não possui o caminho MySQL de agregação mensal.');
+platformReportsRequire($sqlHelper, 'TO_CHAR({$expression}', 'SqlHelper não possui o caminho PostgreSQL de agregação mensal.');
 platformReportsRequire($controller, 'serieVazia', 'Série mensal não preenche meses sem movimento.');
 platformReportsRequire($controller, 'TOTAL_MESES_EVOLUCAO = 12', 'Janela mensal estratégica não foi definida em 12 meses.');
 platformReportsRequire($controller, 'Logger::error', 'Falhas internas do relatório não são registradas em log.');

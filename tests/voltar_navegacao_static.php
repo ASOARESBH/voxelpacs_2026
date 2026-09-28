@@ -80,8 +80,10 @@ $instalar = lerVoltar($root . '/app/Views/estudos/instalar.php');
 $tenant = lerVoltar($root . '/app/Views/auth/select_tenant.php');
 exigirVoltar(substr_count($viewer, 'data-voxel-voltar="/estudos"') >= 2, 'Viewer não cobre os dois retornos à Worklist.');
 exigirVoltar(strpos($viewer, 'voxel-voltar.js?v=') !== false, 'Viewer independente não carrega o helper.');
-exigirVoltar(strpos($moderno, 'data-voxel-return-worklist') !== false && strpos($moderno, 'voxel-voltar.js?v=') !== false,
-    'PDF Moderno Lateral não usa o retorno coordenado à Worklist.');
+exigirVoltar(strpos($moderno, 'data-voxel-voltar="<?= htmlspecialchars($reportReturnUrl, ENT_QUOTES) ?>"') !== false
+    && strpos($moderno, '/reports/r/') !== false
+    && strpos($moderno, 'voxel-voltar.js?v=') !== false,
+    'PDF Moderno Lateral não declara retorno seguro ao Laudário por token.');
 
 $reportsHeader = lerVoltar($root . '/app/Views/layout/reports_header.php');
 $worklist = lerVoltar($root . '/app/Views/estudos/index.php');
@@ -89,8 +91,8 @@ $reportsMain = lerVoltar($root . '/public/assets/js/reports/reports-main.js');
 $reportsSignature = lerVoltar($root . '/public/assets/js/reports/reports-signature.js');
 exigirVoltar(strpos($reportsHeader, 'data-voxel-return-worklist') !== false,
     'Laudário não declara retorno coordenado à Worklist.');
-exigirVoltar(substr_count($worklist, 'target="voxel-laudario"') >= 3,
-    'Worklist não reutiliza a aba nomeada do Laudário.');
+exigirVoltar(preg_match('/class="wl-btn-laudo[^"].{0,500}target="_blank"/s', $worklist) === 1,
+    'Worklist não abre o laudo por token em nova aba.');
 exigirVoltar(strpos($reportsMain, "window.open(pdfUrl, 'voxel-laudo-pdf')") !== false,
     'Prévia PDF não reutiliza sua aba nomeada.');
 exigirVoltar(strpos($reportsMain, 'window.voxelRetornarWorklist(\'/estudos\')') !== false
@@ -108,8 +110,12 @@ exigirVoltar(strpos($moduloMascaras, 'ativarAbaMedico()') !== false,
     'O módulo de Máscaras não documenta a correção por query string.');
 
 $core = lerVoltar($root . '/app/Core/View.php');
-exigirVoltar(strpos($core, "ASSET_VERSION = '2.3.0'") !== false,
-    'Assets não foram versionados para distribuir a camada responsiva e a navegação coordenada.');
+$assetVersion = null;
+if (preg_match("/ASSET_VERSION\s*=\s*'([0-9]+\\.[0-9]+\\.[0-9]+)'/", $core, $assetMatch) === 1) {
+    $assetVersion = $assetMatch[1];
+}
+exigirVoltar($assetVersion !== null && version_compare($assetVersion, '2.3.14', '>='),
+    'Assets devem possuir versão semântica atualizada para invalidar cache.');
 
 if ($falhas !== []) {
     fwrite(STDERR, "FALHOU\n- " . implode("\n- ", $falhas) . "\n");

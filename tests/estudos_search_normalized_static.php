@@ -58,13 +58,16 @@ $require(
     'A Worklist deve centralizar a busca por termos normalizados.'
 );
 $require(
-    str_contains($controller, '$this->aplicarBuscaNormalizada($where, $params, $filtros[\'paciente\'], [\'e.patient_name\']);'),
-    'O filtro Nome do paciente deve usar a busca normalizada.'
+    preg_match(
+        '/\$this->aplicarBuscaNormalizada\(\s*\$where,\s*\$params,\s*\$filtros\[\'paciente\'\],\s*\[\'e\.patient_name\',\s*\'e\.patient_name_display\'\]\s*\)/s',
+        $controller
+    ) === 1,
+    'O filtro Nome do paciente deve normalizar patient_name e patient_name_display.'
 );
 $require(
-    str_contains($controller, "['e.especialidade', 'e.referring_physician_name']")
+    str_contains($controller, "['e.medico_solicitante_manual', 'e.especialidade', 'e.referring_physician_name']")
     && str_contains($controller, "['e.assumido_por']"),
-    'Solicitante e médico responsável devem usar o mesmo contrato de busca.'
+    'Solicitante e médico responsável devem usar o mesmo helper de busca normalizada.'
 );
 $require(
     !str_contains($controller, "e.patient_name LIKE ?"),
