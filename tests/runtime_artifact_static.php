@@ -40,10 +40,32 @@ foreach ([
     'worktree_not_clean',
     'output_inside_worktree',
     'RUNTIME_CONFIG_IN_ARTIFACT=YES',
+    'tmp_checksum="$(mktemp "${checksum_path}.tmp.XXXXXX")"',
+    'rm -f -- "$tmp_zip" "$tmp_checksum"',
+    'sha256sum "$output_path" > "$tmp_checksum"',
+    'sha256sum -c "$tmp_checksum" >/dev/null',
+    'mv -- "$tmp_checksum" "$checksum_path"',
+    'CHECKSUM_FILE_VALID=YES',
     'PRODUCTION_CHANGED=NO',
 ] as $marker) {
     expect_runtime_artifact(str_contains($builder, $marker), "Builder sem proteção: {$marker}");
 }
+
+$zipMovePosition = strpos($builder, 'mv -- "$tmp_zip" "$output_path"');
+$checksumHashPosition = strpos($builder, 'sha256sum "$output_path" > "$tmp_checksum"');
+$checksumMovePosition = strpos($builder, 'mv -- "$tmp_checksum" "$checksum_path"');
+expect_runtime_artifact(
+    is_int($zipMovePosition)
+        && is_int($checksumHashPosition)
+        && is_int($checksumMovePosition)
+        && $zipMovePosition < $checksumHashPosition
+        && $checksumHashPosition < $checksumMovePosition,
+    'Checksum deve ser calculado no ZIP final antes da publicação atômica do sidecar'
+);
+expect_runtime_artifact(
+    !str_contains($builder, 'sha256sum "$tmp_zip" > "$checksum_path"'),
+    'Builder não pode publicar checksum apontando para o ZIP temporário'
+);
 
 expect_runtime_artifact(
     str_contains($builder, "'app/Config/ReportDeliveryRuntimeConfig.php'")

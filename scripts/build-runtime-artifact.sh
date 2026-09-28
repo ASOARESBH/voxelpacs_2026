@@ -159,8 +159,10 @@ bash "$ROOT/scripts/verify-composer-tree.sh"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/voxelpacs-runtime-stage.XXXXXX")"
 tmp_zip="$(mktemp "${TMPDIR:-/tmp}/voxelpacs-runtime-artifact.XXXXXX.zip")"
 rm -f -- "$tmp_zip"
+tmp_checksum="$(mktemp "${checksum_path}.tmp.XXXXXX")"
 cleanup() {
-  rm -rf -- "$stage_dir" "$tmp_zip"
+  rm -rf -- "$stage_dir"
+  rm -f -- "$tmp_zip" "$tmp_checksum"
 }
 trap cleanup EXIT
 
@@ -223,8 +225,10 @@ while IFS= read -r relative; do
   [[ -n "$relative" ]] || continue
   printf '%s\t%s\n' "$relative" "$(sha256sum "$stage_dir/$relative" | awk '{print $1}')"
 done < <(find "$stage_dir" -type f -printf '%P\n' | sort) > "$manifest_path"
-sha256sum "$tmp_zip" > "$checksum_path"
 mv -- "$tmp_zip" "$output_path"
+sha256sum "$output_path" > "$tmp_checksum"
+sha256sum -c "$tmp_checksum" >/dev/null
+mv -- "$tmp_checksum" "$checksum_path"
 
 printf 'RUNTIME_ARTIFACT=PASS\n'
 printf 'SOURCE_SHA_PREFIX=%s…\n' "${current_sha:0:12}"
@@ -234,6 +238,7 @@ printf 'CHECKSUM_PATH=%s\n' "$checksum_path"
 printf 'RUNTIME_CONFIG_IN_ARTIFACT=YES\n'
 printf 'RUNTIME_CONFIG_SHA_PREFIX=%s…\n' "$(awk -F '\t' '$1 == "app/Config/ReportDeliveryRuntimeConfig.php" {print substr($2, 1, 12)}' "$manifest_path")"
 printf 'ARTIFACT_MANIFEST_ENTRIES=%s\n' "$(wc -l < "$manifest_path")"
+printf 'CHECKSUM_FILE_VALID=YES\n'
 printf 'SECRETS_INCLUDED=NO\n'
 printf 'PERSISTENT_DATA_INCLUDED=NO\n'
 printf 'PRODUCTION_CHANGED=NO\n'
