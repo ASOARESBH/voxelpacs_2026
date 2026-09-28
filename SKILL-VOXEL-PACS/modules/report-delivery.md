@@ -61,6 +61,8 @@ Desde 2026-09-28, `App\Config\ReportDeliveryRuntimeConfig` é a fonte única de 
 
 `scripts/configure-report-delivery-runtime.sh` é o aplicador allowlisted e reversível para uma fonte de ambiente autorizada. `--dry-run` não grava; `--apply` exige root e cria backup root-only; `--rollback` restaura apenas um backup sob a raiz autorizada. O mecanismo não reinicia serviço, acessa banco, Bridge, SMB ou Windows. A existência do código versionado não prova aplicação no runtime.
 
+O artefato runtime deve preservar o layout versionado: `app/*` é publicado em `APP_ROOT/app/*`, enquanto `public/*`, `bin/*`, `routes/*` e `lang/*` permanecem relativos a `APP_ROOT`. O builder `scripts/build-runtime-artifact.sh` valida essa topologia, exige `app/Config/ReportDeliveryRuntimeConfig.php` no caminho aninhado, rejeita a cópia plana legada e exclui `.env`, `storage`, `uploads`, logs, backups, testes, documentação, scripts e migrations. `scripts/build.sh` é apenas o wrapper compatível do builder; `scripts/deploy.sh` extrai somente em `APP_ROOT` e não executa Composer nem chmod recursivo no host.
+
 ## Padrões seguidos
 
 Aplica `padrao-sql.md`, `padrao-i18n.md` e o fluxo Controller/Repository existente do Delivery Hub. Toda query mantém filtro de tenant e toda ação mutável usa POST, CSRF e autorização administrativa.
