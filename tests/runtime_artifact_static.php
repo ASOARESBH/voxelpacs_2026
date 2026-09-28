@@ -83,6 +83,12 @@ expect_runtime_artifact(
     'deploy.sh deve usar APP_ROOT e bloquear a raiz pai'
 );
 expect_runtime_artifact(
+    str_contains($deploy, 'legacy_flat_path="$runtime_root/Config/ReportDeliveryRuntimeConfig.php"')
+        && str_contains($deploy, 'LEGACY_FLAT_RUNTIME_CONFIG_PRESERVED=')
+        && !str_contains($deploy, 'test ! -e "$runtime_root/Config/ReportDeliveryRuntimeConfig.php"'),
+    'deploy.sh deve preservar a cópia plana legada sem exigir sua remoção'
+);
+expect_runtime_artifact(
     !str_contains($deploy, 'composer install') && !str_contains($deploy, 'chmod -R 775'),
     'deploy.sh não pode executar Composer ou chmod recursivo no host'
 );
