@@ -4,7 +4,7 @@
 # não cria jobs e não executa qualquer transporte externo.
 set -Eeuo pipefail
 
-readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'
+readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/app/.env'
 readonly DEFAULT_BACKUP_ROOT='/var/backups/voxelpacs/config'
 readonly MANAGED_KEYS=(
   VOXEL_REPORT_DELIVERY_HUB_ENABLED
