@@ -56,7 +56,10 @@ foreach (['index', 'edit', 'update', 'novaUnidade', 'criarUnidade', 'editarUnida
 }
 $expect(str_contains($unidades, '$authenticatedByIntegration') && str_contains($unidades, 'MedicoAccess::isRestricted()'), 'apiInfo não diferencia integração Bearer válida de sessão médica restrita.');
 
-$expect(str_contains($header, '<?php if (!$medicoRestrito): ?>') && str_contains($header, 'href="/unidades"'), 'Sidebar ainda renderiza Unidades para médico restrito.');
+$expect(
+    preg_match('/if\s*\(\s*!\$medicoRestrito\s*&&\s*\$canCadUnidades\s*\).*?href="\/unidades"/s', $header) === 1,
+    'Sidebar deve renderizar Unidades somente fora do escopo de médico restrito e com módulo autorizado.'
+);
 $expect(str_contains($medicosView, "!\\App\\Core\\Access\\MedicoAccess::isRestricted()"), 'View de médicos ainda oferece criação para médico restrito.');
 $expect(str_contains($moduleDoc, 'Correção de acesso por médico vinculado — 2026-08-13'), 'Documentação do módulo Médico não foi atualizada.');
 $expect(str_contains($authDoc, 'MedicoAccess — escopo de cadastro médico (2026-08-13)'), 'Documentação de autorização não registra a nova aplicação.');
