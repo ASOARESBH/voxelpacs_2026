@@ -4,6 +4,7 @@
 // Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 namespace App\Services;
 
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryRepository;
 use PDO;
@@ -189,10 +190,7 @@ class ReportDeliveryOutboxService
 
     private function enabled(): bool
     {
-        return filter_var(
-            getenv('VOXEL_REPORT_DELIVERY_HUB_ENABLED') ?: 'false',
-            FILTER_VALIDATE_BOOLEAN
-        );
+        return ReportDeliveryRuntimeConfig::hubEnabled();
     }
 
     private function clinicalDate(string $releasedAt): string

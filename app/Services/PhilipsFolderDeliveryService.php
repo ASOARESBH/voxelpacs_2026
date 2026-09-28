@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 
 /**
@@ -25,25 +26,25 @@ final class PhilipsFolderDeliveryService
 
     public static function enabled(): bool
     {
-        return filter_var(getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::folderDeliveryEnabled();
     }
 
     /** Fase 1: desligada por padrão; a autorização de teste é independente do worker geral. */
     public static function nonDicomEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_DELIVERY_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::nonDicomDeliveryEnabled();
     }
 
     /** Teste de conectividade não cria job e exige janela própria, desligada por padrão. */
     public static function testEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_SMB_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::smbTestEnabled();
     }
 
     /** Diagnóstico temporário de autenticação SMB sem operação remota de escrita. */
     public static function readOnlyTestEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::smbReadOnlyTestEnabled();
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact

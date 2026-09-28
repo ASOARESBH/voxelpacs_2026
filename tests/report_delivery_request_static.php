@@ -121,13 +121,14 @@ $snapshotService = file_get_contents($root . '/app/Services/ReportDeliveryReques
 $repository = file_get_contents($root . '/app/Repositories/ReportDeliveryRequestRepository.php');
 $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryRequestController.php');
 $worker = file_get_contents($root . '/app/Repositories/ReportDeliveryWorkerRepository.php');
+$runtimeConfig = file_get_contents($root . '/app/Config/ReportDeliveryRuntimeConfig.php');
 $migration = file_get_contents($root . '/database/migrations/2026-09-18_report_delivery_requests_postgresql.sql');
 $overrideMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_delivery_request_patient_name_overrides_postgresql.sql');
 $overrideService = file_get_contents($root . '/app/Services/ReportDeliveryRequestPatientNameOverrideService.php');
 $routes = file_get_contents($root . '/routes/platform.php');
 $env = file_get_contents($root . '/.env.example');
 
-foreach ([$service, $snapshotService, $repository, $controller, $worker, $migration, $overrideMigration, $overrideService, $routes, $env] as $content) {
+foreach ([$service, $snapshotService, $repository, $controller, $worker, $runtimeConfig, $migration, $overrideMigration, $overrideService, $routes, $env] as $content) {
     expect_request(is_string($content), 'Expected Delivery Request file must be readable');
 }
 
@@ -151,7 +152,8 @@ expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worke
 expect_request(str_contains($repository, '$terminalTimestamp = $status ==='), 'Terminal Request timestamp must be selected without duplicate assignments');
 expect_request(!str_contains($repository, '{$column} = NOW(), updated_at = NOW()'), 'Failed Request must not assign updated_at twice');
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
-expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
+expect_request(str_contains($worker, 'ReportDeliveryRuntimeConfig::requestsEnabled()'), 'Worker feature flag guard missing');
+expect_request(str_contains($runtimeConfig, 'REQUESTS_ENABLED'), 'Runtime Requests flag constant missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');
 expect_request(str_contains($service, "\$request['request_reason'] ?? ''") && str_contains($service, '$inputReason'), 'UUID replay must compare the normalized request reason');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::authorizedSnapshotDigest'), 'Authorized snapshot digest must use the shared canonical helper');

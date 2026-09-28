@@ -13,6 +13,7 @@ $files = [
     'repository' => $base . '/app/Repositories/ReportDeliveryRepository.php',
     'view' => $base . '/app/Views/platform/negocios/report_delivery.php',
     'bootstrap' => $base . '/app/bootstrap.php',
+    'runtimeConfig' => $base . '/app/Config/ReportDeliveryRuntimeConfig.php',
 ];
 foreach ($files as $name => $path) {
     if (!is_file($path)) {
@@ -35,6 +36,7 @@ $controller = file_get_contents($files['controller']);
 $repository = file_get_contents($files['repository']);
 $view = file_get_contents($files['view']);
 $bootstrap = file_get_contents($files['bootstrap']);
+$runtimeConfig = file_get_contents($files['runtimeConfig']);
 $requiredI18n = [
     'philips_non_dicom.confirmar_teste_smb',
     'philips_non_dicom.resposta_invalida',
@@ -51,7 +53,8 @@ foreach (['pt_BR', 'en', 'es'] as $locale) {
 }
 
 $required = [
-    [$service, "getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false'", 'feature flag segura'],
+    [$service, 'ReportDeliveryRuntimeConfig::folderDeliveryEnabled()', 'feature flag segura centralizada'],
+    [$runtimeConfig, 'final class ReportDeliveryRuntimeConfig', 'classe central de flags runtime'],
     [$service, "public const TRANSPORT = 'philips_folder'", 'transporte Philips'],
     [$connectivity, 'namespace App\\Services;', 'namespace do serviço de conectividade SMB'],
     [$connectivity, "'gateway_unavailable'", 'falha local do envelope sanitizada'],

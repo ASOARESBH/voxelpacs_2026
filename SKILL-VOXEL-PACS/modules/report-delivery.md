@@ -55,6 +55,12 @@ O recovery administrativo usa `ReportDeliveryRequestService::prepareRecovery()`:
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.
 - Consumido por: tela administrativa `/platform/negocios/{id}/report-delivery`, rota manual por Job ID e worker de entrega.
 
+## Flags runtime e kill switch
+
+Desde 2026-09-28, `App\Config\ReportDeliveryRuntimeConfig` é a fonte única de leitura das flags do Hub, Requests, Philips Folder, Philips Non-DICOM e testes SMB. Recursos ausentes ou com valor booleano inválido permanecem desligados. A exceção é `VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH`: valor inválido bloqueia o Worker (fail-closed) antes de `enableOneShotForJob()`, `claimJobById()` e `claimNextJob()`.
+
+`scripts/configure-report-delivery-runtime.sh` é o aplicador allowlisted e reversível para uma fonte de ambiente autorizada. `--dry-run` não grava; `--apply` exige root e cria backup root-only; `--rollback` restaura apenas um backup sob a raiz autorizada. O mecanismo não reinicia serviço, acessa banco, Bridge, SMB ou Windows. A existência do código versionado não prova aplicação no runtime.
+
 ## Padrões seguidos
 
 Aplica `padrao-sql.md`, `padrao-i18n.md` e o fluxo Controller/Repository existente do Delivery Hub. Toda query mantém filtro de tenant e toda ação mutável usa POST, CSRF e autorização administrativa.
