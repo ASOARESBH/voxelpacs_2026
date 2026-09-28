@@ -102,9 +102,10 @@ expect_runtime_flag(
     'configuração deve declarar o .env raiz como fonte canônica'
 );
 expect_runtime_flag(
-    str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'")
+    str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/app/.env'")
+        && !str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'")
         && !str_contains($script, 'VOXEL_RUNTIME_ENV_FILE'),
-    'aplicador deve usar o mesmo .env raiz sem override secundário'
+    'aplicador deve usar o .env da raiz efetiva do runtime sem override secundário'
 );
 expect_runtime_flag(is_string($script) && is_file($scriptPath), 'aplicador versionado de flags ausente');
 

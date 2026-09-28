@@ -4,7 +4,7 @@
 
 `app/Config/ReportDeliveryRuntimeConfig.php` é a fonte única de leitura das flags operacionais do Report Delivery. A classe não grava configuração, não acessa banco e não contém credenciais.
 
-O bootstrap do VOXEL PACS carrega as fontes de ambiente aprovadas antes dos consumidores. A fonte canônica das flags gerenciadas é o `.env` da raiz do runtime (`BASE_PATH/.env`, em produção `/var/www/voxelpacs/.env`). Quando essa fonte existe, uma chave ausente significa **OFF**; `app/.env` e `EnvironmentFile` secundários não podem sobrescrever essa decisão. Somente em desenvolvimento sem o arquivo canônico há fallback para `$_ENV`, `$_SERVER` e `getenv()`.
+O bootstrap do VOXEL PACS carrega as fontes de ambiente aprovadas antes dos consumidores. A fonte canônica das flags gerenciadas é o `.env` da raiz efetiva do runtime (`BASE_PATH/.env`, que no layout de produção corresponde a `/var/www/voxelpacs/app/.env`). Quando essa fonte existe, uma chave ausente significa **OFF**; EnvironmentFiles secundários não podem sobrescrever essa decisão. Somente em desenvolvimento sem o arquivo canônico há fallback para `$_ENV`, `$_SERVER` e `getenv()`.
 
 A ausência de qualquer flag é segura: **OFF**. Valores booleanos aceitos são `1/true/yes/on` e `0/false/no/off`.
 
@@ -35,7 +35,7 @@ O kill switch é fail-closed: valor inválido também impede o processamento. O 
 - `--dry-run` valida o arquivo, chaves, valores e duplicidades sem gravar.
 - `--apply` exige root, cria backup root-only, preserva owner/group/mode e altera somente as chaves informadas.
 - `--rollback` exige root e restaura somente um backup criado pelo próprio mecanismo.
-- O aplicador aponta para o mesmo `.env` canônico lido por `ReportDeliveryRuntimeConfig`; não há override de caminho para `app/.env`.
+- O aplicador aponta para o mesmo `.env` canônico lido por `ReportDeliveryRuntimeConfig`, incluindo o layout de produção em que o código Git é publicado sob `app/`; não há override secundário de caminho.
 - Nenhuma opção executa reload/restart, acessa banco, Bridge, SMB, Windows ou Philips.
 - O mecanismo não imprime valores de secrets e não aceita chaves fora da allowlist.
 
