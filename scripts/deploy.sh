@@ -67,16 +67,30 @@ archive="$2"
 [[ "$runtime_root" == */app ]] || { printf 'REMOTE_DEPLOY=BLOCKED\nREASON=RUNTIME_ROOT_SUFFIX_INVALID\n' >&2; exit 65; }
 [[ -f "$archive" ]] || { printf 'REMOTE_DEPLOY=BLOCKED\nREASON=ARTIFACT_NOT_FOUND\n' >&2; exit 65; }
 
+legacy_flat_path="$runtime_root/Config/ReportDeliveryRuntimeConfig.php"
+legacy_flat_state_before='ABSENT'
+if [[ -e "$legacy_flat_path" || -L "$legacy_flat_path" ]]; then
+  legacy_flat_state_before='PRESENT'
+fi
+
 unzip -t "$archive" >/dev/null
 unzip -o "$archive" -d "$runtime_root" >/dev/null
 
 test -f "$runtime_root/app/Config/ReportDeliveryRuntimeConfig.php"
 test -f "$runtime_root/public/index.php"
-test ! -e "$runtime_root/Config/ReportDeliveryRuntimeConfig.php"
+legacy_flat_state_after='ABSENT'
+if [[ -e "$legacy_flat_path" || -L "$legacy_flat_path" ]]; then
+  legacy_flat_state_after='PRESENT'
+fi
+[[ "$legacy_flat_state_after" == "$legacy_flat_state_before" ]] || {
+  printf 'REMOTE_DEPLOY=BLOCKED\nREASON=LEGACY_FLAT_RUNTIME_CONFIG_CHANGED\n' >&2
+  exit 65
+}
 rm -f -- "$archive"
 
 printf 'REMOTE_DEPLOY=PASS\n'
 printf 'RUNTIME_ROOT=APP_ROOT\n'
+printf 'LEGACY_FLAT_RUNTIME_CONFIG_PRESERVED=%s\n' "$([[ "$legacy_flat_state_before" == "$legacy_flat_state_after" ]] && printf 'YES' || printf 'NO')"
 printf 'ENV_PRESERVED=YES\n'
 printf 'STORAGE_PRESERVED=YES\n'
 printf 'UPLOADS_PRESERVED=YES\n'
