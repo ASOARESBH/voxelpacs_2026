@@ -1048,4 +1048,60 @@ class ReportDeliveryRepository
 
         return $stmt->rowCount() === 1;
     }
+
+    /**
+     * Torna terminal um lease abandonado sem rearmar o Worker.
+     * Nenhum attempt novo é criado e o Job não volta à fila.
+     */
+    public function quarantineStaleProcessingJob(int $jobId, int $tenantId): bool
+    {
+        $staleThresholdSql = SqlHelper::isPostgres()
+            ? "NOW() - INTERVAL '10 minutes'"
+            : 'DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
+        $this->pdo->beginTransaction();
+        try {
+            $context = $this->pdo->prepare(
+                "SELECT outbox_id
+                   FROM pacs_report_delivery_jobs
+                  WHERE id = :id AND tenant_id = :tenant_id
+                  LIMIT 1"
+            );
+            $context->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+            $outboxId = (int) $context->fetchColumn();
+            if ($outboxId <= 0) {
+                $this->pdo->commit();
+                return false;
+            }
+
+            $stmt = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'failed',
+                     worker_eligible_at = NULL,
+                     next_attempt_at = NULL,
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     last_error = CONCAT(COALESCE(last_error, ''), ' | Lease stale colocado em quarentena administrativa'),
+                     updated_at = NOW()
+                 WHERE id = :id
+                   AND tenant_id = :tenant_id
+                   AND status = 'processing'
+                   AND locked_at IS NOT NULL
+                   AND locked_at <= {$staleThresholdSql}"
+            );
+            $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+            if ($stmt->rowCount() !== 1) {
+                $this->pdo->commit();
+                return false;
+            }
+
+            $this->refreshOutboxStatus($outboxId, $tenantId);
+            $this->pdo->commit();
+            return true;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
 }

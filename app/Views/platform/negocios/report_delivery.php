@@ -361,6 +361,45 @@ $transportLabels = [
                 </div>
             </div>
 
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div><h2 class="h5 mb-0">Jobs técnicos recentes</h2><div class="small text-muted">Estados operacionais do tenant; nenhuma ação é executada automaticamente.</div></div>
+                    <span class="badge text-bg-secondary"><?= count($jobs) ?></span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead><tr><th>Job</th><th>Destino</th><th>Report/version</th><th>Transporte</th><th>Status</th><th class="text-end">Ações administrativas</th></tr></thead>
+                        <tbody>
+                            <?php if (!$jobs): ?><tr><td colspan="6" class="text-center text-muted py-4">Nenhum job técnico recente.</td></tr><?php endif; ?>
+                            <?php foreach ($jobs as $job): ?>
+                                <?php $jobStatus = (string) ($job['status'] ?? ''); $jobId = (int) ($job['id'] ?? 0); ?>
+                                <tr>
+                                    <td><code>#<?= $jobId ?></code><div class="small text-muted">Tentativas: <?= (int) ($job['attempt_count'] ?? 0) ?></div></td>
+                                    <td><?= $escape((string) ($job['destination_name'] ?? '—')) ?></td>
+                                    <td><?= (int) ($job['report_id'] ?? 0) ?>/<?= (int) ($job['report_version'] ?? 0) ?></td>
+                                    <td><code><?= $escape((string) ($job['transport'] ?? '—')) ?></code></td>
+                                    <td><span class="badge text-bg-<?= $jobStatus === 'processing' ? 'warning' : ($jobStatus === 'delivered' ? 'success' : 'secondary') ?>"><?= $escape($jobStatus !== '' ? $jobStatus : 'unknown') ?></span></td>
+                                    <td class="text-end">
+                                        <?php if ($jobStatus === 'processing' && $jobId > 0): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/recover-stale" class="d-inline stale-action-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_recover_stale" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning"><?= $escape(t('delivery_hub.released.recuperar_lease')) ?></button>
+                                            </form>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/quarantine-stale" class="d-inline stale-action-form ms-1">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_quarantine_stale" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"><?= $escape(t('delivery_hub.released.quarentenar_lease')) ?></button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span class="text-muted small">Sem ação automática</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="card shadow-sm">
                 <div class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
                     <div><h2 class="h5 mb-0"><?= $escape(t('delivery_hub.released.titulo')) ?></h2><div class="small text-muted"><?= $escape(t('delivery_hub.released.ajuda_status')) ?></div></div>
@@ -757,6 +796,33 @@ $transportLabels = [
             } catch (_) {
                 resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
                 resendFeedback.textContent = '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.stale-action-form').forEach((staleForm) => {
+        staleForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const isQuarantine = staleForm.action.endsWith('/quarantine-stale');
+            const confirmation = isQuarantine
+                ? <?= json_encode(t('delivery_hub.released.confirmar_quarentena'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+                : <?= json_encode(t('delivery_hub.released.confirmar_recuperacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            if (!window.confirm(confirmation)) return;
+            const submitButton = staleForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(staleForm.action, { method: 'POST', body: new FormData(staleForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.released.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || <?= json_encode(t('delivery_hub.released.erro_stale'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = <?= json_encode(t('delivery_hub.released.erro_stale'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
                 resendFeedback.classList.remove('d-none');
             } finally {
                 if (submitButton) submitButton.disabled = false;

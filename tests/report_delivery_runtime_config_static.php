@@ -81,7 +81,8 @@ expect_runtime_flag(
 );
 
 $worker = file_get_contents($root . '/bin/report_delivery_worker.php');
-$script = $root . '/scripts/configure-report-delivery-runtime.sh';
+$scriptPath = $root . '/scripts/configure-report-delivery-runtime.sh';
+$script = file_get_contents($scriptPath);
 $config = file_get_contents($root . '/app/Config/ReportDeliveryRuntimeConfig.php');
 expect_runtime_flag(is_string($worker), 'Worker não pode ser lido');
 expect_runtime_flag(is_string($config), 'Configuração runtime não pode ser lida');
@@ -95,6 +96,16 @@ expect_runtime_flag(
     str_contains($config, "default => \$invalidValueDefault"),
     'configuração deve tratar valores inválidos conforme o modo fail-closed'
 );
-expect_runtime_flag(is_file($script), 'aplicador versionado de flags ausente');
+expect_runtime_flag(
+    str_contains($config, 'canonicalEnvironmentFile')
+        && str_contains($config, 'BASE_PATH . \'/.env\''),
+    'configuração deve declarar o .env raiz como fonte canônica'
+);
+expect_runtime_flag(
+    str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'")
+        && !str_contains($script, 'VOXEL_RUNTIME_ENV_FILE'),
+    'aplicador deve usar o mesmo .env raiz sem override secundário'
+);
+expect_runtime_flag(is_string($script) && is_file($scriptPath), 'aplicador versionado de flags ausente');
 
 fwrite(STDOUT, "report_delivery_runtime_config_static: PASS\n");

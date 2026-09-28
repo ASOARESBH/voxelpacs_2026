@@ -450,6 +450,9 @@ class ReportDeliveryController extends Controller
         if (!$this->validCsrf()) {
             $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
         }
+        if ((string) ($_POST['confirm_recover_stale'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_recuperacao')], 422);
+        }
 
         try {
             $queued = $this->repository->recoverStaleProcessingJob($jobId, $tenantId);
@@ -468,6 +471,45 @@ class ReportDeliveryController extends Controller
                 'error' => $e->getMessage(),
             ]);
             $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_recuperacao')], 500);
+        }
+    }
+
+    /**
+     * Coloca um lease stale em falha terminal, sem requeue, retry ou attempt novo.
+     * A ação é deliberadamente separada do recovery que rearma o Worker.
+     */
+    public function quarantineStaleProcessing(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_quarantine_stale'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_quarentena')], 422);
+        }
+
+        try {
+            $quarantined = $this->repository->quarantineStaleProcessingJob($jobId, $tenantId);
+            if (!$quarantined) {
+                $this->json(['success' => false, 'message' => t('delivery_hub.released.quarentena_indisponivel')], 422);
+            }
+            AuditLogger::log('report_delivery.stale_job_quarantined', 'pacs_report_delivery_jobs', $jobId, [
+                'tenant_id' => $tenantId,
+                'minimum_stale_minutes' => 10,
+                'requeue' => false,
+                'retry' => false,
+                'attempt_created' => false,
+            ]);
+            $this->json(['success' => true, 'message' => t('delivery_hub.released.quarentena_aceita')]);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::quarantineStaleProcessing] Falha ao colocar lease stale em quarentena', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_quarentena')], 500);
         }
     }
 

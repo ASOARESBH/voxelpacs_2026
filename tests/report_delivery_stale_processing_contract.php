@@ -12,13 +12,22 @@ $rules = [
     'repositório restringe recuperação ao status processing' => str_contains($repository, "status = 'processing'"),
     'repositório exige lease registrado' => str_contains($repository, 'locked_at IS NOT NULL'),
     'repositório exige lease obsoleto de dez minutos' => str_contains($repository, 'DATE_SUB(NOW(), INTERVAL 10 MINUTE)'),
-    'controller exige autenticação e CSRF' => str_contains($controller, 'recoverStaleProcessing')
+    'controller exige autenticação, CSRF e confirmação' => str_contains($controller, 'recoverStaleProcessing')
         && str_contains($controller, 'isPlatformAdmin()')
-        && str_contains($controller, 'validCsrf()'),
+        && str_contains($controller, 'validCsrf()')
+        && str_contains($controller, 'confirm_recover_stale'),
     'controller registra auditoria da recuperação' => str_contains($controller, 'report_delivery.stale_job_recovered'),
     'rota é administrativa e não pública' => str_contains($routes, "/report-delivery/jobs/{jobId}/recover-stale"),
-    'interface exibe recuperação somente para processing' => str_contains($view, "\$job['status'] === 'processing'")
-        && str_contains($view, 'Recuperar lease'),
+    'repositório oferece quarentena terminal sem requeue' => str_contains($repository, 'quarantineStaleProcessingJob')
+        && str_contains($repository, "status = 'failed'")
+        && str_contains($repository, 'Lease stale colocado em quarentena administrativa'),
+    'controller expõe quarentena separada e sem retry' => str_contains($controller, 'quarantineStaleProcessing')
+        && str_contains($controller, 'confirm_quarantine_stale')
+        && str_contains($controller, 'attempt_created\' => false'),
+    'rota de quarentena é administrativa e não pública' => str_contains($routes, "/report-delivery/jobs/{jobId}/quarantine-stale"),
+    'interface exibe ação somente para processing' => str_contains($view, "\$jobStatus === 'processing'")
+        && str_contains($view, 'stale-action-form')
+        && str_contains($view, '/quarantine-stale'),
 ];
 
 $failed = [];
