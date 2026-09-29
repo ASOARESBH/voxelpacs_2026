@@ -38,3 +38,10 @@
 - `scripts/build-runtime-artifact.sh` é o builder determinístico e exclui `.env`, storage, uploads, logs, backups, testes, documentação, scripts e migrations.
 - `scripts/deploy.sh` exige `APP_ROOT`, não substitui dados persistentes e não executa Composer remoto ou permissões recursivas.
 - Backup root-only, reconciliação de drift, deploy, reload/restart e smoke de produção continuam sendo gates operacionais separados.
+
+## Backup root-only de release
+
+- `scripts/release_backup.sh` é o mecanismo versionado para criar/validar o backup da release com SHA explícito e restore-test isolado.
+- O provisionamento root-owned é separado em `scripts/provision-release-backup.sh`; a allowlist fica em `ops/sudoers/voxelpacs-release-backup` e não concede shell ou comandos genéricos.
+- O backup usa `/var/backups/voxelpacs/releases/<SHA>` e `/var/backups/voxelpacs/restore-tests/<SHA>`, não segue `.env`, `storage`, uploads, logs, backups ou dados clínicos.
+- A capacidade é independente de `scripts/deploy.sh` e não foi provisionada ou executada em produção nesta alteração.
