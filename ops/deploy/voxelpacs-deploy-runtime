@@ -301,8 +301,11 @@ rollback() {
 }
 
 [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
-if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != 'manus-admin' ]]; then
-  fail 'CALLER_NOT_ALLOWLISTED'
+if [[ -n "${SUDO_USER:-}" ]]; then
+  case "$SUDO_USER" in
+    manus-admin|manus-deploy) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
 fi
 
   case "${1:-}" in

@@ -24,6 +24,11 @@ fail() {
   exit 64
 }
 
+case "$REMOTE_USER" in
+  manus-admin|manus-deploy) ;;
+  *) fail 'DEPLOY_USER_NOT_ALLOWLISTED' ;;
+esac
+
 [[ -n "$REMOTE_HOST" ]] || fail 'DEPLOY_HOST_REQUIRED'
 [[ "$REMOTE_RUNTIME_ROOT" != '/var/www/voxelpacs' ]] || fail 'PARENT_ROOT_IS_NOT_RUNTIME_ROOT'
 [[ "$REMOTE_RUNTIME_ROOT" == */app ]] || fail 'REMOTE_RUNTIME_ROOT_SUFFIX_INVALID'

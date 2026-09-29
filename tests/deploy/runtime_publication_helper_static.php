@@ -21,6 +21,7 @@ $expect(str_contains($helper, "readonly INCOMING_ROOT='/var/lib/voxelpacs/deploy
 $expect(str_contains($helper, "readonly EFFECTIVE_CONFIG_REL='app/Config/ReportDeliveryRuntimeConfig.php'"), 'configuração efetiva ausente');
 $expect(str_contains($helper, '[[ "$EUID" -eq 0 ]]'), 'helper não exige root');
 $expect(str_contains($helper, "CALLER_NOT_ALLOWLISTED"), 'helper não restringe caller sudo');
+$expect(str_contains($helper, 'manus-admin|manus-deploy'), 'helper não permite os dois callers aprovados');
 $expect(str_contains($helper, 'assert_allowed_archive_entries'), 'allowlist do ZIP ausente');
 $expect(str_contains($helper, 'validate_manifest_shape'), 'validação do manifesto ausente');
 $expect(str_contains($helper, 'MANIFEST_FILE_SET_MISMATCH'), 'comparação do conjunto do manifesto ausente');
@@ -39,6 +40,9 @@ $expect(!str_contains($helper, 'systemctl restart'), 'helper não pode reiniciar
 
 $expect(str_contains($deploy, "REMOTE_INCOMING_ROOT='/var/lib/voxelpacs/deploy/incoming'"), 'deploy não usa entrada fixa');
 $expect(str_contains($deploy, "REMOTE_HELPER='/usr/local/sbin/voxelpacs-deploy-runtime'"), 'deploy não usa helper fixo');
+$expect(str_contains($deploy, 'REMOTE_USER="${DEPLOY_USER:-manus-admin}"'), 'deploy não preserva manus-admin como padrão');
+$expect(str_contains($deploy, 'manus-admin|manus-deploy'), 'deploy não restringe callers aprovados');
+$expect(str_contains($deploy, 'DEPLOY_USER_NOT_ALLOWLISTED'), 'deploy não bloqueia caller arbitrário');
 $expect(str_contains($deploy, 'sudo -n -- "$helper" --sha "$sha"'), 'deploy não chama helper por sudo restrito');
 $expect(str_contains($deploy, 'PRIVILEGED_HELPER_UNAVAILABLE'), 'deploy não bloqueia helper ausente');
 $expect(str_contains($deploy, 'LOCAL_ARTIFACT_CHECKSUM_RECONCILIATION_FAILED'), 'deploy não reconcilia checksum local');
@@ -50,7 +54,10 @@ $expect(!str_contains($deploy, 'composer install'), 'deploy não executa Compose
 
 $expect(str_contains($sudoers, 'manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --sha [a-f0-9]*'), 'regra sudoers de publicação ausente');
 $expect(str_contains($sudoers, 'manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --rollback --sha [a-f0-9]*'), 'regra sudoers de rollback ausente');
-$expect(substr_count($sudoers, 'manus-admin ALL=(root) NOPASSWD:') === 2, 'sudoers contém regras além das duas allowlisted');
+$expect(str_contains($sudoers, 'manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --sha [a-f0-9]*'), 'regra manus-deploy de publicação ausente');
+$expect(str_contains($sudoers, 'manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --rollback --sha [a-f0-9]*'), 'regra manus-deploy de rollback ausente');
+$expect(substr_count($sudoers, 'manus-admin ALL=(root) NOPASSWD:') === 2, 'sudoers alterou as duas regras de manus-admin');
+$expect(substr_count($sudoers, 'manus-deploy ALL=(root) NOPASSWD:') === 2, 'sudoers não contém exatamente duas regras de manus-deploy');
 
 foreach ([
     'quatro arquivos',

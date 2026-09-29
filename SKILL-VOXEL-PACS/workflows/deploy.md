@@ -25,6 +25,8 @@ LOCALIZAR
 
 Produção só pode receber código de um SHA conhecido, enviado ao GitHub e aprovado na `main`. Não fazer deploy de working tree sujo, branch de desenvolvimento, commit não enviado ou código editado diretamente em produção.
 
+O mecanismo versionado aceita somente os callers SSH aprovados `manus-admin` e `manus-deploy`. `scripts/deploy.sh` mantém `manus-admin` como padrão e exige `DEPLOY_USER=manus-deploy` quando a operação deve ocorrer pela identidade separada; não aceitar usuário arbitrário nem forjar `SUDO_USER` para contornar o helper.
+
 ## 2. Pré-checagem do repositório
 
 Antes de montar o artefato:
