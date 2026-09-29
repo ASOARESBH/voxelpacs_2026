@@ -37,6 +37,7 @@ $expect(str_contains($helper, 'PERSISTENT_STATE_CHANGED'), 'guard de persistênc
 foreach (['report_delivery_state', 'logs_state', 'backups_state', 'legacy_state'] as $marker) {
     $expect(str_contains($helper, $marker), "estado persistente ausente: {$marker}");
 }
+$expect(str_contains($helper, '--delay-directory-restore'), 'restore-test não preserva mtime de diretórios');
 $expect(str_contains($helper, 'mv -- "$temp_dir" "$backup_dir"'), 'publicação atômica ausente');
 $expect(str_contains($helper, 'RESTORE_TEST=PASS'), 'restore-test ausente');
 $expect(!str_contains($helper, 'eval '), 'helper não pode usar eval');
