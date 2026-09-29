@@ -15,13 +15,16 @@ function expect_runtime_artifact(bool $condition, string $message): void
 $builderPath = $root . '/scripts/build-runtime-artifact.sh';
 $buildPath = $root . '/scripts/build.sh';
 $deployPath = $root . '/scripts/deploy.sh';
+$helperPath = $root . '/ops/deploy/voxelpacs-deploy-runtime';
 $builder = file_get_contents($builderPath);
 $build = file_get_contents($buildPath);
 $deploy = file_get_contents($deployPath);
+$helper = file_get_contents($helperPath);
 
 expect_runtime_artifact(is_string($builder), 'Builder de artefato runtime ausente');
 expect_runtime_artifact(is_string($build), 'Wrapper build.sh ausente');
 expect_runtime_artifact(is_string($deploy), 'Script deploy.sh ausente');
+expect_runtime_artifact(is_string($helper), 'Helper privilegiado de publicação ausente');
 
 foreach ([
     'archive --format=tar HEAD',
@@ -83,10 +86,10 @@ expect_runtime_artifact(
     'deploy.sh deve usar APP_ROOT e bloquear a raiz pai'
 );
 expect_runtime_artifact(
-    str_contains($deploy, 'legacy_flat_path="$runtime_root/Config/ReportDeliveryRuntimeConfig.php"')
-        && str_contains($deploy, 'LEGACY_FLAT_RUNTIME_CONFIG_PRESERVED=')
+    str_contains($helper, 'readonly LEGACY_FLAT_PATH="$APP_ROOT/Config/ReportDeliveryRuntimeConfig.php"')
+        && str_contains($helper, 'LEGACY_FLAT_PRESERVED=YES')
         && !str_contains($deploy, 'test ! -e "$runtime_root/Config/ReportDeliveryRuntimeConfig.php"'),
-    'deploy.sh deve preservar a cópia plana legada sem exigir sua remoção'
+    'helper deve preservar a cópia plana legada sem exigir sua remoção'
 );
 expect_runtime_artifact(
     !str_contains($deploy, 'composer install') && !str_contains($deploy, 'chmod -R 775'),
