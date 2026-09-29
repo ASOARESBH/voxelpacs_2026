@@ -80,6 +80,8 @@ Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/quarantine-stale', 'Platform\ReportDeliveryController@quarantineStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
+// Correção visual de PDF já liberado; preserva snapshots e revisões anteriores.
+Router::post('/platform/negocios/{id}/reports/{reportId}/versions/{version}/pdf-revisions/visual-renderer-correction', 'Platform\ReportPdfRevisionController@createVisualRendererCorrection');
 
 // Delivery Request — control-plane aditivo; feature flag desligada por padrão.
 Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
