@@ -31,6 +31,8 @@ GET  /api/reports/autotext              autotextSearch
 GET  /api/reports/by-estudo             byEstudo
 POST /api/reports/status                atualizarStatus
 POST /api/reports/liberar               liberar
+POST /platform/negocios/{id}/reports/{reportId}/versions/{version}/pdf-revisions/visual-renderer-correction
+                                        ReportPdfRevisionController::createVisualRendererCorrection
 ```
 
 ## Achado crítico — extração de seções é o ponto único de falha do módulo (2026-08-10)
@@ -136,5 +138,13 @@ Quando uma versão bloqueada não tem snapshot nem conteúdo histórico, mas exi
 
 Lotes de correção visual devem selecionar somente a versão assinada/liberada mais recente com `versao > 0` e conteúdo histórico clínico válido. Registros legados com `versao = 0`, conteúdo ausente ou versão histórica não única permanecem bloqueados; não se deve inferir a versão nem substituir o conteúdo sem autorização operacional explícita. A materialização em lote cria apenas revisões operacionais idempotentes, preservando `report_versions`, snapshots canônicos e artifacts de delivery.
 
+### Chamador administrativo de correção visual
+
+A rota `POST /platform/negocios/{id}/reports/{reportId}/versions/{version}/pdf-revisions/visual-renderer-correction` é o chamador de aplicação para materializar uma nova revisão visual sem editar o banco diretamente no controller. Ela exige superadmin, CSRF e `confirm_visual_renderer_correction=1`; valida o report por `ReportAccessService` e confirma que o `tenant_id` do report corresponde ao `{id}` da rota.
+
+O controller sempre chama `ReportVersionPdfRevisionService::createFromHistoricalReportVersion()`. A fonte não é escolhida por `POST`, não aceita HTML/corpo clínico e não faz fallback automático para `reports.corpo_laudo`. O service existente renderiza com o Dompdf atual, grava o PDF em storage privado e persiste a revisão com hash, tamanho, renderer, motivo, usuário e número monotônico. Repetições do mesmo payload são idempotentes pelo `revision_key`; a revisão anterior nunca é sobrescrita.
+
+A resposta e a auditoria retornam somente metadados técnicos sanitizados: IDs tenant-scoped, versão, número da revisão, `source_kind`, hashes, tamanho, renderer e motivo. O endpoint não inicia Delivery Request, Outbox, Job, worker ou transporte externo. A execução operacional deve ser feita somente após validação do report/version corretos e com registro do resultado.
+
 ## Última análise
-2026-09-23
+2026-09-29

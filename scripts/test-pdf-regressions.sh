@@ -19,6 +19,7 @@ tests=(
   tests/report_version_pdf_revision_static.php
   tests/report_version_pdf_historical_source_static.php
   tests/report_pdf_revision_viewer_static.php
+  tests/report_pdf_revision_caller_static.php
   tests/report_pdf_unit_branding_static.php
   tests/report_delivery_pdf_visual_static.php
   tests/report_delivery_pdf_revision_link_static.php
