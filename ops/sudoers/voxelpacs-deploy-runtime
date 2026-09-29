@@ -1,0 +1,5 @@
+# VOXEL PACS — sudoers mínimo para publicação do runtime.
+# Instalar somente como root em /etc/sudoers.d/voxelpacs-deploy-runtime,
+# após revisão local e validação com visudo.
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --sha [a-f0-9]*
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-runtime --rollback --sha [a-f0-9]*
