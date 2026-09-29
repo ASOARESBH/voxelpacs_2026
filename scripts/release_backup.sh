@@ -377,7 +377,7 @@ restore_test() {
   cleanup_dir="$temp_dir"
   archive="$backup_dir/$RELEASE_ARCHIVE"
   manifest="$backup_dir/$RELEASE_MANIFEST"
-  /usr/bin/tar --extract --gzip --file="$archive" --directory="$temp_dir" --numeric-owner --same-owner --same-permissions
+  /usr/bin/tar --extract --gzip --file="$archive" --directory="$temp_dir" --numeric-owner --same-owner --same-permissions --delay-directory-restore
   compare_extracted_tree "$temp_dir" "$manifest"
   printf 'restore-test-pass\n' > "$temp_dir/$RELEASE_STATUS"
   /usr/bin/chown root:root -- "$temp_dir/$RELEASE_STATUS"
