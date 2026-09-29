@@ -1087,7 +1087,6 @@ return [
     'delivery_hub.pdf_revision.invalid_response' => 'Respuesta inválida del servidor.',
     'delivery_hub.pdf_revision.invalid_report' => 'Indique un ID y una versión positivos.',
     'delivery_hub.pdf_revision.invalid_link' => 'Indique un enlace /reports/r/{token} o un token válido de 48 caracteres.',
-    'delivery_hub.pdf_revision.confirm' => '¿Crear la revisión visual ahora? El artefacto original será conservado.',
     'delivery_hub.destination.habilitar' => 'Habilitar destino',
     'delivery_hub.destination.servidor_pacs' => 'Servidor PACS de origen',
     'delivery_hub.destination.servidor_pacs_curto' => 'Servidor PACS',

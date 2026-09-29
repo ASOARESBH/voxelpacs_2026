@@ -1087,7 +1087,6 @@ return [
     'delivery_hub.pdf_revision.invalid_response' => 'Invalid server response.',
     'delivery_hub.pdf_revision.invalid_report' => 'Enter a positive report ID and version.',
     'delivery_hub.pdf_revision.invalid_link' => 'Enter a /reports/r/{token} link or a valid 48-character token.',
-    'delivery_hub.pdf_revision.confirm' => 'Create the visual revision now? The original artifact will be preserved.',
     'delivery_hub.destination.habilitar' => 'Enable destination',
     'delivery_hub.destination.servidor_pacs' => 'Source PACS server',
     'delivery_hub.destination.servidor_pacs_curto' => 'PACS server',
