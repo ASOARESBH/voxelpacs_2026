@@ -662,7 +662,7 @@ final class ReportVersionPdfRevisionService
                INNER JOIN report_versions rv ON rv.report_id = r.id AND rv.versao = :version
               WHERE r.id = :report_id
                 AND r.tenant_id = :tenant_id
-                AND r.situacao = 'liberado'
+                AND r.situacao IN ('assinado', 'liberado')
                 AND rv.acao IN ('assinado', 'liberado')
               LIMIT 2"
         );
@@ -673,7 +673,7 @@ final class ReportVersionPdfRevisionService
         ]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (count($rows) !== 1) {
-            throw new RuntimeException('Versão liberada não é única para revisão PDF.');
+            throw new RuntimeException('Versão assinada/liberada não é única para revisão PDF.');
         }
         return $rows[0];
     }

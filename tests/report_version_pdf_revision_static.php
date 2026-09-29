@@ -87,6 +87,9 @@ if (!str_contains($context, "rv.acao IN ('assinado', 'liberado')")
     || !str_contains($context, 'r.tenant_id = :tenant_id')) {
     throw new RuntimeException('A fonte histórica não está restrita à versão liberada e ao tenant.');
 }
+if (!str_contains($service, "AND r.situacao IN ('assinado', 'liberado')")) {
+    throw new RuntimeException('O guard da revisão histórica não aceita report assinado.');
+}
 
 if (preg_match('/UPDATE\s+report_versions|DELETE\s+FROM\s+report_versions/i', $service) === 1) {
     throw new RuntimeException('O serviço de revisão não pode alterar ou excluir report_versions.');
