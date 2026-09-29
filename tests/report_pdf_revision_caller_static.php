@@ -23,6 +23,12 @@ foreach ([
     ['findAuthorizedReport($reportId, false)', 'resolução autorizada do report'],
     ['(int) ($report->tenant_id ?? 0) !== $tenantId', 'escopo tenant/report'],
     ['createFromHistoricalReportVersion(', 'fonte histórica explícita'],
+    ['createOperationalReplacementFromCurrentReport(', 'fonte do report atual explícita'],
+    ['$sourceKind === \'current_report_body\'', 'seleção do corpo atual'],
+    ['resolveSourceKind(', 'normalização da fonte solicitada'],
+    ["'historical_report_version'", 'fonte histórica allowlisted'],
+    ["'current_report_body'", 'fonte atual allowlisted'],
+    ["'invalid_source_kind'", 'auditoria de fonte inválida'],
     ["'report.pdf_revision.created'", 'auditoria da criação'],
     ["'report.pdf_revision.denied'", 'auditoria de negação'],
     ["'report.pdf_revision.rejected'", 'auditoria de rejeição'],
@@ -39,8 +45,6 @@ foreach ([
     'UPDATE ',
     'DELETE FROM',
     'Database::getInstance',
-    'createOperationalReplacementFromCurrentReport(',
-    "\$_POST['source_kind']",
     "\$_POST['corpo_laudo']",
 ] as $forbidden) {
     $expect(!str_contains($controller, $forbidden), "Caller contém operação ou entrada proibida: {$forbidden}.");

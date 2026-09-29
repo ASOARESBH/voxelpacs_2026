@@ -120,6 +120,14 @@ $transportLabels = [
                     <input class="form-control" id="pdf-revision-report-version" name="report_version" type="number" min="1" required>
                 </div>
                 <div class="col-md-6">
+                    <label class="form-label" for="pdf-revision-source-kind"><?= $escape(t('delivery_hub.pdf_revision.source_kind')) ?></label>
+                    <select class="form-select" id="pdf-revision-source-kind" name="source_kind" required>
+                        <option value="historical_report_version" selected><?= $escape(t('delivery_hub.pdf_revision.source_historical')) ?></option>
+                        <option value="current_report_body"><?= $escape(t('delivery_hub.pdf_revision.source_current')) ?></option>
+                    </select>
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.source_help')) ?></div>
+                </div>
+                <div class="col-12">
                     <label class="form-label" for="pdf-revision-public-token"><?= $escape(t('delivery_hub.pdf_revision.public_link')) ?></label>
                     <input class="form-control font-monospace" id="pdf-revision-public-token" name="report_public_token" maxlength="512" required placeholder="<?= $escape(t('delivery_hub.pdf_revision.public_link_placeholder')) ?>">
                     <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.public_link_help')) ?></div>
