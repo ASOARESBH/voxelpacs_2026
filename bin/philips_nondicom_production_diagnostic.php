@@ -97,7 +97,8 @@ final class PhilipsNonDicomProductionDiagnostic
                 );
             }
             $result['tenant_pacs'] = $this->tenantPacsState($destinationResult, $server);
-            $result['destination_7']['task_site_match'] = ($result['tenant_pacs']['task_site_id_match'] ?? 'NO') === 'YES';
+            $destinationResult['task_site_match'] = ($result['tenant_pacs']['task_site_id_match'] ?? 'NO') === 'YES';
+            $result['destination_7'] = $destinationResult;
             $result['destination_7']['status'] = self::destinationGate($destinationResult, $server);
             $result['credential_chain'] = $this->credentialState($destinationResult, $environment);
             $result['queue'] = $this->queueState($pdo);
@@ -174,6 +175,29 @@ final class PhilipsNonDicomProductionDiagnostic
         }
 
         return 'PASS';
+    }
+
+    /** @param array<string,int> $jobs */
+    public static function queueGate(array $jobs): string
+    {
+        $active = ($jobs['queued'] ?? 0) + ($jobs['processing'] ?? 0) + ($jobs['retrying'] ?? 0);
+
+        return $active === 0 ? 'PASS' : 'BLOCKED';
+    }
+
+    /** @param array<int,array<string,mixed>> $jobs */
+    public static function queueGateFromRows(array $jobs, int $destinationId): string
+    {
+        $counts = [];
+        foreach ($jobs as $job) {
+            if ((int) ($job['destination_id'] ?? 0) !== $destinationId) {
+                continue;
+            }
+            $status = strtolower(trim((string) ($job['status'] ?? '')));
+            $counts[$status] = ($counts[$status] ?? 0) + 1;
+        }
+
+        return self::queueGate($counts);
     }
 
     /** @param array<string,mixed> $runtime */
@@ -442,11 +466,13 @@ final class PhilipsNonDicomProductionDiagnostic
     private function queueState(PDO $pdo): array
     {
         $outbox = $this->statusCounts($pdo, 'pacs_report_delivery_outbox', 'tenant_id', self::TENANT_ID);
-        $jobs = $this->statusCounts($pdo, 'pacs_report_delivery_jobs', 'tenant_id', self::TENANT_ID);
-        $active = ($outbox['queued'] ?? 0) + ($outbox['processing'] ?? 0)
-            + ($jobs['queued'] ?? 0) + ($jobs['processing'] ?? 0) + ($jobs['retrying'] ?? 0);
+        $jobs = $this->destinationJobStatusCounts($pdo, self::DESTINATION_ID);
         return [
-            'status' => $active === 0 ? 'PASS' : 'BLOCKED',
+            'status' => self::queueGate($jobs),
+            'scope' => 'destination_7_jobs_only',
+            'job_destination_id' => self::DESTINATION_ID,
+            'outbox_scope' => 'tenant_2_observed_only',
+            'outbox_destination_filter' => 'not_available_in_schema',
             'outbox_pending' => (int) ($outbox['queued'] ?? 0),
             'outbox_processing' => (int) ($outbox['processing'] ?? 0),
             'outbox_failed' => (int) ($outbox['failed'] ?? 0),
@@ -460,6 +486,26 @@ final class PhilipsNonDicomProductionDiagnostic
             'jobs_dead_letter' => (int) ($jobs['dead_letter'] ?? 0),
             'jobs_cancelled' => (int) ($jobs['cancelled'] ?? 0),
         ];
+    }
+
+    /** @return array<string,int> */
+    private function destinationJobStatusCounts(PDO $pdo, int $destinationId): array
+    {
+        $stmt = $pdo->prepare(
+            'SELECT status, COUNT(*) AS total
+               FROM pacs_report_delivery_jobs
+              WHERE tenant_id = :tenant_id
+                AND destination_id = :destination_id
+              GROUP BY status'
+        );
+        $stmt->execute([':tenant_id' => self::TENANT_ID, ':destination_id' => $destinationId]);
+        $counts = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $status = strtolower(trim((string) ($row['status'] ?? '')));
+            $counts[$status] = (int) ($row['total'] ?? 0);
+        }
+
+        return $counts;
     }
 
     /** @return array<string,int> */
