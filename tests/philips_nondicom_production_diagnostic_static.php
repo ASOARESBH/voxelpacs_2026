@@ -24,6 +24,11 @@ $expect(str_contains($source, "private const REPORT_ID = 348"), 'report candidat
 $expect(str_contains($source, "private const REPORT_VERSION = 4"), 'report candidate version is fixed to 4');
 $expect(str_contains($source, "'pacs_report_delivery_outbox' => true"), 'outbox table is fixed allowlist');
 $expect(str_contains($source, "'pacs_report_delivery_jobs' => true"), 'jobs table is fixed allowlist');
+$taskSitePosition = strpos($source, "\$destinationResult['task_site_match']");
+$destinationGatePosition = strpos($source, "\$result['destination_7']['status'] = self::destinationGate");
+$expect(is_int($taskSitePosition) && is_int($destinationGatePosition) && $taskSitePosition < $destinationGatePosition, 'task-site match is propagated before destination gate');
+$expect(str_contains($source, 'AND destination_id = :destination_id'), 'job queue gate is destination-scoped');
+$expect(str_contains($source, "'outbox_destination_filter' => 'not_available_in_schema'"), 'outbox destination is not inferred when schema lacks the column');
 $expect(str_contains($source, "['/usr/bin/systemctl', 'show', '--property=MainPID', '--value', \$unit]"), 'systemd command is fixed');
 $expect(str_contains($source, "if ((\$command[0] ?? '') !== '/usr/bin/systemctl')"), 'arbitrary command execution is rejected');
 $expect(!str_contains($source, "require_once $root . '/app/bootstrap.php'"), 'web bootstrap is not loaded');
@@ -72,6 +77,15 @@ $expect($class::destinationGate($destination, $server) === 'BLOCKED', 'automatic
 $destination['auto_trigger'] = 0;
 $destination['server_pacs_id'] = 4;
 $expect($class::destinationGate($destination, $server) === 'BLOCKED', 'wrong PACS binding is rejected');
+
+$expect($class::queueGate([]) === 'PASS', 'no Destination 7 active jobs passes');
+$expect($class::queueGate(['queued' => 0, 'processing' => 0, 'retrying' => 0]) === 'PASS', 'inactive Destination 7 jobs pass');
+$expect($class::queueGate(['queued' => 1]) === 'BLOCKED', 'queued Destination 7 job blocks');
+$expect($class::queueGate(['processing' => 1]) === 'BLOCKED', 'processing Destination 7 job blocks');
+$expect($class::queueGate(['retrying' => 1]) === 'BLOCKED', 'retrying Destination 7 job blocks');
+$expect($class::queueGateFromRows([['destination_id' => 1, 'status' => 'queued']], 7) === 'PASS', 'other destination job does not block D7');
+$expect($class::queueGateFromRows([['destination_id' => 7, 'status' => 'queued']], 7) === 'BLOCKED', 'D7 queued job blocks');
+$expect($class::queueGateFromRows([['status' => 'queued']], 7) === 'PASS', 'row without destination does not create a false D7 association');
 
 $runtime = [];
 foreach ([
