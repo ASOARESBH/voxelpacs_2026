@@ -146,7 +146,7 @@ O controller sempre chama `ReportVersionPdfRevisionService::createFromHistorical
 
 A resposta e a auditoria retornam somente metadados técnicos sanitizados: IDs tenant-scoped, versão, número da revisão, `source_kind`, hashes, tamanho, renderer e motivo. O endpoint não inicia Delivery Request, Outbox, Job, worker ou transporte externo. A execução operacional deve ser feita somente após validação do report/version corretos e com registro do resultado.
 
-O Delivery Hub oferece a execução pela interface autenticada em `app/Views/platform/negocios/report_delivery.php`: o operador informa `report_id`, `report_version` e o token/link público, confirma a operação e o navegador chama o endpoint same-origin com CSRF. Em sucesso, a tela exibe um link com cache-buster para o mesmo viewer público, que prioriza a revisão mais recente. O formulário não recebe conteúdo clínico, não executa SQL e não altera o snapshot original; a revisão permanece idempotente e auditada pelo controller.
+O Delivery Hub oferece a execução pela interface autenticada em `app/Views/platform/negocios/report_delivery.php`: o operador informa `report_id`, `report_version` e o token/link público, confirma a operação pela checkbox explícita e o navegador chama o endpoint same-origin com CSRF. A ação não depende de diálogo nativo `window.confirm`, que pode bloquear clientes automatizados e fluxos assistidos. Em sucesso, a tela exibe um link com cache-buster para o mesmo viewer público, que prioriza a revisão mais recente. O formulário não recebe conteúdo clínico, não executa SQL e não altera o snapshot original; a revisão permanece idempotente e auditada pelo controller.
 
 ## Última análise
 2026-09-29

@@ -809,7 +809,6 @@ $transportLabels = [
             invalidResponse: <?= json_encode(t('delivery_hub.pdf_revision.invalid_response'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             invalidReport: <?= json_encode(t('delivery_hub.pdf_revision.invalid_report'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             invalidLink: <?= json_encode(t('delivery_hub.pdf_revision.invalid_link'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
-            confirm: <?= json_encode(t('delivery_hub.pdf_revision.confirm'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         };
 
         const publicTokenFromInput = (raw) => {
@@ -836,7 +835,7 @@ $transportLabels = [
                 revisionFeedback.classList.remove('d-none');
                 return;
             }
-            if (!confirmed || !window.confirm(revisionMessages.confirm)) return;
+            if (!confirmed) return;
 
             revisionSubmit.disabled = true;
             revisionFeedback.className = 'alert alert-info mt-3 mb-0';

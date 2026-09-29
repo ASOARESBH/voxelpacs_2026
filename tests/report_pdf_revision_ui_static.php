@@ -22,7 +22,6 @@ foreach ([
     "body.delete('report_public_token')" => 'token público não enviado ao endpoint',
     'revisionOpenLink.href' => 'link para abrir a revisão',
     'pdf-revisions/visual-renderer-correction' => 'endpoint de correção visual',
-    'revisionMessages.confirm' => 'confirmação no idioma efetivo',
 ] as $needle => $label) {
     $expect(str_contains($view, $needle), "Contrato ausente: {$label}.");
 }
@@ -34,6 +33,7 @@ $expect(str_contains(
 $expect(!str_contains($view, 'Database::getInstance'), 'A view não pode acessar o banco diretamente.');
 $expect(!str_contains($view, 'INSERT INTO'), 'A view não pode executar SQL de inserção.');
 $expect(!str_contains($view, 'UPDATE '), 'A view não pode executar SQL de atualização.');
+$expect(!str_contains($view, 'window.confirm(revisionMessages'), 'A revisão PDF não pode depender de diálogo nativo.');
 
 $keys = [
     'delivery_hub.pdf_revision.titulo',
@@ -52,7 +52,6 @@ $keys = [
     'delivery_hub.pdf_revision.invalid_response',
     'delivery_hub.pdf_revision.invalid_report',
     'delivery_hub.pdf_revision.invalid_link',
-    'delivery_hub.pdf_revision.confirm',
 ];
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
