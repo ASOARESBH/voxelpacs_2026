@@ -16,8 +16,8 @@ use Throwable;
 /**
  * Control-plane para correção visual de uma versão de PDF já liberada.
  *
- * A rota não aceita conteúdo clínico nem fonte escolhida pelo cliente:
- * sempre reconstrói a revisão a partir de report_versions histórica.
+ * A rota não aceita conteúdo clínico do cliente; a fonte é uma enumeração
+ * allowlisted resolvida no servidor e reconstruída pelo service canônico.
  */
 final class ReportPdfRevisionController extends Controller
 {
@@ -39,9 +39,27 @@ final class ReportPdfRevisionController extends Controller
             $this->json(['success' => false, 'message' => 'Laudo não encontrado para este negócio.'], 404);
         }
 
+        $sourceKind = $this->resolveSourceKind();
+        if ($sourceKind === null) {
+            AuditLogger::log('report.pdf_revision.rejected', 'reports', $reportId, [
+                'tenant_id' => $tenantId,
+                'report_version' => $version,
+                'reason_code' => 'invalid_source_kind',
+            ], $tenantId, 'platform');
+            $this->json(['success' => false, 'message' => 'Fonte da revisão PDF inválida.'], 422);
+            return;
+        }
+
         try {
-            $result = (new ReportVersionPdfRevisionService())
-                ->createFromHistoricalReportVersion(
+            $service = new ReportVersionPdfRevisionService();
+            $result = $sourceKind === 'current_report_body'
+                ? $service->createOperationalReplacementFromCurrentReport(
+                    $tenantId,
+                    $reportId,
+                    $version,
+                    (int) Auth::userId()
+                )
+                : $service->createFromHistoricalReportVersion(
                     $tenantId,
                     $reportId,
                     $version,
@@ -52,6 +70,7 @@ final class ReportPdfRevisionController extends Controller
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
                 'report_version' => $version,
+                'requested_source_kind' => $sourceKind,
                 'revision_number' => (int) $result['revision_number'],
                 'source_kind' => (string) $result['source_kind'],
                 'reason_code' => (string) $result['reason_code'],
@@ -72,17 +91,19 @@ final class ReportPdfRevisionController extends Controller
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
                 'report_version' => $version,
+                'source_kind' => $sourceKind,
                 'error_class' => get_class($e),
             ]);
             AuditLogger::log('report.pdf_revision.rejected', 'reports', $reportId, [
                 'tenant_id' => $tenantId,
                 'report_version' => $version,
-                'reason_code' => 'historical_revision_not_eligible',
+                'source_kind' => $sourceKind,
+                'reason_code' => 'revision_source_not_eligible',
                 'error_class' => get_class($e),
             ], $tenantId, 'platform');
             $this->json([
                 'success' => false,
-                'message' => 'A versão histórica não está elegível para correção operacional.',
+                'message' => 'A fonte selecionada não está elegível para correção operacional.',
             ], 422);
         } catch (Throwable $e) {
             Logger::error('[ReportPdfRevisionController::createVisualRendererCorrection] Falha técnica', [
@@ -94,6 +115,7 @@ final class ReportPdfRevisionController extends Controller
             AuditLogger::log('report.pdf_revision.failed', 'reports', $reportId, [
                 'tenant_id' => $tenantId,
                 'report_version' => $version,
+                'source_kind' => $sourceKind,
                 'reason_code' => 'technical_failure',
                 'error_class' => get_class($e),
             ], $tenantId, 'platform');
@@ -102,6 +124,14 @@ final class ReportPdfRevisionController extends Controller
                 'message' => 'Não foi possível materializar a revisão operacional.',
             ], 500);
         }
+    }
+
+    private function resolveSourceKind(): ?string
+    {
+        $sourceKind = trim((string) ($_POST['source_kind'] ?? 'historical_report_version'));
+        return in_array($sourceKind, ['historical_report_version', 'current_report_body'], true)
+            ? $sourceKind
+            : null;
     }
 
     private function authorizePost(int $tenantId): void
