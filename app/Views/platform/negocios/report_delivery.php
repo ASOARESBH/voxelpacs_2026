@@ -104,6 +104,41 @@ $transportLabels = [
         </div>
     </div>
 
+    <div class="card border-danger shadow-sm mb-4" id="pdf-revision-card">
+        <div class="card-header bg-danger-subtle"><h2 class="h5 mb-0"><i class="fa fa-file-pdf me-1"></i> <?= $escape(t('delivery_hub.pdf_revision.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.pdf_revision.ajuda')) ?></p>
+            <form id="pdf-revision-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="confirm_visual_renderer_correction" value="1">
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-id"><?= $escape(t('delivery_hub.pdf_revision.report_id')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-id" name="report_id" type="number" min="1" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-version"><?= $escape(t('delivery_hub.pdf_revision.report_version')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-version" name="report_version" type="number" min="1" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="pdf-revision-public-token"><?= $escape(t('delivery_hub.pdf_revision.public_link')) ?></label>
+                    <input class="form-control font-monospace" id="pdf-revision-public-token" name="report_public_token" maxlength="512" required placeholder="<?= $escape(t('delivery_hub.pdf_revision.public_link_placeholder')) ?>">
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.public_link_help')) ?></div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" id="pdf-revision-confirm" type="checkbox" required>
+                        <label class="form-check-label" for="pdf-revision-confirm"><?= $escape(t('delivery_hub.pdf_revision.confirm_label')) ?></label>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                    <button type="submit" class="btn btn-danger" id="pdf-revision-submit"><i class="fa fa-wand-magic-sparkles me-1"></i><?= $escape(t('delivery_hub.pdf_revision.submit')) ?></button>
+                    <a id="pdf-revision-open-link" class="btn btn-outline-success d-none" target="_blank" rel="noopener noreferrer"><?= $escape(t('delivery_hub.pdf_revision.open')) ?></a>
+                </div>
+            </form>
+            <div id="pdf-revision-feedback" class="d-none alert mt-3 mb-0" role="alert" aria-live="polite"></div>
+        </div>
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Total de jobs</div><div class="h3 mb-0"><?= (int) ($stats['total'] ?? 0) ?></div></div></div></div>
         <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Na fila</div><div class="h3 mb-0 text-primary"><?= (int) ($stats['queued'] ?? 0) ?></div></div></div></div>
@@ -759,6 +794,85 @@ $transportLabels = [
             });
         });
         updateRequestButtons();
+    }
+
+    const revisionForm = document.getElementById('pdf-revision-form');
+    if (revisionForm) {
+        const revisionFeedback = document.getElementById('pdf-revision-feedback');
+        const revisionSubmit = document.getElementById('pdf-revision-submit');
+        const revisionOpenLink = document.getElementById('pdf-revision-open-link');
+        const revisionTenantId = <?= (int) $tenant['id'] ?>;
+        const revisionMessages = {
+            processing: <?= json_encode(t('delivery_hub.pdf_revision.processing'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            success: <?= json_encode(t('delivery_hub.pdf_revision.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            error: <?= json_encode(t('delivery_hub.pdf_revision.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidResponse: <?= json_encode(t('delivery_hub.pdf_revision.invalid_response'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidReport: <?= json_encode(t('delivery_hub.pdf_revision.invalid_report'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidLink: <?= json_encode(t('delivery_hub.pdf_revision.invalid_link'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            confirm: <?= json_encode(t('delivery_hub.pdf_revision.confirm'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+
+        const publicTokenFromInput = (raw) => {
+            const value = String(raw || '').trim();
+            const match = value.match(/\/reports\/r\/([a-f0-9]{48})/i) || value.match(/^([a-f0-9]{48})$/i);
+            return match ? match[1].toLowerCase() : '';
+        };
+
+        revisionForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const reportId = Number(document.getElementById('pdf-revision-report-id').value || 0);
+            const reportVersion = Number(document.getElementById('pdf-revision-report-version').value || 0);
+            const publicToken = publicTokenFromInput(document.getElementById('pdf-revision-public-token').value);
+            const confirmed = document.getElementById('pdf-revision-confirm').checked;
+            if (!Number.isInteger(reportId) || reportId <= 0 || !Number.isInteger(reportVersion) || reportVersion <= 0) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = revisionMessages.invalidReport;
+                revisionFeedback.classList.remove('d-none');
+                return;
+            }
+            if (!publicToken) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = revisionMessages.invalidLink;
+                revisionFeedback.classList.remove('d-none');
+                return;
+            }
+            if (!confirmed || !window.confirm(revisionMessages.confirm)) return;
+
+            revisionSubmit.disabled = true;
+            revisionFeedback.className = 'alert alert-info mt-3 mb-0';
+            revisionFeedback.textContent = revisionMessages.processing;
+            revisionFeedback.classList.remove('d-none');
+            revisionOpenLink.classList.add('d-none');
+
+            try {
+                const endpoint = `/platform/negocios/${revisionTenantId}/reports/${encodeURIComponent(String(reportId))}/versions/${encodeURIComponent(String(reportVersion))}/pdf-revisions/visual-renderer-correction`;
+                const body = new FormData(revisionForm);
+                body.delete('report_id');
+                body.delete('report_version');
+                body.delete('report_public_token');
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body,
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const result = await response.json().catch(() => ({ success: false, message: revisionMessages.invalidResponse }));
+                if (!response.ok || !result.success) throw new Error(result.message || revisionMessages.error);
+                const revision = result.revision || {};
+                const cacheKey = `${Number(revision.revision_number || 0)}-${Date.now()}`;
+                revisionOpenLink.href = `/reports/r/${publicToken}/pdf?origem=gestao&revision_check=${encodeURIComponent(cacheKey)}`;
+                revisionOpenLink.classList.remove('d-none');
+                revisionFeedback.className = 'alert alert-success mt-3 mb-0';
+                revisionFeedback.textContent = `${revisionMessages.success} #${Number(revision.revision_number || 0)}.`;
+                revisionFeedback.classList.remove('d-none');
+            } catch (error) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = error instanceof Error && error.message ? error.message : revisionMessages.error;
+                revisionFeedback.classList.remove('d-none');
+            } finally {
+                revisionSubmit.disabled = false;
+            }
+        });
     }
 
     manualForm.addEventListener('submit', async (event) => {
