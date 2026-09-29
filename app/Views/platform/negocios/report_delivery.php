@@ -126,7 +126,7 @@ $transportLabels = [
                 </div>
                 <div class="col-12">
                     <div class="form-check">
-                        <input class="form-check-input" id="pdf-revision-confirm" type="checkbox" required>
+                        <input class="form-check-input ms-0 me-2" id="pdf-revision-confirm" type="checkbox" required>
                         <label class="form-check-label" for="pdf-revision-confirm"><?= $escape(t('delivery_hub.pdf_revision.confirm_label')) ?></label>
                     </div>
                 </div>

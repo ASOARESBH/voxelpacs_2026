@@ -16,6 +16,7 @@ foreach ([
     'id="pdf-revision-form"' => 'formulário de revisão PDF',
     'name="_csrf_token"' => 'CSRF no formulário',
     'name="confirm_visual_renderer_correction"' => 'confirmação explícita',
+    'class="form-check-input ms-0 me-2" id="pdf-revision-confirm"' => 'checkbox visível no viewport do formulário',
     'id="pdf-revision-public-token"' => 'token/link público para abertura',
     'credentials: \'same-origin\'' => 'sessão autenticada same-origin',
     'fetch(endpoint' => 'chamada autenticada ao caller',
