@@ -47,6 +47,18 @@ $expect(str_contains($deploy, 'sudo -n -- "$helper" --sha "$sha"'), 'deploy não
 $expect(str_contains($deploy, 'PRIVILEGED_HELPER_UNAVAILABLE'), 'deploy não bloqueia helper ausente');
 $expect(str_contains($deploy, 'LOCAL_ARTIFACT_CHECKSUM_RECONCILIATION_FAILED'), 'deploy não reconcilia checksum local');
 $expect(str_contains($deploy, 'REMOTE_ROOT=APP_ROOT'), 'deploy não declara raiz efetiva');
+$expect(str_contains($deploy, 'archive_name="voxelpacs-runtime-${EXPECTED_SHA}.zip"'), 'ZIP não usa SHA completo no nome');
+$expect(str_contains($deploy, 'manifest_name="voxelpacs-runtime-${EXPECTED_SHA}.manifest.tsv"'), 'manifesto não usa SHA completo no nome');
+$expect(str_contains($deploy, 'checksum_name="voxelpacs-runtime-${EXPECTED_SHA}.sha256"'), 'checksum não usa SHA completo no nome');
+$expect(str_contains($deploy, 'source_sha_name="voxelpacs-runtime-${EXPECTED_SHA}.source-sha"'), 'source-sha não usa SHA completo no nome');
+$expect(str_contains($deploy, 'artifact="$tmp_dir/$archive_name"'), 'ZIP local não usa nome SHA-bound');
+$expect(str_contains($deploy, 'manifest="$tmp_dir/$manifest_name"'), 'manifest local não usa nome SHA-bound');
+$expect(str_contains($deploy, 'checksum="$tmp_dir/$checksum_name"'), 'checksum local não usa nome SHA-bound');
+$expect(str_contains($deploy, 'source_sha="$tmp_dir/$source_sha_name"'), 'source-sha local não usa nome SHA-bound');
+$expect(str_contains($deploy, 'remote_manifest="$REMOTE_INCOMING_ROOT/$manifest_name"'), 'manifest remoto não usa nome SHA-bound');
+$expect(str_contains($deploy, 'remote_checksum="$REMOTE_INCOMING_ROOT/$checksum_name"'), 'checksum remoto não usa nome SHA-bound');
+$expect(str_contains($deploy, 'remote_source_sha="$REMOTE_INCOMING_ROOT/$source_sha_name"'), 'source-sha remoto não usa nome SHA-bound');
+$expect(str_contains($deploy, '--expected-sha "$EXPECTED_SHA"'), 'builder não recebe o SHA esperado');
 $expect(!str_contains($deploy, 'unzip -o'), 'deploy não pode extrair in-place');
 $expect(!str_contains($deploy, 'DEPLOY_PATH'), 'deploy não aceita destino remoto arbitrário');
 $expect(!str_contains($deploy, 'chmod -R'), 'deploy não pode fazer chmod recursivo');

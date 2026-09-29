@@ -66,11 +66,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-artifact="$tmp_dir/runtime.zip"
-manifest="$tmp_dir/runtime.manifest.tsv"
+archive_name="voxelpacs-runtime-${EXPECTED_SHA}.zip"
+manifest_name="voxelpacs-runtime-${EXPECTED_SHA}.manifest.tsv"
+checksum_name="voxelpacs-runtime-${EXPECTED_SHA}.sha256"
+source_sha_name="voxelpacs-runtime-${EXPECTED_SHA}.source-sha"
+artifact="$tmp_dir/$archive_name"
+manifest="$tmp_dir/$manifest_name"
 builder_checksum="$tmp_dir/runtime.builder.sha256"
-checksum="$tmp_dir/runtime.sha256"
-source_sha="$tmp_dir/runtime.source-sha"
+checksum="$tmp_dir/$checksum_name"
+source_sha="$tmp_dir/$source_sha_name"
 
 bash "$ROOT/scripts/build-runtime-artifact.sh" \
   --output "$artifact" \
@@ -85,11 +89,10 @@ printf '%s\n' "$artifact_hash" > "$checksum"
 printf '%s\n' "$EXPECTED_SHA" > "$source_sha"
 chmod 600 "$checksum" "$source_sha"
 
-archive_name="voxelpacs-runtime-${EXPECTED_SHA}.zip"
 remote_archive="$REMOTE_INCOMING_ROOT/$archive_name"
-remote_manifest="$REMOTE_INCOMING_ROOT/voxelpacs-runtime-${EXPECTED_SHA}.manifest.tsv"
-remote_checksum="$REMOTE_INCOMING_ROOT/voxelpacs-runtime-${EXPECTED_SHA}.sha256"
-remote_source_sha="$REMOTE_INCOMING_ROOT/voxelpacs-runtime-${EXPECTED_SHA}.source-sha"
+remote_manifest="$REMOTE_INCOMING_ROOT/$manifest_name"
+remote_checksum="$REMOTE_INCOMING_ROOT/$checksum_name"
+remote_source_sha="$REMOTE_INCOMING_ROOT/$source_sha_name"
 
 scp "${ssh_opts[@]}" \
   "$artifact" "$manifest" "$checksum" "$source_sha" \
