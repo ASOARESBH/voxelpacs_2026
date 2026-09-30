@@ -71,7 +71,7 @@ final class PhilipsFolderDeliveryService
         }
 
         $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, $destinationId, $fileName, $pdfPath, $timeout);
+        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, (int) ($job['tenant_id'] ?? 0), $destinationId, $fileName, $pdfPath, $timeout);
 
         return $result + ['filename' => $fileName];
     }
@@ -102,7 +102,7 @@ final class PhilipsFolderDeliveryService
         sodium_memzero($password);
         $fileName = $this->fileName($payload, $reportId, $reportVersion);
         $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, $destinationId, $fileName, $pdfPath, $timeout, $envelope);
+        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, (int) ($job['tenant_id'] ?? 0), $destinationId, $fileName, $pdfPath, $timeout, $envelope);
         return $result + ['filename' => $fileName];
     }
 

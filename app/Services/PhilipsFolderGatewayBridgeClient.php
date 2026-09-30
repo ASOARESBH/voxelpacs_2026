@@ -21,9 +21,9 @@ final class PhilipsFolderGatewayBridgeClient
 
 
     /** @return array{reference:string,sha256:string,size:int} */
-    public function send(int $jobId, int $destinationId, string $fileName, string $pdfPath, int $timeout, ?array $secretEnvelope = null): array
+    public function send(int $jobId, int $tenantId, int $destinationId, string $fileName, string $pdfPath, int $timeout, ?array $secretEnvelope = null): array
     {
-        if ($jobId <= 0 || $destinationId <= 0 || !$this->validFileName($fileName) || !is_file($pdfPath)) {
+        if ($jobId <= 0 || $tenantId <= 0 || $destinationId <= 0 || !$this->validFileName($fileName) || !is_file($pdfPath)) {
             throw new PhilipsFolderDeliveryException('invalid_artifact', 'invalid_artifact');
         }
 
@@ -50,7 +50,7 @@ final class PhilipsFolderGatewayBridgeClient
         $timestamp = (string) time();
         $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
         $envelope = $this->secretEnvelope($secretEnvelope);
-        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $destinationId, $fileName, $sha256, (string) $size, $timestamp, $envelope['sha256']]);
+        $signatureBase = implode("\n", ['POST', $path, (string) $jobId, (string) $tenantId, (string) $destinationId, $fileName, $sha256, (string) $size, $timestamp, $envelope['sha256']]);
         $signature = hash_hmac('sha256', $signatureBase, $secret);
         $input = fopen($pdfPath, 'rb');
         if (!is_resource($input)) {
@@ -85,6 +85,7 @@ final class PhilipsFolderGatewayBridgeClient
                     'Content-Type: application/pdf',
                     'Content-Length: ' . $size,
                     'X-VOXEL-Job-ID: ' . $jobId,
+                    'X-VOXEL-Tenant-ID: ' . $tenantId,
                     'X-VOXEL-Destination-ID: ' . $destinationId,
                     'X-VOXEL-Filename: ' . $fileName,
                     'X-VOXEL-Timestamp: ' . $timestamp,
