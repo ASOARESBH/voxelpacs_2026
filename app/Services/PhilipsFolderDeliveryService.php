@@ -61,7 +61,7 @@ final class PhilipsFolderDeliveryService
         }
 
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $pdfPath = (string) ($artifact['storage_path'] ?? '');
@@ -90,7 +90,7 @@ final class PhilipsFolderDeliveryService
             throw new PhilipsFolderDeliveryException('invalid_configuration', 'invalid_configuration');
         }
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $pdfPath = (string) ($artifact['storage_path'] ?? '');
@@ -123,7 +123,7 @@ final class PhilipsFolderDeliveryService
             throw new PhilipsFolderDeliveryException('invalid_configuration', 'invalid_configuration');
         }
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         if ($jobId <= 0 || $destinationId <= 0 || $reportId <= 0 || $reportVersion <= 0) {
@@ -225,6 +225,12 @@ final class PhilipsFolderDeliveryService
         } finally {
             sodium_memzero($password);
         }
+    }
+
+    /** @param array<string,mixed> $job */
+    private function effectiveDestinationId(array $job): int
+    {
+        return (int) ($job['effective_destination_id'] ?? $job['destination_id'] ?? 0);
     }
 
     private function smbPassword(string $encryptedSecret): string

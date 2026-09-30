@@ -46,6 +46,29 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
+    public function findActiveDestinationsByTransportAndEnvironment(int $tenantId, string $transport, string $environment): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome,
+                    d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    d.configuration_json, d.configuration_secret, d.timeout_seconds,
+                    d.max_attempts, d.updated_at
+             FROM pacs_report_delivery_destinations d
+             WHERE d.tenant_id = :tenant_id
+               AND d.transport = :transport
+               AND d.ambiente = :environment
+               AND d.enabled = 1"
+        );
+        $stmt->execute([
+            ':tenant_id' => $tenantId,
+            ':transport' => $transport,
+            ':environment' => $environment,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @return array<int, array<string, mixed>> */
     private function findDestinations(
         int $tenantId,
         ?int $estabelecimentoId,
