@@ -18,6 +18,8 @@ O Report Delivery Hub mantém destinos, outboxes, jobs, artifacts PDF e tentativ
 | `app/Services/ReportVersionPatientNameService.php` | Parser DICOM PN e validação da identidade estruturada congelada na versão |
 | `app/Services/PhilipsSubmissionDocumentGenerator.php` | Geração determinística do documento XML Philips |
 | `app/Services/PhilipsSubmissionPackageProducer.php` | Composição imutável do package PDF + XML |
+| `app/Services/ActiveDestinationResolver.php` | Resolução fail-closed do único Destination ativo por tenant, transporte e ambiente no claim de Jobs automáticos |
+| `app/Services/ActiveDestinationResolutionException.php` | Códigos sanitizados de bloqueio da resolução |
 | `docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md` | Contrato de campos, origens e ativação do profile XML |
 | `bin/report_delivery_worker.php` | Execução normal dos jobs elegíveis |
 | `tests/report_delivery_manual_retry_static.php` | Contratos estáticos do retry manual homologatório |
@@ -37,6 +39,12 @@ O profile `submission_document` é opt-in e compõe PDF + XML somente quando a c
 No perfil `submission_document`, o destino deve possuir `servidor_pacs_id` ativo e vinculado ao tenant. O `task_site_id` é derivado do nome desse servidor; a UI o apresenta em um select somente leitura com as opções tenant-scoped, e o controller reescreve o valor antes da validação para impedir divergência entre identificação visual e XML. Destinos sem vínculo falham fechado no CRUD até serem vinculados pelo fluxo oficial. O tenant de dispatch não é um campo clínico do XML: vem da rota/contexto administrativo e permanece validado em destino, outbox e job.
 
 Ao editar um destino, o serializador da view remove da cópia de configuração todas as chaves raiz com prefixo `task_` antes de reconstruir `philips_submission`. Isso elimina duplicidades legadas de versões que persistiam esses campos fora do objeto aninhado, sem remover configurações não relacionadas, e mantém `pdf_only` sem `philips_submission`.
+
+## Resolução de Destination na execução
+
+Jobs automáticos de `report.released` preservam `j.destination_id` como referência histórica e de auditoria, mas o claim do Worker chama `ActiveDestinationResolver` antes de marcar o Job como `processing`. A consulta usa somente `tenant_id + transport + ambiente + enabled=1`; zero candidatos bloqueia com `NO_ACTIVE_DESTINATION` e dois ou mais bloqueiam com `MULTIPLE_ACTIVE_DESTINATIONS`, sem escolher por ID ou usar homologação como fallback. O Destination e o profile resolvidos são mantidos somente no contexto de memória do Worker e registrados em metadata sanitizada da attempt; o schema e o Job persistido não são alterados.
+
+Delivery Requests vinculadas permanecem fora da re-resolução: o binding autorizado e o digest do Destination continuam sendo verificados exatamente como materializados. O ramo `philips_non_dicom` propaga o ID efetivo ao `PhilipsFolderDeliveryService`/`PhilipsFolderGatewayBridgeClient`; `dicom_pdf` continua usando o cliente DICOM/C-STORE existente e não é encaminhado à Bridge Folder.
 
 ## Delivery Request
 

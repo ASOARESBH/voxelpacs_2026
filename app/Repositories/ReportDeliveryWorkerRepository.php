@@ -6,6 +6,8 @@ use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\SqlHelper;
 use App\Core\Logger;
 use App\Services\DeliveryRequestIdentity;
+use App\Services\ActiveDestinationResolutionException;
+use App\Services\ActiveDestinationResolver;
 use PDO;
 use Throwable;
 
@@ -22,9 +24,15 @@ class ReportDeliveryWorkerRepository
 {
     private ?int $oneShotJobId = null;
     private ?string $lastLedgerFailureStage = null;
+    private ReportDeliveryRepository $reportDeliveryRepository;
+    private ActiveDestinationResolver $activeDestinationResolver;
+    /** @var array<int,int> */
+    private array $effectiveDestinationIds = [];
 
     public function __construct(private PDO $pdo)
     {
+        $this->reportDeliveryRepository = new ReportDeliveryRepository($pdo);
+        $this->activeDestinationResolver = new ActiveDestinationResolver($this->reportDeliveryRepository);
     }
 
     public function enableOneShotForJob(int $jobId): void
@@ -76,15 +84,14 @@ class ReportDeliveryWorkerRepository
                         d.max_attempts, {$requestSelect}
                  FROM pacs_report_delivery_jobs j
                  INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
-                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 LEFT JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                  {$requestJoin}
                  WHERE j.status IN ('queued', 'retrying')
                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
                    AND j.worker_eligible_at IS NOT NULL
                    AND j.worker_eligible_at <= NOW()
                    AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
-                   AND d.enabled = 1
-                   AND d.ambiente IN ('homologacao', 'producao'){$requestWhere}{$transportWhere}
+                   AND (o.delivery_request_id IS NULL OR (d.enabled = 1 AND d.ambiente IN ('homologacao', 'producao'))){$requestWhere}{$transportWhere}
                  ORDER BY j.created_at ASC
                  LIMIT 1
                  {$jobLockClause}"
@@ -98,6 +105,13 @@ class ReportDeliveryWorkerRepository
             $claimFailureCode = $this->linkedRequestFailureCode($job);
             if ($claimFailureCode !== null) {
                 $this->failUnclaimedRequestJob($job, $claimFailureCode);
+                $this->pdo->commit();
+                return null;
+            }
+            try {
+                $job = $this->resolveDestinationForExecution($job);
+            } catch (ActiveDestinationResolutionException $e) {
+                $this->failUnclaimedJob($job, $e->reason);
                 $this->pdo->commit();
                 return null;
             }
@@ -175,7 +189,7 @@ class ReportDeliveryWorkerRepository
                         d.max_attempts, {$requestSelect}
                  FROM pacs_report_delivery_jobs j
                  INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
-                 INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 LEFT JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
                  {$requestJoin}
                  WHERE j.id = :job_id
                    AND j.status IN ('queued', 'retrying')
@@ -183,8 +197,7 @@ class ReportDeliveryWorkerRepository
                    AND j.worker_eligible_at IS NOT NULL
                    AND j.worker_eligible_at <= NOW()
                    AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
-                   AND d.enabled = 1
-                   AND d.ambiente IN ('homologacao', 'producao')
+                   AND (o.delivery_request_id IS NULL OR (d.enabled = 1 AND d.ambiente IN ('homologacao', 'producao')))
                    AND j.transport IN (" . implode(', ', $placeholders) . "){$requestWhere}
                  LIMIT 1 {$jobLockClause}"
             );
@@ -197,6 +210,13 @@ class ReportDeliveryWorkerRepository
             $claimFailureCode = $this->linkedRequestFailureCode($job);
             if ($claimFailureCode !== null) {
                 $this->failUnclaimedRequestJob($job, $claimFailureCode);
+                $this->pdo->commit();
+                return null;
+            }
+            try {
+                $job = $this->resolveDestinationForExecution($job);
+            } catch (ActiveDestinationResolutionException $e) {
+                $this->failUnclaimedJob($job, $e->reason);
                 $this->pdo->commit();
                 return null;
             }
@@ -376,6 +396,120 @@ class ReportDeliveryWorkerRepository
                 ':tenant_id' => $tenantId,
             ]);
         }
+        if ($update->rowCount() === 1 && $outboxId > 0) {
+            $this->refreshOutboxStatus($outboxId, $tenantId);
+        }
+    }
+
+    /** @param array<string,mixed> $job @return array<string,mixed> */
+    private function resolveDestinationForExecution(array $job): array
+    {
+        if ((int) ($job['delivery_request_id'] ?? 0) > 0) {
+            return $job;
+        }
+
+        $payload = json_decode((string) ($job['payload_json'] ?? ''), true);
+        if (!is_array($payload) || (string) ($payload['dispatch_mode'] ?? '') !== 'automatic_production') {
+            if ((int) ($job['destination_enabled'] ?? 0) !== 1) {
+                throw new ActiveDestinationResolutionException('PERSISTED_DESTINATION_DISABLED');
+            }
+            return $job;
+        }
+        $environment = $this->executionEnvironment();
+        $destination = $this->activeDestinationResolver->resolveActiveDestination(
+            (int) ($job['tenant_id'] ?? 0),
+            (string) ($job['transport'] ?? ''),
+            $environment
+        );
+        $resolvedProfile = $this->reportDeliveryRepository->deliveryProfileForDestination($destination);
+        $jobProfile = trim((string) ($job['delivery_profile'] ?? ''));
+        if ($jobProfile !== '' && $jobProfile !== $resolvedProfile) {
+            Logger::warning('DESTINATION_RESOLUTION_BLOCKED', [
+                'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                'transport' => (string) ($job['transport'] ?? ''),
+                'environment' => $environment,
+                'destination_id' => (int) ($destination['id'] ?? 0),
+                'reason' => 'INCOMPATIBLE_DELIVERY_PROFILE',
+            ]);
+            throw new ActiveDestinationResolutionException('INCOMPATIBLE_DELIVERY_PROFILE');
+        }
+        if ($jobProfile === '') {
+            $job['delivery_profile'] = $resolvedProfile;
+        }
+
+        $effectiveId = (int) ($destination['id'] ?? 0);
+        if ($effectiveId <= 0) {
+            throw new ActiveDestinationResolutionException(ActiveDestinationResolver::NO_ACTIVE_DESTINATION);
+        }
+        $this->effectiveDestinationIds[(int) ($job['id'] ?? 0)] = $effectiveId;
+        $job['effective_destination_id'] = $effectiveId;
+        $job['destination_resolution'] = 'execution_time';
+        foreach ([
+            'destination_name' => 'nome',
+            'ambiente' => 'ambiente',
+            'destination_enabled' => 'enabled',
+            'destination_auto' => 'disparar_na_liberacao',
+            'destination_transport' => 'transport',
+            'destination_updated_at' => 'updated_at',
+            'configuration_json' => 'configuration_json',
+            'configuration_secret' => 'configuration_secret',
+            'timeout_seconds' => 'timeout_seconds',
+            'max_attempts' => 'max_attempts',
+        ] as $jobKey => $destinationKey) {
+            if (array_key_exists($destinationKey, $destination)) {
+                $job[$jobKey] = $destination[$destinationKey];
+            }
+        }
+
+        return $job;
+    }
+
+    private function executionEnvironment(): string
+    {
+        $raw = $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? getenv('APP_ENV');
+        $normalized = strtolower(trim((string) ($raw === false ? '' : $raw)));
+        return match ($normalized) {
+            'production', 'prod', 'producao' => 'producao',
+            'homologacao', 'staging', 'stage', 'hml' => 'homologacao',
+            default => throw new ActiveDestinationResolutionException(ActiveDestinationResolver::INVALID_DESTINATION_SCOPE),
+        };
+    }
+
+    /** @param array<string,mixed> $job */
+    private function failUnclaimedJob(array $job, string $failureCode): void
+    {
+        $allowed = [
+            ActiveDestinationResolver::NO_ACTIVE_DESTINATION,
+            ActiveDestinationResolver::MULTIPLE_ACTIVE_DESTINATIONS,
+            ActiveDestinationResolver::INVALID_DESTINATION_SCOPE,
+            'INCOMPATIBLE_DELIVERY_PROFILE',
+            'PERSISTED_DESTINATION_DISABLED',
+        ];
+        if (!in_array($failureCode, $allowed, true)) {
+            $failureCode = ActiveDestinationResolver::INVALID_DESTINATION_SCOPE;
+        }
+        $tenantId = (int) ($job['tenant_id'] ?? 0);
+        $jobId = (int) ($job['id'] ?? 0);
+        $outboxId = (int) ($job['outbox_id'] ?? 0);
+        Logger::warning('[ReportDeliveryWorker] Job bloqueado na resolução de Destination', [
+            'tenant_id' => $tenantId,
+            'job_id' => $jobId,
+            'outbox_id' => $outboxId,
+            'stage' => 'destination_resolution',
+            'reason' => $failureCode,
+        ]);
+        $update = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_jobs
+                SET status = 'failed', worker_eligible_at = NULL, next_attempt_at = NULL,
+                    locked_at = NULL, locked_by = NULL, last_error = :error_code, updated_at = NOW()
+              WHERE id = :job_id AND tenant_id = :tenant_id
+                AND status IN ('queued', 'retrying')"
+        );
+        $update->execute([
+            ':error_code' => $failureCode,
+            ':job_id' => $jobId,
+            ':tenant_id' => $tenantId,
+        ]);
         if ($update->rowCount() === 1 && $outboxId > 0) {
             $this->refreshOutboxStatus($outboxId, $tenantId);
         }
@@ -682,6 +816,10 @@ class ReportDeliveryWorkerRepository
         $requestsEnabled = $this->requestsFeatureEnabled();
         $requestSelect = 'o.delivery_request_id';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
+        $effectiveDestinationId = $this->effectiveDestinationIds[$jobId] ?? null;
+        $destinationJoin = $effectiveDestinationId !== null
+            ? 'INNER JOIN pacs_report_delivery_destinations d ON d.id = :effective_destination_id AND d.tenant_id = j.tenant_id'
+            : 'INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id';
         $requestJoin = $requestsEnabled
             ? "LEFT JOIN pacs_report_delivery_requests dr
                         ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
@@ -695,13 +833,17 @@ class ReportDeliveryWorkerRepository
             "SELECT j.*, d.max_attempts, {$requestSelect}, {$overrideSelect}
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
-             INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+             {$destinationJoin}
              {$requestJoin}
              {$overrideJoin}
              WHERE j.id = :id AND j.status = 'processing' AND j.locked_by = :worker_id
              LIMIT 1 {$jobLockClause}"
         );
-        $stmt->execute([':id' => $jobId, ':worker_id' => $workerId]);
+        $parameters = [':id' => $jobId, ':worker_id' => $workerId];
+        if ($effectiveDestinationId !== null) {
+            $parameters[':effective_destination_id'] = $effectiveDestinationId;
+        }
+        $stmt->execute($parameters);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     }

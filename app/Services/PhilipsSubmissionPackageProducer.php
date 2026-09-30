@@ -57,7 +57,7 @@ final class PhilipsSubmissionPackageProducer
             'report_id' => (int) ($job['report_id'] ?? 0),
             'report_version' => (int) ($job['report_version'] ?? 0),
             'estudo_id' => (int) ($job['estudo_id'] ?? 0),
-            'destination_id' => (int) ($job['destination_id'] ?? 0),
+            'destination_id' => (int) ($job['effective_destination_id'] ?? $job['destination_id'] ?? 0),
             'ambiente' => (string) ($job['ambiente'] ?? ''),
             'delivery_profile' => (string) ($job['delivery_profile'] ?? ($configuration['delivery_profile'] ?? '')),
             'transport' => (string) ($job['transport'] ?? ''),
