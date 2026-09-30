@@ -2,6 +2,20 @@
 
 Este componente entrega o perfil legado **PDF-only** e o perfil `submission_document` **PDF + XML** por meio da bridge privada. O aplicativo PACS não conhece SMB, SFTP, uma pasta Windows, host remoto ou credenciais do receptor. Esses valores existem exclusivamente em configuração root-owned do gateway conectado à VPN aprovada.
 
+## Unidade canônica e separação de transporte
+
+O transporte Philips Non-DICOM usa exclusivamente a unidade versionada:
+
+```text
+voxelpacs-philips-folder-bridge.service
+  → /opt/voxelpacs/report-delivery-gateway/philips_folder_bridge.py
+  → /etc/voxelpacs/philips-folder-bridge.env
+```
+
+`voxelpacs-report-delivery-bridge.service` executa `bridge_server.py` e permanece reservado ao contrato DICOM/C-STORE. Ele não é o transportador do Destination 7 e não deve ser apontado para PDF+XML.
+
+Para o primeiro envio controlado do Destination 7, o fragmento `philips_folder_bridge.destination7.single_test.env.example` documenta somente o escopo não secreto `tenant=2`, `destination=7`, `mode=single_test` e o placeholder do Job. O Job real deve ser preenchido apenas no EnvironmentFile root-owned após preflight e autorização separada; o fragmento não é instalável diretamente.
+
 ## Limites obrigatórios
 
 | Controle | Regra |
