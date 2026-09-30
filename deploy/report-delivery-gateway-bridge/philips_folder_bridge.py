@@ -157,9 +157,14 @@ class Policy:
     def __init__(self) -> None:
         self.bind_ip = setting("PHILIPS_FOLDER_BIND_IP")
         self.bind_port = int(setting("PHILIPS_FOLDER_BIND_PORT"))
+        self.allow_tenant_id = self._positive_id_setting("PHILIPS_FOLDER_ALLOW_TENANT_ID")
+        self.allow_destination_id = self._positive_id_setting("PHILIPS_FOLDER_ALLOW_DESTINATION_ID")
         self.destination_id = int(setting("PHILIPS_FOLDER_DESTINATION_ID"))
         self.mode = setting("PHILIPS_FOLDER_MODE")
-        self.allowed_job_id = int(os.environ.get("PHILIPS_FOLDER_ALLOW_JOB_ID", "0"))
+        allowed_job_id = os.environ.get("PHILIPS_FOLDER_ALLOW_JOB_ID", "0").strip()
+        if not allowed_job_id.isdigit():
+            raise RuntimeError("invalid_bridge_scope")
+        self.allowed_job_id = int(allowed_job_id)
         self.patient_name_exception_enabled = os.environ.get(PATIENT_NAME_EXCEPTION_ENV, "0").strip() == "1"
         self.patient_name_as_family_enabled = os.environ.get(PATIENT_NAME_AS_FAMILY_ENV, "0").strip() == "1"
         self.target_directory = Path(setting("PHILIPS_FOLDER_TARGET_DIRECTORY"))
@@ -170,8 +175,14 @@ class Policy:
         self.vpn_peer_host = private_ipv4(setting("PHILIPS_FOLDER_VPN_PEER_HOST"))
         self.transport = setting("PHILIPS_FOLDER_TRANSPORT").lower()
         self.fallback = os.environ.get("PHILIPS_FOLDER_FALLBACK", "").strip().lower()
-        if self.mode not in {"single_test", "destination"} or self.destination_id <= 0:
-            raise RuntimeError("invalid_bridge_policy")
+        if (
+            self.mode not in {"single_test", "destination"}
+            or self.destination_id <= 0
+            or self.destination_id != self.allow_destination_id
+            or (self.mode == "single_test" and self.allowed_job_id <= 0)
+            or (self.mode == "destination" and self.allowed_job_id != 0)
+        ):
+            raise RuntimeError("invalid_bridge_scope")
         # Em single_test sem job autorizado, a bridge pode iniciar somente para o
         # preflight técnico. O roteamento de entrega continua recusando qualquer
         # job porque nenhum ID positivo pode corresponder ao valor zero.
@@ -190,6 +201,13 @@ class Policy:
         self.sftp = self._sftp_settings() if self.transport == "sftp" else None
         self.envelope_private_key = self._envelope_private_key()
         self.smb = self._smb_settings() if self.transport == "smb" or self.fallback == "smb" else None
+
+    @staticmethod
+    def _positive_id_setting(name: str) -> int:
+        value = setting(name)
+        if not value.isdigit() or int(value) <= 0:
+            raise RuntimeError("invalid_bridge_scope")
+        return int(value)
 
     def _envelope_private_key(self) -> X25519PrivateKey | None:
         value = os.environ.get("PHILIPS_NON_DICOM_ENVELOPE_PRIVATE_KEY_FILE", "").strip()
@@ -369,6 +387,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         job_id = int(self.path[len(prefix):])
         supplied_job_id = self.headers.get("X-VOXEL-Job-ID", "")
+        tenant_id_header = self.headers.get("X-VOXEL-Tenant-ID", "")
         destination_id_header = self.headers.get("X-VOXEL-Destination-ID", "")
         filename = self.headers.get("X-VOXEL-Filename", "")
         timestamp = self.headers.get("X-VOXEL-Timestamp", "")
@@ -377,13 +396,15 @@ class Handler(BaseHTTPRequestHandler):
         content_length = self.headers.get("Content-Length", "")
         try:
             length = int(content_length)
+            tenant_id = int(tenant_id_header)
             request_time = int(timestamp)
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
             return
         permitted = (
             supplied_job_id == str(job_id)
-            and destination_id_header == str(POLICY.destination_id)
+            and tenant_id == POLICY.allow_tenant_id
+            and destination_id_header == str(POLICY.allow_destination_id)
             and 256 <= length <= MAX_BYTES
             and self.valid_filename(filename)
             and re.fullmatch(r"[a-f0-9]{64}", supplied_hash) is not None
@@ -392,13 +413,13 @@ class Handler(BaseHTTPRequestHandler):
         if not permitted:
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
-        destination_id = POLICY.destination_id
+        destination_id = POLICY.allow_destination_id
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "expired_request"})
             return
         envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
         envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest() if envelope else ""
-        signature_parts = ["POST", self.path, str(job_id), destination_id_header, filename, supplied_hash, str(length), timestamp]
+        signature_parts = ["POST", self.path, str(job_id), tenant_id_header, destination_id_header, filename, supplied_hash, str(length), timestamp]
         if envelope:
             signature_parts.append(envelope_hash)
         signature_base = "\n".join(signature_parts)
@@ -446,8 +467,8 @@ class Handler(BaseHTTPRequestHandler):
         if (
             supplied_job_id != str(job_id)
             or not tenant_id.isdigit()
-            or int(tenant_id) <= 0
-            or destination_id != str(POLICY.destination_id)
+            or int(tenant_id) != POLICY.allow_tenant_id
+            or destination_id != str(POLICY.allow_destination_id)
             or re.fullmatch(r"[a-f0-9]{64}", package_hash) is None
             or (POLICY.mode != "destination" and job_id != POLICY.allowed_job_id)
         ):
@@ -538,8 +559,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         permitted = (
             supplied_job_id == str(job_id)
-            and tenant_id > 0
-            and destination_id_header == str(POLICY.destination_id)
+            and tenant_id == POLICY.allow_tenant_id
+            and destination_id_header == str(POLICY.allow_destination_id)
             and 256 <= length <= MAX_BYTES
             and 100 <= pdf_length <= MAX_BYTES
             and 32 <= xml_length <= 2 * 1024 * 1024
@@ -959,7 +980,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
             return
-        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+        if tenant_value != POLICY.allow_tenant_id or destination_id != POLICY.allow_destination_id or not envelope or POLICY.envelope_private_key is None:
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
@@ -1003,7 +1024,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self.respond(HTTPStatus.BAD_REQUEST, {"error": "invalid_headers"})
             return
-        if tenant_value <= 0 or destination_id != POLICY.destination_id or not envelope or POLICY.envelope_private_key is None:
+        if tenant_value != POLICY.allow_tenant_id or destination_id != POLICY.allow_destination_id or not envelope or POLICY.envelope_private_key is None:
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
