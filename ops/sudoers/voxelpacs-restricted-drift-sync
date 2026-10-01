@@ -1,0 +1,5 @@
+# VOXEL PACS — allowlist da sincronização restrita de drift
+# Validar com: visudo -cf /etc/sudoers.d/voxelpacs-restricted-drift-sync
+# Nenhum argumento de source, destination, path ou comando é aceito pelo executor.
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-sync-restricted-drift --dry-run
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-sync-restricted-drift --execute
