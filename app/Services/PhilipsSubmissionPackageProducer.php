@@ -26,6 +26,32 @@ final class PhilipsSubmissionPackageProducer
         return rtrim($directory, "\\/") . $separator . $pdfFilename;
     }
 
+    /**
+     * Resolve o SITE_ID de transporte sem permitir que o alias enfraqueça o
+     * vínculo canônico do Destination 7 ao servidor PACS autorizado.
+     *
+     * @param array<string,mixed> $payload
+     * @param array<string,mixed> $deliveryContext
+     */
+    public static function resolveTaskSiteId(array $payload, mixed $configuredTaskSiteId, array $deliveryContext): mixed
+    {
+        $isControlledProduction = (string) ($deliveryContext['transport'] ?? '') === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && (int) ($deliveryContext['destination_id'] ?? 0) === 7
+            && (string) ($deliveryContext['ambiente'] ?? '') === 'producao'
+            && (string) ($deliveryContext['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
+            && (string) ($deliveryContext['dispatch_mode'] ?? '') === 'controlled_production';
+        if (!$isControlledProduction) {
+            return $configuredTaskSiteId;
+        }
+
+        $alias = trim((string) ($payload['task_site_id_alias'] ?? ''));
+        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) !== 1) {
+            throw new PhilipsXmlFieldUnresolvedException('task_site_id');
+        }
+
+        return $alias;
+    }
+
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload */
     public function produce(array $job, array $configuration, array $payload, string $workerId): ReportDeliveryPackage
     {
@@ -35,7 +61,7 @@ final class PhilipsSubmissionPackageProducer
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $payload = $this->requestSnapshot->hydratePayload($job, $payload);
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
-        $deliveryContext = $this->deliveryContext($job, $configuration);
+        $deliveryContext = $this->deliveryContext($job, $configuration, $payload);
 
         $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
         $input['pdf_filename'] = $pdfFilename;
@@ -49,8 +75,8 @@ final class PhilipsSubmissionPackageProducer
         return new ReportDeliveryPackage(array_replace($pdf, ['filename' => $pdfFilename]), $document, $xmlStoragePath);
     }
 
-    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @return array<string,mixed> */
-    private function deliveryContext(array $job, array $configuration): array
+    /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @return array<string,mixed> */
+    private function deliveryContext(array $job, array $configuration, array $payload): array
     {
         return [
             'tenant_id' => (int) ($job['tenant_id'] ?? 0),
@@ -61,6 +87,7 @@ final class PhilipsSubmissionPackageProducer
             'ambiente' => (string) ($job['ambiente'] ?? ''),
             'delivery_profile' => (string) ($job['delivery_profile'] ?? ($configuration['delivery_profile'] ?? '')),
             'transport' => (string) ($job['transport'] ?? ''),
+            'dispatch_mode' => (string) ($payload['dispatch_mode'] ?? $job['dispatch_mode'] ?? ''),
         ];
     }
 
@@ -85,6 +112,11 @@ final class PhilipsSubmissionPackageProducer
                 $input[$field] = $settings[$field];
             }
         }
+        $input['task_site_id'] = self::resolveTaskSiteId(
+            $payload,
+            $input['task_site_id'] ?? null,
+            $deliveryContext
+        );
         if (!array_key_exists('task_file_path', $settings) || !is_string($settings['task_file_path'])) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_path');
         }

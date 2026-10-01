@@ -38,7 +38,7 @@ O resultado geral é `READY` somente quando todos os gates retornam `PASS`. Qual
 
 1. **Runtime** — flags efetivas do `ReportDeliveryRuntimeConfig`, incluindo Hub/Requests/Non-DICOM ativos, SMB test/read-only OFF e Worker kill switch OFF.
 2. **Destination 7** — tenant, transport, produção, habilitado, auto-trigger OFF, profile, protocolo SMB, gateway bridge, credencial presente e vínculo PACS.
-3. **Tenant/PACS** — servidor PACS ativo e autorizado para o tenant, com `task_site_id` correspondente.
+3. **Tenant/PACS** — servidor PACS ativo e autorizado para o tenant, com `task_site_id` canônico correspondente. O `task_site_id_alias` é um identificador técnico ASCII separado, obrigatório para o D7 controlado, e não substitui esse binding.
 4. **Fila** — o gate usa somente Jobs tenant-scoped do Destination `7`; Jobs de outros destinos não bloqueiam D7. Outbox é exibido apenas como observação tenant-scoped, porque o schema não possui `destination_id` e não permite inferência de destino.
 5. **Worker** — unit habilitada, inativa e sem processo.
 6. **Bridge** — uma unidade oficial efetivamente proprietária do transporte. Se a propriedade remota não puder ser comprovada, o gate fica bloqueado; o diagnóstico não altera Host 2.

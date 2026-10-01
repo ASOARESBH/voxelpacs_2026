@@ -64,6 +64,7 @@ class ReportDeliveryWorkerRepository
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
         $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $parameters = [':automatic_today' => $currentDate];
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         if ($transports !== []) {
             $placeholders = [];
             foreach ($transports as $index => $transport) {
@@ -80,6 +81,7 @@ class ReportDeliveryWorkerRepository
                         o.event_type, d.nome AS destination_name, d.ambiente,
                         d.enabled AS destination_enabled, d.disparar_na_liberacao AS destination_auto,
                         d.transport AS destination_transport, d.updated_at AS destination_updated_at,
+                        {$taskSiteAliasSelect},
                         d.configuration_json, d.configuration_secret, d.timeout_seconds,
                         d.max_attempts, {$requestSelect}
                  FROM pacs_report_delivery_jobs j
@@ -162,6 +164,7 @@ class ReportDeliveryWorkerRepository
         $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $placeholders = [];
         $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $requestsEnabled = $this->requestsFeatureEnabled();
         $requestSelect = 'o.delivery_request_id';
         $requestJoin = $requestsEnabled
@@ -185,6 +188,7 @@ class ReportDeliveryWorkerRepository
                         o.event_type, d.nome AS destination_name, d.ambiente,
                         d.enabled AS destination_enabled, d.disparar_na_liberacao AS destination_auto,
                         d.transport AS destination_transport, d.updated_at AS destination_updated_at,
+                        {$taskSiteAliasSelect},
                         d.configuration_json, d.configuration_secret, d.timeout_seconds,
                         d.max_attempts, {$requestSelect}
                  FROM pacs_report_delivery_jobs j
@@ -452,6 +456,7 @@ class ReportDeliveryWorkerRepository
             'destination_transport' => 'transport',
             'destination_updated_at' => 'updated_at',
             'configuration_json' => 'configuration_json',
+            'task_site_id_alias' => 'task_site_id_alias',
             'configuration_secret' => 'configuration_secret',
             'timeout_seconds' => 'timeout_seconds',
             'max_attempts' => 'max_attempts',
@@ -518,6 +523,17 @@ class ReportDeliveryWorkerRepository
     private function requestsFeatureEnabled(): bool
     {
         return ReportDeliveryRuntimeConfig::requestsEnabled();
+    }
+
+    private function taskSiteAliasSelect(): string
+    {
+        try {
+            return SqlHelper::hasColumn($this->pdo, 'pacs_report_delivery_destinations', 'task_site_id_alias')
+                ? 'd.task_site_id_alias'
+                : 'NULL AS task_site_id_alias';
+        } catch (\Throwable) {
+            return 'NULL AS task_site_id_alias';
+        }
     }
 
     private function destinationSelectorValues(int $destinationId, int $tenantId, string $table, string $column): string

@@ -20,6 +20,8 @@ $expect(is_string($source), 'diagnostic source is readable');
 $expect(str_contains($source, 'class PhilipsNonDicomProductionDiagnostic'), 'diagnostic class exists');
 $expect(str_contains($source, "private const TENANT_ID = 2"), 'tenant is fixed to 2');
 $expect(str_contains($source, "private const DESTINATION_ID = 7"), 'destination is fixed to 7');
+$expect(str_contains($source, 'task_site_alias_valid'), 'diagnostic validates the technical alias separately');
+$expect(str_contains($source, 'canonical_task_site_id_match'), 'diagnostic preserves canonical PACS binding semantics');
 $expect(str_contains($source, "private const REPORT_ID = 348"), 'report candidate is fixed to 348');
 $expect(str_contains($source, "private const REPORT_VERSION = 4"), 'report candidate version is fixed to 4');
 $expect(str_contains($source, "'pacs_report_delivery_outbox' => true"), 'outbox table is fixed allowlist');
@@ -69,6 +71,7 @@ $destination = [
     'gateway_bridge' => true,
     'transport_protocol' => 'smb',
     'task_site_match' => true,
+    'task_site_alias_valid' => true,
 ];
 $server = ['id' => 3, 'nome' => 'synthetic-server'];
 $expect($class::destinationGate($destination, $server) === 'PASS', 'valid production destination passes');

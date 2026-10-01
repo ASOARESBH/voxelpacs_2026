@@ -25,7 +25,8 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_mimetype` | Constante `application/pdf` | Obrigatório |
 | `task_patient_birthday` | `patient_birth_date` do snapshot | Obrigatório |
 | `task_patient_gender` | `patient_sex` do snapshot, normalizado pelo gerador | Obrigatório |
-| `task_site_id` | Nome do servidor PACS ativo e vinculado ao tenant, quando `servidor_pacs_id` está selecionado; destinos legados sem vínculo mantêm o valor explícito já configurado | Obrigatório |
+| `task_site_id` | Nome canônico do servidor PACS ativo e vinculado ao tenant, quando `servidor_pacs_id` está selecionado; destinos legados sem vínculo mantêm o valor explícito já configurado | Obrigatório |
+| `task_site_id_alias` | Alias técnico ASCII `[A-Za-z0-9._-]{1,120}` configurado separadamente no Destination 7 de produção e congelado na Delivery Request/outbox; substitui somente o valor emitido no XML, nunca o binding canônico | Obrigatório no D7 controlado; proibido no D6/homologação |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
 | `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); quando o nome é plano, preserva o valor integral | Obrigatório |
@@ -71,6 +72,8 @@ A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`
 
 O tenant não é gravado como um campo clínico do XML. Ele é derivado da rota administrativa e validado contra `tenant_id` do destino, outbox e job; esse mesmo contexto tenant-scoped é o que autoriza o dispatch. A UI o exibe ao lado do identificador técnico do autor para evitar configuração visual em outro negócio, mas não aceita tenant arbitrário no payload.
 
+No Destination 7 de produção, `task_site_id` permanece a prova de vínculo do PACS: o controller o deriva do nome do servidor PACS autorizado e o Service revalida esse valor contra a origem do estudo. `task_site_id_alias` é somente um identificador de transporte sem segredo; o Request o congela no momento da autorização, inclui-o nos digests e no outbox payload, e o `PhilipsSubmissionPackageProducer` usa exclusivamente esse valor congelado para o SITE_ID do XML. Alias ausente, inválido, alterado ou desvinculado do Request falha fechado. O Destination 6 continua usando o `task_site_id` existente e ignora qualquer alias.
+
 O Controller valida o profile, o transporte SMB, a bridge privada, os campos obrigatórios, os booleanos, o tipo documental `11502-2` e a ausência de tipo quando ele não é aplicável. A credencial continua passando pelo fluxo existente de criptografia e preservação; nenhum segredo é incluído no XML, logs, snapshot ou documentação.
 
 ## Compatibilidade e ativação
@@ -81,7 +84,7 @@ A configuração do destino não ativa produção, worker global, trigger autom�
 
 O package só pode retornar `PACKAGE_VERIFIED=PASS` depois de confirmar os hashes e tamanhos do PDF e do XML, XML bem-formado em bytes ISO-8859-1, estrutura `<submission><document>`, campos obrigatórios, `task_file_name` idêntico ao PDF, `task_file_path` vinculado por hash ao valor configurado, `application/pdf`, tipo documental aprovado e política explícita de `task_delete_file`. O arquivo final remoto não é removido pelo cleanup; somente arquivos `.part` temporários podem ser removidos automaticamente.
 
-Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versão, assinatura do artifact, destino e `delivery_profile`. Chaves de jobs históricos não são recalculadas nem modificadas.
+Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versão, assinatura do artifact, destino, `delivery_profile`, modo de despacho e alias técnico congelado. Chaves de jobs históricos não são recalculadas nem modificadas.
 
 ## Falhas e rollback
 

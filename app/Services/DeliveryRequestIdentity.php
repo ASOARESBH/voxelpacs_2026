@@ -40,7 +40,7 @@ final class DeliveryRequestIdentity
     public static function requestKey(array $value): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 2,
+            'schema_version' => 3,
             'tenant_id' => (int) ($value['tenant_id'] ?? 0),
             'request_uuid' => self::assertUuidV4((string) ($value['request_uuid'] ?? '')),
             'report_id' => (int) ($value['report_id'] ?? 0),
@@ -49,6 +49,8 @@ final class DeliveryRequestIdentity
             'snapshot_digest' => (string) ($value['snapshot_digest'] ?? ''),
             'destination_id' => (int) ($value['destination_id'] ?? 0),
             'delivery_profile' => (string) ($value['delivery_profile'] ?? ''),
+            'dispatch_mode' => (string) ($value['dispatch_mode'] ?? ''),
+            'task_site_id_alias' => (string) ($value['task_site_id_alias'] ?? ''),
         ]));
     }
 
@@ -56,7 +58,7 @@ final class DeliveryRequestIdentity
     public static function activeIdentityKey(array $value): string
     {
         return hash('sha256', self::canonicalJson([
-            'schema_version' => 2,
+            'schema_version' => 3,
             'tenant_id' => (int) ($value['tenant_id'] ?? 0),
             'report_id' => (int) ($value['report_id'] ?? 0),
             'report_version' => (int) ($value['report_version'] ?? 0),
@@ -64,6 +66,8 @@ final class DeliveryRequestIdentity
             'snapshot_digest' => (string) ($value['snapshot_digest'] ?? ''),
             'destination_id' => (int) ($value['destination_id'] ?? 0),
             'delivery_profile' => (string) ($value['delivery_profile'] ?? ''),
+            'dispatch_mode' => (string) ($value['dispatch_mode'] ?? ''),
+            'task_site_id_alias' => (string) ($value['task_site_id_alias'] ?? ''),
             'destination_config_digest' => (string) ($value['destination_config_digest'] ?? ''),
         ]));
     }
@@ -152,6 +156,7 @@ final class DeliveryRequestIdentity
             'ambiente' => (string) ($destination['ambiente'] ?? ''),
             'enabled' => (int) ($destination['enabled'] ?? 0),
             'disparar_na_liberacao' => (int) ($destination['disparar_na_liberacao'] ?? 0),
+            'task_site_id_alias' => (string) ($destination['task_site_id_alias'] ?? ''),
             'configuration' => self::removeSensitiveKeys($configuration),
             'institution_names' => self::selectors($destination['institution_names'] ?? ''),
             'issuers' => self::selectors($destination['issuers'] ?? ''),
