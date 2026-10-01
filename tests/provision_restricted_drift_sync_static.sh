@@ -51,9 +51,6 @@ trap cleanup_fixture EXIT
 fixture="$fixture_root/repo"
 git clone --no-local "$repo" "$fixture" >/dev/null 2>&1
 git -C "$fixture" checkout --detach HEAD >/dev/null 2>&1
-cp -- "$script" "$fixture/scripts/provision-restricted-drift-sync.sh"
-git -C "$fixture" add scripts/provision-restricted-drift-sync.sh
-git -C "$fixture" -c user.name='VOXEL PACS Test' -c user.email='test@example.invalid' commit -m 'fixture: provisioner' >/dev/null
 sha="$(git -C "$fixture" rev-parse HEAD)"
 fixture_script="$fixture/scripts/provision-restricted-drift-sync.sh"
 output="$(run_as_root "$fixture_script" --expected-sha "$sha" --dry-run)"
