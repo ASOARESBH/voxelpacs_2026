@@ -54,7 +54,7 @@ final class ReportDeliveryRequestRepository
                                    FROM pacs_report_delivery_destination_issuers ds
                                   WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers";
         }
-        $sql = "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente,
+        $sql = "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente,
                        d.enabled, d.disparar_na_liberacao, d.configuration_json, d.updated_at,
                        {$institutionSelect},
                        {$issuerSelect}
@@ -67,6 +67,26 @@ final class ReportDeliveryRequestRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':destination_id' => $destinationId, ':tenant_id' => $tenantId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    /** @return array{id:int,nome:string}|null */
+    public function findTenantPacsServer(int $tenantId, int $serverId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1"
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
         return $row ?: null;
     }
 
@@ -90,6 +110,7 @@ final class ReportDeliveryRequestRepository
         $sql = "SELECT r.id AS report_id, r.tenant_id, r.estudo_id AS estudo_id, r.situacao,
                        r.liberado_em, r.liberado_por, r.assinado_por,
                        e.id AS estudo_id_effective, e.tenant_id AS estudo_tenant_id,
+                       e.servidor_id AS estudo_servidor_id,
                        e.unidade_id AS estabelecimento_id, e.study_instance_uid,
                        e.accession_number, e.modalities, e.patient_id, e.patient_name, e.tags_raw,
                        e.patient_birth_date, e.patient_sex, e.study_date, e.study_time,
