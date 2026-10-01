@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+# VOXEL PACS — sincronização restrita de drift versionado.
+#
+# Este executor não é um deploy genérico. Ele aceita somente --dry-run ou
+# --execute, usa source/SHA/destino fixos e sincroniza uma allowlist embutida
+# validada também pelo manifesto instalado. Não executa Composer, migrations,
+# SQL, serviços, Bridge, SMB ou qualquer transmissão.
+set -Eeuo pipefail
+umask 077
+
+readonly FIXED_APP_ROOT='/var/www/voxelpacs/app'
+readonly TARGET_SHA='617e7d67bf88ba325773b220b78052d416eddb2b'
+readonly SOURCE_ROOT_BASE='/var/lib/voxelpacs/restricted-drift-sync/source'
+readonly SOURCE_ROOT="$SOURCE_ROOT_BASE/$TARGET_SHA"
+readonly MANIFEST_PATH='/usr/local/share/voxelpacs/voxelpacs-restricted-drift-sync.manifest.tsv'
+readonly TRANSACTION_ROOT='/var/lib/voxelpacs/restricted-drift-sync/transactions'
+readonly LOCK_PATH='/run/lock/voxelpacs-restricted-drift-sync.lock'
+readonly APP_ROOT="$FIXED_APP_ROOT"
+readonly ALLOWLIST_COUNT=11
+readonly ALLOWED_PATHS=(
+  'app/Repositories/ReportDeliveryRepository.php'
+  'app/Repositories/ReportDeliveryWorkerRepository.php'
+  'app/Services/PhilipsFolderDeliveryService.php'
+  'app/Services/PhilipsFolderGatewayBridgeClient.php'
+  'app/Services/PhilipsSubmissionPackageProducer.php'
+  'bin/report_delivery_worker.php'
+  '.htaccess'
+  'app/Services/ActiveDestinationResolutionException.php'
+  'app/Services/ActiveDestinationResolver.php'
+  'composer.json'
+  'composer.lock'
+)
+
+mode=''
+lock_fd=''
+transaction_dir=''
+stage_dir=''
+timestamp=''
+operator=''
+
+fail() {
+  printf 'VOXEL_RESTRICTED_SYNC=BLOCKED\nREASON=%s\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' \
+    'uso: voxelpacs-sync-restricted-drift --dry-run' \
+    'uso: voxelpacs-sync-restricted-drift --execute' >&2
+}
+
+parse_args() {
+  [[ "$#" -eq 1 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+  case "$1" in
+    --dry-run) mode='dry-run' ;;
+    --execute) mode='execute' ;;
+    *) usage; fail 'ARGUMENTS_INVALID' ;;
+  esac
+}
+
+require_root_and_caller() {
+  [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    case "$SUDO_USER" in
+      manus-admin) ;;
+      *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+    esac
+  fi
+}
+
+expected_hash() {
+  case "$1" in
+    app/Repositories/ReportDeliveryRepository.php) printf '%s' '5b3d06f24511af7c0033f2c4141cc516d1791f91d98cdf03ea6eed11004b8c7b' ;;
+    app/Repositories/ReportDeliveryWorkerRepository.php) printf '%s' 'd4ea47b64b70a0e37a1dd1693ec0098795012849d3eb734f6e7af96b9e6cabf3' ;;
+    app/Services/PhilipsFolderDeliveryService.php) printf '%s' '5c30704105564baa173c8510b355121c5089b3d605b86887e5345a7dfb15df71' ;;
+    app/Services/PhilipsFolderGatewayBridgeClient.php) printf '%s' 'ddf3f543fde27cb43f0212f04adf896bb781789cb69fbf667a192e0a1799375b' ;;
+    app/Services/PhilipsSubmissionPackageProducer.php) printf '%s' '6780c931f8937d3917946aaa4210509e8ae9854874070e4e9ab4eb9d4474a3e1' ;;
+    bin/report_delivery_worker.php) printf '%s' '0402c2440fd376c26e5fef2bc6a36f0017eccdea657295a1e22ccdb6a9dc0b1f' ;;
+    .htaccess) printf '%s' '9c02422b6a5c7bf0ff0a3575a5241c9097a30551182c364a57f4a1efebab6f69' ;;
+    app/Services/ActiveDestinationResolutionException.php) printf '%s' '0226784abbea3e9f667bee9ed5a96b53bb9b3e1522f2374415422fe28d8ea81a' ;;
+    app/Services/ActiveDestinationResolver.php) printf '%s' '49a9dbd34822e69e79552e2f265bf0aa507b398326cc92ba60c07d8d2c486ec2' ;;
+    composer.json) printf '%s' '6911012139005aca07c644b7fdbc1221eb2f34c56f09269e3a8aef7e86e668b0' ;;
+    composer.lock) printf '%s' 'f2d638c411aa3bc6b4bc0b5b6967f03b4beaf72e1b5ff116204c0fbf5539c087' ;;
+    *) return 1 ;;
+  esac
+}
+
+is_allowed_path() {
+  local candidate="$1" allowed
+  for allowed in "${ALLOWED_PATHS[@]}"; do
+    [[ "$candidate" == "$allowed" ]] && return 0
+  done
+  return 1
+}
+
+assert_scope_constants() {
+  [[ "$APP_ROOT" == '/var/www/voxelpacs/app' ]] || fail 'DESTINATION_SCOPE_INVALID'
+  [[ "$SOURCE_ROOT" == "/var/lib/voxelpacs/restricted-drift-sync/source/$TARGET_SHA" ]] || fail 'SOURCE_SCOPE_INVALID'
+  [[ "$MANIFEST_PATH" == '/usr/local/share/voxelpacs/voxelpacs-restricted-drift-sync.manifest.tsv' ]] || fail 'MANIFEST_SCOPE_INVALID'
+  [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'SOURCE_SHA_FORMAT_INVALID'
+  [[ "${#ALLOWED_PATHS[@]}" -eq "$ALLOWLIST_COUNT" ]] || fail 'ALLOWLIST_COUNT_INVALID'
+  local path
+  for path in "${ALLOWED_PATHS[@]}"; do
+    [[ "$path" != /* && "$path" != *'..'* ]] || fail 'ALLOWLIST_PATH_INVALID'
+    [[ "$path" != vendor/* && "$path" != .env && "$path" != .env.* ]] || fail 'PROTECTED_PATH_IN_ALLOWLIST'
+    is_allowed_path "$path" || fail 'ALLOWLIST_PATH_NOT_RECOGNIZED'
+  done
+}
+
+assert_manifest() {
+  [[ -f "$MANIFEST_PATH" && ! -L "$MANIFEST_PATH" ]] || fail 'MANIFEST_MISSING_OR_SYMLINK'
+  local count=0 path hash expected extra
+  declare -A seen=()
+  while IFS=$'\t' read -r path hash extra; do
+    [[ -n "$path" && -z "${extra:-}" ]] || fail 'MANIFEST_FORMAT_INVALID'
+    [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || fail 'MANIFEST_HASH_FORMAT_INVALID'
+    is_allowed_path "$path" || fail 'MANIFEST_PATH_NOT_ALLOWED'
+    [[ -z "${seen[$path]+present}" ]] || fail 'MANIFEST_DUPLICATE_PATH'
+    seen["$path"]=1
+    expected="$(expected_hash "$path")" || fail 'MANIFEST_PATH_UNKNOWN'
+    [[ "$hash" == "$expected" ]] || fail 'MANIFEST_HASH_MISMATCH'
+    count=$((count + 1))
+  done < "$MANIFEST_PATH"
+  [[ "$count" -eq "$ALLOWLIST_COUNT" ]] || fail 'MANIFEST_COUNT_INVALID'
+  local allowed
+  for allowed in "${ALLOWED_PATHS[@]}"; do
+    [[ -n "${seen[$allowed]+present}" ]] || fail 'MANIFEST_PATH_MISSING'
+  done
+  printf 'MANIFEST_CHECK=PASS\n'
+}
+
+assert_source_checkout() {
+  [[ -d "$SOURCE_ROOT" && ! -L "$SOURCE_ROOT" ]] || fail 'SOURCE_ROOT_MISSING_OR_SYMLINK'
+  [[ "$(git -C "$SOURCE_ROOT" rev-parse --show-toplevel 2>/dev/null)" == "$SOURCE_ROOT" ]] || fail 'SOURCE_CHECKOUT_INVALID'
+  [[ "$(git -C "$SOURCE_ROOT" rev-parse HEAD 2>/dev/null)" == "$TARGET_SHA" ]] || fail 'SOURCE_SHA_MISMATCH'
+  [[ -z "$(git -C "$SOURCE_ROOT" status --porcelain --untracked-files=all)" ]] || fail 'SOURCE_CHECKOUT_DIRTY'
+  printf 'SOURCE_SHA_CHECK=PASS\n'
+}
+
+assert_runtime_root() {
+  [[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || fail 'RUNTIME_ROOT_INVALID'
+  [[ -r "$APP_ROOT/.env" ]] || fail 'PERSISTENT_ENV_NOT_FOUND'
+  [[ -e "$APP_ROOT/storage" ]] || fail 'PERSISTENT_STORAGE_NOT_FOUND'
+  [[ -d "$APP_ROOT/app" && ! -L "$APP_ROOT/app" ]] || fail 'RUNTIME_APP_ROOT_INVALID'
+}
+
+validate_paths_and_hashes() {
+  local path source target parent source_hash
+  for path in "${ALLOWED_PATHS[@]}"; do
+    source="$SOURCE_ROOT/$path"
+    target="$APP_ROOT/$path"
+    parent="$(dirname "$target")"
+    [[ -f "$source" && ! -L "$source" ]] || fail "SOURCE_FILE_INVALID:$path"
+    git -C "$SOURCE_ROOT" ls-files --error-unmatch -- "$path" >/dev/null 2>&1 || fail "SOURCE_FILE_NOT_TRACKED:$path"
+    git -C "$SOURCE_ROOT" cat-file -e "$TARGET_SHA:$path" >/dev/null 2>&1 || fail "SOURCE_FILE_NOT_IN_SHA:$path"
+    source_hash="$(sha256sum "$source" | awk '{print $1}')"
+    [[ "$source_hash" == "$(expected_hash "$path")" ]] || fail "SOURCE_FILE_HASH_MISMATCH:$path"
+    [[ -d "$parent" && ! -L "$parent" ]] || fail "RUNTIME_PARENT_INVALID:$path"
+    if [[ -e "$target" ]]; then
+      [[ -f "$target" && ! -L "$target" ]] || fail "RUNTIME_TARGET_NOT_REGULAR:$path"
+    fi
+  done
+  printf 'ALLOWLIST_CHECK=PASS\nFILES_VALIDATED=%s\n' "$ALLOWLIST_COUNT"
+}
+
+preserved_state() {
+  local relative path
+  for relative in .env storage storage/uploads uploads logs backups runtime cache sessions database public/uploads vendor; do
+    path="$APP_ROOT/$relative"
+    if [[ -L "$path" ]]; then
+      printf '%s|SYMLINK|%s|%s\n' "$relative" "$(stat -c '%d:%i:%u:%g:%a:%s:%Y:%F' "$path")" "$(readlink "$path")"
+    elif [[ -e "$path" ]]; then
+      printf '%s|FILE|%s\n' "$relative" "$(stat -c '%d:%i:%u:%g:%a:%s:%Y:%F' "$path")"
+    else
+      printf '%s|ABSENT\n' "$relative"
+    fi
+  done
+}
+
+assert_preserved_state() {
+  local before="$1" after
+  after="$(preserved_state)" || fail 'PERSISTENT_STATE_UNREADABLE'
+  [[ "$before" == "$after" ]] || fail 'PERSISTENT_STATE_CHANGED'
+}
+
+acquire_lock() {
+  local lock_parent
+  lock_parent="$(dirname "$LOCK_PATH")"
+  [[ -d "$lock_parent" && ! -L "$lock_parent" ]] || fail 'LOCK_PARENT_MISSING'
+  exec {lock_fd}>"$LOCK_PATH"
+  flock -n "$lock_fd" || fail 'SYNC_LOCK_BUSY'
+}
+
+snapshot_targets() {
+  local path target parent backup uid gid mode_bits
+  mkdir -p -- "$transaction_dir/previous"
+  : > "$transaction_dir/state.tsv"
+  chmod 600 "$transaction_dir/state.tsv"
+  for path in "${ALLOWED_PATHS[@]}"; do
+    target="$APP_ROOT/$path"
+    if [[ -e "$target" ]]; then
+      [[ -f "$target" && ! -L "$target" ]] || fail "RUNTIME_TARGET_NOT_REGULAR:$path"
+      backup="$transaction_dir/previous/$path"
+      mkdir -p -- "$(dirname "$backup")"
+      cp -p -- "$target" "$backup"
+      uid="$(stat -c '%u' "$target")"
+      gid="$(stat -c '%g' "$target")"
+      mode_bits="$(stat -c '%a' "$target")"
+      printf 'PRESENT\t%s\t%s\t%s\t%s\n' "$path" "$uid" "$gid" "$mode_bits" >> "$transaction_dir/state.tsv"
+    else
+      printf 'ABSENT\t%s\n' "$path" >> "$transaction_dir/state.tsv"
+    fi
+  done
+}
+
+prepare_stage() {
+  local path source staged
+  stage_dir="$transaction_dir/stage"
+  mkdir -p -- "$stage_dir"
+  chmod 700 "$stage_dir"
+  for path in "${ALLOWED_PATHS[@]}"; do
+    source="$SOURCE_ROOT/$path"
+    staged="$stage_dir/$path"
+    mkdir -p -- "$(dirname "$staged")"
+    install -o 0 -g 0 -m 0644 "$source" "$staged"
+    [[ "$(sha256sum "$staged" | awk '{print $1}')" == "$(expected_hash "$path")" ]] || fail "STAGE_HASH_MISMATCH:$path"
+  done
+}
+
+cleanup_stage() {
+  local path dir
+  [[ -n "$stage_dir" && -d "$stage_dir" ]] || return 0
+  for path in "${ALLOWED_PATHS[@]}"; do
+    rm -f -- "$stage_dir/$path"
+  done
+  for dir in "$stage_dir/app/Repositories" "$stage_dir/app/Services" "$stage_dir/app" "$stage_dir/bin" "$stage_dir"; do
+    rmdir -- "$dir" 2>/dev/null || true
+  done
+}
+
+restore_targets() {
+  local state path uid gid mode_bits target parent backup tmp
+  [[ -f "$transaction_dir/state.tsv" ]] || fail 'ROLLBACK_STATE_MISSING'
+  while IFS=$'\t' read -r state path uid gid mode_bits; do
+    target="$APP_ROOT/$path"
+    parent="$(dirname "$target")"
+    case "$state" in
+      PRESENT)
+        backup="$transaction_dir/previous/$path"
+        [[ -f "$backup" && ! -L "$backup" ]] || fail "ROLLBACK_BACKUP_MISSING:$path"
+        tmp="$(mktemp "$parent/.voxelpacs-sync-rollback.XXXXXX")"
+        install -o "$uid" -g "$gid" -m "$mode_bits" "$backup" "$tmp"
+        mv -f -- "$tmp" "$target"
+        ;;
+      ABSENT)
+        [[ ! -L "$target" ]] || fail "ROLLBACK_TARGET_SYMLINK:$path"
+        if [[ -e "$target" ]]; then
+          [[ -f "$target" ]] || fail "ROLLBACK_TARGET_NOT_REGULAR:$path"
+          rm -f -- "$target"
+        fi
+        ;;
+      *) fail 'ROLLBACK_STATE_INVALID' ;;
+    esac
+  done < "$transaction_dir/state.tsv"
+}
+
+publish_targets() {
+  local path staged target parent uid gid mode_bits tmp
+  for path in "${ALLOWED_PATHS[@]}"; do
+    staged="$stage_dir/$path"
+    target="$APP_ROOT/$path"
+    parent="$(dirname "$target")"
+    if [[ -e "$target" ]]; then
+      [[ -f "$target" && ! -L "$target" ]] || fail "RUNTIME_TARGET_NOT_REGULAR:$path"
+      uid="$(stat -c '%u' "$target")"
+      gid="$(stat -c '%g' "$target")"
+      mode_bits="$(stat -c '%a' "$target")"
+    else
+      uid="$(stat -c '%u' "$parent")"
+      gid="$(stat -c '%g' "$parent")"
+      mode_bits='0644'
+    fi
+    tmp="$(mktemp "$parent/.voxelpacs-sync.XXXXXX")"
+    install -o "$uid" -g "$gid" -m "$mode_bits" "$staged" "$tmp"
+    mv -f -- "$tmp" "$target"
+  done
+}
+
+validate_published() {
+  local path target actual
+  for path in "${ALLOWED_PATHS[@]}"; do
+    target="$APP_ROOT/$path"
+    [[ -f "$target" && ! -L "$target" ]] || fail "PUBLISHED_FILE_INVALID:$path"
+    actual="$(sha256sum "$target" | awk '{print $1}')"
+    [[ "$actual" == "$(expected_hash "$path")" ]] || fail "PUBLISHED_HASH_MISMATCH:$path"
+  done
+  printf 'SYNC_SHA_MATCH=PASS\n'
+}
+
+execute_sync() {
+  local before_state
+  transaction_dir="$TRANSACTION_ROOT/$TARGET_SHA"
+  [[ ! -e "$transaction_dir" ]] || fail 'TRANSACTION_ALREADY_EXISTS'
+  mkdir -p -- "$TRANSACTION_ROOT"
+  mkdir -- "$transaction_dir"
+  chmod 700 "$transaction_dir"
+  before_state="$(preserved_state)" || fail 'PERSISTENT_STATE_UNREADABLE'
+  snapshot_targets
+  prepare_stage
+  if ! publish_targets; then
+    restore_targets
+    assert_preserved_state "$before_state"
+    cleanup_stage
+    fail 'PUBLICATION_FAILED_ROLLED_BACK'
+  fi
+  if ! validate_published || ! assert_preserved_state "$before_state"; then
+    restore_targets
+    assert_preserved_state "$before_state"
+    cleanup_stage
+    fail 'POST_PUBLICATION_VALIDATION_FAILED_ROLLED_BACK'
+  fi
+  cleanup_stage
+  printf 'SYNC=PASS\nFILES_SYNCED=%s\nPRODUCTION_CHANGED=YES\n' "$ALLOWLIST_COUNT"
+}
+
+main() {
+  parse_args "$@"
+  require_root_and_caller
+  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  operator="${SUDO_USER:-root}"
+  printf 'VOXEL_RESTRICTED_SYNC=START\n'
+  printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+  printf 'TIMESTAMP=%s\nDESTINATION=%s\nOPERATOR=%s\n' "$timestamp" "$APP_ROOT" "$operator"
+  assert_scope_constants
+  assert_manifest
+  assert_source_checkout
+  assert_runtime_root
+  validate_paths_and_hashes
+  printf 'FILES_EXPECTED=%s\n' "$ALLOWLIST_COUNT"
+  printf 'VENDOR_SYNC=BLOCKED\nOPTIONAL_SYNC=SKIPPED\nUNAUTHORIZED_PATHS=0\n'
+  acquire_lock
+  if [[ "$mode" == 'dry-run' ]]; then
+    printf 'DRY_RUN=PASS\nSYNC=NOT_EXECUTED\nFILES_TO_SYNC=%s\nVALIDATED_COUNT=%s\nSYNCED_COUNT=0\nRESULT=DRY_RUN\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER=NO\nBRIDGE=NO\nSMB=NO\nTRANSMISSION=NO\n' "$ALLOWLIST_COUNT" "$ALLOWLIST_COUNT"
+  else
+    execute_sync
+    printf 'DRY_RUN=PASS\nVALIDATED_COUNT=%s\nSYNCED_COUNT=%s\nRESULT=PASS\nDATABASE_CHANGED=NO\nWORKER=NO\nBRIDGE=NO\nSMB=NO\nTRANSMISSION=NO\n' "$ALLOWLIST_COUNT" "$ALLOWLIST_COUNT"
+  fi
+  printf 'VOXEL_RESTRICTED_SYNC=END\n'
+}
+
+main "$@"

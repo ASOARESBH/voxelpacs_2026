@@ -92,3 +92,25 @@ jobs:
           fi
           vendor/bin/phpunit tests --no-coverage
           echo "PHPUNIT=PASS"
+
+  restricted-sync:
+    name: Restricted drift sync executor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-sync-restricted-drift
+          bash -n tests/restricted_drift_sync_static.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x ops/deploy/voxelpacs-sync-restricted-drift tests/restricted_drift_sync_static.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Run isolated executor tests
+        run: sudo -n env -u SUDO_USER bash tests/restricted_drift_sync_static.sh
