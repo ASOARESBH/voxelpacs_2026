@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "tenant_id": 2,
+  "destination_id": 7,
+  "transport": "philips_non_dicom",
+  "environment": "producao",
+  "delivery_profile": "submission_document",
+  "servidor_pacs_id": 3,
+  "philips_submission": {
+    "task_site_id": "<DERIVED_FROM_SERVIDOR_PACS_NOME>",
+    "task_site_id_alias": "ORTHANC-CLIENTE-A-CELULA-ISOLADA",
+    "task_site_id_source": "servidor_pacs.nome",
+    "task_site_id_rendering": "alias",
+    "task_file_path": "C:\\AutoIngest\\PDF",
+    "task_document_name": "LAUDO RADIOLOGICO",
+    "task_author_id": "<CONFIGURED_AUTHOR_ID>",
+    "task_document_type_applicable": true,
+    "task_document_type": "11502-2",
+    "task_delete_file": false
+  }
+}
