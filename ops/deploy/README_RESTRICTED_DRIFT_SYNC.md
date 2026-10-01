@@ -59,17 +59,39 @@ Em falha de publicação ou validação pós-publicação, o executor restaura o
 
 ## Provisionamento root-controlled — etapa separada
 
-Esta PR **não instala** o executor, o manifesto ou o sudoers no Host 1. O administrador root deverá, em uma etapa posterior e autorizada:
+O provisionador versionado é `scripts/provision-restricted-drift-sync.sh`. Ele não é allowlisted no sudoers e exige root administrativo, checkout limpo e o SHA exato da `main` que contém o próprio provisionador. O `SYNC_TARGET_SHA` do executor continua fixo em `617e7d67bf88ba325773b220b78052d416eddb2b`; esse SHA-alvo não é necessariamente o SHA da release que instala o provisionador.
 
-1. validar o checkout source no SHA exato;
-2. instalar o executor como `/usr/local/sbin/voxelpacs-sync-restricted-drift`, `root:root`, modo `0555`;
-3. instalar o manifesto como `/usr/local/share/voxelpacs/voxelpacs-restricted-drift-sync.manifest.tsv`, `root:root`, modo `0444` ou mais restrito;
-4. disponibilizar o checkout limpo no source root fixo, sem symlink;
-5. instalar o sudoers como `/etc/sudoers.d/voxelpacs-restricted-drift-sync`, `root:root`, modo `0440`;
-6. executar `visudo -cf /etc/sudoers.d/voxelpacs-restricted-drift-sync`;
-7. validar `stat`, `sha256sum`, `sudo -n -l` e somente depois executar o dry-run.
+Com o checkout detached no SHA aprovado, executar primeiro somente:
 
-Não instalar por cópia manual fora de Git nem conceder `NOPASSWD: ALL`. A instalação/provisionamento não faz parte desta PR.
+```bash
+PROVISIONER_MAIN_SHA=<SHA_DA_MAIN_COM_O_PROVISIONADOR>
+sudo -n scripts/provision-restricted-drift-sync.sh \
+  --expected-sha "$PROVISIONER_MAIN_SHA" \
+  --dry-run
+```
+
+O `--dry-run` valida a árvore, os 11 hashes do manifesto, o contrato do executor, o sudoers com `visudo` e a ausência dos três destinos instalados; não cria diretórios, não copia arquivos e não altera produção.
+
+Somente em etapa posterior, com autorização específica, o mesmo provisionador pode ser chamado com `--install`:
+
+```bash
+PROVISIONER_MAIN_SHA=<SHA_DA_MAIN_COM_O_PROVISIONADOR>
+sudo -n scripts/provision-restricted-drift-sync.sh \
+  --expected-sha "$PROVISIONER_MAIN_SHA" \
+  --install
+```
+
+O `--install` publica somente:
+
+1. executor em `/usr/local/sbin/voxelpacs-sync-restricted-drift`, `root:root`, modo `0555`;
+2. manifesto em `/usr/local/share/voxelpacs/voxelpacs-restricted-drift-sync.manifest.tsv`, `root:root`, modo `0444`;
+3. sudoers em `/etc/sudoers.d/voxelpacs-restricted-drift-sync`, `root:root`, modo `0440`.
+
+Os arquivos são preparados em staging privado, validados e movidos individualmente. Em falha parcial, o trap remove somente os destinos que o próprio provisionador instalou nesta execução; não usa `rm -rf`, não substitui instalações prévias e não altera o checkout, o runtime da aplicação, `.env`, storage, banco, systemd, Worker, Bridge, SMB ou transmissão.
+
+O provisionador não instala o source checkout fixo usado pelo executor. Esse checkout deve ser disponibilizado separadamente por administrador root, em `/var/lib/voxelpacs/restricted-drift-sync/source/617e7d67bf88ba325773b220b78052d416eddb2b`, como árvore Git limpa, não symlink. O provisionamento deve ser validado antes de executar o dry-run do executor.
+
+Não instalar por cópia manual fora de Git nem conceder `NOPASSWD: ALL`. O `--install` não foi executado no Host 1 nesta etapa.
 
 ## Rollback
 
