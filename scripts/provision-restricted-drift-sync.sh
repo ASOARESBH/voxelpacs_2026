@@ -8,8 +8,10 @@ set -Eeuo pipefail
 umask 077
 export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly ROOT="$(/usr/bin/git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null || true)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+ROOT="$(/usr/bin/git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null || true)"
+readonly ROOT
 readonly EXPECTED_SYNC_SHA='617e7d67bf88ba325773b220b78052d416eddb2b'
 readonly HELPER_SOURCE="$ROOT/ops/deploy/voxelpacs-sync-restricted-drift"
 readonly MANIFEST_SOURCE="$ROOT/ops/deploy/voxelpacs-restricted-drift-sync.manifest.tsv"
