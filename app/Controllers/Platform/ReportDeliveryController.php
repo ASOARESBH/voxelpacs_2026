@@ -438,6 +438,69 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    /** Probe SMB somente leitura: autentica/lista/pwd, sem PUT, rename, delete ou Job. */
+    public function testSmbReadOnly(int $tenantId, int $destinationId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_smb_readonly'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => 'Confirme o probe SMB somente leitura.'], 422);
+        }
+        try {
+            $destination = $this->repository->findDestination($destinationId, $tenantId, true);
+            if (!$destination || (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                || (string) ($destination['ambiente'] ?? '') !== 'producao'
+                || (int) ($destination['enabled'] ?? 0) !== 1) {
+                throw new DomainException('Destino Non-DICOM de produção não encontrado ou desabilitado.');
+            }
+            $configuration = json_decode((string) ($destination['configuration_json'] ?? '{}'), true);
+            if (!is_array($configuration)) {
+                throw new DomainException('Configuração do destino inválida.');
+            }
+            $result = (new PhilipsFolderSmbConnectivityService())->testReadOnly(
+                $tenantId,
+                $destinationId,
+                $configuration,
+                (string) ($destination['configuration_secret'] ?? ''),
+                (int) ($destination['timeout_seconds'] ?? 30)
+            );
+            Logger::info('[ReportDeliveryController::testSmbReadOnly] Probe concluído', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'smb_auth' => $result['SMB_AUTH'] ?? 'UNKNOWN',
+                'smb_target' => $result['SMB_TARGET'] ?? 'UNKNOWN',
+                'smb_readonly_list' => $result['SMB_READONLY_LIST'] ?? 'UNKNOWN',
+                'smb_write' => 'NOT_EXECUTED',
+            ]);
+            $this->json(['success' => true, 'result' => [
+                'SMB_AUTH' => $result['SMB_AUTH'] ?? 'UNKNOWN',
+                'SMB_TARGET' => $result['SMB_TARGET'] ?? 'UNKNOWN',
+                'SMB_READONLY_LIST' => $result['SMB_READONLY_LIST'] ?? 'UNKNOWN',
+                'SMB_WRITE' => 'NOT_EXECUTED',
+            ]]);
+        } catch (PhilipsFolderDeliveryException $e) {
+            Logger::warning('[ReportDeliveryController::testSmbReadOnly] Probe bloqueado/falhou', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'reason_category' => $e->reasonCategory,
+            ]);
+            $this->json(['success' => false, 'message' => 'Probe SMB não concluído: ' . $this->sanitizedReason($e->reasonCategory)], 422);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::testSmbReadOnly] Falha técnica sanitizada', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => 'Probe SMB indisponível.'], 500);
+        }
+    }
+
     /**
      * Recupera um job cujo worker interrompeu antes de concluir a entrega.
      * A operação é permitida somente após dez minutos em processamento.

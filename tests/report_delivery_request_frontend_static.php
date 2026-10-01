@@ -16,7 +16,7 @@ function expect_frontend(bool $condition, string $message): void
 expect_frontend($view !== false, 'Report Delivery view must be readable');
 
 $requestStart = strpos($view, "const requestForm = document.getElementById('delivery-request-form');");
-$requestEnd = strpos($view, "manualForm.addEventListener('submit'", $requestStart === false ? 0 : $requestStart);
+$requestEnd = strpos($view, "const revisionForm = document.getElementById('pdf-revision-form');", $requestStart === false ? 0 : $requestStart);
 expect_frontend($requestStart !== false && $requestEnd !== false, 'Frontend Request executor block must be present');
 $requestBlock = substr($view, $requestStart, $requestEnd - $requestStart);
 
@@ -33,9 +33,10 @@ expect_frontend(str_contains($requestBlock, "requestForm.querySelector('[name=\"
 expect_frontend(substr_count($requestBlock, "headers['Idempotency-Key'] = idempotencyKey") === 1, 'Idempotency-Key must be set by the frontend');
 expect_frontend(str_contains($requestBlock, "if (stage === 'prepare')"), 'Idempotency-Key must be scoped to prepare');
 expect_frontend(str_contains($requestBlock, 'window.crypto.randomUUID()') && str_contains($requestBlock, 'window.crypto.getRandomValues'), 'Prepare must generate UUID v4 with Web Crypto');
-expect_frontend(str_contains($requestBlock, "value=\"6\"") || str_contains($view, "name=\"destination_id\" value=\"6\""), 'Frontend payload must keep Destination 6');
+expect_frontend(str_contains($view, 'delivery-request-destination-id') && str_contains($view, 'controlled_production'), 'Frontend payload must support the explicit Destination 7 controlled-production target');
+expect_frontend(str_contains($requestBlock, 'confirm_production_prepare'), 'Production prepare must carry an explicit confirmation');
 expect_frontend(str_contains($view, 'name="delivery_profile" value="submission_document"'), 'Frontend payload must keep submission_document');
-expect_frontend(str_contains($view, 'name="dispatch_mode" value="manual_homologation"'), 'Frontend payload must keep manual_homologation');
+expect_frontend(str_contains($view, 'name="dispatch_mode" id="delivery-request-dispatch-mode"'), 'Frontend payload must submit the selected dispatch mode');
 expect_frontend(str_contains($requestBlock, "requestStageIndex += 1"), 'Frontend must enforce sequential phases');
 expect_frontend(!str_contains($requestBlock, '/reports/enqueue'), 'Request executor must not use the legacy enqueue flow');
 expect_frontend(!str_contains($requestBlock, 'test-smb'), 'Request executor must not call SMB test');
@@ -43,7 +44,7 @@ expect_frontend(!str_contains($requestBlock, 'test-smb'), 'Request executor must
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $translations = file_get_contents($root . "/lang/{$locale}.php");
     expect_frontend($translations !== false, "Translation file {$locale} must be readable");
-    foreach (['delivery_hub.request.titulo', 'delivery_hub.request.prepare', 'delivery_hub.request.approve', 'delivery_hub.request.materialize', 'delivery_hub.request.arm', 'delivery_hub.request.confirm_prepare', 'delivery_hub.request.confirm_approve', 'delivery_hub.request.confirm_materialize', 'delivery_hub.request.confirm_arm'] as $key) {
+    foreach (['delivery_hub.request.titulo', 'delivery_hub.request.prepare', 'delivery_hub.request.approve', 'delivery_hub.request.materialize', 'delivery_hub.request.arm', 'delivery_hub.request.confirm_prepare', 'delivery_hub.request.confirm_production_prepare', 'delivery_hub.request.confirm_approve', 'delivery_hub.request.confirm_materialize', 'delivery_hub.request.confirm_arm'] as $key) {
         expect_frontend(str_contains($translations, "'{$key}'"), "Translation {$key} missing in {$locale}");
     }
 }

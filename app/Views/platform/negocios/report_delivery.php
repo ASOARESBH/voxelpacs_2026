@@ -19,6 +19,22 @@ $pacsServerNames = [];
 foreach ($pacsServers as $pacsServer) {
     $pacsServerNames[(int) ($pacsServer['id'] ?? 0)] = (string) ($pacsServer['nome'] ?? '');
 }
+$requestTargets = [];
+foreach ($destinations as $destination) {
+    $destinationId = (int) ($destination['id'] ?? 0);
+    $transport = (string) ($destination['transport'] ?? '');
+    $environment = (string) ($destination['ambiente'] ?? '');
+    if ($transport !== 'philips_non_dicom' || (int) ($destination['enabled'] ?? 0) !== 1) {
+        continue;
+    }
+    if ($destinationId === 6 && $environment === 'homologacao') {
+        $requestTargets[] = ['id' => 6, 'dispatch_mode' => 'manual_homologation', 'environment' => 'homologacao', 'label' => 'Destination 6 — Philips Non-DICOM — Homologação'];
+    }
+    if ($destinationId === 7 && $environment === 'producao' && (int) ($destination['servidor_pacs_id'] ?? 0) > 0) {
+        $requestTargets[] = ['id' => 7, 'dispatch_mode' => 'controlled_production', 'environment' => 'producao', 'label' => 'Destination 7 — Philips Non-DICOM — Produção controlada'];
+    }
+}
+$requestTarget = $requestTargets[0] ?? ['id' => 0, 'dispatch_mode' => '', 'environment' => '', 'label' => 'Nenhum Destination controlado elegível'];
 $transportLabels = [
     'dicom_pdf' => 'DICOM Encapsulated PDF',
     'dicom_sr' => 'DICOM Structured Report',
@@ -50,9 +66,10 @@ $transportLabels = [
             <p class="small mb-3"><?= $escape(t('delivery_hub.request.ajuda')) ?></p>
             <form id="delivery-request-form" class="row g-3">
                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                <input type="hidden" name="destination_id" value="6">
+                <input type="hidden" name="destination_id" id="delivery-request-destination-id" value="<?= (int) $requestTarget['id'] ?>">
                 <input type="hidden" name="delivery_profile" value="submission_document">
-                <input type="hidden" name="dispatch_mode" value="manual_homologation">
+                <input type="hidden" name="dispatch_mode" id="delivery-request-dispatch-mode" value="<?= $escape($requestTarget['dispatch_mode']) ?>">
+                <input type="hidden" name="confirm_production_prepare" id="delivery-request-confirm-production" value="0">
                 <div class="col-md-3">
                     <label class="form-label" for="delivery-request-report-id"><?= $escape(t('delivery_hub.request.report_id')) ?></label>
                     <input class="form-control" id="delivery-request-report-id" name="report_id" type="number" min="1" value="348" required>
@@ -66,8 +83,16 @@ $transportLabels = [
                     <input class="form-control" id="delivery-request-pdf-revision" name="pdf_revision_id" type="number" min="0" value="0">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label"><?= $escape(t('delivery_hub.request.destination')) ?></label>
-                    <div class="form-control-plaintext"><code>6</code> — <?= $escape(t('delivery_hub.request.destination_value')) ?></div>
+                    <label class="form-label" for="delivery-request-target"><?= $escape(t('delivery_hub.request.destination')) ?></label>
+                    <select class="form-select" id="delivery-request-target" <?= $requestTargets === [] ? 'disabled' : '' ?>>
+                        <?php if ($requestTargets === []): ?>
+                            <option value="0"><?= $escape($requestTarget['label']) ?></option>
+                        <?php else: ?>
+                            <?php foreach ($requestTargets as $target): ?>
+                                <option value="<?= (int) $target['id'] ?>" data-dispatch-mode="<?= $escape($target['dispatch_mode']) ?>" data-environment="<?= $escape($target['environment']) ?>" data-label="<?= $escape($target['label']) ?>" <?= (int) $target['id'] === (int) $requestTarget['id'] ? 'selected' : '' ?>><?= $escape($target['label']) ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label"><?= $escape(t('delivery_hub.request.profile')) ?></label>
@@ -79,7 +104,7 @@ $transportLabels = [
                 </div>
                 <div class="col-md-4">
                     <label class="form-label"><?= $escape(t('delivery_hub.request.environment')) ?></label>
-                    <div class="form-control-plaintext"><code>homologacao</code></div>
+                    <div class="form-control-plaintext"><code id="delivery-request-environment"><?= $escape($requestTarget['environment'] !== '' ? $requestTarget['environment'] : '—') ?></code></div>
                 </div>
                 <div class="col-12">
                     <label class="form-label" for="delivery-request-reason"><?= $escape(t('delivery_hub.request.reason')) ?></label>
@@ -396,7 +421,7 @@ $transportLabels = [
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
-                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
+                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'producao' && !empty($destination['enabled'])): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb-readonly" class="d-inline smb-readonly-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_readonly" value="1"><button type="submit" class="btn btn-sm btn-outline-warning ms-1"><?= $escape(t('philips_non_dicom.testar_smb_readonly')) ?></button></form><?php endif; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -713,6 +738,11 @@ $transportLabels = [
         const requestIdOutput = document.getElementById('delivery-request-id');
         const outboxIdOutput = document.getElementById('delivery-request-outbox-id');
         const jobIdOutput = document.getElementById('delivery-request-job-id');
+        const requestTargetSelect = document.getElementById('delivery-request-target');
+        const requestDestinationId = document.getElementById('delivery-request-destination-id');
+        const requestDispatchMode = document.getElementById('delivery-request-dispatch-mode');
+        const requestEnvironment = document.getElementById('delivery-request-environment');
+        const requestProductionConfirmation = document.getElementById('delivery-request-confirm-production');
         const requestStages = ['prepare', 'approve', 'materialize', 'arm'];
         const requestPaths = { approve: 'approve', materialize: 'materialize', arm: 'arm' };
         const requestStatusLabels = {
@@ -723,6 +753,7 @@ $transportLabels = [
         };
         const requestConfirmations = {
             prepare: <?= json_encode(t('delivery_hub.request.confirm_prepare'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            production_prepare: <?= json_encode(t('delivery_hub.request.confirm_production_prepare'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             approve: <?= json_encode(t('delivery_hub.request.confirm_approve'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             materialize: <?= json_encode(t('delivery_hub.request.confirm_materialize'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             arm: <?= json_encode(t('delivery_hub.request.confirm_arm'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
@@ -731,6 +762,18 @@ $transportLabels = [
         let requestId = 0;
         let requestStageIndex = 0;
         let requestBusy = false;
+
+        const updateRequestTarget = () => {
+            const option = requestTargetSelect && requestTargetSelect.selectedOptions[0];
+            if (!option) return;
+            requestDestinationId.value = option.value;
+            requestDispatchMode.value = option.dataset.dispatchMode || '';
+            requestEnvironment.textContent = option.dataset.environment || '—';
+        };
+        if (requestTargetSelect) {
+            requestTargetSelect.addEventListener('change', updateRequestTarget);
+            updateRequestTarget();
+        }
 
         const updateRequestButtons = () => {
             requestButtons.forEach((button, index) => {
@@ -753,7 +796,8 @@ $transportLabels = [
                 const stage = button.dataset.requestStage;
                 if (!stage || requestBusy || requestStages[requestStageIndex] !== stage) return;
                 if (stage !== 'prepare' && requestId <= 0) return;
-                if (!window.confirm(requestConfirmations[stage])) return;
+                const isProductionPrepare = stage === 'prepare' && requestDispatchMode.value === 'controlled_production';
+                if (!window.confirm(isProductionPrepare ? requestConfirmations.production_prepare : requestConfirmations[stage])) return;
 
                 requestBusy = true;
                 updateRequestButtons();
@@ -765,6 +809,7 @@ $transportLabels = [
                     const body = stage === 'prepare' ? new FormData(requestForm) : new FormData();
                     if (stage !== 'prepare') body.append('_csrf_token', requestForm.querySelector('[name="_csrf_token"]').value);
                     body.set('confirm_' + stage, '1');
+                    if (stage === 'prepare') body.set('confirm_production_prepare', isProductionPrepare ? '1' : '0');
                     const headers = { 'X-Requested-With': 'XMLHttpRequest' };
                     if (stage === 'prepare') {
                         const idempotencyKey = uuidV4();
@@ -985,6 +1030,31 @@ $transportLabels = [
                 const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('philips_non_dicom.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
                 smbTestFeedback.className = 'alert m-3 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
                 smbTestFeedback.textContent = result.message || <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (_) {
+                smbTestFeedback.className = 'alert m-3 mb-0 alert-danger';
+                smbTestFeedback.textContent = <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.smb-readonly-test-form').forEach((smbTestForm) => {
+        smbTestForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('philips_non_dicom.confirmar_teste_smb_readonly'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = smbTestForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(smbTestForm.action, { method: 'POST', body: new FormData(smbTestForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('philips_non_dicom.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                const detail = result.result ? Object.entries(result.result).map(([key, value]) => key + '=' + value).join(' | ') : '';
+                smbTestFeedback.className = 'alert m-3 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                smbTestFeedback.textContent = result.message || detail || <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
                 smbTestFeedback.classList.remove('d-none');
                 smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } catch (_) {
