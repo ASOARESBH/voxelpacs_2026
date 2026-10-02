@@ -56,6 +56,7 @@ expect_claim(str_contains($claimById, "dr.status = 'armed'"), 'claimJobById must
 expect_claim(str_contains($repository, 'private function linkedRequestFailureCode(array $job)'), 'claim must retain server-side request validation');
 expect_claim(str_contains($repository, 'if ($claimFailureCode !== null)'), 'claim must fail closed on request drift or disabled feature');
 expect_claim(str_contains($repository, "return 'feature_disabled';"), 'linked requests must fail closed when the feature is disabled');
+expect_claim(str_contains($repository, "'task_site_id_alias' => (string) (\$job['task_site_id_alias'] ?? '')"), 'claim drift digest must include the frozen technical alias');
 expect_claim(str_contains($claimSnapshot, 'e.patient_id, e.patient_name, e.tags_raw, e.patient_birth_date, e.patient_sex'), 'claim snapshot digest projection must include tags_raw');
 expect_claim(str_contains($claimSnapshot, 'e.study_time, e.referring_physician_name, e.institution_name'), 'claim snapshot digest projection must include referring physician');
 foreach ([

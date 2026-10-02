@@ -296,6 +296,7 @@ class ReportDeliveryWorkerRepository
             'ambiente' => (string) ($job['ambiente'] ?? ''),
             'enabled' => (int) ($job['destination_enabled'] ?? 0),
             'disparar_na_liberacao' => (int) ($job['destination_auto'] ?? 0),
+            'task_site_id_alias' => (string) ($job['task_site_id_alias'] ?? ''),
             'configuration_json' => (string) ($job['configuration_json'] ?? '{}'),
             'updated_at' => (string) ($job['destination_updated_at'] ?? ''),
             'institution_names' => $this->destinationSelectorValues(
