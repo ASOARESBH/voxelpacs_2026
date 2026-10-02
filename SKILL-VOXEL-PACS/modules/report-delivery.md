@@ -61,6 +61,8 @@ Requests ligadas usam `outbox.delivery_request_id`; não existe nem deve ser pre
 
 O recovery administrativo usa `ReportDeliveryRequestService::prepareRecovery()`: gera um UUID v4 novo no servidor, referencia apenas `report_id`/`report_version` explícitos, registra auditoria sanitizada e termina em `prepared`. Não aceita `job_id` histórico, não chama retry, não materializa outbox/job e não inicia transporte; aprovar, materializar, armar e executar continuam sendo fases separadas.
 
+O diagnóstico `bin/philips_nondicom_submission_no_send.php` é o gate explícito para validar um Job `submission_document` de produção controlada sem transmissão. Ele exige `tenant_id`, `job_id` e `--no-send`, lê Job/Outbox/Request/Destination tenant-scoped em transação somente-leitura, confirma o alias congelado nos três pontos e chama `PhilipsSubmissionPackageProducer::validateNoSend()` para serializar o XML apenas em memória. Não reclama Job, cria attempt, grava artifact, chama Bridge ou acessa SMB; `PASS` não autoriza o Worker nem prova chegada física.
+
 ## Dependências
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.

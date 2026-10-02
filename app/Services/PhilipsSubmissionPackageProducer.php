@@ -75,6 +75,39 @@ final class PhilipsSubmissionPackageProducer
         return new ReportDeliveryPackage(array_replace($pdf, ['filename' => $pdfFilename]), $document, $xmlStoragePath);
     }
 
+    /**
+     * Valida o contrato do submission sem produzir PDF, persistir XML ou chamar transporte.
+     * O conteúdo do documento fica somente em memória e é descartado antes do retorno.
+     *
+     * @param array<string,mixed> $job
+     * @param array<string,mixed> $configuration
+     * @param array<string,mixed> $payload
+     * @return array{xml_serialized:string,artifact_written:string,bridge_called:string,smb_called:string}
+     */
+    public function validateNoSend(array $job, array $configuration, array $payload): array
+    {
+        $payload = $this->requestSnapshot->hydratePayload($job, $payload, false);
+        $reportId = (int) ($job['report_id'] ?? 0);
+        $reportVersion = (int) ($job['report_version'] ?? 0);
+        if ($reportId <= 0 || $reportVersion <= 0) {
+            throw new PhilipsXmlFieldUnresolvedException('task_document_name');
+        }
+
+        $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
+        $deliveryContext = $this->deliveryContext($job, $configuration, $payload);
+        $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
+        $input['pdf_filename'] = $pdfFilename;
+        $document = $this->generator->generate($input, $deliveryContext);
+        unset($document, $input, $payload);
+
+        return [
+            'xml_serialized' => 'PASS',
+            'artifact_written' => 'NO',
+            'bridge_called' => 'NO',
+            'smb_called' => 'NO',
+        ];
+    }
+
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @return array<string,mixed> */
     private function deliveryContext(array $job, array $configuration, array $payload): array
     {
