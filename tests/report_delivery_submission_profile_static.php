@@ -121,6 +121,29 @@ foreach (['pt_BR', 'en', 'es'] as $locale) {
     expect_profile(is_string($catalog) && substr_count($catalog, 'philips_non_dicom.profile_submission_document') === 1, "{$locale} must contain the profile translation");
 }
 
+foreach ([
+    "\$result['smb_auth']",
+    "\$result['smb_pwd']",
+    "\$result['smb_return_code']",
+    "\$result['smb_classification']",
+    "\$result['nt_status_logon_failure']",
+    "\$result['result']",
+    "'SMB_WRITE' => 'NOT_EXECUTED'",
+] as $marker) {
+    expect_profile(str_contains($controller, $marker), "SMB read-only controller must map {$marker}");
+}
+expect_profile(
+    str_contains($controller, "'success' => \$probePassed")
+        && str_contains($controller, "\$probePassed ? 200 : 422"),
+    'SMB read-only controller must not report an unconfirmed probe as success'
+);
+expect_profile(
+    !str_contains($controller, "\$result['SMB_AUTH']")
+        && !str_contains($controller, "\$result['SMB_TARGET']")
+        && !str_contains($controller, "\$result['SMB_READONLY_LIST']"),
+    'SMB read-only controller must not read nonexistent uppercase client keys'
+);
+
 $d6Context = [
     'transport' => 'philips_non_dicom',
     'destination_id' => 6,

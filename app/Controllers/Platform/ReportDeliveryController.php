@@ -468,20 +468,29 @@ class ReportDeliveryController extends Controller
                 (string) ($destination['configuration_secret'] ?? ''),
                 (int) ($destination['timeout_seconds'] ?? 30)
             );
+            $probeResult = [
+                'SMB_AUTH' => (string) ($result['smb_auth'] ?? 'UNKNOWN'),
+                'SMB_PWD' => (string) ($result['smb_pwd'] ?? 'UNKNOWN'),
+                'SMB_RETURN_CODE' => (string) ($result['smb_return_code'] ?? 'UNKNOWN'),
+                'SMB_CLASSIFICATION' => (string) ($result['smb_classification'] ?? 'UNKNOWN'),
+                'NT_STATUS_LOGON_FAILURE' => (string) ($result['nt_status_logon_failure'] ?? 'UNKNOWN'),
+                'SMB_WRITE' => 'NOT_EXECUTED',
+            ];
+            $probePassed = (string) ($result['result'] ?? '') === 'PASS';
             Logger::info('[ReportDeliveryController::testSmbReadOnly] Probe concluído', [
                 'tenant_id' => $tenantId,
                 'destination_id' => $destinationId,
-                'smb_auth' => $result['SMB_AUTH'] ?? 'UNKNOWN',
-                'smb_target' => $result['SMB_TARGET'] ?? 'UNKNOWN',
-                'smb_readonly_list' => $result['SMB_READONLY_LIST'] ?? 'UNKNOWN',
+                'smb_auth' => $probeResult['SMB_AUTH'],
+                'smb_pwd' => $probeResult['SMB_PWD'],
+                'smb_return_code' => $probeResult['SMB_RETURN_CODE'],
+                'smb_classification' => $probeResult['SMB_CLASSIFICATION'],
                 'smb_write' => 'NOT_EXECUTED',
             ]);
-            $this->json(['success' => true, 'result' => [
-                'SMB_AUTH' => $result['SMB_AUTH'] ?? 'UNKNOWN',
-                'SMB_TARGET' => $result['SMB_TARGET'] ?? 'UNKNOWN',
-                'SMB_READONLY_LIST' => $result['SMB_READONLY_LIST'] ?? 'UNKNOWN',
-                'SMB_WRITE' => 'NOT_EXECUTED',
-            ]]);
+            $this->json([
+                'success' => $probePassed,
+                'message' => $probePassed ? null : 'Probe SMB não confirmado: ' . $this->sanitizedReason($probeResult['SMB_CLASSIFICATION']),
+                'result' => $probeResult,
+            ], $probePassed ? 200 : 422);
         } catch (PhilipsFolderDeliveryException $e) {
             Logger::warning('[ReportDeliveryController::testSmbReadOnly] Probe bloqueado/falhou', [
                 'tenant_id' => $tenantId,
