@@ -29,6 +29,32 @@ final class ReportDeliveryRequestController extends Controller
         }
     }
 
+    public function active(int $tenantId): void
+    {
+        $this->authorizeTenant($tenantId);
+        try {
+            $result = $this->service()->findActiveForInput($tenantId, [
+                'report_id' => $_GET['report_id'] ?? null,
+                'report_version' => $_GET['report_version'] ?? null,
+                'pdf_revision_id' => $_GET['pdf_revision_id'] ?? 0,
+                'destination_id' => $_GET['destination_id'] ?? null,
+                'delivery_profile' => $_GET['delivery_profile'] ?? 'submission_document',
+                'dispatch_mode' => $_GET['dispatch_mode'] ?? null,
+                'request_reason' => $_GET['request_reason'] ?? '',
+            ], (int) Auth::userId());
+            $this->json([
+                'success' => true,
+                'feature_enabled' => ReportDeliveryRequestService::isEnabled(),
+                'request' => $result,
+            ]);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], $this->statusFor($e));
+        } catch (Throwable $e) {
+            $this->logFailure('active', $tenantId, null, $e);
+            $this->json(['success' => false, 'message' => 'Não foi possível retomar a Delivery Request ativa.'], 500);
+        }
+    }
+
     public function prepare(int $tenantId): void
     {
         $this->authorizePost($tenantId, 'confirm_prepare');

@@ -804,6 +804,40 @@ $transportLabels = [
             });
         };
 
+        const resumeActiveRequest = async () => {
+            const params = new URLSearchParams({
+                report_id: document.getElementById('delivery-request-report-id')?.value || '',
+                report_version: document.getElementById('delivery-request-report-version')?.value || '',
+                pdf_revision_id: document.getElementById('delivery-request-pdf-revision')?.value || '0',
+                destination_id: requestDestinationId?.value || '',
+                delivery_profile: 'submission_document',
+                dispatch_mode: requestDispatchMode?.value || '',
+                request_reason: document.getElementById('delivery-request-reason')?.value || '',
+            });
+            try {
+                const response = await fetch(requestBase + '/active?' + params.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+                const result = await response.json().catch(() => ({ success: false }));
+                const request = result.success ? (result.request || null) : null;
+                if (!response.ok || !request || Number(request.id || 0) <= 0) return;
+                const stageIndexes = { prepared: 1, approved: 2, materialized: 3, armed: 4, processing: 4 };
+                requestId = Number(request.id);
+                requestStageIndex = stageIndexes[request.status] ?? 0;
+                requestIdOutput.textContent = String(requestId);
+                if (Number(request.outbox_id || 0) > 0) outboxIdOutput.textContent = String(Number(request.outbox_id));
+                if (Number(request.job_id || 0) > 0) jobIdOutput.textContent = String(Number(request.job_id));
+                requestState.textContent = requestStatusLabels[request.status] || String(request.status || 'active');
+                requestFeedback.className = 'alert alert-success mt-3 mb-0';
+                requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                requestFeedback.classList.remove('d-none');
+                updateRequestButtons();
+            } catch (error) {
+                // A read-only resume failure must not block a new explicit prepare attempt.
+            }
+        };
+
         const uuidV4 = () => {
             if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
             if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') return '';
@@ -870,6 +904,7 @@ $transportLabels = [
             });
         });
         updateRequestButtons();
+        resumeActiveRequest();
     }
 
     const revisionForm = document.getElementById('pdf-revision-form');

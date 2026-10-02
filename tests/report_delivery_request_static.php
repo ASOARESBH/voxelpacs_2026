@@ -157,6 +157,7 @@ foreach ([$service, $snapshotService, $repository, $controller, $deliveryControl
 foreach (['prepare', 'prepareRecovery', 'approve', 'materialize', 'arm', 'cancel', 'expire', 'get'] as $method) {
     expect_request(str_contains($service, "public function {$method}"), "Service method {$method} missing");
 }
+expect_request(str_contains($service, 'findActiveForInput'), 'Service must expose read-only active Request resumption');
 foreach (['prepared', 'approved', 'materialized', 'armed', 'processing', 'delivered', 'failed', 'cancelled', 'expired'] as $state) {
     expect_request(str_contains($migration, "'{$state}'"), "State {$state} missing from migration");
 }
@@ -191,6 +192,7 @@ expect_request(!str_contains($service, "'patient_name'") && !str_contains($servi
 expect_request(str_contains($controller, "_csrf_token"), 'Request endpoints must enforce CSRF');
 expect_request(str_contains($controller, "'confirm_prepare'"), 'Prepare must require explicit confirmation');
 expect_request(str_contains($controller, "HTTP_IDEMPOTENCY_KEY"), 'Prepare must read Idempotency-Key from the header');
+expect_request(str_contains($controller, 'findActiveForInput') && str_contains($controller, "'active'"), 'Active Request endpoint must be read-only and sanitized');
 expect_request(str_contains($deliveryController, 'testSmbReadOnly') && str_contains($deliveryController, 'testReadOnly'), 'Production SMB probe must use the dedicated read-only service');
 expect_request(str_contains($deliveryController, 'confirm_smb_readonly') && str_contains($deliveryController, "'smb_write' => 'NOT_EXECUTED'"), 'Production SMB probe must be explicitly confirmed and report no write');
 expect_request(str_contains($controller, 'confirm_recovery') && str_contains($controller, 'prepareRecovery'), 'Recovery endpoint must require explicit confirmation');
@@ -199,6 +201,7 @@ expect_request(str_contains($routes, 'ReportDeliveryRequestController@recover'),
 expect_request(!str_contains($controller, 'snapshot_digest'), 'Controller must not accept full digests for arm');
 expect_request(str_contains($controller, 'Auth::isPlatformAdmin') && str_contains($controller, 'Auth::perfilAtual()'), 'Request endpoints must enforce admin authorization');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@prepare'), 'Prepare route missing');
+expect_request(str_contains($routes, 'report-delivery/requests/active') && str_contains($routes, 'ReportDeliveryRequestController@active'), 'Active Request resume route missing');
 expect_request(str_contains($routes, 'test-smb-readonly') && str_contains($routes, 'ReportDeliveryController@testSmbReadOnly'), 'Read-only SMB probe route missing');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@expire'), 'Expire route missing');
 expect_request(str_contains($env, 'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED=false'), 'Feature flag must default OFF');
