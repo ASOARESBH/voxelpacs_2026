@@ -370,6 +370,7 @@ final class ReportDeliveryRequestService
             $pdfRevisionId
         );
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
+        $taskSiteAlias = (string) ($destination['task_site_id_alias'] ?? '');
         $sourceKey = 'report_version:' . (int) $report['report_version_row_id'];
         $identityInput = [
             'request_uuid' => $requestUuid,
@@ -380,6 +381,7 @@ final class ReportDeliveryRequestService
             'destination_id' => $destinationId,
             'delivery_profile' => 'submission_document',
             'dispatch_mode' => $dispatchMode,
+            'task_site_id_alias' => $taskSiteAlias,
             'snapshot_digest' => $snapshotDigest,
             'destination_config_digest' => $destinationDigest,
         ];
@@ -402,6 +404,7 @@ final class ReportDeliveryRequestService
             'ambiente' => $expectedTarget['environment'],
             'delivery_profile' => 'submission_document',
             'dispatch_mode' => $dispatchMode,
+            'task_site_id_alias' => $taskSiteAlias,
             'snapshot_schema_version' => 1,
             'authorized_snapshot_digest' => $snapshotDigest,
             'destination_config_digest' => $destinationDigest,
@@ -450,8 +453,16 @@ final class ReportDeliveryRequestService
         if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && (int) ($submission['task_site_id'] ?? 0) !== 2) {
             throw new DomainException('Destination 6 não possui SITE_ID de homologação esperado.', 422);
         }
-        if ($dispatchMode === self::DISPATCH_MODE_PRODUCTION && trim((string) ($submission['task_site_id'] ?? '')) === '') {
-            throw new DomainException('Destination 7 não possui SITE_ID de produção.', 422);
+        if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && trim((string) ($destination['task_site_id_alias'] ?? '')) !== '') {
+            throw new DomainException('Destination 6 não pode possuir alias técnico de produção.', 422);
+        }
+        if ($dispatchMode === self::DISPATCH_MODE_PRODUCTION) {
+            if (trim((string) ($submission['task_site_id'] ?? '')) === '') {
+                throw new DomainException('Destination 7 não possui SITE_ID de produção.', 422);
+            }
+            if (!$this->isValidTaskSiteAlias($destination['task_site_id_alias'] ?? null)) {
+                throw new DomainException('Destination 7 não possui alias técnico ASCII válido.', 422);
+            }
         }
     }
 
@@ -545,6 +556,7 @@ final class ReportDeliveryRequestService
             'ambiente' => (string) ($request['ambiente'] ?? ''),
             'delivery_profile' => 'submission_document',
             'dispatch_mode' => (string) ($request['dispatch_mode'] ?? ''),
+            'task_site_id_alias' => (string) ($request['task_site_id_alias'] ?? ''),
             'snapshot_digest' => (string) $request['authorized_snapshot_digest'],
             'destination_config_digest' => (string) $request['destination_config_digest'],
         ];
@@ -669,6 +681,11 @@ final class ReportDeliveryRequestService
         return $value === true || $value === 1 || $value === '1' || $value === 'true';
     }
 
+    private function isValidTaskSiteAlias(mixed $value): bool
+    {
+        return is_string($value) && preg_match('/^[A-Za-z0-9._-]{1,120}$/', trim($value)) === 1;
+    }
+
     /** @param array<string,mixed> $request */
     private function logTransition(string $transition, array $request): void
     {
@@ -696,6 +713,7 @@ final class ReportDeliveryRequestService
             'report_version' => (int) ($request['report_version'] ?? 0),
             'destination_id' => (int) ($request['destination_id'] ?? 0),
             'delivery_profile' => (string) ($request['delivery_profile'] ?? ''),
+            'task_site_id_alias_present' => trim((string) ($request['task_site_id_alias'] ?? '')) !== '',
             'status' => (string) ($request['status'] ?? $transition),
             'snapshot_digest_present' => (string) ($request['authorized_snapshot_digest'] ?? '') !== '',
             'destination_config_digest_present' => (string) ($request['destination_config_digest'] ?? '') !== '',
@@ -715,7 +733,7 @@ final class ReportDeliveryRequestService
         $allowed = [
             'id', 'request_uuid', 'tenant_id', 'report_id', 'estudo_id',
             'report_version', 'report_version_source_key', 'pdf_revision_id', 'destination_id', 'transport',
-            'ambiente', 'delivery_profile', 'dispatch_mode', 'snapshot_schema_version',
+            'ambiente', 'delivery_profile', 'dispatch_mode', 'task_site_id_alias', 'snapshot_schema_version',
             'status', 'requested_by',
             'approved_by', 'approved_at', 'materialized_at', 'armed_at', 'outbox_id', 'job_id',
             'created_at', 'updated_at', 'last_error_code', 'last_error_stage',

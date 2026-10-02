@@ -44,6 +44,7 @@ $activeA = DeliveryRequestIdentity::activeIdentityKey($base);
 $activeARepeat = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['request_uuid' => $uuidB]));
 $activeTenant = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['tenant_id' => 3]));
 $activeVersion = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['report_version' => 12]));
+$activeAlias = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['task_site_id_alias' => 'SITE-A']));
 
 expect_request(strlen($requestKeyA) === 64 && strlen($activeA) === 64, 'Identity keys must be SHA-256');
 expect_request($requestKeyA === $requestKeyARepeat, 'request_key must be deterministic');
@@ -51,6 +52,7 @@ expect_request($requestKeyA !== $requestKeyB, 'request_uuid must distinguish req
 expect_request($activeA === $activeARepeat, 'active identity must ignore request_uuid');
 expect_request($activeA !== $activeTenant, 'active identity must include tenant');
 expect_request($activeA !== $activeVersion, 'active identity must include explicit report version');
+expect_request($activeA !== $activeAlias, 'active identity must include the frozen technical alias');
 
 $serviceReflection = new ReflectionClass(ReportDeliveryRequestService::class);
 $serviceWithoutConstructor = $serviceReflection->newInstanceWithoutConstructor();
@@ -118,11 +120,18 @@ $syntheticDestination = [
     'configuration_json' => '{"delivery_profile":"submission_document","configuration_secret":"opaque"}',
     'institution_names' => '',
     'issuers' => '',
+    'task_site_id_alias' => 'SITE-A',
 ];
 expect_request(
     DeliveryRequestIdentity::destinationDigest($syntheticDestination)
         === DeliveryRequestIdentity::destinationDigest($syntheticDestination),
     'Destination digest must be deterministic'
+);
+$aliasDestination = array_replace($syntheticDestination, ['task_site_id_alias' => 'SITE-B']);
+expect_request(
+    DeliveryRequestIdentity::destinationDigest($syntheticDestination)
+        !== DeliveryRequestIdentity::destinationDigest($aliasDestination),
+    'Destination digest must change when the technical alias changes'
 );
 
 $service = file_get_contents($root . '/app/Services/ReportDeliveryRequestService.php');
@@ -135,11 +144,13 @@ $runtimeConfig = file_get_contents($root . '/app/Config/ReportDeliveryRuntimeCon
 $migration = file_get_contents($root . '/database/migrations/2026-09-18_report_delivery_requests_postgresql.sql');
 $overrideMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_delivery_request_patient_name_overrides_postgresql.sql');
 $controlledProductionMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_controlled_production_postgresql.sql');
+$requestAliasMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_task_site_alias_postgresql.sql');
+$requestAliasMysqlMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_task_site_alias_mysql.sql');
 $overrideService = file_get_contents($root . '/app/Services/ReportDeliveryRequestPatientNameOverrideService.php');
 $routes = file_get_contents($root . '/routes/platform.php');
 $env = file_get_contents($root . '/.env.example');
 
-foreach ([$service, $snapshotService, $repository, $controller, $deliveryController, $worker, $runtimeConfig, $migration, $overrideMigration, $controlledProductionMigration, $overrideService, $routes, $env] as $content) {
+foreach ([$service, $snapshotService, $repository, $controller, $deliveryController, $worker, $runtimeConfig, $migration, $overrideMigration, $controlledProductionMigration, $requestAliasMigration, $requestAliasMysqlMigration, $overrideService, $routes, $env] as $content) {
     expect_request(is_string($content), 'Expected Delivery Request file must be readable');
 }
 
@@ -222,4 +233,9 @@ expect_request(!str_contains($auditBlock, "'family'")
     && !str_contains($auditBlock, "'middle'")
     && !str_contains($auditBlock, "'patient_name'"), 'Override audit must not log clinical components');
 
+expect_request(str_contains($service, "'task_site_id_alias' => \$taskSiteAlias"), 'Request identity and payload must freeze the technical alias');
+expect_request(str_contains($service, "'task_site_id_alias' => (string) (\$request['task_site_id_alias'] ?? '')"), 'Outbox payload must carry the frozen alias');
+expect_request(str_contains($repository, 'task_site_id_alias') && str_contains($repository, 'hasColumn'), 'Request repository must persist the alias compatibly');
+expect_request(str_contains($requestAliasMigration, 'ADD COLUMN IF NOT EXISTS task_site_id_alias') && str_contains($requestAliasMigration, 'ck_report_delivery_request_task_site_id_alias'), 'PostgreSQL Request alias migration must be additive and constrained');
+expect_request(str_contains($requestAliasMysqlMigration, 'pacs_report_delivery_requests') && str_contains($requestAliasMysqlMigration, 'task_site_id_alias'), 'MySQL Request alias migration must be present for parity');
 fwrite(STDOUT, "REPORT_DELIVERY_REQUEST_STATIC_OK\n");

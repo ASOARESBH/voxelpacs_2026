@@ -368,6 +368,11 @@ $transportLabels = [
                                         </select>
                                         <div class="form-text" id="nondicom-task-site-id-help"><?= $escape(t('philips_non_dicom.task_site_id_help')) ?></div>
                                     </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label" for="nondicom-task-site-id-alias"><?= $escape(t('philips_non_dicom.task_site_id_alias_label')) ?></label>
+                                        <input class="form-control" id="nondicom-task-site-id-alias" name="task_site_id_alias" data-alias-required maxlength="120" pattern="[A-Za-z0-9._-]{1,120}" autocomplete="off" aria-describedby="nondicom-task-site-id-alias-help">
+                                        <div class="form-text" id="nondicom-task-site-id-alias-help"><?= $escape(t('philips_non_dicom.task_site_id_alias_help')) ?></div>
+                                    </div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-tenant-context"><?= $escape(t('philips_non_dicom.tenant_label')) ?></label><input class="form-control" id="nondicom-tenant-context" value="<?= $escape(($tenant['nome'] ?? $tenant['razao_social'] ?? '') . ' (#' . (int) ($tenant['id'] ?? 0) . ')') ?>" readonly><div class="form-text"><?= $escape(t('philips_non_dicom.tenant_help')) ?></div></div>
@@ -561,6 +566,7 @@ $transportLabels = [
     const environment = document.getElementById('destination-environment');
     const serverPacs = document.getElementById('destination-server-pacs');
     const siteIdField = document.getElementById('nondicom-task-site-id');
+    const taskSiteAliasField = document.getElementById('nondicom-task-site-id-alias');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -627,8 +633,13 @@ $transportLabels = [
         const submissionActive = transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document';
         if (submissionSettings) {
             submissionSettings.classList.toggle('d-none', !submissionActive);
-            submissionSettings.querySelectorAll('[data-required]').forEach((input) => { input.required = submissionActive; });
+            submissionSettings.querySelectorAll('[data-required]').forEach((input) => {
+                input.required = input.hasAttribute('data-alias-required')
+                    ? submissionActive && environment.value === 'producao'
+                    : submissionActive;
+            });
         }
+        syncTaskSiteAliasRequirement();
         populateActiveFields();
     }
 
@@ -659,6 +670,17 @@ $transportLabels = [
         siteIdField.value = '';
         siteIdField.disabled = true;
         siteIdField.removeAttribute('title');
+    }
+
+    function syncTaskSiteAliasRequirement() {
+        if (!taskSiteAliasField) return;
+        const active = transport.value === 'philips_non_dicom'
+            && submissionProfile
+            && submissionProfile.value === 'submission_document'
+            && environment.value === 'producao';
+        taskSiteAliasField.required = active;
+        taskSiteAliasField.disabled = !active;
+        if (!active) taskSiteAliasField.value = '';
     }
 
     function setSelectedInstitutions(rawNames) {
@@ -722,6 +744,7 @@ $transportLabels = [
         configInput.value = '{}';
         secretInput.value = '';
         if (serverPacs) serverPacs.value = '';
+        if (taskSiteAliasField) taskSiteAliasField.value = '';
         setSelectedInstitutions('');
         setSelectedIssuers('');
         title.textContent = 'Novo destino';
@@ -1071,7 +1094,7 @@ $transportLabels = [
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); syncServerPacsRequirement(); });
     if (serverPacs) serverPacs.addEventListener('change', syncSiteIdFromServer);
     if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
-    environment.addEventListener('change', syncEnvironment);
+    environment.addEventListener('change', () => { syncEnvironment(); syncTaskSiteAliasRequirement(); });
     enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
         button.addEventListener('click', () => {
@@ -1091,6 +1114,7 @@ $transportLabels = [
             transport.value = item.transport;
             environment.value = item.ambiente;
             if (serverPacs) serverPacs.value = item.servidor_pacs_id ? String(item.servidor_pacs_id) : '';
+            if (taskSiteAliasField) taskSiteAliasField.value = item.task_site_id_alias || '';
             secretInput.value = '';
             document.querySelectorAll('[data-secret-field]').forEach((input) => { input.value = ''; });
             document.getElementById('destination-timeout').value = item.timeout_seconds;

@@ -98,6 +98,7 @@ final class PhilipsNonDicomProductionDiagnostic
             }
             $result['tenant_pacs'] = $this->tenantPacsState($destinationResult, $server);
             $destinationResult['task_site_match'] = ($result['tenant_pacs']['task_site_id_match'] ?? 'NO') === 'YES';
+            $destinationResult['canonical_task_site_id_match'] = $result['tenant_pacs']['task_site_id_match'] ?? 'UNKNOWN';
             $result['destination_7'] = $destinationResult;
             $result['destination_7']['status'] = self::destinationGate($destinationResult, $server);
             $result['credential_chain'] = $this->credentialState($destinationResult, $environment);
@@ -170,6 +171,7 @@ final class PhilipsNonDicomProductionDiagnostic
             || ($destination['gateway_bridge'] ?? false) !== true
             || ($destination['credential_configured'] ?? false) !== true
             || ($destination['task_site_match'] ?? false) !== true
+            || ($destination['task_site_alias_valid'] ?? false) !== true
         ) {
             return 'BLOCKED';
         }
@@ -391,6 +393,7 @@ final class PhilipsNonDicomProductionDiagnostic
             : [];
         $serverId = (int) ($destination['servidor_pacs_id'] ?? 0);
         $taskSite = trim((string) ($submission['task_site_id'] ?? ''));
+        $taskSiteAlias = trim((string) ($destination['task_site_id_alias'] ?? ''));
         $share = trim((string) ($configuration['smb_share'] ?? $configuration['share'] ?? ''));
         return [
             'id' => (int) ($destination['id'] ?? 0),
@@ -407,6 +410,8 @@ final class PhilipsNonDicomProductionDiagnostic
             'smb_share_configured' => $share !== '',
             'task_site_value_present' => $taskSite !== '',
             'task_site_value' => $taskSite,
+            'task_site_alias_present' => $taskSiteAlias !== '',
+            'task_site_alias_valid' => preg_match('/^[A-Za-z0-9._-]{1,120}$/', $taskSiteAlias) === 1,
         ];
     }
 
@@ -421,6 +426,7 @@ final class PhilipsNonDicomProductionDiagnostic
                 'server_pacs_id' => 0,
                 'server_pacs_authorized' => 'NO',
                 'task_site_id_match' => 'UNKNOWN',
+                'canonical_task_site_id_match' => 'UNKNOWN',
             ];
         }
         if ($server === null) {
@@ -430,6 +436,7 @@ final class PhilipsNonDicomProductionDiagnostic
                 'server_pacs_id' => $serverId,
                 'server_pacs_authorized' => 'NO',
                 'task_site_id_match' => 'UNKNOWN',
+                'canonical_task_site_id_match' => 'UNKNOWN',
             ];
         }
         $serverName = trim((string) ($server['nome'] ?? ''));
@@ -442,6 +449,7 @@ final class PhilipsNonDicomProductionDiagnostic
             'server_pacs_active' => 'YES',
             'server_pacs_authorized' => 'YES',
             'task_site_id_match' => $match ? 'YES' : 'NO',
+            'canonical_task_site_id_match' => $match ? 'YES' : 'NO',
         ];
     }
 

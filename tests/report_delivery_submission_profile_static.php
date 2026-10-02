@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/app/autoload.php';
 
 function expect_profile(bool $condition, string $message): void
 {
@@ -31,6 +32,7 @@ foreach ([
     'validatePhilipsSubmissionConfiguration',
     'task_file_path',
     'task_site_id',
+    'task_site_id_alias',
     'task_document_name',
     'task_author_id',
     'task_delete_file',
@@ -72,6 +74,8 @@ expect_profile(
 );
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
+expect_profile(str_contains($producer, 'resolveTaskSiteId'), 'Package producer must resolve the controlled production alias explicitly');
+expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($producer, 'task_site_id_alias'), 'Alias selection must be scoped to the frozen controlled-production payload');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
 expect_profile(!str_contains($producer, "'task_author_humanname_family'")
@@ -107,6 +111,37 @@ expect_profile(str_contains($contract, 'Quando o valor é plano') && str_contain
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = file_get_contents($root . '/lang/' . ($locale === 'pt_BR' ? 'pt_BR' : $locale) . '.php');
     expect_profile(is_string($catalog) && substr_count($catalog, 'philips_non_dicom.profile_submission_document') === 1, "{$locale} must contain the profile translation");
+}
+
+$d6Context = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'manual_homologation',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(['task_site_id_alias' => 'MALICIOUS'], '2', $d6Context) === '2',
+    'D6 must retain its canonical task_site_id and ignore aliases'
+);
+$d7Context = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 7,
+    'ambiente' => 'producao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'controlled_production',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(['task_site_id_alias' => 'ORTHANC-CLIENTE-A'], 'Unicode — canonical', $d7Context) === 'ORTHANC-CLIENTE-A',
+    'D7 production must use only the frozen ASCII alias'
+);
+foreach ([[], ['task_site_id_alias' => ''], ['task_site_id_alias' => 'não-ascii']] as $invalidPayload) {
+    try {
+        \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId($invalidPayload, 'Unicode — canonical', $d7Context);
+        expect_profile(false, 'D7 production must fail closed without a valid alias');
+    } catch (\App\Services\PhilipsXmlFieldUnresolvedException) {
+        // Expected fail-closed behavior.
+    }
 }
 
 echo "REPORT_DELIVERY_SUBMISSION_PROFILE_STATIC_OK\n";

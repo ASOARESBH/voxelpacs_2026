@@ -17,6 +17,8 @@ use App\Helpers\DicomPersonName;
  */
 class ReportDeliveryRepository
 {
+    private ?bool $taskSiteAliasColumnAvailable = null;
+
     public function __construct(private PDO $pdo)
     {
     }
@@ -48,9 +50,11 @@ class ReportDeliveryRepository
     /** @return array<int, array<string, mixed>> */
     public function findActiveDestinationsByTransportAndEnvironment(int $tenantId, string $transport, string $environment): array
     {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome,
                     d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    {$taskSiteAliasSelect},
                     d.configuration_json, d.configuration_secret, d.timeout_seconds,
                     d.max_attempts, d.updated_at
              FROM pacs_report_delivery_destinations d
@@ -97,6 +101,7 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $eligibilityWhere = $onlyEligible && $requireReleaseTrigger
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
             : ($onlyEligible ? 'AND d.enabled = 1' : '');
@@ -107,7 +112,7 @@ class ReportDeliveryRepository
             : '';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, {$taskSiteAliasSelect}, d.timeout_seconds, d.max_attempts,
                     d.configuration_json{$secretColumn}
              FROM pacs_report_delivery_destinations d
              {$sourceJoin}
@@ -136,10 +141,12 @@ class ReportDeliveryRepository
     /** @return array<int, array<string, mixed>> */
     public function listDestinations(int $tenantId): array
     {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
             "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    {$taskSiteAliasSelect},
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
                     CASE WHEN COALESCE(d.configuration_secret, '') <> '' THEN 1 ELSE 0 END AS credential_configured,
@@ -161,8 +168,10 @@ class ReportDeliveryRepository
     /** @return array<string, mixed>|null */
     public function findDestination(int $destinationId, int $tenantId, bool $includeSecret = false): ?array
     {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $columns = $includeSecret ? 'd.*' :
             'd.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+             ' . $taskSiteAliasSelect . ',
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
              CASE WHEN COALESCE(d.configuration_secret, \'\') <> \'\' THEN 1 ELSE 0 END AS credential_configured';
@@ -250,6 +259,11 @@ class ReportDeliveryRepository
     {
         $name = trim((string) $data['nome']);
         $serverPacsId = $this->validateDestinationPacsServer($tenantId, $data);
+        $taskSiteAlias = $this->validatedTaskSiteAlias($data);
+        $hasTaskSiteAliasColumn = $this->hasTaskSiteAliasColumn();
+        if ($taskSiteAlias !== null && !$hasTaskSiteAliasColumn) {
+            throw new DomainException('A migration do alias técnico Philips ainda não foi aplicada.', 503);
+        }
         if ($destinationId) {
             $existing = $this->findDestination($destinationId, $tenantId, true);
             if (!$existing) {
@@ -270,6 +284,7 @@ class ReportDeliveryRepository
                 "UPDATE pacs_report_delivery_destinations SET
                     nome = :nome,
                     servidor_pacs_id = :servidor_pacs_id,
+                    " . ($hasTaskSiteAliasColumn ? 'task_site_id_alias = :task_site_id_alias,' : '') . "
                     transport = :transport,
                     ambiente = :ambiente,
                     enabled = :enabled,
@@ -287,6 +302,7 @@ class ReportDeliveryRepository
             $stmt->execute([
                 ':nome' => $name,
                 ':servidor_pacs_id' => $serverPacsId,
+                ...($hasTaskSiteAliasColumn ? [':task_site_id_alias' => $taskSiteAlias] : []),
                 ':transport' => $data['transport'],
                 ':ambiente' => $data['ambiente'],
                 ':enabled' => (int) $data['enabled'],
@@ -316,16 +332,17 @@ class ReportDeliveryRepository
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_destinations
-                (tenant_id, nome, servidor_pacs_id, transport, ambiente, enabled, disparar_na_liberacao,
+                (tenant_id, nome, servidor_pacs_id, " . ($hasTaskSiteAliasColumn ? 'task_site_id_alias, ' : '') . "transport, ambiente, enabled, disparar_na_liberacao,
                  configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by)
              VALUES
-                (:tenant_id, :nome, :servidor_pacs_id, :transport, :ambiente, :enabled, :disparar_na_liberacao,
+                (:tenant_id, :nome, :servidor_pacs_id, " . ($hasTaskSiteAliasColumn ? ':task_site_id_alias, ' : '') . ":transport, :ambiente, :enabled, :disparar_na_liberacao,
                  :configuration_json, :configuration_secret, :timeout_seconds, :max_attempts, :created_by)"
         );
         $stmt->execute([
             ':tenant_id' => $tenantId,
             ':nome' => $name,
             ':servidor_pacs_id' => $serverPacsId,
+            ...($hasTaskSiteAliasColumn ? [':task_site_id_alias' => $taskSiteAlias] : []),
             ':transport' => $data['transport'],
             ':ambiente' => $data['ambiente'],
             ':enabled' => (int) $data['enabled'],
@@ -341,6 +358,45 @@ class ReportDeliveryRepository
         $this->replaceDestinationSources($savedId, $tenantId, $data);
 
         return $savedId;
+    }
+
+    private function hasTaskSiteAliasColumn(): bool
+    {
+        if ($this->taskSiteAliasColumnAvailable === null) {
+            try {
+                $this->taskSiteAliasColumnAvailable = SqlHelper::hasColumn(
+                    $this->pdo,
+                    'pacs_report_delivery_destinations',
+                    'task_site_id_alias'
+                );
+            } catch (\Throwable) {
+                $this->taskSiteAliasColumnAvailable = false;
+            }
+        }
+
+        return $this->taskSiteAliasColumnAvailable;
+    }
+
+    private function taskSiteAliasSelect(): string
+    {
+        return $this->hasTaskSiteAliasColumn()
+            ? 'd.task_site_id_alias'
+            : 'NULL AS task_site_id_alias';
+    }
+
+    /** @param array<string,mixed> $data */
+    private function validatedTaskSiteAlias(array $data): ?string
+    {
+        $raw = $data['task_site_id_alias'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') {
+            return null;
+        }
+        $alias = trim((string) $raw);
+        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) !== 1) {
+            throw new DomainException('O alias técnico Philips deve usar somente ASCII, letras, números, ponto, hífen ou sublinhado, com até 120 caracteres.');
+        }
+
+        return $alias;
     }
 
     /** @param array<string,mixed> $data */

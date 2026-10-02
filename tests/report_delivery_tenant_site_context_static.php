@@ -20,6 +20,7 @@ foreach ([
 
 foreach ([
     "'task_site_id'] = \$serverName",
+    "'task_site_id_alias' => \$isControlledProductionSubmission ? \$taskSiteAlias : null",
     "findTenantPacsServer(\$tenantId, \$serverPacsId)",
     "'servidor_pacs_id' => \$serverPacsId",
     "\$isPhilipsSubmissionDocument && \$serverPacsId === null",
@@ -40,6 +41,7 @@ foreach ([
     'const serverPacsNames =',
     'function syncSiteIdFromServer()',
     'serverPacs.addEventListener(\'change\', syncSiteIdFromServer)',
+    'task-site-id-alias',
 ] as $needle) {
     if (!str_contains($view, $needle)) {
         throw new RuntimeException('Contexto tenant/servidor PACS ausente na UI.');
@@ -51,6 +53,9 @@ foreach ([
     'philips_non_dicom.task_site_id_server_title',
     'philips_non_dicom.task_site_id_select_placeholder',
     'philips_non_dicom.task_site_id_server_required',
+    'philips_non_dicom.task_site_id_alias_required',
+    'philips_non_dicom.task_site_id_alias_invalid',
+    'philips_non_dicom.task_site_id_alias_production_only',
     'philips_non_dicom.tenant_label',
     'philips_non_dicom.tenant_help',
 ] as $key) {
@@ -63,7 +68,8 @@ foreach ([
 }
 
 foreach ([
-    '`task_site_id` | Nome do servidor PACS ativo',
+    '`task_site_id` | Nome canônico do servidor PACS ativo',
+    '`task_site_id_alias` | Alias técnico ASCII',
     'O tenant não é gravado como um campo clínico do XML',
 ] as $needle) {
     if (!str_contains($contract, $needle)) {

@@ -644,6 +644,7 @@ class ReportDeliveryController extends Controller
                     'institution_names' => array_key_exists('institution_names', $_POST),
                     'issuer_of_patient_ids' => array_key_exists('issuer_of_patient_ids', $_POST),
                     'servidor_pacs_id' => array_key_exists('servidor_pacs_id', $_POST),
+                    'task_site_id_alias' => array_key_exists('task_site_id_alias', $_POST),
                 ],
                 'configuration_json_state' => $this->saveDiagnosticJsonState($rawConfiguration, $configuration),
                 'delivery_profile' => $profileState,
@@ -714,6 +715,7 @@ class ReportDeliveryController extends Controller
         $environment = (string) ($_POST['ambiente'] ?? 'homologacao');
         $configuration = trim((string) ($_POST['configuration_json'] ?? ''));
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
+        $taskSiteAlias = trim((string) ($_POST['task_site_id_alias'] ?? ''));
         $serverPacsInput = trim((string) ($_POST['servidor_pacs_id'] ?? ''));
         if ($serverPacsInput !== '' && !ctype_digit($serverPacsInput)) {
             throw new DomainException('Selecione um servidor PACS válido.');
@@ -796,6 +798,16 @@ class ReportDeliveryController extends Controller
         }
         $isPhilipsSubmissionDocument = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
+        $isControlledProductionSubmission = $isPhilipsSubmissionDocument && $environment === 'producao';
+        if ($taskSiteAlias !== '' && preg_match('/^[A-Za-z0-9._-]{1,120}$/', $taskSiteAlias) !== 1) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_invalid'));
+        }
+        if ($taskSiteAlias !== '' && !$isControlledProductionSubmission) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_production_only'));
+        }
+        if ($isControlledProductionSubmission && $taskSiteAlias === '') {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_required'));
+        }
         if ($isPhilipsSubmissionDocument && $serverPacsId === null) {
             throw new DomainException(t('philips_non_dicom.task_site_id_server_required'));
         }
@@ -822,6 +834,7 @@ class ReportDeliveryController extends Controller
         return [
             'nome' => $name,
             'servidor_pacs_id' => $serverPacsId,
+            'task_site_id_alias' => $isControlledProductionSubmission ? $taskSiteAlias : null,
             'transport' => $transport,
             'ambiente' => $environment,
             'enabled' => $enabled,
