@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-namespace App\Diagnostics;
+namespace App\Services;
 
-use App\Services\PhilipsFolderDeliveryService;
-use App\Services\PhilipsSubmissionPackageProducer;
 use PDO;
 use RuntimeException;
 use Throwable;

@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Core\Database;
-use App\Diagnostics\PhilipsSubmissionNoSendDiagnostic;
 use App\Services\PhilipsSubmissionDocumentGenerator;
 use App\Services\PhilipsSubmissionMetadataResolver;
+use App\Services\PhilipsSubmissionNoSendDiagnostic;
 use App\Services\PhilipsSubmissionPackageProducer;
 use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryRequestSnapshotService;

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
-$diagnostic = (string) file_get_contents($root . '/app/Diagnostics/PhilipsSubmissionNoSendDiagnostic.php');
+$diagnostic = (string) file_get_contents($root . '/app/Services/PhilipsSubmissionNoSendDiagnostic.php');
 $cli = (string) file_get_contents($root . '/bin/philips_nondicom_submission_no_send.php');
 $producer = (string) file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
 
