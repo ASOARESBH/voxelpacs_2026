@@ -1175,6 +1175,7 @@ $transportLabels = [
                 transport: transport.value,
                 environment: environment.value,
                 server_pacs_id: serverPacs && serverPacs.value !== '' ? Number(serverPacs.value) : null,
+                task_site_id_alias: taskSiteAliasField ? taskSiteAliasField.value.trim() : '',
                 enabled: enabled.checked,
                 auto_trigger: document.getElementById('destination-release').checked,
             };
@@ -1184,7 +1185,9 @@ $transportLabels = [
             feedback.classList.remove('d-none');
             return;
         }
-        const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+        const body = new FormData(form);
+        if (taskSiteAliasField) body.set('task_site_id_alias', taskSiteAliasField.value.trim());
+        const response = await fetch(form.action, { method: 'POST', body, credentials: 'same-origin' });
         const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
         feedback.className = 'alert ' + (result.success ? 'alert-success' : 'alert-danger');
         feedback.textContent = result.message || 'Operação concluída.';
