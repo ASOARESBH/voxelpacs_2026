@@ -72,6 +72,14 @@ expect_profile(
     str_contains($view, "if (key.startsWith('task_')) delete config[key];"),
     'View must remove legacy task fields from the configuration root before serialization'
 );
+expect_profile(
+    str_contains($view, "body.set('task_site_id_alias', taskSiteAliasField.value.trim())"),
+    'View must submit the technical alias explicitly, including when the browser omits a disabled control'
+);
+expect_profile(
+    str_contains($view, "task_site_id_alias: taskSiteAliasField ? taskSiteAliasField.value.trim() : ''"),
+    'View capture diagnostics must expose only the sanitized alias field'
+);
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, 'resolveTaskSiteId'), 'Package producer must resolve the controlled production alias explicitly');
