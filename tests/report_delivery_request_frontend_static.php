@@ -26,6 +26,9 @@ foreach (['prepare', 'approve', 'materialize', 'arm'] as $stage) {
 }
 
 expect_frontend(str_contains($requestBlock, "requestBase + '/prepare'"), 'Prepare must use the existing prepare route');
+expect_frontend(str_contains($requestBlock, "requestBase + '/active?'"), 'Frontend must resume an existing active Request read-only');
+expect_frontend(str_contains($requestBlock, 'stageIndexes = { prepared: 1, approved: 2, materialized: 3, armed: 4'), 'Frontend must map active Request status to the next phase');
+expect_frontend(str_contains($requestBlock, 'resumeActiveRequest();'), 'Frontend must attempt active Request resumption on load');
 expect_frontend(str_contains($requestBlock, "requestPaths = { approve: 'approve', materialize: 'materialize', arm: 'arm' }"), 'Transition paths must use the existing routes');
 expect_frontend(substr_count($requestBlock, "method: 'POST'") === 1, 'Frontend executor must use POST for the request phases');
 expect_frontend(str_contains($requestBlock, "credentials: 'same-origin'"), 'Frontend executor must preserve the authenticated session');

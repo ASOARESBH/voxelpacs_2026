@@ -293,6 +293,31 @@ final class ReportDeliveryRequestService
         return $this->publicRequest($request);
     }
 
+    /**
+     * Retoma uma Request ativa pela identidade dos campos do control-plane.
+     * Esta operação é somente leitura e nunca cria, aprova ou altera uma Request.
+     *
+     * @param array<string,mixed> $input
+     * @return array<string,mixed>|null
+     */
+    public function findActiveForInput(int $tenantId, array $input, int $actorId): ?array
+    {
+        $this->requireEnabled();
+        $request = $this->resolveAndValidate($tenantId, array_replace($input, [
+            'request_uuid' => $this->newUuidV4(),
+            'request_reason' => trim((string) ($input['request_reason'] ?? '')) !== ''
+                ? (string) $input['request_reason']
+                : 'resume active request',
+            'confirm_production_prepare' => '1',
+        ]), $actorId);
+        $active = $this->repository->findActiveIdentity($tenantId, $request['active_identity_key']);
+        if (!$active) {
+            return null;
+        }
+        $stored = $this->repository->findRequest($tenantId, (int) $active['id']);
+        return $stored ? $this->publicRequest($stored) : null;
+    }
+
     /** @param array<string,mixed> $input */
     private function resolveAndValidate(int $tenantId, array $input, int $actorId): array
     {

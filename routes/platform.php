@@ -85,6 +85,7 @@ Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend'
 Router::post('/platform/negocios/{id}/reports/{reportId}/versions/{version}/pdf-revisions/visual-renderer-correction', 'Platform\ReportPdfRevisionController@createVisualRendererCorrection');
 
 // Delivery Request — control-plane aditivo; feature flag desligada por padrão.
+Router::get('/platform/negocios/{id}/report-delivery/requests/active', 'Platform\ReportDeliveryRequestController@active');
 Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
 Router::post('/platform/negocios/{id}/report-delivery/requests/prepare', 'Platform\ReportDeliveryRequestController@prepare');
 Router::post('/platform/negocios/{id}/report-delivery/requests/recover', 'Platform\ReportDeliveryRequestController@recover');
