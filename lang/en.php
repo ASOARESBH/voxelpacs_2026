@@ -1110,6 +1110,7 @@ return [
     'delivery_hub.destination.producao_ativado' => 'Production destination activated with explicit confirmation.',
     'delivery_hub.destination.homologacao_ativado' => 'Homologation destination activated.',
     'delivery_hub.destination.desativado_salvo' => 'Destination saved as disabled.',
+    'delivery_hub.tabs.configuracao_destinos' => 'Configuration and destinations', 'delivery_hub.tabs.jobs_tecnicos' => 'Technical jobs', 'delivery_hub.tabs.request_control_plane' => 'Delivery Request — control plane',
     'delivery_hub.request.titulo' => 'Delivery Request — control plane',
     'delivery_hub.request.ajuda' => 'Runs the four official Delivery Request phases sequentially for an explicit identity. This screen does not start the worker or transmission.',
     'delivery_hub.request.report_id' => 'Report ID',

@@ -1134,6 +1134,7 @@ return [
     'delivery_hub.destination.producao_ativado' => 'Destino de produção ativado com confirmação explícita.',
     'delivery_hub.destination.homologacao_ativado' => 'Destino de homologação ativado.',
     'delivery_hub.destination.desativado_salvo' => 'Destino salvo como desativado.',
+    'delivery_hub.tabs.configuracao_destinos' => 'Configuração e destinos', 'delivery_hub.tabs.jobs_tecnicos' => 'Jobs técnicos', 'delivery_hub.tabs.request_control_plane' => 'Delivery Request — control-plane',
     'delivery_hub.request.titulo' => 'Delivery Request — control-plane',
     'delivery_hub.request.ajuda' => 'Executa sequencialmente as quatro fases oficiais da Delivery Request para uma identidade explícita. O worker e a transmissão não são iniciados por esta tela.',
     'delivery_hub.request.report_id' => 'Report ID',
