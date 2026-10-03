@@ -6,6 +6,8 @@ $root = dirname(__DIR__);
 $autoload = $root . '/vendor/autoload.php';
 if (is_file($autoload)) {
     require_once $autoload;
+} else {
+    require_once $root . '/app/autoload.php';
 }
 
 $dispatcher = $root . '/app/Views/reports/pdf.php';
@@ -52,11 +54,12 @@ foreach ([
     'AQUI FOI INSERIDA UMA OBSERVAÇÃO PELO MÉDICO.',
     'Medida máxima:',
     '14 mm',
-    'margin-bottom: 28px',
     'Parágrafo com espaçamento clínico preservado.',
 ] as $expected) {
     $require(strpos($html, $expected) !== false, "PDF não preservou o conteúdo atual do editor: {$expected}");
 }
+$require(strpos($html, 'margin-bottom: 28px') === false,
+    'PDF não deve transportar margem inline colada pelo conteúdo do editor.');
 
 foreach ([
     'CONTEÚDO ANTIGO DA SEÇÃO — NÃO IMPRIMIR',

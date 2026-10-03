@@ -10,10 +10,31 @@
 /** @var array<string,int> $stats */
 /** @var string $csrfToken */
 /** @var array<int,string> $transports */
+/** @var array<int,array{id:int,nome:string}> $pacsServers */
 /** @var array<int,string> $institutionNames */
 /** @var array<int,array{issuer:string,normalized:string}> $issuers */
 
 $escape = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$pacsServerNames = [];
+foreach ($pacsServers as $pacsServer) {
+    $pacsServerNames[(int) ($pacsServer['id'] ?? 0)] = (string) ($pacsServer['nome'] ?? '');
+}
+$requestTargets = [];
+foreach ($destinations as $destination) {
+    $destinationId = (int) ($destination['id'] ?? 0);
+    $transport = (string) ($destination['transport'] ?? '');
+    $environment = (string) ($destination['ambiente'] ?? '');
+    if ($transport !== 'philips_non_dicom' || (int) ($destination['enabled'] ?? 0) !== 1) {
+        continue;
+    }
+    if ($destinationId === 6 && $environment === 'homologacao') {
+        $requestTargets[] = ['id' => 6, 'dispatch_mode' => 'manual_homologation', 'environment' => 'homologacao', 'label' => 'Destination 6 — Philips Non-DICOM — Homologação'];
+    }
+    if ($destinationId === 7 && $environment === 'producao' && (int) ($destination['servidor_pacs_id'] ?? 0) > 0) {
+        $requestTargets[] = ['id' => 7, 'dispatch_mode' => 'controlled_production', 'environment' => 'producao', 'label' => 'Destination 7 — Philips Non-DICOM — Produção controlada'];
+    }
+}
+$requestTarget = $requestTargets[0] ?? ['id' => 0, 'dispatch_mode' => '', 'environment' => '', 'label' => 'Nenhum Destination controlado elegível'];
 $transportLabels = [
     'dicom_pdf' => 'DICOM Encapsulated PDF',
     'dicom_sr' => 'DICOM Structured Report',
@@ -37,6 +58,118 @@ $transportLabels = [
 
     <div class="alert alert-warning border-warning-subtle" role="alert">
         <strong>Modo seguro:</strong> destinos novos iniciam desativados e em homologação. A configuração não envia laudos por si só; a ativação depende do worker e de homologação técnica por cliente.
+    </div>
+
+    <div class="card border-primary shadow-sm mb-4" id="delivery-request-card">
+        <div class="card-header bg-primary-subtle"><h2 class="h5 mb-0"><i class="fa fa-list-check me-1"></i> <?= $escape(t('delivery_hub.request.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.request.ajuda')) ?></p>
+            <form id="delivery-request-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="destination_id" id="delivery-request-destination-id" value="<?= (int) $requestTarget['id'] ?>">
+                <input type="hidden" name="delivery_profile" value="submission_document">
+                <input type="hidden" name="dispatch_mode" id="delivery-request-dispatch-mode" value="<?= $escape($requestTarget['dispatch_mode']) ?>">
+                <input type="hidden" name="confirm_production_prepare" id="delivery-request-confirm-production" value="0">
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-id"><?= $escape(t('delivery_hub.request.report_id')) ?></label>
+                    <input class="form-control" id="delivery-request-report-id" name="report_id" type="number" min="1" value="348" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-version"><?= $escape(t('delivery_hub.request.report_version')) ?></label>
+                    <input class="form-control" id="delivery-request-report-version" name="report_version" type="number" min="1" value="4" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-pdf-revision"><?= $escape(t('delivery_hub.request.pdf_revision')) ?></label>
+                    <input class="form-control" id="delivery-request-pdf-revision" name="pdf_revision_id" type="number" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-target"><?= $escape(t('delivery_hub.request.destination')) ?></label>
+                    <select class="form-select" id="delivery-request-target" <?= $requestTargets === [] ? 'disabled' : '' ?>>
+                        <?php if ($requestTargets === []): ?>
+                            <option value="0"><?= $escape($requestTarget['label']) ?></option>
+                        <?php else: ?>
+                            <?php foreach ($requestTargets as $target): ?>
+                                <option value="<?= (int) $target['id'] ?>" data-dispatch-mode="<?= $escape($target['dispatch_mode']) ?>" data-environment="<?= $escape($target['environment']) ?>" data-label="<?= $escape($target['label']) ?>" <?= (int) $target['id'] === (int) $requestTarget['id'] ? 'selected' : '' ?>><?= $escape($target['label']) ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.profile')) ?></label>
+                    <div class="form-control-plaintext"><code>submission_document</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.transport')) ?></label>
+                    <div class="form-control-plaintext"><code>philips_non_dicom</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.environment')) ?></label>
+                    <div class="form-control-plaintext"><code id="delivery-request-environment"><?= $escape($requestTarget['environment'] !== '' ? $requestTarget['environment'] : '—') ?></code></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="delivery-request-reason"><?= $escape(t('delivery_hub.request.reason')) ?></label>
+                    <input class="form-control" id="delivery-request-reason" name="request_reason" maxlength="120" value="<?= $escape(t('delivery_hub.request.reason_default')) ?>" required>
+                </div>
+                <div class="col-12">
+                    <div class="small text-muted" id="delivery-request-state"><?= $escape(t('delivery_hub.request.status_initial')) ?></div>
+                    <div class="small text-muted d-flex flex-wrap gap-3 mt-1" id="delivery-request-identifiers">
+                        <span><?= $escape(t('delivery_hub.request.request_id')) ?>: <code id="delivery-request-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.outbox_id')) ?>: <code id="delivery-request-outbox-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.job_id')) ?>: <code id="delivery-request-job-id">—</code></span>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary" data-request-stage="prepare"><?= $escape(t('delivery_hub.request.prepare')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="approve" disabled><?= $escape(t('delivery_hub.request.approve')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="materialize" disabled><?= $escape(t('delivery_hub.request.materialize')) ?></button>
+                    <button type="button" class="btn btn-outline-danger" data-request-stage="arm" disabled><?= $escape(t('delivery_hub.request.arm')) ?></button>
+                </div>
+            </form>
+            <div id="delivery-request-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
+        </div>
+    </div>
+
+    <div class="card border-danger shadow-sm mb-4" id="pdf-revision-card">
+        <div class="card-header bg-danger-subtle"><h2 class="h5 mb-0"><i class="fa fa-file-pdf me-1"></i> <?= $escape(t('delivery_hub.pdf_revision.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.pdf_revision.ajuda')) ?></p>
+            <form id="pdf-revision-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="confirm_visual_renderer_correction" value="1">
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-id"><?= $escape(t('delivery_hub.pdf_revision.report_id')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-id" name="report_id" type="number" min="1" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-version"><?= $escape(t('delivery_hub.pdf_revision.report_version')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-version" name="report_version" type="number" min="1" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="pdf-revision-source-kind"><?= $escape(t('delivery_hub.pdf_revision.source_kind')) ?></label>
+                    <select class="form-select" id="pdf-revision-source-kind" name="source_kind" required>
+                        <option value="historical_report_version" selected><?= $escape(t('delivery_hub.pdf_revision.source_historical')) ?></option>
+                        <option value="current_report_body"><?= $escape(t('delivery_hub.pdf_revision.source_current')) ?></option>
+                    </select>
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.source_help')) ?></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="pdf-revision-public-token"><?= $escape(t('delivery_hub.pdf_revision.public_link')) ?></label>
+                    <input class="form-control font-monospace" id="pdf-revision-public-token" name="report_public_token" maxlength="512" required placeholder="<?= $escape(t('delivery_hub.pdf_revision.public_link_placeholder')) ?>">
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.public_link_help')) ?></div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input ms-0 me-2" id="pdf-revision-confirm" type="checkbox" required>
+                        <label class="form-check-label" for="pdf-revision-confirm"><?= $escape(t('delivery_hub.pdf_revision.confirm_label')) ?></label>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                    <button type="submit" class="btn btn-danger" id="pdf-revision-submit"><i class="fa fa-wand-magic-sparkles me-1"></i><?= $escape(t('delivery_hub.pdf_revision.submit')) ?></button>
+                    <a id="pdf-revision-open-link" class="btn btn-outline-success d-none" target="_blank" rel="noopener noreferrer"><?= $escape(t('delivery_hub.pdf_revision.open')) ?></a>
+                </div>
+            </form>
+            <div id="pdf-revision-feedback" class="d-none alert mt-3 mb-0" role="alert" aria-live="polite"></div>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">
@@ -92,6 +225,16 @@ $transportLabels = [
                                     <option value="producao">Produção</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label class="form-label" for="destination-server-pacs"><?= $escape(t('delivery_hub.destination.servidor_pacs')) ?></label>
+                            <select class="form-select" id="destination-server-pacs" name="servidor_pacs_id">
+                                <option value=""><?= $escape(t('delivery_hub.destination.servidor_pacs_sem_vinculo')) ?></option>
+                                <?php foreach ($pacsServers as $pacsServer): ?>
+                                    <option value="<?= (int) $pacsServer['id'] ?>"><?= $escape($pacsServer['nome']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text"><?= $escape(t('delivery_hub.destination.servidor_pacs_ajuda')) ?></div>
                         </div>
                         <div class="border rounded-3 bg-light-subtle p-3 mt-3" id="institution-routing">
                             <h3 class="h6 mb-1"><i class="fa fa-fingerprint me-1"></i> Issuers dos servidores PACS</h3>
@@ -213,9 +356,26 @@ $transportLabels = [
                                 <div class="alert alert-warning small"><?= $escape(t('philips_non_dicom.xml_ajuda')) ?></div>
                                 <div class="row g-3">
                                     <div class="col-12"><label class="form-label" for="nondicom-task-file-path"><?= $escape(t('philips_non_dicom.task_file_path_label')) ?></label><input class="form-control" id="nondicom-task-file-path" data-submission-field data-field="task_file_path" data-required placeholder="<?= $escape(t('philips_non_dicom.task_file_path_placeholder')) ?>"><div class="form-text"><?= $escape(t('philips_non_dicom.task_file_path_help')) ?></div></div>
-                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label><input class="form-control" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required></div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="nondicom-task-site-id"><?= $escape(t('philips_non_dicom.task_site_id_label')) ?></label>
+                                        <select class="form-select" id="nondicom-task-site-id" data-submission-field data-field="task_site_id" data-required disabled aria-describedby="nondicom-task-site-id-help">
+                                            <option value=""><?= $escape(t('philips_non_dicom.task_site_id_select_placeholder')) ?></option>
+                                            <?php foreach ($pacsServers as $pacsServer): ?>
+                                                <?php $pacsServerName = trim((string) ($pacsServer['nome'] ?? '')); ?>
+                                                <?php if ($pacsServerName === ''): continue; endif; ?>
+                                                <option value="<?= $escape($pacsServerName) ?>" data-server-pacs-id="<?= (int) ($pacsServer['id'] ?? 0) ?>"><?= $escape($pacsServerName) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="form-text" id="nondicom-task-site-id-help"><?= $escape(t('philips_non_dicom.task_site_id_help')) ?></div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label" for="nondicom-task-site-id-alias"><?= $escape(t('philips_non_dicom.task_site_id_alias_label')) ?></label>
+                                        <input class="form-control" id="nondicom-task-site-id-alias" name="task_site_id_alias" data-alias-required maxlength="120" pattern="[A-Za-z0-9._-]{1,120}" autocomplete="off" aria-describedby="nondicom-task-site-id-alias-help">
+                                        <div class="form-text" id="nondicom-task-site-id-alias-help"><?= $escape(t('philips_non_dicom.task_site_id_alias_help')) ?></div>
+                                    </div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-tenant-context"><?= $escape(t('philips_non_dicom.tenant_label')) ?></label><input class="form-control" id="nondicom-tenant-context" value="<?= $escape(($tenant['nome'] ?? $tenant['razao_social'] ?? '') . ' (#' . (int) ($tenant['id'] ?? 0) . ')') ?>" readonly><div class="form-text"><?= $escape(t('philips_non_dicom.tenant_help')) ?></div></div>
                                     <div class="col-12"><div class="form-text"><?= $escape(t('philips_non_dicom.task_author_source_help')) ?></div></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type"><?= $escape(t('philips_non_dicom.task_document_type_label')) ?></label><input class="form-control" id="nondicom-task-type" data-submission-field data-field="task_document_type" value="11502-2"></div>
@@ -257,14 +417,55 @@ $transportLabels = [
                                     <?php $destinationInstitutions = str_replace('||', ', ', (string) ($destination['institution_names'] ?? '')); ?>
                                     <?php $destinationIssuers = str_replace('||', ', ', (string) ($destination['issuers'] ?? '')); ?>
                                     <td class="small">
+                                        <?php $destinationServerId = (int) ($destination['servidor_pacs_id'] ?? 0); ?>
+                                        <?php if ($destinationServerId > 0 && isset($pacsServerNames[$destinationServerId])): ?><div><strong><?= $escape(t('delivery_hub.destination.servidor_pacs_curto')) ?>:</strong> <?= $escape($pacsServerNames[$destinationServerId]) ?></div><?php endif; ?>
                                         <?php if ($destinationIssuers !== ''): ?><div><strong>Issuer:</strong> <?= $escape($destinationIssuers) ?></div><?php endif; ?>
                                         <?php if ($destinationInstitutions !== ''): ?><div><strong>Fallback:</strong> <?= $escape($destinationInstitutions) ?></div><?php endif; ?>
-                                        <?php if ($destinationIssuers === '' && $destinationInstitutions === ''): ?><span class="text-warning">Sem origem vinculada</span><?php endif; ?>
+                                        <?php if ($destinationIssuers === '' && $destinationInstitutions === '' && $destinationServerId <= 0): ?><span class="text-warning"><?= $escape(t('delivery_hub.destination.sem_origem_vinculada')) ?></span><?php endif; ?>
                                     </td>
                                     <td><?= $escape($transportLabels[$destination['transport']] ?? $destination['transport']) ?></td>
                                     <td><span class="badge <?= $destination['ambiente'] === 'producao' ? 'text-bg-dark' : 'text-bg-info' ?>"><?= $escape($destination['ambiente']) ?></span></td>
                                     <td><?= !empty($destination['enabled']) ? '<span class="badge text-bg-success">Habilitado</span>' : '<span class="badge text-bg-secondary">Desativado</span>' ?></td>
-                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?></td>
+                                    <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary edit-destination" data-destination="<?= $json ?>">Editar</button><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'homologacao'): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb" class="d-inline smb-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_test" value="1"><button type="submit" class="btn btn-sm btn-outline-success ms-1"><?= $escape(t('philips_non_dicom.testar_smb')) ?></button></form><?php endif; ?><?php if (($destination['transport'] ?? '') === 'philips_non_dicom' && ($destination['ambiente'] ?? '') === 'producao' && !empty($destination['enabled'])): ?><form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/destinations/<?= (int) $destination['id'] ?>/test-smb-readonly" class="d-inline smb-readonly-test-form"><input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_smb_readonly" value="1"><button type="submit" class="btn btn-sm btn-outline-warning ms-1"><?= $escape(t('philips_non_dicom.testar_smb_readonly')) ?></button></form><?php endif; ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div><h2 class="h5 mb-0">Jobs técnicos recentes</h2><div class="small text-muted">Estados operacionais do tenant; nenhuma ação é executada automaticamente.</div></div>
+                    <span class="badge text-bg-secondary"><?= count($jobs) ?></span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead><tr><th>Job</th><th>Destino</th><th>Report/version</th><th>Transporte</th><th>Status</th><th class="text-end">Ações administrativas</th></tr></thead>
+                        <tbody>
+                            <?php if (!$jobs): ?><tr><td colspan="6" class="text-center text-muted py-4">Nenhum job técnico recente.</td></tr><?php endif; ?>
+                            <?php foreach ($jobs as $job): ?>
+                                <?php $jobStatus = (string) ($job['status'] ?? ''); $jobId = (int) ($job['id'] ?? 0); ?>
+                                <tr>
+                                    <td><code>#<?= $jobId ?></code><div class="small text-muted">Tentativas: <?= (int) ($job['attempt_count'] ?? 0) ?></div></td>
+                                    <td><?= $escape((string) ($job['destination_name'] ?? '—')) ?></td>
+                                    <td><?= (int) ($job['report_id'] ?? 0) ?>/<?= (int) ($job['report_version'] ?? 0) ?></td>
+                                    <td><code><?= $escape((string) ($job['transport'] ?? '—')) ?></code></td>
+                                    <td><span class="badge text-bg-<?= $jobStatus === 'processing' ? 'warning' : ($jobStatus === 'delivered' ? 'success' : 'secondary') ?>"><?= $escape($jobStatus !== '' ? $jobStatus : 'unknown') ?></span></td>
+                                    <td class="text-end">
+                                        <?php if ($jobStatus === 'processing' && $jobId > 0): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/recover-stale" class="d-inline stale-action-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_recover_stale" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning"><?= $escape(t('delivery_hub.released.recuperar_lease')) ?></button>
+                                            </form>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/quarantine-stale" class="d-inline stale-action-form ms-1">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_quarantine_stale" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"><?= $escape(t('delivery_hub.released.quarentenar_lease')) ?></button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span class="text-muted small">Sem ação automática</span>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -363,6 +564,9 @@ $transportLabels = [
     const feedback = document.getElementById('delivery-feedback');
     const transport = document.getElementById('destination-transport');
     const environment = document.getElementById('destination-environment');
+    const serverPacs = document.getElementById('destination-server-pacs');
+    const siteIdField = document.getElementById('nondicom-task-site-id');
+    const taskSiteAliasField = document.getElementById('nondicom-task-site-id-alias');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -376,6 +580,7 @@ $transportLabels = [
     const knownKeys = ['host', 'port', 'called_ae', 'calling_ae', 'patient_id_normalization', 'use_tls', 'sending_application', 'sending_facility', 'receiving_application', 'receiving_facility', 'url', 'auth_type', 'protocol', 'remote_directory', 'username', 'delivery_profile', 'gateway_bridge', 'transport_protocol', 'smb_share', 'smb_username', 'philips_submission'];
     const submissionSettings = document.getElementById('nondicom-submission-settings');
     const submissionProfile = document.getElementById('nondicom-delivery-profile');
+    const serverPacsNames = <?= json_encode($pacsServerNames, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const philipsFolderFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::enabled() ? 'true' : 'false' ?>;
     const philipsNonDicomFeatureEnabled = <?= \App\Services\PhilipsFolderDeliveryService::nonDicomEnabled() ? 'true' : 'false' ?>;
     const guideText = {
@@ -428,8 +633,13 @@ $transportLabels = [
         const submissionActive = transport.value === 'philips_non_dicom' && submissionProfile && submissionProfile.value === 'submission_document';
         if (submissionSettings) {
             submissionSettings.classList.toggle('d-none', !submissionActive);
-            submissionSettings.querySelectorAll('[data-required]').forEach((input) => { input.required = submissionActive; });
+            submissionSettings.querySelectorAll('[data-required]').forEach((input) => {
+                input.required = input.hasAttribute('data-alias-required')
+                    ? submissionActive && environment.value === 'producao'
+                    : submissionActive;
+            });
         }
+        syncTaskSiteAliasRequirement();
         populateActiveFields();
     }
 
@@ -445,6 +655,32 @@ $transportLabels = [
                 else input.value = value;
             });
         });
+        syncSiteIdFromServer();
+    }
+
+    function syncSiteIdFromServer() {
+        if (!serverPacs || !siteIdField) return;
+        const serverName = serverPacs.value !== '' ? String(serverPacsNames[serverPacs.value] || '') : '';
+        if (serverName !== '') {
+            siteIdField.value = serverName;
+            siteIdField.disabled = true;
+            siteIdField.title = <?= json_encode(t('philips_non_dicom.task_site_id_server_title'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            return;
+        }
+        siteIdField.value = '';
+        siteIdField.disabled = true;
+        siteIdField.removeAttribute('title');
+    }
+
+    function syncTaskSiteAliasRequirement() {
+        if (!taskSiteAliasField) return;
+        const active = transport.value === 'philips_non_dicom'
+            && submissionProfile
+            && submissionProfile.value === 'submission_document'
+            && environment.value === 'producao';
+        taskSiteAliasField.required = active;
+        taskSiteAliasField.disabled = !active;
+        if (!active) taskSiteAliasField.value = '';
     }
 
     function setSelectedInstitutions(rawNames) {
@@ -463,6 +699,12 @@ $transportLabels = [
         productionConfirmationBox.classList.toggle('d-none', !confirmationRequired);
         productionConfirmation.required = confirmationRequired;
         if (!production) productionConfirmation.checked = false;
+        syncServerPacsRequirement();
+    }
+
+    function syncServerPacsRequirement() {
+        if (!serverPacs) return;
+        serverPacs.required = environment.value === 'producao' && transport.value === 'philips_non_dicom';
     }
 
     function serializeConfiguration() {
@@ -501,12 +743,246 @@ $transportLabels = [
         form.action = baseAction;
         configInput.value = '{}';
         secretInput.value = '';
+        if (serverPacs) serverPacs.value = '';
+        if (taskSiteAliasField) taskSiteAliasField.value = '';
         setSelectedInstitutions('');
         setSelectedIssuers('');
         title.textContent = 'Novo destino';
         cancel.classList.add('d-none');
         renderTransportFields();
         syncEnvironment();
+    }
+
+    const requestForm = document.getElementById('delivery-request-form');
+    if (requestForm) {
+        const requestButtons = Array.from(requestForm.querySelectorAll('[data-request-stage]'));
+        const requestFeedback = document.getElementById('delivery-request-feedback');
+        const requestState = document.getElementById('delivery-request-state');
+        const requestIdOutput = document.getElementById('delivery-request-id');
+        const outboxIdOutput = document.getElementById('delivery-request-outbox-id');
+        const jobIdOutput = document.getElementById('delivery-request-job-id');
+        const requestTargetSelect = document.getElementById('delivery-request-target');
+        const requestDestinationId = document.getElementById('delivery-request-destination-id');
+        const requestDispatchMode = document.getElementById('delivery-request-dispatch-mode');
+        const requestEnvironment = document.getElementById('delivery-request-environment');
+        const requestProductionConfirmation = document.getElementById('delivery-request-confirm-production');
+        const requestStages = ['prepare', 'approve', 'materialize', 'arm'];
+        const requestPaths = { approve: 'approve', materialize: 'materialize', arm: 'arm' };
+        const requestStatusLabels = {
+            prepared: <?= json_encode(t('delivery_hub.request.status_prepared'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            approved: <?= json_encode(t('delivery_hub.request.status_approved'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            materialized: <?= json_encode(t('delivery_hub.request.status_materialized'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            armed: <?= json_encode(t('delivery_hub.request.status_armed'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+        const requestConfirmations = {
+            prepare: <?= json_encode(t('delivery_hub.request.confirm_prepare'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            production_prepare: <?= json_encode(t('delivery_hub.request.confirm_production_prepare'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            approve: <?= json_encode(t('delivery_hub.request.confirm_approve'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            materialize: <?= json_encode(t('delivery_hub.request.confirm_materialize'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            arm: <?= json_encode(t('delivery_hub.request.confirm_arm'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+        const requestBase = '/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/requests';
+        let requestId = 0;
+        let requestStageIndex = 0;
+        let requestBusy = false;
+
+        const updateRequestTarget = () => {
+            const option = requestTargetSelect && requestTargetSelect.selectedOptions[0];
+            if (!option) return;
+            requestDestinationId.value = option.value;
+            requestDispatchMode.value = option.dataset.dispatchMode || '';
+            requestEnvironment.textContent = option.dataset.environment || '—';
+        };
+        if (requestTargetSelect) {
+            requestTargetSelect.addEventListener('change', updateRequestTarget);
+            updateRequestTarget();
+        }
+
+        const updateRequestButtons = () => {
+            requestButtons.forEach((button, index) => {
+                button.disabled = requestBusy || index !== requestStageIndex;
+            });
+        };
+
+        const resumeActiveRequest = async () => {
+            const params = new URLSearchParams({
+                report_id: document.getElementById('delivery-request-report-id')?.value || '',
+                report_version: document.getElementById('delivery-request-report-version')?.value || '',
+                pdf_revision_id: document.getElementById('delivery-request-pdf-revision')?.value || '0',
+                destination_id: requestDestinationId?.value || '',
+                delivery_profile: 'submission_document',
+                dispatch_mode: requestDispatchMode?.value || '',
+                request_reason: document.getElementById('delivery-request-reason')?.value || '',
+            });
+            try {
+                const response = await fetch(requestBase + '/active?' + params.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+                const result = await response.json().catch(() => ({ success: false }));
+                const request = result.success ? (result.request || null) : null;
+                if (!response.ok || !request || Number(request.id || 0) <= 0) return;
+                const stageIndexes = { prepared: 1, approved: 2, materialized: 3, armed: 4, processing: 4 };
+                requestId = Number(request.id);
+                requestStageIndex = stageIndexes[request.status] ?? 0;
+                requestIdOutput.textContent = String(requestId);
+                if (Number(request.outbox_id || 0) > 0) outboxIdOutput.textContent = String(Number(request.outbox_id));
+                if (Number(request.job_id || 0) > 0) jobIdOutput.textContent = String(Number(request.job_id));
+                requestState.textContent = requestStatusLabels[request.status] || String(request.status || 'active');
+                requestFeedback.className = 'alert alert-success mt-3 mb-0';
+                requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                requestFeedback.classList.remove('d-none');
+                updateRequestButtons();
+            } catch (error) {
+                // A read-only resume failure must not block a new explicit prepare attempt.
+            }
+        };
+
+        const uuidV4 = () => {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+            if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') return '';
+            const bytes = new Uint8Array(16);
+            window.crypto.getRandomValues(bytes);
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+        };
+
+        requestButtons.forEach((button) => {
+            button.addEventListener('click', async () => {
+                const stage = button.dataset.requestStage;
+                if (!stage || requestBusy || requestStages[requestStageIndex] !== stage) return;
+                if (stage !== 'prepare' && requestId <= 0) return;
+                const isProductionPrepare = stage === 'prepare' && requestDispatchMode.value === 'controlled_production';
+                if (!window.confirm(isProductionPrepare ? requestConfirmations.production_prepare : requestConfirmations[stage])) return;
+
+                requestBusy = true;
+                updateRequestButtons();
+                requestFeedback.className = 'alert alert-info mt-3 mb-0';
+                requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.processing'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                requestFeedback.classList.remove('d-none');
+
+                try {
+                    const body = stage === 'prepare' ? new FormData(requestForm) : new FormData();
+                    if (stage !== 'prepare') body.append('_csrf_token', requestForm.querySelector('[name="_csrf_token"]').value);
+                    body.set('confirm_' + stage, '1');
+                    if (stage === 'prepare') body.set('confirm_production_prepare', isProductionPrepare ? '1' : '0');
+                    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+                    if (stage === 'prepare') {
+                        const idempotencyKey = uuidV4();
+                        if (!idempotencyKey) throw new Error(<?= json_encode(t('delivery_hub.request.uuid_unavailable'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+                        headers['Idempotency-Key'] = idempotencyKey;
+                    }
+                    const endpoint = stage === 'prepare'
+                        ? requestBase + '/prepare'
+                        : requestBase + '/' + encodeURIComponent(String(requestId)) + '/' + requestPaths[stage];
+                    const response = await fetch(endpoint, { method: 'POST', headers, body, credentials: 'same-origin' });
+                    const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.request.invalid_response'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                    if (!response.ok || !result.success) throw new Error(result.message || <?= json_encode(t('delivery_hub.request.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+
+                    const request = result.request || {};
+                    if (stage === 'prepare') {
+                        requestId = Number(request.id || 0);
+                        if (requestId <= 0) throw new Error(<?= json_encode(t('delivery_hub.request.missing_id'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+                    }
+                    requestIdOutput.textContent = requestId > 0 ? String(requestId) : '—';
+                    if (Number(request.outbox_id || 0) > 0) outboxIdOutput.textContent = String(Number(request.outbox_id));
+                    if (Number(request.job_id || 0) > 0) jobIdOutput.textContent = String(Number(request.job_id));
+                    requestStageIndex += 1;
+                    requestState.textContent = requestStatusLabels[request.status] || String(request.status || stage);
+                    requestFeedback.className = 'alert alert-success mt-3 mb-0';
+                    requestFeedback.textContent = <?= json_encode(t('delivery_hub.request.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                    requestFeedback.classList.remove('d-none');
+                } catch (error) {
+                    requestFeedback.className = 'alert alert-danger mt-3 mb-0';
+                    requestFeedback.textContent = error instanceof Error && error.message ? error.message : <?= json_encode(t('delivery_hub.request.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                    requestFeedback.classList.remove('d-none');
+                } finally {
+                    requestBusy = false;
+                    updateRequestButtons();
+                }
+            });
+        });
+        updateRequestButtons();
+        resumeActiveRequest();
+    }
+
+    const revisionForm = document.getElementById('pdf-revision-form');
+    if (revisionForm) {
+        const revisionFeedback = document.getElementById('pdf-revision-feedback');
+        const revisionSubmit = document.getElementById('pdf-revision-submit');
+        const revisionOpenLink = document.getElementById('pdf-revision-open-link');
+        const revisionTenantId = <?= (int) $tenant['id'] ?>;
+        const revisionMessages = {
+            processing: <?= json_encode(t('delivery_hub.pdf_revision.processing'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            success: <?= json_encode(t('delivery_hub.pdf_revision.success'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            error: <?= json_encode(t('delivery_hub.pdf_revision.error'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidResponse: <?= json_encode(t('delivery_hub.pdf_revision.invalid_response'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidReport: <?= json_encode(t('delivery_hub.pdf_revision.invalid_report'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            invalidLink: <?= json_encode(t('delivery_hub.pdf_revision.invalid_link'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+
+        const publicTokenFromInput = (raw) => {
+            const value = String(raw || '').trim();
+            const match = value.match(/\/reports\/r\/([a-f0-9]{48})/i) || value.match(/^([a-f0-9]{48})$/i);
+            return match ? match[1].toLowerCase() : '';
+        };
+
+        revisionForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const reportId = Number(document.getElementById('pdf-revision-report-id').value || 0);
+            const reportVersion = Number(document.getElementById('pdf-revision-report-version').value || 0);
+            const publicToken = publicTokenFromInput(document.getElementById('pdf-revision-public-token').value);
+            const confirmed = document.getElementById('pdf-revision-confirm').checked;
+            if (!Number.isInteger(reportId) || reportId <= 0 || !Number.isInteger(reportVersion) || reportVersion <= 0) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = revisionMessages.invalidReport;
+                revisionFeedback.classList.remove('d-none');
+                return;
+            }
+            if (!publicToken) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = revisionMessages.invalidLink;
+                revisionFeedback.classList.remove('d-none');
+                return;
+            }
+            if (!confirmed) return;
+
+            revisionSubmit.disabled = true;
+            revisionFeedback.className = 'alert alert-info mt-3 mb-0';
+            revisionFeedback.textContent = revisionMessages.processing;
+            revisionFeedback.classList.remove('d-none');
+            revisionOpenLink.classList.add('d-none');
+
+            try {
+                const endpoint = `/platform/negocios/${revisionTenantId}/reports/${encodeURIComponent(String(reportId))}/versions/${encodeURIComponent(String(reportVersion))}/pdf-revisions/visual-renderer-correction`;
+                const body = new FormData(revisionForm);
+                body.delete('report_id');
+                body.delete('report_version');
+                body.delete('report_public_token');
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body,
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const result = await response.json().catch(() => ({ success: false, message: revisionMessages.invalidResponse }));
+                if (!response.ok || !result.success) throw new Error(result.message || revisionMessages.error);
+                const revision = result.revision || {};
+                const cacheKey = `${Number(revision.revision_number || 0)}-${Date.now()}`;
+                revisionOpenLink.href = `/reports/r/${publicToken}/pdf?origem=gestao&revision_check=${encodeURIComponent(cacheKey)}`;
+                revisionOpenLink.classList.remove('d-none');
+                revisionFeedback.className = 'alert alert-success mt-3 mb-0';
+                revisionFeedback.textContent = `${revisionMessages.success} #${Number(revision.revision_number || 0)}.`;
+                revisionFeedback.classList.remove('d-none');
+            } catch (error) {
+                revisionFeedback.className = 'alert alert-danger mt-3 mb-0';
+                revisionFeedback.textContent = error instanceof Error && error.message ? error.message : revisionMessages.error;
+                revisionFeedback.classList.remove('d-none');
+            } finally {
+                revisionSubmit.disabled = false;
+            }
+        });
     }
 
     manualForm.addEventListener('submit', async (event) => {
@@ -544,6 +1020,33 @@ $transportLabels = [
             } catch (_) {
                 resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
                 resendFeedback.textContent = '<?= addslashes(t('delivery_hub.released.erro_reenvio')) ?>';
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.stale-action-form').forEach((staleForm) => {
+        staleForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const isQuarantine = staleForm.action.endsWith('/quarantine-stale');
+            const confirmation = isQuarantine
+                ? <?= json_encode(t('delivery_hub.released.confirmar_quarentena'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+                : <?= json_encode(t('delivery_hub.released.confirmar_recuperacao'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            if (!window.confirm(confirmation)) return;
+            const submitButton = staleForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(staleForm.action, { method: 'POST', body: new FormData(staleForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.released.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || <?= json_encode(t('delivery_hub.released.erro_stale'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = <?= json_encode(t('delivery_hub.released.erro_stale'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
                 resendFeedback.classList.remove('d-none');
             } finally {
                 if (submitButton) submitButton.disabled = false;
@@ -598,9 +1101,35 @@ $transportLabels = [
         });
     });
 
-    transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); });
+    document.querySelectorAll('.smb-readonly-test-form').forEach((smbTestForm) => {
+        smbTestForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('philips_non_dicom.confirmar_teste_smb_readonly'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = smbTestForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(smbTestForm.action, { method: 'POST', body: new FormData(smbTestForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('philips_non_dicom.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                const detail = result.result ? Object.entries(result.result).map(([key, value]) => key + '=' + value).join(' | ') : '';
+                smbTestFeedback.className = 'alert m-3 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                smbTestFeedback.textContent = result.message || detail || <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (_) {
+                smbTestFeedback.className = 'alert m-3 mb-0 alert-danger';
+                smbTestFeedback.textContent = <?= json_encode(t('philips_non_dicom.teste_indisponivel'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                smbTestFeedback.classList.remove('d-none');
+                smbTestFeedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
+    transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); syncServerPacsRequirement(); });
+    if (serverPacs) serverPacs.addEventListener('change', syncSiteIdFromServer);
     if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
-    environment.addEventListener('change', syncEnvironment);
+    environment.addEventListener('change', () => { syncEnvironment(); syncTaskSiteAliasRequirement(); });
     enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
         button.addEventListener('click', () => {
@@ -619,6 +1148,8 @@ $transportLabels = [
             document.getElementById('destination-name').value = item.nome;
             transport.value = item.transport;
             environment.value = item.ambiente;
+            if (serverPacs) serverPacs.value = item.servidor_pacs_id ? String(item.servidor_pacs_id) : '';
+            if (taskSiteAliasField) taskSiteAliasField.value = item.task_site_id_alias || '';
             secretInput.value = '';
             document.querySelectorAll('[data-secret-field]').forEach((input) => { input.value = ''; });
             document.getElementById('destination-timeout').value = item.timeout_seconds;
@@ -678,6 +1209,8 @@ $transportLabels = [
                 configuration_secret_present: secretInput.value.trim() !== '',
                 transport: transport.value,
                 environment: environment.value,
+                server_pacs_id: serverPacs && serverPacs.value !== '' ? Number(serverPacs.value) : null,
+                task_site_id_alias: taskSiteAliasField ? taskSiteAliasField.value.trim() : '',
                 enabled: enabled.checked,
                 auto_trigger: document.getElementById('destination-release').checked,
             };
@@ -687,7 +1220,9 @@ $transportLabels = [
             feedback.classList.remove('d-none');
             return;
         }
-        const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+        const body = new FormData(form);
+        if (taskSiteAliasField) body.set('task_site_id_alias', taskSiteAliasField.value.trim());
+        const response = await fetch(form.action, { method: 'POST', body, credentials: 'same-origin' });
         const result = await response.json().catch(() => ({ success: false, message: 'Resposta inválida do servidor.' }));
         feedback.className = 'alert ' + (result.success ? 'alert-success' : 'alert-danger');
         feedback.textContent = result.message || 'Operação concluída.';

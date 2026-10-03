@@ -32,10 +32,10 @@
 
 Estes são os fluxos onde um bug tem maior impacto clínico/operacional — priorize documentá-los antes de fluxos administrativos:
 
-1. **Ingestão de estudo DICOM** (Orthanc recebe → sistema é notificado → metadados são persistidos → aparece na worklist) — `[A detalhar em modules/ingestao-dicom.md]`
-2. **Geração e liberação de laudo** (RIS/HIS → laudo → assinatura → distribuição) — `[A detalhar em modules/laudos.md]`
-3. **Mensageria HL7 de admissão/pedido** (ADT/ORM recebido → paciente/pedido criado ou atualizado no PACS) — `[A detalhar em modules/hl7-integracao.md]`
-4. **Autenticação e controle de acesso a exames** (login → permissão → acesso ao estudo) — `[A detalhar em modules/auth.md]`
+1. **Ingestão de estudo DICOM** (Orthanc recebe → sistema é notificado → metadados são persistidos → aparece na worklist) — `modules/servidor-pacs.md` cobre sincronização/Orthanc; documentação específica do fluxo de ingestão: **Não localizado no código analisado.**
+2. **Geração e liberação de laudo** (RIS/HIS → laudo → assinatura → distribuição) — documentação distribuída em `modules/reports.md`, `modules/report-templates.md`, `modules/template-laudo.md` e `modules/assinatura-medico.md`; fluxo ponta a ponta ainda não consolidado em um único módulo.
+3. **Mensageria HL7 de admissão/pedido** (ADT/ORM recebido → paciente/pedido criado ou atualizado no PACS) — documentação específica do módulo HL7: **Não localizado no código analisado.**
+4. **Autenticação e controle de acesso a exames** (login → permissão → acesso ao estudo) — `architecture/auth-e-permissoes.md` documenta a arquitetura; módulo específico `auth`: **Não localizado no código analisado.**
 
 ## Diagrama de dependências entre módulos
 

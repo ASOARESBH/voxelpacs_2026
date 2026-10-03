@@ -38,7 +38,7 @@ Worker local supervisionado
 
 | Tabela | Função |
 |---|---|
-| `pacs_report_delivery_destinations` | Perfil de entrega por tenant/unidade e canal. |
+| `pacs_report_delivery_destinations` | Perfil de entrega por tenant/unidade, canal e, quando configurado, servidor PACS de origem (`servidor_pacs_id`). |
 | `pacs_report_delivery_destination_issuers` | Vínculos normalizados de Issuer por destino de entrega. |
 | `pacs_report_delivery_outbox` | Evento imutável de liberação/correção de laudo. |
 | `pacs_report_delivery_jobs` | Uma unidade de trabalho para cada destino selecionado, com marca explícita de elegibilidade do worker. |
@@ -78,7 +78,7 @@ O worker atual implementa **DICOM Encapsulated PDF**. Ele gera o PDF a partir da
 
 Nas falhas de C-STORE direto, o worker mantém uma parcela limitada do `stderr` somente em memória para classificá-la e descartá-la imediatamente. A tentativa persiste somente `reason_category`, sem saída bruta, comando, argumentos, parâmetros de rede ou atributos DICOM. As categorias permitidas são `timeout`, `connect_failed`, `association_rejected`, `tls_required` e `command_failed`. A classificação não altera o lease, o backoff, a DLQ nem a política de retentativa.
 
-> O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada.
+> O watchdog não reenfileira automaticamente um lease em `processing` cujo resultado remoto seja desconhecido. A recuperação desse estado continua sendo uma ação administrativa auditável e controlada, evitando transmissão duplicada. O painel também pode colocar um lease comprovadamente stale em quarentena terminal, sem criar attempt, retry ou requeue; essa ação é distinta de recuperar o lease.
 
 ### Identidade DICOM no retorno de laudo
 
@@ -133,16 +133,19 @@ Nenhum destino clínico é habilitado pela implantação: a habilitação e a co
 
 O painel administrativo lista servidores PACS exclusivamente através dos vínculos ativos do próprio negócio em `bi_negocio_servidor_pacs`. A consulta devolve somente identificador técnico interno e nome administrativo do servidor; ela não carrega URL, credenciais, AE Titles, estudos ou objetos DICOM.
 
+O destino pode registrar `servidor_pacs_id` para limitar a origem física do estudo. Para `philips_non_dicom` em `producao`, esse vínculo é obrigatório e só é aceito quando o servidor está ativo e possui vínculo ativo com o mesmo tenant. Na liberação, o Hub compara esse valor com `bi_pacs_estudos.servidor_id`; se não houver correspondência, o destino não é elegível e nenhum job é criado para ele. Homologação mantém compatibilidade com destinos legados sem esse vínculo, desde que as demais regras de Issuer/InstitutionName sejam satisfeitas. Esta alteração não cria migration: o preflight do ambiente deve confirmar a coluna existente antes do deploy.
+
 Um mesmo negócio pode receber estudos de vários PACS. Cada destino pode vincular um ou mais **Issuers** e, opcionalmente, InstitutionNames de fallback. O Issuer é normalizado antes da comparação e vem de `bi_pacs_estudos.issuer_of_patient_id`; o InstitutionName é o valor DICOM `(0008,0080)` armazenado em `bi_pacs_estudos.institution_name`.
 
 Ao liberar ou reenviar um laudo, o Hub aplica **Issuer como chave prioritária**. InstitutionName só é consultado quando o estudo não tem Issuer utilizável. O snapshot da outbox registra o valor recebido, o Issuer normalizado, o InstitutionName canônico e a base da decisão de roteamento.
 
 | Situação | Resultado do Hub |
 |---|---|
-| Estudo com Issuer vinculado ao destino | Cria job apenas para os destinos ativos vinculados àquele Issuer. |
+| Estudo com Issuer vinculado ao destino e servidor PACS compatível | Cria job apenas para os destinos ativos vinculados àquele Issuer e, quando configurado, ao servidor de origem. |
 | Estudo com Issuer não vinculado | Não usa InstitutionName; não cria job externo. |
 | Estudo sem Issuer e InstitutionName de fallback vinculado | Cria job apenas para os destinos ativos associados ao InstitutionName canônico. |
 | Estudo sem Issuer e sem fallback ativo | Não cria job externo; registra outbox como `no_destination` e log administrativo. |
+| Destino Philips Non-DICOM de produção sem servidor PACS vinculado | Bloqueado no CRUD e inelegível para a automação. |
 | Destino legado sem origem vinculada | Não recebe novos jobs até que a origem seja selecionada no painel. |
 
 No painel **Devolutiva de Laudos**, selecione os Issuers dos servidores PACS antes de salvar o destino. InstitutionNames podem ser selecionados somente como fallback para estudos sem Issuer. A lista de destinos mostra ambos os vínculos e a prioridade aplicada.

@@ -483,28 +483,33 @@ class ReportsController extends Controller
                         un.id AS rich_unit_id,
                         bnin.report_layout_template_id AS institution_report_layout_id,
                         un.report_layout_template_id AS rich_report_layout_id,
-                        COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
-                        COALESCE(NULLIF(bnin.nome_fantasia, ''), un.nome_fantasia)   AS unidade_nome_fantasia,
-                        COALESCE(NULLIF(bnin.razao_social, ''), un.razao_social)     AS unidade_razao_social,
-                        COALESCE(NULLIF(bnin.cnpj, ''), un.cnpj)                     AS unidade_cnpj,
-                        COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path)           AS unidade_logo_path,
-                        COALESCE(NULLIF(bnin.telefone, ''), un.telefone)             AS unidade_telefone,
-                        COALESCE(NULLIF(bnin.email, ''), un.email)                   AS unidade_email,
-                        COALESCE(NULLIF(bnin.logradouro, ''), un.logradouro)         AS unidade_logradouro,
-                        COALESCE(NULLIF(bnin.numero, ''), un.numero)                 AS unidade_numero,
-                        COALESCE(NULLIF(bnin.complemento, ''), un.complemento)       AS unidade_complemento,
-                        COALESCE(NULLIF(bnin.bairro, ''), un.bairro)                 AS unidade_bairro,
-                        COALESCE(NULLIF(bnin.cidade, ''), un.cidade)                 AS unidade_cidade,
-                        COALESCE(NULLIF(bnin.estado, ''), un.estado)                 AS unidade_estado
+                        COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS report_layout_template_id,
+                        CASE
+                            WHEN NULLIF(un.report_layout_template_id, 0) IS NOT NULL THEN 'unidade'
+                            WHEN NULLIF(bnin.report_layout_template_id, 0) IS NOT NULL THEN 'institution_name'
+                            ELSE NULL
+                        END AS report_layout_template_source,
+                        COALESCE(NULLIF(un.nome_fantasia, ''), NULLIF(bnin.nome_fantasia, ''), NULLIF(un.razao_social, ''), bnin.razao_social) AS unidade_nome_fantasia,
+                        COALESCE(NULLIF(un.razao_social, ''), NULLIF(bnin.razao_social, ''), NULLIF(un.nome_fantasia, ''), bnin.nome_fantasia) AS unidade_razao_social,
+                        COALESCE(NULLIF(un.cnpj, ''), bnin.cnpj) AS unidade_cnpj,
+                        COALESCE(NULLIF(un.logo_path, ''), bnin.logo_path) AS unidade_logo_path,
+                        COALESCE(NULLIF(un.telefone, ''), bnin.telefone) AS unidade_telefone,
+                        COALESCE(NULLIF(un.email, ''), bnin.email) AS unidade_email,
+                        COALESCE(NULLIF(un.logradouro, ''), bnin.logradouro) AS unidade_logradouro,
+                        COALESCE(NULLIF(un.numero, ''), bnin.numero) AS unidade_numero,
+                        COALESCE(NULLIF(un.complemento, ''), bnin.complemento) AS unidade_complemento,
+                        COALESCE(NULLIF(un.bairro, ''), bnin.bairro) AS unidade_bairro,
+                        COALESCE(NULLIF(un.cidade, ''), bnin.cidade) AS unidade_cidade,
+                        COALESCE(NULLIF(un.estado, ''), bnin.estado) AS unidade_estado
                  FROM reports r
                                   JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                  LEFT JOIN bi_users u ON u.id = r.usuario_id
                  LEFT JOIN bi_medicos m ON m.usuario_id = r.usuario_id AND m.tenant_id = r.tenant_id
                  LEFT JOIN bi_tenants t ON t.id = r.tenant_id
-                 -- Unidade: duas tabelas coexistem (ver modules/unidades.md) — a tela
-                 -- realmente usada em produção (/unidades/{id}/edit) grava direto em
-                 -- bi_negocio_institution_names; bi_unidades é um 2º sistema, mais novo,
-                 -- ainda sem dado real confirmado. Prioriza bnin, cai pra un se faltar.
+                 -- Unidade: InstitutionName identifica o vínculo dentro do tenant;
+                 -- quando unidade_id aponta para bi_unidades, os dados da Unidade
+                 -- vinculada são a fonte visual canônica. Os campos legados de
+                 -- bi_negocio_institution_names permanecem fallback compatível.
                  LEFT JOIN bi_negocio_institution_names bnin
                         ON bnin.tenant_id = r.tenant_id
                                               AND {$institutionJoinSql}
@@ -530,14 +535,14 @@ class ReportsController extends Controller
             try {
                 $stmtCanais = $pdo->prepare(
                     "SELECT
-                        COALESCE(bnin.personalizado_qrcode_habilitado, un.personalizado_qrcode_habilitado, 0) AS qrcode_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_qrcode_url, ''), un.personalizado_qrcode_url) AS qrcode_url,
-                        COALESCE(bnin.personalizado_site_habilitado, un.personalizado_site_habilitado, 0) AS site_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_site_url, ''), un.personalizado_site_url) AS site_url,
-                        COALESCE(bnin.personalizado_instagram_habilitado, un.personalizado_instagram_habilitado, 0) AS instagram_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_instagram_url, ''), un.personalizado_instagram_url) AS instagram_url,
-                        COALESCE(bnin.personalizado_facebook_habilitado, un.personalizado_facebook_habilitado, 0) AS facebook_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_facebook_url, ''), un.personalizado_facebook_url) AS facebook_url
+                        COALESCE(un.personalizado_qrcode_habilitado, bnin.personalizado_qrcode_habilitado, 0) AS qrcode_habilitado,
+                        COALESCE(NULLIF(un.personalizado_qrcode_url, ''), bnin.personalizado_qrcode_url) AS qrcode_url,
+                        COALESCE(un.personalizado_site_habilitado, bnin.personalizado_site_habilitado, 0) AS site_habilitado,
+                        COALESCE(NULLIF(un.personalizado_site_url, ''), bnin.personalizado_site_url) AS site_url,
+                        COALESCE(un.personalizado_instagram_habilitado, bnin.personalizado_instagram_habilitado, 0) AS instagram_habilitado,
+                        COALESCE(NULLIF(un.personalizado_instagram_url, ''), bnin.personalizado_instagram_url) AS instagram_url,
+                        COALESCE(un.personalizado_facebook_habilitado, bnin.personalizado_facebook_habilitado, 0) AS facebook_habilitado,
+                        COALESCE(NULLIF(un.personalizado_facebook_url, ''), bnin.personalizado_facebook_url) AS facebook_url
                      FROM bi_negocio_institution_names bnin
                      LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                      WHERE bnin.tenant_id = :tenant_id
@@ -611,6 +616,30 @@ class ReportsController extends Controller
 
             $situacaoCanonica = (string) ($data['situacao'] ?? '');
             if (in_array($situacaoCanonica, ['assinado', 'liberado'], true)) {
+                $revisionPdf = (new \App\Services\ReportVersionPdfRevisionService($pdo))
+                    ->readLatestForViewer((int) ($data['tenant_id'] ?? 0), $reportId);
+                if (is_array($revisionPdf) && is_file((string) ($revisionPdf['path'] ?? ''))) {
+                    if (!$portalPatientPdf) {
+                        $userId = Auth::userId();
+                        $user = Auth::user();
+                        $this->reportRepo->logAction(
+                            $reportId, (int) $data['estudo_id'], (int) $data['tenant_id'],
+                            $userId, $user->name ?? $user->nome ?? '', 'pdf',
+                            $download ? 'Download PDF da revisão operacional' : 'Visualização PDF da revisão operacional'
+                        );
+                    }
+                    $filename = 'laudo-' . $reportId
+                        . '-v' . (int) ($revisionPdf['report_version'] ?? 0)
+                        . '-r' . (int) ($revisionPdf['revision_number'] ?? 0) . '.pdf';
+                    header('Content-Type: application/pdf');
+                    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $filename . '"');
+                    header('Content-Length: ' . (string) ($revisionPdf['size'] ?? filesize((string) $revisionPdf['path'])));
+                    header('Cache-Control: private, no-store, max-age=0');
+                    header('X-Content-Type-Options: nosniff');
+                    readfile((string) $revisionPdf['path']);
+                    return;
+                }
+
                 $snapshotPdf = (new \App\Services\ReportVersionPdfSnapshotService($pdo))
                     ->readLatestForReport((int) ($data['tenant_id'] ?? 0), $reportId);
                 if (is_array($snapshotPdf) && is_file((string) ($snapshotPdf['path'] ?? ''))) {
@@ -668,7 +697,7 @@ class ReportsController extends Controller
                     $customTemplate = $customService->getById($snapshotId, (int) $data['tenant_id']);
                 }
                 if ($customTemplate === null) {
-                    $origem = ((int) ($data['institution_report_layout_id'] ?? 0) === (int) ($data['report_layout_template_id'] ?? 0))
+                    $origem = (string) ($data['report_layout_template_source'] ?? '') === 'institution_name'
                         ? \App\Services\ReportCustomTemplateService::SOURCE_INSTITUTION
                         : \App\Services\ReportCustomTemplateService::SOURCE_UNIDADE;
                     $unidadeId = $origem === \App\Services\ReportCustomTemplateService::SOURCE_INSTITUTION
@@ -1323,9 +1352,9 @@ class ReportsController extends Controller
             $pdo = \App\Core\Database::getInstance();
             $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
-                "SELECT COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
-                        COALESCE(NULLIF(bnin.nome_fantasia, ''), NULLIF(bnin.razao_social, ''), un.nome_fantasia, un.razao_social) AS unidade_nome,
-                        COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path) AS unidade_logo_path
+                "SELECT COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS report_layout_template_id,
+                        COALESCE(NULLIF(un.nome_fantasia, ''), NULLIF(bnin.nome_fantasia, ''), NULLIF(un.razao_social, ''), bnin.razao_social) AS unidade_nome,
+                        COALESCE(NULLIF(un.logo_path, ''), bnin.logo_path) AS unidade_logo_path
                  FROM bi_negocio_institution_names bnin
                  LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                  WHERE bnin.tenant_id = :tenant_id

@@ -75,6 +75,7 @@ class ReportDeliveryController extends Controller
             'stats' => $this->repository->stats($tenantId),
             'csrfToken' => $this->csrfToken(),
             'transports' => $this->transports,
+            'pacsServers' => $this->repository->listTenantPacsServers($tenantId),
             'institutionNames' => InstitutionResolverService::getInstitutionNamesByTenant($tenantId),
             'issuers' => $this->repository->listTenantIssuers($tenantId),
         ], 'platform');
@@ -92,6 +93,7 @@ class ReportDeliveryController extends Controller
     {
         foreach ($deliveries as &$delivery) {
             $estabelecimentoId = (int) ($delivery['estabelecimento_id'] ?? 0) ?: null;
+            $sourceServerId = (int) ($delivery['servidor_id'] ?? 0) ?: null;
             $issuerNormalized = trim((string) ($delivery['issuer_of_patient_id_normalized'] ?? ''));
             $institutionName = $issuerNormalized === ''
                 ? InstitutionResolverService::canonicalForTenant($tenantId, (string) ($delivery['institution_name'] ?? ''))
@@ -106,7 +108,8 @@ class ReportDeliveryController extends Controller
                 $tenantId,
                 $estabelecimentoId,
                 $issuerNormalized,
-                $institutionName
+                $institutionName,
+                $sourceServerId
             );
             $eligible = array_values(array_filter($eligible, static fn(array $destination): bool =>
                 ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
@@ -435,6 +438,78 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    /** Probe SMB somente leitura: autentica/lista/pwd, sem PUT, rename, delete ou Job. */
+    public function testSmbReadOnly(int $tenantId, int $destinationId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_smb_readonly'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => 'Confirme o probe SMB somente leitura.'], 422);
+        }
+        try {
+            $destination = $this->repository->findDestination($destinationId, $tenantId, true);
+            if (!$destination || (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                || (string) ($destination['ambiente'] ?? '') !== 'producao'
+                || (int) ($destination['enabled'] ?? 0) !== 1) {
+                throw new DomainException('Destino Non-DICOM de produção não encontrado ou desabilitado.');
+            }
+            $configuration = json_decode((string) ($destination['configuration_json'] ?? '{}'), true);
+            if (!is_array($configuration)) {
+                throw new DomainException('Configuração do destino inválida.');
+            }
+            $result = (new PhilipsFolderSmbConnectivityService())->testReadOnly(
+                $tenantId,
+                $destinationId,
+                $configuration,
+                (string) ($destination['configuration_secret'] ?? ''),
+                (int) ($destination['timeout_seconds'] ?? 30)
+            );
+            $probeResult = [
+                'SMB_AUTH' => (string) ($result['smb_auth'] ?? 'UNKNOWN'),
+                'SMB_PWD' => (string) ($result['smb_pwd'] ?? 'UNKNOWN'),
+                'SMB_RETURN_CODE' => (string) ($result['smb_return_code'] ?? 'UNKNOWN'),
+                'SMB_CLASSIFICATION' => (string) ($result['smb_classification'] ?? 'UNKNOWN'),
+                'NT_STATUS_LOGON_FAILURE' => (string) ($result['nt_status_logon_failure'] ?? 'UNKNOWN'),
+                'SMB_WRITE' => 'NOT_EXECUTED',
+            ];
+            $probePassed = (string) ($result['result'] ?? '') === 'PASS';
+            Logger::info('[ReportDeliveryController::testSmbReadOnly] Probe concluído', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'smb_auth' => $probeResult['SMB_AUTH'],
+                'smb_pwd' => $probeResult['SMB_PWD'],
+                'smb_return_code' => $probeResult['SMB_RETURN_CODE'],
+                'smb_classification' => $probeResult['SMB_CLASSIFICATION'],
+                'smb_write' => 'NOT_EXECUTED',
+            ]);
+            $this->json([
+                'success' => $probePassed,
+                'message' => $probePassed ? null : 'Probe SMB não confirmado: ' . $this->sanitizedReason($probeResult['SMB_CLASSIFICATION']),
+                'result' => $probeResult,
+            ], $probePassed ? 200 : 422);
+        } catch (PhilipsFolderDeliveryException $e) {
+            Logger::warning('[ReportDeliveryController::testSmbReadOnly] Probe bloqueado/falhou', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'reason_category' => $e->reasonCategory,
+            ]);
+            $this->json(['success' => false, 'message' => 'Probe SMB não concluído: ' . $this->sanitizedReason($e->reasonCategory)], 422);
+        } catch (DomainException $e) {
+            $this->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::testSmbReadOnly] Falha técnica sanitizada', [
+                'tenant_id' => $tenantId,
+                'destination_id' => $destinationId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => 'Probe SMB indisponível.'], 500);
+        }
+    }
+
     /**
      * Recupera um job cujo worker interrompeu antes de concluir a entrega.
      * A operação é permitida somente após dez minutos em processamento.
@@ -446,6 +521,9 @@ class ReportDeliveryController extends Controller
         }
         if (!$this->validCsrf()) {
             $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_recover_stale'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_recuperacao')], 422);
         }
 
         try {
@@ -465,6 +543,45 @@ class ReportDeliveryController extends Controller
                 'error' => $e->getMessage(),
             ]);
             $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_recuperacao')], 500);
+        }
+    }
+
+    /**
+     * Coloca um lease stale em falha terminal, sem requeue, retry ou attempt novo.
+     * A ação é deliberadamente separada do recovery que rearma o Worker.
+     */
+    public function quarantineStaleProcessing(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => 'Sem permissão.'], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => 'Sessão expirada.'], 419);
+        }
+        if ((string) ($_POST['confirm_quarantine_stale'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_confirmacao_quarentena')], 422);
+        }
+
+        try {
+            $quarantined = $this->repository->quarantineStaleProcessingJob($jobId, $tenantId);
+            if (!$quarantined) {
+                $this->json(['success' => false, 'message' => t('delivery_hub.released.quarentena_indisponivel')], 422);
+            }
+            AuditLogger::log('report_delivery.stale_job_quarantined', 'pacs_report_delivery_jobs', $jobId, [
+                'tenant_id' => $tenantId,
+                'minimum_stale_minutes' => 10,
+                'requeue' => false,
+                'retry' => false,
+                'attempt_created' => false,
+            ]);
+            $this->json(['success' => true, 'message' => t('delivery_hub.released.quarentena_aceita')]);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::quarantineStaleProcessing] Falha ao colocar lease stale em quarentena', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.released.erro_quarentena')], 500);
         }
     }
 
@@ -535,6 +652,8 @@ class ReportDeliveryController extends Controller
                     'configuration_secret' => array_key_exists('configuration_secret', $_POST),
                     'institution_names' => array_key_exists('institution_names', $_POST),
                     'issuer_of_patient_ids' => array_key_exists('issuer_of_patient_ids', $_POST),
+                    'servidor_pacs_id' => array_key_exists('servidor_pacs_id', $_POST),
+                    'task_site_id_alias' => array_key_exists('task_site_id_alias', $_POST),
                 ],
                 'configuration_json_state' => $this->saveDiagnosticJsonState($rawConfiguration, $configuration),
                 'delivery_profile' => $profileState,
@@ -605,6 +724,15 @@ class ReportDeliveryController extends Controller
         $environment = (string) ($_POST['ambiente'] ?? 'homologacao');
         $configuration = trim((string) ($_POST['configuration_json'] ?? ''));
         $secret = trim((string) ($_POST['configuration_secret'] ?? ''));
+        $taskSiteAlias = trim((string) ($_POST['task_site_id_alias'] ?? ''));
+        $serverPacsInput = trim((string) ($_POST['servidor_pacs_id'] ?? ''));
+        if ($serverPacsInput !== '' && !ctype_digit($serverPacsInput)) {
+            throw new DomainException('Selecione um servidor PACS válido.');
+        }
+        $serverPacsId = $serverPacsInput === '' ? null : (int) $serverPacsInput;
+        if ($serverPacsId !== null && $serverPacsId <= 0) {
+            throw new DomainException('Selecione um servidor PACS válido.');
+        }
         $enabled = !empty($_POST['enabled']) ? 1 : 0;
         $producaoConfirmada = (string) ($_POST['confirm_production_activation'] ?? '') === '1';
         $requestedInstitutions = $_POST['institution_names'] ?? [];
@@ -652,6 +780,11 @@ class ReportDeliveryController extends Controller
         if (!in_array($environment, ['homologacao', 'producao'], true)) {
             throw new DomainException('Ambiente inválido.');
         }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && $environment === 'producao'
+            && $serverPacsId === null) {
+            throw new DomainException('Selecione um servidor PACS autorizado para destinos Philips Non-DICOM de produção.');
+        }
         if ($enabled && $environment === 'producao' && !$producaoConfirmada) {
             throw new DomainException(t('delivery_hub.destination.confirmacao_producao_obrigatoria'));
         }
@@ -672,6 +805,32 @@ class ReportDeliveryController extends Controller
         if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             throw new DomainException('A configuração pública deve ser um JSON válido.');
         }
+        $isPhilipsSubmissionDocument = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
+        $isControlledProductionSubmission = $isPhilipsSubmissionDocument && $environment === 'producao';
+        if ($taskSiteAlias !== '' && preg_match('/^[A-Za-z0-9._-]{1,120}$/', $taskSiteAlias) !== 1) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_invalid'));
+        }
+        if ($taskSiteAlias !== '' && !$isControlledProductionSubmission) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_production_only'));
+        }
+        if ($isControlledProductionSubmission && $taskSiteAlias === '') {
+            throw new DomainException(t('philips_non_dicom.task_site_id_alias_required'));
+        }
+        if ($isPhilipsSubmissionDocument && $serverPacsId === null) {
+            throw new DomainException(t('philips_non_dicom.task_site_id_server_required'));
+        }
+        if ($isPhilipsSubmissionDocument) {
+            $server = $this->repository->findTenantPacsServer($tenantId, $serverPacsId);
+            $serverName = trim((string) ($server['nome'] ?? ''));
+            if ($server === null || $serverName === '') {
+                throw new DomainException('O servidor PACS selecionado não possui um nome válido para o SITE_ID Philips.');
+            }
+            if (!is_array($decoded['philips_submission'] ?? null)) {
+                throw new DomainException('Configure o contrato Philips XML antes de vincular o servidor PACS.');
+            }
+            $decoded['philips_submission']['task_site_id'] = $serverName;
+        }
         $this->validateTransportConfiguration($transport, $decoded);
         if ($secret !== '') {
             $decodedSecret = json_decode($secret, true);
@@ -683,6 +842,8 @@ class ReportDeliveryController extends Controller
 
         return [
             'nome' => $name,
+            'servidor_pacs_id' => $serverPacsId,
+            'task_site_id_alias' => $isControlledProductionSubmission ? $taskSiteAlias : null,
             'transport' => $transport,
             'ambiente' => $environment,
             'enabled' => $enabled,

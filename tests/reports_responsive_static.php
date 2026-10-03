@@ -55,7 +55,10 @@ require_text($exam, 'rp-value--full', 'Study UID completo não está marcado par
 require_text($show, "_chat_card.php", 'CHAT não está na composição do Report.');
 require_text($show, "_historico_actions.php", 'Ações laterais não estão na composição do Report.');
 require_text($history, 'id="card-historico-paciente"', 'Card de histórico sem identificador de grade.');
-require_text($chat, 'chatDestinatarioGrupo', 'CHAT não possui grupo.');
+require_text($chat, '$chatGroups = is_array($chat[\'groups\'] ?? null) ? $chat[\'groups\'] : [];', 'CHAT não carrega grupos de destinatários.');
+require_text($chat, '<optgroup', 'CHAT não possui grupos visuais de destinatários.');
+require_text($chat, 'report_chat.destinatarios_grupos', 'CHAT não possui rótulo traduzido para grupos.');
+require_text($chat, 'value="grupo:<?= $groupId ?>"', 'CHAT não envia o identificador explícito do grupo.');
 require_text($doc, 'Nenhum conteúdo será escondido', 'Decisão de não supressão não está documentada.');
 
 echo "OK: contrato responsivo do Reports validado.\n";

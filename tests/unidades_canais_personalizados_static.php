@@ -3,6 +3,7 @@
  * Regressão estática — QR, site e redes sociais institucionais por Unidade.
  * Executar: php tests/unidades_canais_personalizados_static.php
  */
+require_once __DIR__ . '/../app/autoload.php';
 require_once __DIR__ . '/../app/Services/ReportCustomTemplateService.php';
 
 use App\Services\ReportCustomTemplateService;

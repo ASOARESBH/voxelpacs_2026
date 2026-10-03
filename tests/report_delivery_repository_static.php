@@ -31,6 +31,10 @@ foreach ([
     'bsp.tenant_id = :tenant_id',
     'bsp.ativo = 1',
     'SELECT s.id, s.nome',
+    'd.servidor_pacs_id',
+    'AND d.servidor_pacs_id IS NULL',
+    'AND d.servidor_pacs_id = :source_server_id',
+    'bindValue(\':source_server_id\', $sourceServerId, PDO::PARAM_INT)',
 ] as $contract) {
     if (!str_contains($source, $contract)) {
         throw new RuntimeException('Contrato tenant-scoped de servidores PACS ausente no Delivery Hub.');

@@ -13,6 +13,7 @@ $files = [
     'repository' => $base . '/app/Repositories/ReportDeliveryRepository.php',
     'view' => $base . '/app/Views/platform/negocios/report_delivery.php',
     'bootstrap' => $base . '/app/bootstrap.php',
+    'runtimeConfig' => $base . '/app/Config/ReportDeliveryRuntimeConfig.php',
 ];
 foreach ($files as $name => $path) {
     if (!is_file($path)) {
@@ -35,6 +36,7 @@ $controller = file_get_contents($files['controller']);
 $repository = file_get_contents($files['repository']);
 $view = file_get_contents($files['view']);
 $bootstrap = file_get_contents($files['bootstrap']);
+$runtimeConfig = file_get_contents($files['runtimeConfig']);
 $requiredI18n = [
     'philips_non_dicom.confirmar_teste_smb',
     'philips_non_dicom.resposta_invalida',
@@ -51,16 +53,22 @@ foreach (['pt_BR', 'en', 'es'] as $locale) {
 }
 
 $required = [
-    [$service, "getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false'", 'feature flag segura'],
+    [$service, 'ReportDeliveryRuntimeConfig::folderDeliveryEnabled()', 'feature flag segura centralizada'],
+    [$runtimeConfig, 'final class ReportDeliveryRuntimeConfig', 'classe central de flags runtime'],
     [$service, "public const TRANSPORT = 'philips_folder'", 'transporte Philips'],
     [$connectivity, 'namespace App\\Services;', 'namespace do serviço de conectividade SMB'],
     [$connectivity, "'gateway_unavailable'", 'falha local do envelope sanitizada'],
     [$connectivity, 'sodium_memzero($password)', 'limpeza da senha temporária'],
     [$client, 'CURLOPT_SSL_VERIFYPEER => true', 'mTLS peer verification'],
+    [$client, 'X-VOXEL-Tenant-ID', 'tenant binding do transporte'],
     [$client, 'X-VOXEL-Destination-ID', 'vínculo de destino'],
     [$worker, 'PHILIPS_FOLDER_REASON_CATEGORIES', 'categorias sanitizadas'],
     [$worker, 'PhilipsFolderDeliveryService::enabled()', 'claim condicionado à feature flag'],
     [$bridge, 'PHILIPS_FOLDER_MODE', 'modo de política root-only'],
+    [$bridge, 'PHILIPS_FOLDER_ALLOW_TENANT_ID', 'tenant allowlisted da Bridge'],
+    [$bridge, 'PHILIPS_FOLDER_ALLOW_DESTINATION_ID', 'Destination allowlisted da Bridge'],
+    [$bridge, 'int(tenant_id) != POLICY.allow_tenant_id', 'rejeição de tenant divergente'],
+    [$bridge, 'destination_id_header == str(POLICY.allow_destination_id)', 'rejeição de Destination divergente'],
     [$bridge, 'TARGET_ROOT = Path("/var/lib/voxelpacs/philips-folder-target")', 'raiz privada de destino'],
     [$bridge, 'single_test sem job autorizado', 'preflight single_test sem job'],
     [$bridge, 'POLICY.mode == "destination" or job_id == POLICY.allowed_job_id', 'rejeição de entrega sem job autorizado'],

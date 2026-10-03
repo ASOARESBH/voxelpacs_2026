@@ -10,10 +10,11 @@ use App\Helpers\DicomPersonName;
  * Resolve o snapshot de metadata do submission Philips a partir de fontes já congeladas.
  *
  * Este componente não consulta banco, não deriva identidade clínica e não transforma
- * released_by em task_author_id. A autoria humana vem do ReferringPhysicianName
- * estruturado e a data do documento vem de StudyDate/StudyTime. O PatientName plano
- * somente chega como Family quando a versão congelada registra patient_name_fallback;
- * a política de homologação continua controlando a emissão sem Given/Middle.
+ * released_by em task_author_id. A autoria humana vem do ReferringPhysicianName;
+ * nomes estruturados preservam os componentes DICOM e nomes planos são preservados
+ * integralmente em Family apenas no contexto do autor Philips. A data do documento
+ * vem de StudyDate/StudyTime. O PatientName plano somente chega como Family quando
+ * a versão congelada registra patient_name_fallback; as duas regras permanecem separadas.
  */
 final class PhilipsSubmissionMetadataResolver
 {
@@ -40,15 +41,24 @@ final class PhilipsSubmissionMetadataResolver
             'task_author_humanname_family' => null,
             'task_author_humanname_given' => null,
             'task_author_humanname_middle' => null,
+            'author_humanname_flat' => false,
         ];
 
-        $referringPhysician = $this->dicomPersonName(
-            $this->stringOrNull($payload['referring_physician_name'] ?? null)
-        );
-        if ($referringPhysician !== null) {
-            $resolved['task_author_humanname_family'] = $referringPhysician['family'];
-            $resolved['task_author_humanname_given'] = $referringPhysician['given'];
-            $resolved['task_author_humanname_middle'] = $referringPhysician['middle'];
+        $referringPhysicianRaw = $this->stringOrNull($payload['referring_physician_name'] ?? null);
+        if ($referringPhysicianRaw !== null && $referringPhysicianRaw !== '') {
+            if (str_contains($referringPhysicianRaw, '^')) {
+                $referringPhysician = $this->dicomPersonName($referringPhysicianRaw);
+                if ($referringPhysician !== null) {
+                    $resolved['task_author_humanname_family'] = $referringPhysician['family'];
+                    $resolved['task_author_humanname_given'] = $referringPhysician['given'];
+                    $resolved['task_author_humanname_middle'] = $referringPhysician['middle'];
+                }
+            } else {
+                $resolved['task_author_humanname_family'] = $referringPhysicianRaw;
+                $resolved['task_author_humanname_given'] = '';
+                $resolved['task_author_humanname_middle'] = '';
+                $resolved['author_humanname_flat'] = true;
+            }
         }
 
         $patientName = $this->versionPatientName($payload);

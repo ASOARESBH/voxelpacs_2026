@@ -61,6 +61,33 @@ final class ReportPdfDeliveryContextService
         return $this->buildVisualContext($report, $tenantId);
     }
 
+    /**
+     * Constrói uma revisão histórica usando somente o conteúdo da linha
+     * report_versions indicada. O report atual fornece apenas metadados de
+     * estudo/unidade necessários à apresentação e é sempre filtrado por tenant.
+     *
+     * @param array<string,mixed> $job
+     * @return array<string,mixed>
+     */
+    public function buildFromHistoricalVersion(array $job): array
+    {
+        [$tenantId, $reportId, $studyId, $version] = $this->validateJob($job);
+        $report = $this->loadVisualReport($tenantId, $reportId, $studyId);
+        [$report, $sourceContentSha256] = $this->applyHistoricalVersion(
+            $report,
+            $tenantId,
+            $reportId,
+            $version
+        );
+        if (!ReportClinicalContentService::hasReportContent($report)) {
+            throw new RuntimeException('Versão histórica do PDF sem conteúdo clínico válido.');
+        }
+
+        $context = $this->buildVisualContext($report, $tenantId);
+        $context['source_content_sha256'] = $sourceContentSha256;
+        return $context;
+    }
+
     /** @param array<string,mixed> $job @return array{0:int,1:int,2:int,3:int} */
     private function validateJob(array $job): array
     {
@@ -77,7 +104,11 @@ final class ReportPdfDeliveryContextService
     /** @param array<string,mixed> $report @return array<string,mixed> */
     private function buildVisualContext(array $report, int $tenantId): array
     {
-        $report = $this->applyMask($report, $tenantId);
+        $historicalSource = (bool) ($report['_historical_report_version_source'] ?? false);
+        if (!$historicalSource) {
+            $report = $this->applyMask($report, $tenantId);
+        }
+        unset($report['_historical_report_version_source']);
         $report = $this->applyInstitutionalChannels($report, $tenantId);
         $report = $this->applyCompanyRegistration($report, $tenantId);
 
@@ -93,8 +124,7 @@ final class ReportPdfDeliveryContextService
                 $customTemplate = $customService->getById($snapshotId, $tenantId);
             }
             if ($customTemplate === null) {
-                $source = (int) ($report['institution_report_layout_id'] ?? 0)
-                    === (int) ($report['report_layout_template_id'] ?? 0)
+                $source = (string) ($report['report_layout_template_source'] ?? '') === 'institution_name'
                     ? ReportCustomTemplateService::SOURCE_INSTITUTION
                     : ReportCustomTemplateService::SOURCE_UNIDADE;
                 $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
@@ -135,19 +165,24 @@ final class ReportPdfDeliveryContextService
                     bnin.id AS institution_unit_id, un.id AS rich_unit_id,
                     bnin.report_layout_template_id AS institution_report_layout_id,
                     un.report_layout_template_id AS rich_report_layout_id,
-                    COALESCE(bnin.report_layout_template_id, un.report_layout_template_id) AS report_layout_template_id,
-                    COALESCE(NULLIF(bnin.nome_fantasia, ''), un.nome_fantasia) AS unidade_nome_fantasia,
-                    COALESCE(NULLIF(bnin.razao_social, ''), un.razao_social) AS unidade_razao_social,
-                    COALESCE(NULLIF(bnin.cnpj, ''), un.cnpj) AS unidade_cnpj,
-                    COALESCE(NULLIF(bnin.logo_path, ''), un.logo_path) AS unidade_logo_path,
-                    COALESCE(NULLIF(bnin.telefone, ''), un.telefone) AS unidade_telefone,
-                    COALESCE(NULLIF(bnin.email, ''), un.email) AS unidade_email,
-                    COALESCE(NULLIF(bnin.logradouro, ''), un.logradouro) AS unidade_logradouro,
-                    COALESCE(NULLIF(bnin.numero, ''), un.numero) AS unidade_numero,
-                    COALESCE(NULLIF(bnin.complemento, ''), un.complemento) AS unidade_complemento,
-                    COALESCE(NULLIF(bnin.bairro, ''), un.bairro) AS unidade_bairro,
-                    COALESCE(NULLIF(bnin.cidade, ''), un.cidade) AS unidade_cidade,
-                    COALESCE(NULLIF(bnin.estado, ''), un.estado) AS unidade_estado
+                    COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS report_layout_template_id,
+                    CASE
+                        WHEN NULLIF(un.report_layout_template_id, 0) IS NOT NULL THEN 'unidade'
+                        WHEN NULLIF(bnin.report_layout_template_id, 0) IS NOT NULL THEN 'institution_name'
+                        ELSE NULL
+                    END AS report_layout_template_source,
+                    COALESCE(NULLIF(un.nome_fantasia, ''), NULLIF(bnin.nome_fantasia, ''), NULLIF(un.razao_social, ''), bnin.razao_social) AS unidade_nome_fantasia,
+                    COALESCE(NULLIF(un.razao_social, ''), NULLIF(bnin.razao_social, ''), NULLIF(un.nome_fantasia, ''), bnin.nome_fantasia) AS unidade_razao_social,
+                    COALESCE(NULLIF(un.cnpj, ''), bnin.cnpj) AS unidade_cnpj,
+                    COALESCE(NULLIF(un.logo_path, ''), bnin.logo_path) AS unidade_logo_path,
+                    COALESCE(NULLIF(un.telefone, ''), bnin.telefone) AS unidade_telefone,
+                    COALESCE(NULLIF(un.email, ''), bnin.email) AS unidade_email,
+                    COALESCE(NULLIF(un.logradouro, ''), bnin.logradouro) AS unidade_logradouro,
+                    COALESCE(NULLIF(un.numero, ''), bnin.numero) AS unidade_numero,
+                    COALESCE(NULLIF(un.complemento, ''), bnin.complemento) AS unidade_complemento,
+                    COALESCE(NULLIF(un.bairro, ''), bnin.bairro) AS unidade_bairro,
+                    COALESCE(NULLIF(un.cidade, ''), bnin.cidade) AS unidade_cidade,
+                    COALESCE(NULLIF(un.estado, ''), bnin.estado) AS unidade_estado
                FROM reports r
                INNER JOIN bi_pacs_estudos e ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                LEFT JOIN bi_users u ON u.id = r.usuario_id
@@ -234,6 +269,72 @@ final class ReportPdfDeliveryContextService
     }
 
     /** @param array<string,mixed> $report @return array<string,mixed> */
+    /** @param array<string,mixed> $report @return array{0:array<string,mixed>,1:string} */
+    private function applyHistoricalVersion(array $report, int $tenantId, int $reportId, int $version): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT rv.id AS report_version_row_id, rv.versao, rv.acao, rv.created_at,
+                    rv.corpo_laudo, rv.secao_exame, rv.secao_tecnica, rv.secao_achados,
+                    rv.secao_conclusao, rv.secao_recomendacao,
+                    rv.patient_name_family, rv.patient_name_given,
+                    rv.patient_name_middle, rv.patient_name_source
+               FROM report_versions rv
+               INNER JOIN reports r ON r.id = rv.report_id AND r.tenant_id = :tenant_id
+              WHERE rv.report_id = :report_id
+                AND rv.versao = :version
+                AND rv.acao IN ('assinado', 'liberado')
+                AND r.situacao IN ('assinado', 'liberado')"
+        );
+        $stmt->execute([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'version' => $version,
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== 1 || !is_array($rows[0])) {
+            throw new RuntimeException('Versão histórica do PDF não é única ou não está liberada.');
+        }
+
+        $versionRow = $rows[0];
+        $report['report_version_row_id'] = (int) $versionRow['report_version_row_id'];
+        $report['corpo_laudo'] = (string) ($versionRow['corpo_laudo'] ?? '');
+        foreach (['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'] as $section) {
+            $report['secao_' . $section] = (string) ($versionRow['secao_' . $section] ?? '');
+        }
+        $report['patient_name_family'] = $versionRow['patient_name_family'] ?? null;
+        $report['patient_name_given'] = $versionRow['patient_name_given'] ?? null;
+        $report['patient_name_middle'] = $versionRow['patient_name_middle'] ?? null;
+        $report['patient_name_source'] = $versionRow['patient_name_source'] ?? null;
+        $report['conteudo'] = '';
+        $report['mascara_conteudo_livre'] = '';
+        $report['mascara_secoes'] = [];
+        $report['_historical_report_version_source'] = true;
+
+        $sourceContentSha256 = hash('sha256', DeliveryRequestIdentity::canonicalJson([
+            'schema_version' => 1,
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $version,
+            'report_version_row_id' => (int) $versionRow['report_version_row_id'],
+            'acao' => (string) $versionRow['acao'],
+            'created_at' => (string) $versionRow['created_at'],
+            'content' => [
+                'corpo_laudo' => (string) ($versionRow['corpo_laudo'] ?? ''),
+                'secao_exame' => (string) ($versionRow['secao_exame'] ?? ''),
+                'secao_tecnica' => (string) ($versionRow['secao_tecnica'] ?? ''),
+                'secao_achados' => (string) ($versionRow['secao_achados'] ?? ''),
+                'secao_conclusao' => (string) ($versionRow['secao_conclusao'] ?? ''),
+                'secao_recomendacao' => (string) ($versionRow['secao_recomendacao'] ?? ''),
+                'patient_name_family' => $versionRow['patient_name_family'] ?? null,
+                'patient_name_given' => $versionRow['patient_name_given'] ?? null,
+                'patient_name_middle' => $versionRow['patient_name_middle'] ?? null,
+                'patient_name_source' => $versionRow['patient_name_source'] ?? null,
+            ],
+        ]));
+
+        return [$report, $sourceContentSha256];
+    }
+
     private function applyMask(array $report, int $tenantId): array
     {
         $templateId = (int) ($report['template_id'] ?? 0);
@@ -286,14 +387,14 @@ final class ReportPdfDeliveryContextService
         try {
             $institutionSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $this->pdo->prepare(
-                "SELECT COALESCE(bnin.personalizado_qrcode_habilitado, un.personalizado_qrcode_habilitado, 0) AS qrcode_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_qrcode_url, ''), un.personalizado_qrcode_url) AS qrcode_url,
-                        COALESCE(bnin.personalizado_site_habilitado, un.personalizado_site_habilitado, 0) AS site_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_site_url, ''), un.personalizado_site_url) AS site_url,
-                        COALESCE(bnin.personalizado_instagram_habilitado, un.personalizado_instagram_habilitado, 0) AS instagram_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_instagram_url, ''), un.personalizado_instagram_url) AS instagram_url,
-                        COALESCE(bnin.personalizado_facebook_habilitado, un.personalizado_facebook_habilitado, 0) AS facebook_habilitado,
-                        COALESCE(NULLIF(bnin.personalizado_facebook_url, ''), un.personalizado_facebook_url) AS facebook_url
+                "SELECT COALESCE(un.personalizado_qrcode_habilitado, bnin.personalizado_qrcode_habilitado, 0) AS qrcode_habilitado,
+                        COALESCE(NULLIF(un.personalizado_qrcode_url, ''), bnin.personalizado_qrcode_url) AS qrcode_url,
+                        COALESCE(un.personalizado_site_habilitado, bnin.personalizado_site_habilitado, 0) AS site_habilitado,
+                        COALESCE(NULLIF(un.personalizado_site_url, ''), bnin.personalizado_site_url) AS site_url,
+                        COALESCE(un.personalizado_instagram_habilitado, bnin.personalizado_instagram_habilitado, 0) AS instagram_habilitado,
+                        COALESCE(NULLIF(un.personalizado_instagram_url, ''), bnin.personalizado_instagram_url) AS instagram_url,
+                        COALESCE(un.personalizado_facebook_habilitado, bnin.personalizado_facebook_habilitado, 0) AS facebook_habilitado,
+                        COALESCE(NULLIF(un.personalizado_facebook_url, ''), bnin.personalizado_facebook_url) AS facebook_url
                    FROM bi_negocio_institution_names bnin
                    LEFT JOIN bi_unidades un ON un.id = bnin.unidade_id AND un.tenant_id = bnin.tenant_id
                   WHERE bnin.tenant_id = :tenant_id AND {$institutionSql}

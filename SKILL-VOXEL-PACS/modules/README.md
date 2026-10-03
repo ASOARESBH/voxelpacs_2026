@@ -2,15 +2,36 @@
 
 Cada módulo/feature relevante do VOXEL PACS deve ter um arquivo aqui, no formato abaixo. Isso é o que permite que uma tarefa futura reutilize conhecimento em vez de reanalisar o código.
 
-## Módulos já documentados
+## Módulos versionados
 
-- `servidor-pacs` — dashboard/sync/roteamento do Orthanc global → `modules/servidor-pacs.md`
-- `negocios` — CRUD de tenants/clientes, InstitutionNames, Unidades DICOM → `modules/negocios.md`
-- `worklist-estudos` — tela `/estudos`, worklist principal do usuário final → `modules/worklist-estudos.md`
-- `tenants` — multi-tenancy (TenantContext vs Auth::tenantId()), impersonação, o que NÃO existe ainda (médico↔unidade) → `modules/tenants.md`
-- `i18n` — tradução pt_BR/en/es por Negócio, o que já foi migrado (piloto) e a lista do que falta → `modules/i18n.md`
-- `sla-regras` — Cadastros > Regras de SLA + robô de remanejamento automático de médico (Fase 2 do SLA) → `modules/sla-regras.md`
-- `report-delivery` — Report Delivery Hub, jobs/outbox/artifacts e retry manual homologatório → `modules/report-delivery.md`
+Esta lista é derivada dos arquivos `SKILL-VOXEL-PACS/modules/*.md` presentes na árvore oficial auditada. A presença de um arquivo não significa que seu conteúdo esteja completo ou que o comportamento esteja validado em produção.
+
+| Módulo | Arquivo |
+|---|---|
+| Assinatura de médico | `assinatura-medico.md` |
+| Ditado de voz | `ditado-voz.md` |
+| Edição de médico | `editar-medico.md` |
+| E-mail | `email.md` |
+| Gestão de exames | `gestao-exames.md` |
+| Grupos | `grupos.md` |
+| Internacionalização | `i18n.md` |
+| Máscaras de laudo | `mascaras-laudo.md` |
+| Médicos | `medicos.md` |
+| Negócios | `negocios.md` |
+| Peer Review | `peer-review.md` |
+| Relatórios da plataforma | `platform-reports.md` |
+| Portal de resultados | `portal-resultados-pacientes.md` |
+| Relatórios | `relatorios.md` |
+| Report Delivery | `report-delivery.md` |
+| Templates de relatório | `report-templates.md` |
+| Reports | `reports.md` |
+| Servidor PACS | `servidor-pacs.md` |
+| Regras de SLA | `sla-regras.md` |
+| Template de laudo | `template-laudo.md` |
+| Tenants | `tenants.md` |
+| Unidades | `unidades.md` |
+| Usuários | `usuarios.md` |
+| Worklist de estudos | `worklist-estudos.md` |
 
 ## Template para um módulo novo (`modules/<nome-do-modulo>.md`)
 
@@ -39,9 +60,9 @@ Cada módulo/feature relevante do VOXEL PACS deve ter um arquivo aqui, no format
 [Data]
 ```
 
-## Módulos sugeridos com prioridade alta (candidatos óbvios dado o domínio PACS)
+## Áreas ainda não confirmadas como módulos
 
-Estes são os módulos que provavelmente existem e valem análise prioritária, dado o escopo do sistema — confirmar nomes reais contra o repositório:
+Os nomes abaixo aparecem como referências arquiteturais ou áreas de interesse, mas não correspondem a arquivos de módulo presentes na árvore oficial auditada. Não tratá-los como módulos existentes nem criar documentação artificial sem localizar primeiro o código e obter uma decisão documentada:
 
 - `ingestao-dicom` — recepção e processamento de estudos vindos do Orthanc
 - `laudos` — geração, assinatura e distribuição de laudos

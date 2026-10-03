@@ -4,6 +4,7 @@
  * Executar: php tests/report_custom_templates_static.php
  */
 require_once __DIR__ . '/../app/Services/ReportCustomTemplateService.php';
+require_once __DIR__ . '/../app/Services/ReportClinicalHtmlSanitizer.php';
 
 use App\Services\ReportCustomTemplateService;
 
@@ -39,6 +40,7 @@ $assert(str_contains($service, "SOURCE_INSTITUTION = 'institution_name'"), 'Serv
 $assert(str_contains($service, "STATUS_DRAFT = 'rascunho'"), 'Service deve manter rascunho.');
 $assert(str_contains($service, "STATUS_PUBLISHED = 'publicado'"), 'Service deve manter publicação versionada.');
 $assert(str_contains($service, 'sanitizeHtml'), 'Service deve sanitizar HTML.');
+$assert(str_contains($service, 'ReportClinicalHtmlSanitizer::sanitizeAndNormalize'), 'Service deve normalizar o corpo clínico antes de inseri-lo no PDF.');
 $assert(str_contains($service, 'sanitizeCss'), 'Service deve sanitizar CSS.');
 $assert(str_contains($service, "'laudo.corpo'"), 'Service deve oferecer corpo de laudo no catálogo de variáveis.');
 $assert(str_contains($service, 'mockContext'), 'Preview deve depender de contexto fictício.');

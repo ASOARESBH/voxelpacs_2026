@@ -21,7 +21,9 @@ echo -e "${GREEN}✔ Código atualizado${RESET}"
 
 # 2. Atualizar dependências
 echo -e "\n${YELLOW}[2/3] Atualizando dependências PHP...${RESET}"
+bash "$(dirname "$0")/verify-composer-tree.sh" --allow-missing-vendor
 composer install --no-dev --optimize-autoloader --no-interaction
+bash "$(dirname "$0")/verify-composer-tree.sh"
 echo -e "${GREEN}✔ Dependências atualizadas${RESET}"
 
 # 3. Verificar permissões

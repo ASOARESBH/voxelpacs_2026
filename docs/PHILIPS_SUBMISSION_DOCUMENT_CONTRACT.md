@@ -25,12 +25,13 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_document_mimetype` | Constante `application/pdf` | Obrigatório |
 | `task_patient_birthday` | `patient_birth_date` do snapshot | Obrigatório |
 | `task_patient_gender` | `patient_sex` do snapshot, normalizado pelo gerador | Obrigatório |
-| `task_site_id` | Valor explícito configurado no destino | Obrigatório |
+| `task_site_id` | Nome canônico do servidor PACS ativo e vinculado ao tenant, quando `servidor_pacs_id` está selecionado; destinos legados sem vínculo mantêm o valor explícito já configurado | Obrigatório |
+| `task_site_id_alias` | Alias técnico ASCII `[A-Za-z0-9._-]{1,120}` configurado separadamente no Destination 7 de produção e congelado na Delivery Request/outbox; substitui somente o valor emitido no XML, nunca o binding canônico | Obrigatório no D7 controlado; proibido no D6/homologação |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
-| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName) | Obrigatório |
-| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name` | Obrigatório |
-| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; ausente vira vazio | Opcional |
+| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); quando o nome é plano, preserva o valor integral | Obrigatório |
+| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name`; nome plano usa nó vazio | Obrigatório para PN estruturado; vazio permitido para autor plano |
+| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; nome plano e componente ausente viram vazio | Opcional |
 | `task_modalities` | `modalities` do estudo no snapshot, sem conversão heurística de separadores | Obrigatório |
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
@@ -41,7 +42,7 @@ Depois de assinatura/liberação, os quatro campos estruturados são imutáveis.
 
 `task_document_date` representa a data/hora clínica do exame, usando `bi_pacs_estudos.study_date` e `study_time`, correspondentes a StudyDate/StudyTime. A data sem horário é completada com `00:00:00`; `reports.liberado_em` e `released_by` não participam da resolução.
 
-Os três componentes `task_author_humanname_*` são resolvidos exclusivamente do ReferringPhysicianName estruturado do estudo. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. Nome plano, componente ausente obrigatório ou fonte não estruturada falha fechado; o sistema não divide nomes por espaços.
+Os três componentes `task_author_humanname_*` são resolvidos exclusivamente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName). Quando o valor possui `^`, os componentes DICOM são preservados. Quando o valor é plano, o nome integral é preservado em `task_author_humanname_family`, enquanto `given` e `middle` ficam vazios; essa representação é marcada internamente como autor plano e não reutiliza `patient_name_as_family`. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. O sistema não divide nomes por espaços; a ausência do nome original continua falhando fechado.
 
 ### Override request-scoped de PatientName
 
@@ -67,7 +68,11 @@ O package marca apenas `patient_name_components_omitted=true` em metadata saniti
 
 ## Configuração administrativa
 
-A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, identificador técnico do autor, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. Os nomes humanos do autor não são editáveis nesse destino: vêm do ReferringPhysicianName do estudo. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
+A tela de Report Delivery permite selecionar `pdf_only` ou `submission_document`. Ao selecionar o segundo, os campos explícitos de pasta lógica, SITE_ID, nome do documento, identificador técnico do autor, tipo documental e política `task_delete_file` ficam visíveis e são persistidos dentro de `philips_submission`. O SITE_ID é exibido como um select somente leitura, preenchido exclusivamente pelo servidor PACS selecionado no campo de origem; as opções são os servidores ativos e vinculados ao tenant. Para `submission_document`, o vínculo de servidor PACS é obrigatório: o controller substitui qualquer valor enviado pelo nome do servidor PACS autorizado ao tenant e falha fechado quando esse vínculo não existe. Os nomes humanos do autor não são editáveis nesse destino: vêm do ReferringPhysicianName do estudo. O `PhilipsSubmissionPackageProducer` combina a pasta configurada com o basename de transporte validado do PDF, usando o mesmo separador detectado na pasta, antes de gerar o XML.
+
+O tenant não é gravado como um campo clínico do XML. Ele é derivado da rota administrativa e validado contra `tenant_id` do destino, outbox e job; esse mesmo contexto tenant-scoped é o que autoriza o dispatch. A UI o exibe ao lado do identificador técnico do autor para evitar configuração visual em outro negócio, mas não aceita tenant arbitrário no payload.
+
+No Destination 7 de produção, `task_site_id` permanece a prova de vínculo do PACS: o controller o deriva do nome do servidor PACS autorizado e o Service revalida esse valor contra a origem do estudo. `task_site_id_alias` é somente um identificador de transporte sem segredo; o Request o congela no momento da autorização, inclui-o nos digests e no outbox payload, e o `PhilipsSubmissionPackageProducer` usa exclusivamente esse valor congelado para o SITE_ID do XML. Alias ausente, inválido, alterado ou desvinculado do Request falha fechado. O Destination 6 continua usando o `task_site_id` existente e ignora qualquer alias.
 
 O Controller valida o profile, o transporte SMB, a bridge privada, os campos obrigatórios, os booleanos, o tipo documental `11502-2` e a ausência de tipo quando ele não é aplicável. A credencial continua passando pelo fluxo existente de criptografia e preservação; nenhum segredo é incluído no XML, logs, snapshot ou documentação.
 
@@ -79,13 +84,15 @@ A configuração do destino não ativa produção, worker global, trigger autom�
 
 O package só pode retornar `PACKAGE_VERIFIED=PASS` depois de confirmar os hashes e tamanhos do PDF e do XML, XML bem-formado em bytes ISO-8859-1, estrutura `<submission><document>`, campos obrigatórios, `task_file_name` idêntico ao PDF, `task_file_path` vinculado por hash ao valor configurado, `application/pdf`, tipo documental aprovado e política explícita de `task_delete_file`. O arquivo final remoto não é removido pelo cleanup; somente arquivos `.part` temporários podem ser removidos automaticamente.
 
-Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versão, assinatura do artifact, destino e `delivery_profile`. Chaves de jobs históricos não são recalculadas nem modificadas.
+Novos jobs usam uma chave de idempotência que inclui tenant, relatório, versão, assinatura do artifact, destino, `delivery_profile`, modo de despacho e alias técnico congelado. Chaves de jobs históricos não são recalculadas nem modificadas.
 
 ## Falhas e rollback
 
 A ausência de qualquer campo obrigatório gera `PhilipsXmlFieldUnresolvedException` com o nome técnico do campo, sem incluir seu valor. A falha ocorre antes da confirmação do package e impede o transporte parcial. O rollback da funcionalidade consiste em selecionar novamente `pdf_only` ou manter o destino desabilitado; não há alteração destrutiva de dados históricos.
 
 A serialização também rejeita bytes de controle, incluindo NUL, e exige a declaração ISO-8859-1 e um XML bem-formado antes de o `PhilipsSubmissionDocument` ser entregue ao produtor de artifacts. O `ReportDeliveryPackage` repete a rejeição como defesa independente. Falhas do ledger registram somente a classe e o estágio técnico (`lock_job`, `create_attempt`, `update_job`, `refresh_outbox`, `sync_request` ou `commit`); SQL, parâmetros, payload, PHI e segredos não entram no log.
+
+Quando o POST do package termina sem uma confirmação HTTP utilizável, o cliente não retransmite o package nem executa SMB novamente. Ele faz uma única consulta GET autenticada ao state do mesmo Job na Bridge. A reconciliação só pode retornar sucesso se o state for `delivered`, a `package_identity`/SHA-256 coincidir, `package_verified=PASS` e a referência remota tiver o formato validado. Nessa situação, o Worker conclui o Job e registra `confirmation_source=bridge_state`; se qualquer evidência faltar, a falha original permanece e o Job segue as regras normais de terminalidade. A consulta é mTLS/HMAC, tenant/destination-scoped, allowlisted e não expõe conteúdo de artefato, credencial, stdout ou stderr.
 
 A migration de profile é aditiva e deve ser aplicada pelo procedimento de migrations do projeto. O rollback de banco deve remover apenas a coluna nova depois de confirmar que nenhum destino ou job ativo depende dela; não se deve apagar artifacts, jobs, outboxes ou arquivos remotos como parte do rollback.
 

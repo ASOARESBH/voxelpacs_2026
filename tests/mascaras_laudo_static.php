@@ -9,6 +9,7 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 $view = (string) file_get_contents($root . '/app/Views/medicos/form.php');
 $controller = (string) file_get_contents($root . '/app/Controllers/TemplatesController.php');
+$sanitizer = (string) file_get_contents($root . '/app/Services/ReportClinicalHtmlSanitizer.php');
 $failures = [];
 
 $expect = static function (bool $condition, string $message) use (&$failures): void {
@@ -38,7 +39,8 @@ $expect(str_contains($view, 'secao_exame:          _mascaraLegacySecoes.exame'),
 $expect(str_contains($view, 'secao_recomendacao:   _mascaraLegacySecoes.recomendacao'), 'Seção Recomendação legada não é preservada no payload.');
 
 $expect(str_contains($controller, 'private function sanitizeSectionHtml'), 'Sanitização de HTML não foi implementada.');
-$expect(str_contains($controller, '<p><br><strong><b><em><i><u><h1>'), 'Allowlist não preserva a marcação rica do editor.');
+$expect(str_contains($controller, 'ReportClinicalHtmlSanitizer::sanitize'), 'Controller não delega para o sanitizador clínico central.');
+$expect(str_contains($sanitizer, "'p' => true") && str_contains($sanitizer, "'u' => true") && str_contains($sanitizer, "'table' => true"), 'Allowlist central não preserva a marcação rica do editor.');
 $expect(str_contains($controller, 'conteudo_livre        = :conteudo_livre'), 'Atualização não persiste conteúdo livre.');
 $expect(str_contains($controller, 'SELECT secao_exame, secao_recomendacao'), 'Edição não busca seções legadas para preservá-las.');
 
