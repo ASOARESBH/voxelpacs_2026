@@ -63,6 +63,8 @@ O recovery administrativo usa `ReportDeliveryRequestService::prepareRecovery()`:
 
 O diagnóstico `bin/philips_nondicom_submission_no_send.php` é o gate explícito para validar um Job `submission_document` de produção controlada sem transmissão. Ele exige `tenant_id`, `job_id` e `--no-send`, lê Job/Outbox/Request/Destination tenant-scoped em transação somente-leitura, confirma o alias congelado nos três pontos e chama `PhilipsSubmissionPackageProducer::validateNoSend()` para serializar o XML apenas em memória. Não reclama Job, cria attempt, grava artifact, chama Bridge ou acessa SMB; `PASS` não autoriza o Worker nem prova chegada física.
 
+O diagnóstico complementar `bin/philips_nondicom_pdf_readonly.php` exige `--read-only-no-send` e valida o gate completo do pacote sem envio: snapshot/digest e binding canônico, PDF imutável (ou revisão explicitamente ligada), renderização visual em memória pelo renderer oficial, XML em memória e correlação PDF/XML pelo basename e alias. Ele usa `SET TRANSACTION READ ONLY` com rollback, não persiste artefatos, não reclama Job e não chama Worker, Bridge, SMB ou DICOM. `PDF_GENERATION=PASS` significa renderização em memória válida; o PDF efetivo continua sendo o snapshot imutável lido e validado. O contrato está em `docs/technical/PHILIPS_NON_DICOM_PDF_READONLY_VALIDATION.md`; esse `PASS` também não autoriza o primeiro envio.
+
 ## Dependências
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.
