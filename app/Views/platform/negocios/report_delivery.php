@@ -60,144 +60,26 @@ $transportLabels = [
         <strong>Modo seguro:</strong> destinos novos iniciam desativados e em homologação. A configuração não envia laudos por si só; a ativação depende do worker e de homologação técnica por cliente.
     </div>
 
-    <div class="card border-primary shadow-sm mb-4" id="delivery-request-card">
-        <div class="card-header bg-primary-subtle"><h2 class="h5 mb-0"><i class="fa fa-list-check me-1"></i> <?= $escape(t('delivery_hub.request.titulo')) ?></h2></div>
-        <div class="card-body">
-            <p class="small mb-3"><?= $escape(t('delivery_hub.request.ajuda')) ?></p>
-            <form id="delivery-request-form" class="row g-3">
-                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                <input type="hidden" name="destination_id" id="delivery-request-destination-id" value="<?= (int) $requestTarget['id'] ?>">
-                <input type="hidden" name="delivery_profile" value="submission_document">
-                <input type="hidden" name="dispatch_mode" id="delivery-request-dispatch-mode" value="<?= $escape($requestTarget['dispatch_mode']) ?>">
-                <input type="hidden" name="confirm_production_prepare" id="delivery-request-confirm-production" value="0">
-                <div class="col-md-3">
-                    <label class="form-label" for="delivery-request-report-id"><?= $escape(t('delivery_hub.request.report_id')) ?></label>
-                    <input class="form-control" id="delivery-request-report-id" name="report_id" type="number" min="1" value="348" required>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="delivery-request-report-version"><?= $escape(t('delivery_hub.request.report_version')) ?></label>
-                    <input class="form-control" id="delivery-request-report-version" name="report_version" type="number" min="1" value="4" required>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="delivery-request-pdf-revision"><?= $escape(t('delivery_hub.request.pdf_revision')) ?></label>
-                    <input class="form-control" id="delivery-request-pdf-revision" name="pdf_revision_id" type="number" min="0" value="0">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="delivery-request-target"><?= $escape(t('delivery_hub.request.destination')) ?></label>
-                    <select class="form-select" id="delivery-request-target" <?= $requestTargets === [] ? 'disabled' : '' ?>>
-                        <?php if ($requestTargets === []): ?>
-                            <option value="0"><?= $escape($requestTarget['label']) ?></option>
-                        <?php else: ?>
-                            <?php foreach ($requestTargets as $target): ?>
-                                <option value="<?= (int) $target['id'] ?>" data-dispatch-mode="<?= $escape($target['dispatch_mode']) ?>" data-environment="<?= $escape($target['environment']) ?>" data-label="<?= $escape($target['label']) ?>" <?= (int) $target['id'] === (int) $requestTarget['id'] ? 'selected' : '' ?>><?= $escape($target['label']) ?></option>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label"><?= $escape(t('delivery_hub.request.profile')) ?></label>
-                    <div class="form-control-plaintext"><code>submission_document</code></div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label"><?= $escape(t('delivery_hub.request.transport')) ?></label>
-                    <div class="form-control-plaintext"><code>philips_non_dicom</code></div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label"><?= $escape(t('delivery_hub.request.environment')) ?></label>
-                    <div class="form-control-plaintext"><code id="delivery-request-environment"><?= $escape($requestTarget['environment'] !== '' ? $requestTarget['environment'] : '—') ?></code></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label" for="delivery-request-reason"><?= $escape(t('delivery_hub.request.reason')) ?></label>
-                    <input class="form-control" id="delivery-request-reason" name="request_reason" maxlength="120" value="<?= $escape(t('delivery_hub.request.reason_default')) ?>" required>
-                </div>
-                <div class="col-12">
-                    <div class="small text-muted" id="delivery-request-state"><?= $escape(t('delivery_hub.request.status_initial')) ?></div>
-                    <div class="small text-muted d-flex flex-wrap gap-3 mt-1" id="delivery-request-identifiers">
-                        <span><?= $escape(t('delivery_hub.request.request_id')) ?>: <code id="delivery-request-id">—</code></span>
-                        <span><?= $escape(t('delivery_hub.request.outbox_id')) ?>: <code id="delivery-request-outbox-id">—</code></span>
-                        <span><?= $escape(t('delivery_hub.request.job_id')) ?>: <code id="delivery-request-job-id">—</code></span>
-                    </div>
-                </div>
-                <div class="col-12 d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-primary" data-request-stage="prepare"><?= $escape(t('delivery_hub.request.prepare')) ?></button>
-                    <button type="button" class="btn btn-outline-primary" data-request-stage="approve" disabled><?= $escape(t('delivery_hub.request.approve')) ?></button>
-                    <button type="button" class="btn btn-outline-primary" data-request-stage="materialize" disabled><?= $escape(t('delivery_hub.request.materialize')) ?></button>
-                    <button type="button" class="btn btn-outline-danger" data-request-stage="arm" disabled><?= $escape(t('delivery_hub.request.arm')) ?></button>
-                </div>
-            </form>
-            <div id="delivery-request-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
-        </div>
-    </div>
-
-    <div class="card border-danger shadow-sm mb-4" id="pdf-revision-card">
-        <div class="card-header bg-danger-subtle"><h2 class="h5 mb-0"><i class="fa fa-file-pdf me-1"></i> <?= $escape(t('delivery_hub.pdf_revision.titulo')) ?></h2></div>
-        <div class="card-body">
-            <p class="small mb-3"><?= $escape(t('delivery_hub.pdf_revision.ajuda')) ?></p>
-            <form id="pdf-revision-form" class="row g-3">
-                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                <input type="hidden" name="confirm_visual_renderer_correction" value="1">
-                <div class="col-md-3">
-                    <label class="form-label" for="pdf-revision-report-id"><?= $escape(t('delivery_hub.pdf_revision.report_id')) ?></label>
-                    <input class="form-control" id="pdf-revision-report-id" name="report_id" type="number" min="1" required>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="pdf-revision-report-version"><?= $escape(t('delivery_hub.pdf_revision.report_version')) ?></label>
-                    <input class="form-control" id="pdf-revision-report-version" name="report_version" type="number" min="1" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="pdf-revision-source-kind"><?= $escape(t('delivery_hub.pdf_revision.source_kind')) ?></label>
-                    <select class="form-select" id="pdf-revision-source-kind" name="source_kind" required>
-                        <option value="historical_report_version" selected><?= $escape(t('delivery_hub.pdf_revision.source_historical')) ?></option>
-                        <option value="current_report_body"><?= $escape(t('delivery_hub.pdf_revision.source_current')) ?></option>
-                    </select>
-                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.source_help')) ?></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label" for="pdf-revision-public-token"><?= $escape(t('delivery_hub.pdf_revision.public_link')) ?></label>
-                    <input class="form-control font-monospace" id="pdf-revision-public-token" name="report_public_token" maxlength="512" required placeholder="<?= $escape(t('delivery_hub.pdf_revision.public_link_placeholder')) ?>">
-                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.public_link_help')) ?></div>
-                </div>
-                <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input ms-0 me-2" id="pdf-revision-confirm" type="checkbox" required>
-                        <label class="form-check-label" for="pdf-revision-confirm"><?= $escape(t('delivery_hub.pdf_revision.confirm_label')) ?></label>
-                    </div>
-                </div>
-                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
-                    <button type="submit" class="btn btn-danger" id="pdf-revision-submit"><i class="fa fa-wand-magic-sparkles me-1"></i><?= $escape(t('delivery_hub.pdf_revision.submit')) ?></button>
-                    <a id="pdf-revision-open-link" class="btn btn-outline-success d-none" target="_blank" rel="noopener noreferrer"><?= $escape(t('delivery_hub.pdf_revision.open')) ?></a>
-                </div>
-            </form>
-            <div id="pdf-revision-feedback" class="d-none alert mt-3 mb-0" role="alert" aria-live="polite"></div>
-        </div>
-    </div>
-
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Total de jobs</div><div class="h3 mb-0"><?= (int) ($stats['total'] ?? 0) ?></div></div></div></div>
-        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Na fila</div><div class="h3 mb-0 text-primary"><?= (int) ($stats['queued'] ?? 0) ?></div></div></div></div>
-        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Entregues</div><div class="h3 mb-0 text-success"><?= (int) ($stats['delivered'] ?? 0) ?></div></div></div></div>
-        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Falhas/DLQ</div><div class="h3 mb-0 text-danger"><?= (int) ($stats['failed'] ?? 0) ?></div></div></div></div>
-    </div>
-
-    <div class="card border-warning shadow-sm mb-4">
-        <div class="card-header bg-warning-subtle"><h2 class="h5 mb-0"><i class="fa fa-vial-circle-check me-1"></i> Envio único de homologação</h2></div>
-        <div class="card-body">
-            <p class="small mb-3">Use somente após confirmar o destino e o PACS de origem. O laudo deve estar <strong>liberado</strong>; o Hub prioriza o Issuer e usa InstitutionName somente quando o estudo não tiver Issuer, criando job apenas para destinos habilitados em homologação.</p>
-            <form id="manual-delivery-form" method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/enqueue" class="row g-3">
-                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-                <div class="col-lg-8">
-                    <label class="form-label" for="manual-report-token">Link ou token público do laudo liberado</label>
-                    <input class="form-control font-monospace" id="manual-report-token" name="report_public_token" maxlength="512" required placeholder="Cole o link /reports/r/{token} ou o token de 48 caracteres">
-                    <div class="form-text">O identificador não expõe o ID sequencial do laudo. O servidor valida o tenant, o status liberado e o PACS de origem.</div>
-                </div>
-                <div class="col-lg-4 d-flex align-items-end"><button type="submit" class="btn btn-warning w-100"><i class="fa fa-paper-plane me-1"></i> Criar entrega de homologação</button></div>
-                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="manual-delivery-confirm" name="confirm_single_delivery" value="1" required><label class="form-check-label" for="manual-delivery-confirm">Confirmo a criação de <strong>uma única</strong> entrega para o laudo informado.</label></div></div>
-            </form>
-            <div id="manual-delivery-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
-        </div>
-    </div>
-
-    <div class="row g-4">
+    <ul class="nav nav-tabs nav-fill" id="reportDeliveryTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="report-delivery-config-tab" data-bs-toggle="tab" data-bs-target="#report-delivery-config-pane" type="button" role="tab" aria-controls="report-delivery-config-pane" aria-selected="true">
+            <i class="fa fa-sliders me-1"></i><?= $escape(t('delivery_hub.tabs.configuracao_destinos')) ?>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="report-delivery-jobs-tab" data-bs-toggle="tab" data-bs-target="#report-delivery-jobs-pane" type="button" role="tab" aria-controls="report-delivery-jobs-pane" aria-selected="false">
+            <i class="fa fa-list-check me-1"></i><?= $escape(t('delivery_hub.tabs.jobs_tecnicos')) ?>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="report-delivery-request-tab" data-bs-toggle="tab" data-bs-target="#report-delivery-request-pane" type="button" role="tab" aria-controls="report-delivery-request-pane" aria-selected="false">
+            <i class="fa fa-shield-halved me-1"></i><?= $escape(t('delivery_hub.tabs.request_control_plane')) ?>
+        </button>
+    </li>
+</ul>
+<div class="tab-content pt-4" id="reportDeliveryTabsContent">
+    <div class="tab-pane fade show active" id="report-delivery-config-pane" role="tabpanel" aria-labelledby="report-delivery-config-tab" tabindex="0">
+        <div class="row g-4">
         <div class="col-xl-5">
             <div class="card shadow-sm">
                 <div class="card-header bg-white"><h2 class="h5 mb-0" id="destination-form-title">Novo destino</h2></div>
@@ -434,7 +316,19 @@ $transportLabels = [
                 </div>
             </div>
 
-            <div class="card shadow-sm mb-4">
+        </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="report-delivery-jobs-pane" role="tabpanel" aria-labelledby="report-delivery-jobs-tab" tabindex="0">
+<div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Total de jobs</div><div class="h3 mb-0"><?= (int) ($stats['total'] ?? 0) ?></div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Na fila</div><div class="h3 mb-0 text-primary"><?= (int) ($stats['queued'] ?? 0) ?></div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Entregues</div><div class="h3 mb-0 text-success"><?= (int) ($stats['delivered'] ?? 0) ?></div></div></div></div>
+        <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Falhas/DLQ</div><div class="h3 mb-0 text-danger"><?= (int) ($stats['failed'] ?? 0) ?></div></div></div></div>
+    </div>
+
+                <div class="card shadow-sm mb-4">
                 <div class="card-header bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
                     <div><h2 class="h5 mb-0">Jobs técnicos recentes</h2><div class="small text-muted">Estados operacionais do tenant; nenhuma ação é executada automaticamente.</div></div>
                     <span class="badge text-bg-secondary"><?= count($jobs) ?></span>
@@ -546,7 +440,140 @@ $transportLabels = [
                     </table>
                 </div>
             </div>
+    </div>
+
+    <div class="tab-pane fade" id="report-delivery-request-pane" role="tabpanel" aria-labelledby="report-delivery-request-tab" tabindex="0">
+<div class="card border-primary shadow-sm mb-4" id="delivery-request-card">
+        <div class="card-header bg-primary-subtle"><h2 class="h5 mb-0"><i class="fa fa-list-check me-1"></i> <?= $escape(t('delivery_hub.request.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.request.ajuda')) ?></p>
+            <form id="delivery-request-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="destination_id" id="delivery-request-destination-id" value="<?= (int) $requestTarget['id'] ?>">
+                <input type="hidden" name="delivery_profile" value="submission_document">
+                <input type="hidden" name="dispatch_mode" id="delivery-request-dispatch-mode" value="<?= $escape($requestTarget['dispatch_mode']) ?>">
+                <input type="hidden" name="confirm_production_prepare" id="delivery-request-confirm-production" value="0">
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-id"><?= $escape(t('delivery_hub.request.report_id')) ?></label>
+                    <input class="form-control" id="delivery-request-report-id" name="report_id" type="number" min="1" value="348" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-report-version"><?= $escape(t('delivery_hub.request.report_version')) ?></label>
+                    <input class="form-control" id="delivery-request-report-version" name="report_version" type="number" min="1" value="4" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-pdf-revision"><?= $escape(t('delivery_hub.request.pdf_revision')) ?></label>
+                    <input class="form-control" id="delivery-request-pdf-revision" name="pdf_revision_id" type="number" min="0" value="0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="delivery-request-target"><?= $escape(t('delivery_hub.request.destination')) ?></label>
+                    <select class="form-select" id="delivery-request-target" <?= $requestTargets === [] ? 'disabled' : '' ?>>
+                        <?php if ($requestTargets === []): ?>
+                            <option value="0"><?= $escape($requestTarget['label']) ?></option>
+                        <?php else: ?>
+                            <?php foreach ($requestTargets as $target): ?>
+                                <option value="<?= (int) $target['id'] ?>" data-dispatch-mode="<?= $escape($target['dispatch_mode']) ?>" data-environment="<?= $escape($target['environment']) ?>" data-label="<?= $escape($target['label']) ?>" <?= (int) $target['id'] === (int) $requestTarget['id'] ? 'selected' : '' ?>><?= $escape($target['label']) ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.profile')) ?></label>
+                    <div class="form-control-plaintext"><code>submission_document</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.transport')) ?></label>
+                    <div class="form-control-plaintext"><code>philips_non_dicom</code></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><?= $escape(t('delivery_hub.request.environment')) ?></label>
+                    <div class="form-control-plaintext"><code id="delivery-request-environment"><?= $escape($requestTarget['environment'] !== '' ? $requestTarget['environment'] : '—') ?></code></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="delivery-request-reason"><?= $escape(t('delivery_hub.request.reason')) ?></label>
+                    <input class="form-control" id="delivery-request-reason" name="request_reason" maxlength="120" value="<?= $escape(t('delivery_hub.request.reason_default')) ?>" required>
+                </div>
+                <div class="col-12">
+                    <div class="small text-muted" id="delivery-request-state"><?= $escape(t('delivery_hub.request.status_initial')) ?></div>
+                    <div class="small text-muted d-flex flex-wrap gap-3 mt-1" id="delivery-request-identifiers">
+                        <span><?= $escape(t('delivery_hub.request.request_id')) ?>: <code id="delivery-request-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.outbox_id')) ?>: <code id="delivery-request-outbox-id">—</code></span>
+                        <span><?= $escape(t('delivery_hub.request.job_id')) ?>: <code id="delivery-request-job-id">—</code></span>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary" data-request-stage="prepare"><?= $escape(t('delivery_hub.request.prepare')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="approve" disabled><?= $escape(t('delivery_hub.request.approve')) ?></button>
+                    <button type="button" class="btn btn-outline-primary" data-request-stage="materialize" disabled><?= $escape(t('delivery_hub.request.materialize')) ?></button>
+                    <button type="button" class="btn btn-outline-danger" data-request-stage="arm" disabled><?= $escape(t('delivery_hub.request.arm')) ?></button>
+                </div>
+            </form>
+            <div id="delivery-request-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
         </div>
+    </div>
+
+    <div class="card border-danger shadow-sm mb-4" id="pdf-revision-card">
+        <div class="card-header bg-danger-subtle"><h2 class="h5 mb-0"><i class="fa fa-file-pdf me-1"></i> <?= $escape(t('delivery_hub.pdf_revision.titulo')) ?></h2></div>
+        <div class="card-body">
+            <p class="small mb-3"><?= $escape(t('delivery_hub.pdf_revision.ajuda')) ?></p>
+            <form id="pdf-revision-form" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="confirm_visual_renderer_correction" value="1">
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-id"><?= $escape(t('delivery_hub.pdf_revision.report_id')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-id" name="report_id" type="number" min="1" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="pdf-revision-report-version"><?= $escape(t('delivery_hub.pdf_revision.report_version')) ?></label>
+                    <input class="form-control" id="pdf-revision-report-version" name="report_version" type="number" min="1" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="pdf-revision-source-kind"><?= $escape(t('delivery_hub.pdf_revision.source_kind')) ?></label>
+                    <select class="form-select" id="pdf-revision-source-kind" name="source_kind" required>
+                        <option value="historical_report_version" selected><?= $escape(t('delivery_hub.pdf_revision.source_historical')) ?></option>
+                        <option value="current_report_body"><?= $escape(t('delivery_hub.pdf_revision.source_current')) ?></option>
+                    </select>
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.source_help')) ?></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="pdf-revision-public-token"><?= $escape(t('delivery_hub.pdf_revision.public_link')) ?></label>
+                    <input class="form-control font-monospace" id="pdf-revision-public-token" name="report_public_token" maxlength="512" required placeholder="<?= $escape(t('delivery_hub.pdf_revision.public_link_placeholder')) ?>">
+                    <div class="form-text"><?= $escape(t('delivery_hub.pdf_revision.public_link_help')) ?></div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input ms-0 me-2" id="pdf-revision-confirm" type="checkbox" required>
+                        <label class="form-check-label" for="pdf-revision-confirm"><?= $escape(t('delivery_hub.pdf_revision.confirm_label')) ?></label>
+                    </div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                    <button type="submit" class="btn btn-danger" id="pdf-revision-submit"><i class="fa fa-wand-magic-sparkles me-1"></i><?= $escape(t('delivery_hub.pdf_revision.submit')) ?></button>
+                    <a id="pdf-revision-open-link" class="btn btn-outline-success d-none" target="_blank" rel="noopener noreferrer"><?= $escape(t('delivery_hub.pdf_revision.open')) ?></a>
+                </div>
+            </form>
+            <div id="pdf-revision-feedback" class="d-none alert mt-3 mb-0" role="alert" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <div class="card border-warning shadow-sm mb-4">
+        <div class="card-header bg-warning-subtle"><h2 class="h5 mb-0"><i class="fa fa-vial-circle-check me-1"></i> Envio único de homologação</h2></div>
+        <div class="card-body">
+            <p class="small mb-3">Use somente após confirmar o destino e o PACS de origem. O laudo deve estar <strong>liberado</strong>; o Hub prioriza o Issuer e usa InstitutionName somente quando o estudo não tiver Issuer, criando job apenas para destinos habilitados em homologação.</p>
+            <form id="manual-delivery-form" method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/reports/enqueue" class="row g-3">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
+                <div class="col-lg-8">
+                    <label class="form-label" for="manual-report-token">Link ou token público do laudo liberado</label>
+                    <input class="form-control font-monospace" id="manual-report-token" name="report_public_token" maxlength="512" required placeholder="Cole o link /reports/r/{token} ou o token de 48 caracteres">
+                    <div class="form-text">O identificador não expõe o ID sequencial do laudo. O servidor valida o tenant, o status liberado e o PACS de origem.</div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-end"><button type="submit" class="btn btn-warning w-100"><i class="fa fa-paper-plane me-1"></i> Criar entrega de homologação</button></div>
+                <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="manual-delivery-confirm" name="confirm_single_delivery" value="1" required><label class="form-check-label" for="manual-delivery-confirm">Confirmo a criação de <strong>uma única</strong> entrega para o laudo informado.</label></div></div>
+            </form>
+            <div id="manual-delivery-feedback" class="d-none alert mt-3 mb-0" role="alert"></div>
+        </div>
+    </div>
+
+    </div>
     </div>
 </div>
 
