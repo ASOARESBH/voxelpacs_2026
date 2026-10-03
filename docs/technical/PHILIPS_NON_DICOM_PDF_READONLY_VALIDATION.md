@@ -22,7 +22,8 @@ A execução:
 - abre uma transação PostgreSQL `READ ONLY` e faz `ROLLBACK`;
 - exige Job `queued`, Request `armed`, Outbox `queued`, `attempt_count=0` e sem lock;
 - valida tenant, Destination 7, transporte, profile, ambiente e `controlled_production`;
-- compara o digest autorizado da Request com o snapshot atual e o digest do Destination;
+- compara separadamente o digest autorizado da Request com o snapshot atual e o digest do Destination;
+- valida separadamente que `destination_config_observed_at` ainda corresponde ao `updated_at` do Destination;
 - valida o vínculo canônico `servidor_pacs_id` ↔ estudo ↔ servidor ativo do tenant;
 - confirma que o alias ASCII está congelado no Destination, Request e payload;
 - lê o snapshot PDF canônico imutável, ou a revisão PDF explicitamente ligada ao Job;
@@ -56,6 +57,8 @@ OUTBOX_STATUS
 ATTEMPT_COUNT
 SNAPSHOT
 SNAPSHOT_DIGEST
+DESTINATION_DIGEST
+DESTINATION_TIMESTAMP_VALIDATION
 TASK_SITE_ID
 TASK_SITE_ID_VALIDATION
 TASK_SITE_ID_ALIAS
@@ -78,6 +81,14 @@ FAILURE_CODE
 
 O valor literal do alias, o conteúdo do PDF/XML, nomes clínicos, Patient ID,
 UID, caminho privado, segredo e hashes não são retornados.
+
+`SNAPSHOT_DIGEST=PASS` e `DESTINATION_DIGEST=PASS` confirmam os bytes
+canônicos congelados. `DESTINATION_TIMESTAMP_VALIDATION=FAIL` significa que o
+Destination foi atualizado depois da autorização da Request; esse caso não é
+uma divergência do digest e deve ser reportado como
+`DESTINATION_CHANGED_AFTER_AUTHORIZATION`. O diagnóstico permanece bloqueado
+até que exista uma nova autorização/identidade pelo fluxo oficial; não se deve
+alterar a Request ou recalcular/gravar digests em produção.
 
 ## Decisão
 

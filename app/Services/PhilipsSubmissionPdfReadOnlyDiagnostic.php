@@ -43,6 +43,8 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             'attempt_count' => null,
             'snapshot' => 'NOT_EXECUTED',
             'snapshot_digest' => 'NOT_VALIDATED',
+            'destination_digest' => 'NOT_VALIDATED',
+            'destination_timestamp_validation' => 'NOT_EXECUTED',
             'task_site_id' => 'NOT_VALIDATED',
             'task_site_id_validation' => 'NOT_EXECUTED',
             'task_site_id_alias' => 'NOT_VALIDATED',
@@ -117,10 +119,18 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             }
             $result['snapshot'] = 'PASS';
 
-            $digestPass = $this->digestPass($tenantId, $requestId, $request, $destination, $reportSnapshot);
-            $result['snapshot_digest'] = $digestPass ? 'PASS' : 'FAIL';
-            if (!$digestPass) {
-                throw new RuntimeException('DIGEST_MISMATCH');
+            $digestChecks = $this->digestChecks($tenantId, $requestId, $request, $destination, $reportSnapshot);
+            $result['snapshot_digest'] = $digestChecks['snapshot_digest'] ? 'PASS' : 'FAIL';
+            $result['destination_digest'] = $digestChecks['destination_digest'] ? 'PASS' : 'FAIL';
+            $result['destination_timestamp_validation'] = $digestChecks['destination_timestamp'] ? 'PASS' : 'FAIL';
+            if (!$digestChecks['snapshot_digest']) {
+                throw new RuntimeException('SNAPSHOT_DIGEST_MISMATCH');
+            }
+            if (!$digestChecks['destination_digest']) {
+                throw new RuntimeException('DESTINATION_DIGEST_MISMATCH');
+            }
+            if (!$digestChecks['destination_timestamp']) {
+                throw new RuntimeException('DESTINATION_CHANGED_AFTER_AUTHORIZATION');
             }
 
             $canonicalPass = $this->canonicalBindingPass($tenantId, $destination, $reportSnapshot);
@@ -275,8 +285,8 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
         }
     }
 
-    /** @param array<string,mixed> $request @param array<string,mixed> $destination @param array<string,mixed> $report */
-    private function digestPass(int $tenantId, int $requestId, array $request, array $destination, array $report): bool
+    /** @param array<string,mixed> $request @param array<string,mixed> $destination @param array<string,mixed> $report @return array{snapshot_digest:bool,destination_digest:bool,destination_timestamp:bool} */
+    private function digestChecks(int $tenantId, int $requestId, array $request, array $destination, array $report): array
     {
         $overrideDigest = (new ReportDeliveryRequestPatientNameOverrideService($this->pdo))->digest($tenantId, $requestId);
         $snapshotDigest = DeliveryRequestIdentity::authorizedSnapshotDigest(
@@ -290,12 +300,17 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
         $destinationDigest = DeliveryRequestIdentity::destinationDigest($destination);
         $storedSnapshotDigest = (string) ($request['authorized_snapshot_digest'] ?? '');
         $storedDestinationDigest = (string) ($request['destination_config_digest'] ?? '');
-        return (int) ($request['snapshot_schema_version'] ?? 0) === 1
-            && $this->sameTimestamp($request['destination_config_observed_at'] ?? null, $destination['updated_at'] ?? null)
-            && preg_match('/^[a-f0-9]{64}$/i', $storedSnapshotDigest) === 1
-            && preg_match('/^[a-f0-9]{64}$/i', $storedDestinationDigest) === 1
-            && hash_equals($storedSnapshotDigest, $snapshotDigest)
-            && hash_equals($storedDestinationDigest, $destinationDigest);
+        return [
+            'snapshot_digest' => (int) ($request['snapshot_schema_version'] ?? 0) === 1
+                && preg_match('/^[a-f0-9]{64}$/i', $storedSnapshotDigest) === 1
+                && hash_equals($storedSnapshotDigest, $snapshotDigest),
+            'destination_digest' => preg_match('/^[a-f0-9]{64}$/i', $storedDestinationDigest) === 1
+                && hash_equals($storedDestinationDigest, $destinationDigest),
+            'destination_timestamp' => $this->sameTimestamp(
+                $request['destination_config_observed_at'] ?? null,
+                $destination['updated_at'] ?? null
+            ),
+        ];
     }
 
     /** @param array<string,mixed> $destination @param array<string,mixed> $report */

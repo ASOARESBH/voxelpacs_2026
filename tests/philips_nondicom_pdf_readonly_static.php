@@ -25,6 +25,12 @@ foreach ([
     'renderSnapshotBinary',
     'ReportDeliveryRequestRepository',
     'DeliveryRequestIdentity::authorizedSnapshotDigest',
+    'digestChecks',
+    'destination_digest',
+    'destination_timestamp_validation',
+    'SNAPSHOT_DIGEST_MISMATCH',
+    'DESTINATION_DIGEST_MISMATCH',
+    'DESTINATION_CHANGED_AFTER_AUTHORIZATION',
     'task_site_id_alias',
     'CANONICAL_BOUND',
     'PDF_XML_CORRELATION',
@@ -39,6 +45,8 @@ foreach ([
     'PDF_GENERATION',
     'PDF_VALIDATION',
     'PDF_XML_CORRELATION',
+    'DESTINATION_DIGEST',
+    'DESTINATION_TIMESTAMP_VALIDATION',
     'DATABASE_CHANGED',
 ] as $marker) {
     $expect(str_contains($cli, $marker), 'Marker ausente no CLI PDF read-only: ' . $marker);
@@ -70,6 +78,8 @@ $forbidden = [
 foreach ($forbidden as $marker) {
     $expect(!str_contains($service, $marker), 'Operação proibida localizada no diagnóstico: ' . $marker);
 }
+
+$expect(!str_contains($service, "new RuntimeException('DIGEST_MISMATCH')"), 'O diagnóstico não deve usar o código combinado legado DIGEST_MISMATCH.');
 
 $expect(str_contains($producer, 'public function composeNoSend'), 'Compositor no-send não foi exposto de forma isolada.');
 $expect(str_contains($producer, '$this->composeNoSend($job, $configuration, $payload)'), 'validateNoSend não reutiliza o compositor oficial.');
