@@ -1135,6 +1135,7 @@ return [
     'delivery_hub.destination.homologacao_ativado' => 'Destino de homologação ativado.',
     'delivery_hub.destination.desativado_salvo' => 'Destino salvo como desativado.',
     'delivery_hub.tabs.configuracao_destinos' => 'Configuração e destinos', 'delivery_hub.tabs.jobs_tecnicos' => 'Jobs técnicos', 'delivery_hub.tabs.request_control_plane' => 'Delivery Request — control-plane',
+    'delivery_hub.jobs.coluna_paciente' => 'Paciente', 'delivery_hub.jobs.coluna_accession' => 'Accession Number', 'delivery_hub.jobs.coluna_acoes' => 'Ações administrativas', 'delivery_hub.jobs.vazio' => 'Nenhum job técnico recente.', 'delivery_hub.jobs.sem_accession' => 'Não informado', 'delivery_hub.jobs.sem_acao' => 'Sem ação disponível', 'delivery_hub.jobs.reenviar_homologacao' => 'Reenviar teste', 'delivery_hub.jobs.reenviar_homologacao_ajuda' => 'Reenvia somente este Job terminal para o destino Philips Non-DICOM de homologação, após nova confirmação.',
     'delivery_hub.request.titulo' => 'Delivery Request — control-plane',
     'delivery_hub.request.ajuda' => 'Executa sequencialmente as quatro fases oficiais da Delivery Request para uma identidade explícita. O worker e a transmissão não são iniciados por esta tela.',
     'delivery_hub.request.report_id' => 'Report ID',

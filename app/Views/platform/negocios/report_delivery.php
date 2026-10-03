@@ -335,19 +335,26 @@ $transportLabels = [
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
-                        <thead><tr><th>Job</th><th>Destino</th><th>Report/version</th><th>Transporte</th><th>Status</th><th class="text-end">Ações administrativas</th></tr></thead>
+                        <thead><tr><th>Job</th><th><?= $escape(t('delivery_hub.jobs.coluna_paciente')) ?></th><th><?= $escape(t('delivery_hub.jobs.coluna_accession')) ?></th><th>Destino</th><th>Report/version</th><th>Transporte</th><th>Status</th><th class="text-end"><?= $escape(t('delivery_hub.jobs.coluna_acoes')) ?></th></tr></thead>
                         <tbody>
-                            <?php if (!$jobs): ?><tr><td colspan="6" class="text-center text-muted py-4">Nenhum job técnico recente.</td></tr><?php endif; ?>
+                            <?php if (!$jobs): ?><tr><td colspan="8" class="text-center text-muted py-4"><?= $escape(t('delivery_hub.jobs.vazio')) ?></td></tr><?php endif; ?>
                             <?php foreach ($jobs as $job): ?>
                                 <?php $jobStatus = (string) ($job['status'] ?? ''); $jobId = (int) ($job['id'] ?? 0); ?>
                                 <tr>
                                     <td><code>#<?= $jobId ?></code><div class="small text-muted">Tentativas: <?= (int) ($job['attempt_count'] ?? 0) ?></div></td>
+                                    <td><?= $escape((string) ($job['patient_name'] ?? '—')) ?></td>
+                                    <td><code><?= $escape((string) ($job['accession_number'] ?? '') !== '' ? (string) $job['accession_number'] : t('delivery_hub.jobs.sem_accession')) ?></code></td>
                                     <td><?= $escape((string) ($job['destination_name'] ?? '—')) ?></td>
                                     <td><?= (int) ($job['report_id'] ?? 0) ?>/<?= (int) ($job['report_version'] ?? 0) ?></td>
                                     <td><code><?= $escape((string) ($job['transport'] ?? '—')) ?></code></td>
                                     <td><span class="badge text-bg-<?= $jobStatus === 'processing' ? 'warning' : ($jobStatus === 'delivered' ? 'success' : 'secondary') ?>"><?= $escape($jobStatus !== '' ? $jobStatus : 'unknown') ?></span></td>
                                     <td class="text-end">
-                                        <?php if ($jobStatus === 'processing' && $jobId > 0): ?>
+                                        <?php if ((int) ($job['manual_retry_eligible'] ?? 0) === 1 && $jobId > 0): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/retry-homologation" class="d-inline manual-homologation-retry-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_manual_homologation_retry" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="<?= $escape(t('delivery_hub.jobs.reenviar_homologacao_ajuda')) ?>"><?= $escape(t('delivery_hub.jobs.reenviar_homologacao')) ?></button>
+                                            </form>
+                                        <?php elseif ($jobStatus === 'processing' && $jobId > 0): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/recover-stale" class="d-inline stale-action-form">
                                                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_recover_stale" value="1">
                                                 <button type="submit" class="btn btn-sm btn-outline-warning"><?= $escape(t('delivery_hub.released.recuperar_lease')) ?></button>
@@ -357,7 +364,7 @@ $transportLabels = [
                                                 <button type="submit" class="btn btn-sm btn-outline-danger"><?= $escape(t('delivery_hub.released.quarentenar_lease')) ?></button>
                                             </form>
                                         <?php else: ?>
-                                            <span class="text-muted small">Sem ação automática</span>
+                                            <span class="text-muted small"><?= $escape(t('delivery_hub.jobs.sem_acao')) ?></span>
                                         <?php endif; ?>
                                     </td>
                                 </tr>

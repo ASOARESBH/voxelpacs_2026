@@ -788,11 +788,32 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare(
             "SELECT j.id, j.transport, j.status, j.attempt_count, j.next_attempt_at,
                     j.delivered_at, j.remote_reference, j.last_error, j.created_at,
-                    d.nome AS destination_name, o.report_id, o.report_version,
-                    o.estudo_id, o.event_type
+                    d.nome AS destination_name, d.ambiente AS destination_environment,
+                    d.enabled AS destination_enabled, o.report_id, o.report_version,
+                    o.estudo_id, o.event_type,
+                    e.patient_name, e.patient_name_display, e.tags_raw,
+                    COALESCE(e.accession_number, '') AS accession_number,
+                    CASE WHEN j.status IN ('failed', 'dead_letter')
+                               AND j.transport = 'philips_non_dicom'
+                               AND d.transport = 'philips_non_dicom'
+                               AND d.ambiente = 'homologacao'
+                               AND d.enabled = 1
+                               AND EXISTS (
+                                   SELECT 1
+                                     FROM pacs_report_delivery_artifacts a
+                                    WHERE a.outbox_id = j.outbox_id
+                                      AND a.tenant_id = j.tenant_id
+                                      AND a.artifact_type = 'pdf'
+                               )
+                         THEN 1 ELSE 0 END AS manual_retry_eligible
              FROM pacs_report_delivery_jobs j
-             INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
-             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+             INNER JOIN pacs_report_delivery_destinations d
+                     ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+             INNER JOIN pacs_report_delivery_outbox o
+                     ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+             LEFT JOIN bi_pacs_estudos e
+                    ON e.id = o.estudo_id
+                   AND e.tenant_id = j.tenant_id
              WHERE j.tenant_id = :tenant_id
              ORDER BY j.created_at DESC
              LIMIT :limit"
@@ -801,7 +822,13 @@ class ReportDeliveryRepository
         $stmt->bindValue(':limit', max(1, min(200, $limit)), PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($jobs as &$job) {
+            $job['patient_name'] = DicomPersonName::displayFromStudy($job) ?: '—';
+        }
+        unset($job);
+
+        return $jobs;
     }
 
     /**
