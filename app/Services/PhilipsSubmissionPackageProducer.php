@@ -86,6 +86,27 @@ final class PhilipsSubmissionPackageProducer
      */
     public function validateNoSend(array $job, array $configuration, array $payload): array
     {
+        $this->composeNoSend($job, $configuration, $payload);
+
+        return [
+            'xml_serialized' => 'PASS',
+            'artifact_written' => 'NO',
+            'bridge_called' => 'NO',
+            'smb_called' => 'NO',
+        ];
+    }
+
+    /**
+     * Compõe o XML oficial e o filename do PDF somente em memória.
+     * Não lê o PDF, não cria arquivo, não registra artifact e não transporta.
+     *
+     * @param array<string,mixed> $job
+     * @param array<string,mixed> $configuration
+     * @param array<string,mixed> $payload
+     * @return array{document:PhilipsSubmissionDocument,pdf_filename:string}
+     */
+    public function composeNoSend(array $job, array $configuration, array $payload): array
+    {
         $payload = $this->requestSnapshot->hydratePayload($job, $payload, false);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
@@ -98,13 +119,10 @@ final class PhilipsSubmissionPackageProducer
         $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
         $input['pdf_filename'] = $pdfFilename;
         $document = $this->generator->generate($input, $deliveryContext);
-        unset($document, $input, $payload);
 
         return [
-            'xml_serialized' => 'PASS',
-            'artifact_written' => 'NO',
-            'bridge_called' => 'NO',
-            'smb_called' => 'NO',
+            'document' => $document,
+            'pdf_filename' => $pdfFilename,
         ];
     }
 
