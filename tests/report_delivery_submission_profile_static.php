@@ -83,7 +83,8 @@ expect_profile(
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, 'resolveTaskSiteId'), 'Package producer must resolve the controlled production alias explicitly');
-expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($producer, 'task_site_id_alias'), 'Alias selection must be scoped to the frozen controlled-production payload');
+expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($producer, 'task_site_id_alias'), 'Alias selection must be scoped to the controlled payload or automatic destination context');
+expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job['task_site_id_alias'] ?? '')"), 'Automatic production must pass the resolved destination alias into the delivery context');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
 expect_profile(!str_contains($producer, "'task_author_humanname_family'")
@@ -165,6 +166,43 @@ $d7Context = [
 expect_profile(
     \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(['task_site_id_alias' => 'ORTHANC-CLIENTE-A'], 'Unicode — canonical', $d7Context) === 'ORTHANC-CLIENTE-A',
     'D7 production must use only the frozen ASCII alias'
+);
+$d7AutomaticContext = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 7,
+    'ambiente' => 'producao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'automatic_production',
+    'task_site_id_alias' => 'ORTHANC-CLIENTE-A',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId([], 'Unicode — canonical', $d7AutomaticContext) === 'ORTHANC-CLIENTE-A',
+    'D7 automatic production must use the resolved ASCII destination alias'
+);
+try {
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(
+        [],
+        'Unicode — canonical',
+        array_replace($d7AutomaticContext, ['task_site_id_alias' => ''])
+    );
+    expect_profile(false, 'D7 automatic production must fail closed without a valid destination alias');
+} catch (\App\Services\PhilipsXmlFieldUnresolvedException) {
+    // Expected fail-closed behavior.
+}
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(
+        ['task_site_id_alias' => 'MALICIOUS'],
+        'Unicode — canonical',
+        [
+            'transport' => 'philips_non_dicom',
+            'destination_id' => 6,
+            'ambiente' => 'producao',
+            'delivery_profile' => 'submission_document',
+            'dispatch_mode' => 'automatic_production',
+            'task_site_id_alias' => 'OTHER-DESTINATION',
+        ]
+    ) === 'Unicode — canonical',
+    'Non-D7 automatic production must retain its canonical task_site_id'
 );
 foreach ([[], ['task_site_id_alias' => ''], ['task_site_id_alias' => 'não-ascii']] as $invalidPayload) {
     try {
