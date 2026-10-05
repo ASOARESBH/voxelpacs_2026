@@ -35,16 +35,18 @@ final class PhilipsSubmissionPackageProducer
      */
     public static function resolveTaskSiteId(array $payload, mixed $configuredTaskSiteId, array $deliveryContext): mixed
     {
-        $isControlledProduction = (string) ($deliveryContext['transport'] ?? '') === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+        $isAliasScopedProduction = (string) ($deliveryContext['transport'] ?? '') === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             && (int) ($deliveryContext['destination_id'] ?? 0) === 7
             && (string) ($deliveryContext['ambiente'] ?? '') === 'producao'
             && (string) ($deliveryContext['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
-            && (string) ($deliveryContext['dispatch_mode'] ?? '') === 'controlled_production';
-        if (!$isControlledProduction) {
+            && in_array((string) ($deliveryContext['dispatch_mode'] ?? ''), ['controlled_production', 'automatic_production'], true);
+        if (!$isAliasScopedProduction) {
             return $configuredTaskSiteId;
         }
 
-        $alias = trim((string) ($payload['task_site_id_alias'] ?? ''));
+        $alias = (string) ($deliveryContext['dispatch_mode'] ?? '') === 'automatic_production'
+            ? trim((string) ($deliveryContext['task_site_id_alias'] ?? ''))
+            : trim((string) ($payload['task_site_id_alias'] ?? ''));
         if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) !== 1) {
             throw new PhilipsXmlFieldUnresolvedException('task_site_id');
         }
@@ -139,6 +141,7 @@ final class PhilipsSubmissionPackageProducer
             'delivery_profile' => (string) ($job['delivery_profile'] ?? ($configuration['delivery_profile'] ?? '')),
             'transport' => (string) ($job['transport'] ?? ''),
             'dispatch_mode' => (string) ($payload['dispatch_mode'] ?? $job['dispatch_mode'] ?? ''),
+            'task_site_id_alias' => (string) ($job['task_site_id_alias'] ?? ''),
         ];
     }
 
