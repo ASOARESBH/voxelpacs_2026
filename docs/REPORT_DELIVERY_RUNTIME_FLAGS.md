@@ -18,6 +18,10 @@ A ausência de qualquer flag é segura: **OFF**. Valores booleanos aceitos são 
 | `PHILIPS_NON_DICOM_DELIVERY_ENABLED` | transporte Philips Non-DICOM e Worker | OFF | OFF |
 | `PHILIPS_NON_DICOM_SMB_TEST_ENABLED` | teste de conectividade SMB opt-in | OFF | OFF |
 | `PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED` | teste SMB somente leitura opt-in | OFF | OFF |
+| `PHILIPS_AUTHOR_FALLBACK_ENABLED` | fallback de autor somente no diagnóstico XML no-send | OFF | OFF |
+| `PHILIPS_AUTHOR_FALLBACK_FAMILY` | componente Family sanitizado do fallback | `VOXEL` | valor documentado |
+| `PHILIPS_AUTHOR_FALLBACK_GIVEN` | componente Given sanitizado do fallback | `AUTHOR_MISSING` | valor documentado |
+| `PHILIPS_AUTHOR_FALLBACK_MIDDLE` | componente Middle sanitizado do fallback | vazio | valor documentado |
 | `VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH` | entrypoint do Worker contínuo e one-shot | OFF | **ON** |
 
 O kill switch é fail-closed: valor inválido também impede o processamento. O guard ocorre antes de `enableOneShotForJob()`, `claimJobById()` e `claimNextJob()`. Ele não cancela jobs, não modifica Outbox/Request, não cria attempts e não executa retry.
@@ -47,6 +51,8 @@ PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED=false
 ```
 
 A configuração de produção de Hub, Requests e Non-DICOM permanece uma decisão operacional separada e não é habilitada pelo script por padrão. O kill switch também não é alterado por uma aplicação de perfil de teste sem declaração explícita.
+
+As flags `PHILIPS_AUTHOR_FALLBACK_*` não alteram a configuração do Destination, não consultam banco e não habilitam Worker, Bridge, SMB ou transmissão. Mesmo quando `PHILIPS_AUTHOR_FALLBACK_ENABLED=true`, o fallback só é aceito pela API explícita de diagnóstico no-send para `automatic_production`; o caminho normal de produção continua fail-closed quando não há autor real ou configuração explícita. Os componentes são ASCII restritos para manter a serialização ISO-8859-1 previsível e o resultado sanitizado identifica `AUTHOR_SOURCE=FALLBACK_MISSING_DATA`.
 
 ## Rollback operacional futuro
 

@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Services\PhilipsSubmissionDocumentGenerator;
 use App\Services\PhilipsSubmissionMetadataResolver;
 use App\Services\PhilipsSubmissionPackageProducer;
+use App\Services\PhilipsSubmissionAuthorResolver;
 use App\Services\PhilipsSubmissionPdfReadOnlyDiagnostic;
 use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryRequestSnapshotService;
@@ -25,6 +26,7 @@ $producer = new PhilipsSubmissionPackageProducer(
     new ReportDeliveryArtifactService(),
     new PhilipsSubmissionDocumentGenerator(),
     new PhilipsSubmissionMetadataResolver(),
+    new PhilipsSubmissionAuthorResolver(),
     new ReportDeliveryRequestSnapshotService($pdo)
 );
 $result = (new PhilipsSubmissionPdfReadOnlyDiagnostic($pdo, $producer))->run((int) $tenantId, (int) $jobId);

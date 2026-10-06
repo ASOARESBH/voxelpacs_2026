@@ -16,6 +16,7 @@ function expect_profile(bool $condition, string $message): void
 $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryController.php');
 $view = file_get_contents($root . '/app/Views/platform/negocios/report_delivery.php');
 $producer = file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
+$authorResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionAuthorResolver.php');
 $resolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
 $generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
 $dicomPersonName = file_get_contents($root . '/app/Helpers/DicomPersonName.php');
@@ -24,7 +25,7 @@ $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.p
 $versionName = file_get_contents($root . '/app/Services/ReportVersionPatientNameService.php');
 $versionMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
+expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($authorResolver) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
 
 foreach ([
     'PROFILE_PDF_ONLY',
@@ -82,15 +83,18 @@ expect_profile(
 );
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
+expect_profile(str_contains($producer, 'PhilipsSubmissionAuthorResolver') && str_contains($producer, 'resolveForNoSendDiagnostic'), 'Package producer must use the dedicated author resolver and isolate diagnostic fallback');
 expect_profile(str_contains($producer, 'resolveTaskSiteId'), 'Package producer must resolve the controlled production alias explicitly');
 expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($producer, 'task_site_id_alias'), 'Alias selection must be scoped to the controlled payload or automatic destination context');
 expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job['task_site_id_alias'] ?? '')"), 'Automatic production must pass the resolved destination alias into the delivery context');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
-expect_profile(str_contains($producer, "'automatic_production'"), 'Configured author overlay must be scoped to automatic production');
+expect_profile(str_contains($authorResolver, "'automatic_production'"), 'Configured author resolution must be scoped to automatic production');
 foreach (['task_author_humanname_family', 'task_author_humanname_given', 'task_author_humanname_middle'] as $field) {
-    expect_profile(str_contains($producer, "'{$field}'"), "Automatic production must accept configured {$field}");
+    expect_profile(str_contains($authorResolver, "'{$field}'"), "Author resolver must accept configured {$field}");
 }
+expect_profile(str_contains($authorResolver, 'TASK_AUTHOR_ID_RESOLUTION') || str_contains($authorResolver, 'taskAuthorIdResolution'), 'Author resolver must not infer task_author_id as an internal medical ID');
+expect_profile(str_contains($authorResolver, 'SOURCE_FALLBACK_MISSING_DATA') && str_contains($authorResolver, 'resolveForNoSendDiagnostic'), 'Author fallback must be identifiable and no-send scoped');
 expect_profile(!str_contains($producer, "'task_patient_humanname_family'")
     && !str_contains($producer, "'task_patient_humanname_given'")
     && !str_contains($producer, "'task_patient_humanname_middle'"), 'Package producer must not accept administrative PatientName components');
