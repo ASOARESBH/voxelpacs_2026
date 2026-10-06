@@ -38,6 +38,7 @@ A configuração do runtime permanece fora do Git. O helper recebe explicitament
 --transport philips_non_dicom
 --profile submission_document
 --mode single_test
+--unit voxelpacs-philips-folder-bridge.service
 ```
 
 O helper exige root, paths absolutos, EnvironmentFile root-owned `0600`, backup root-owned `0700` e uma allowlist sem chaves desconhecidas ou duplicadas.
@@ -72,13 +73,28 @@ Nenhum default perigoso é aplicado.
 
 ## Backup
 
+A ordem obrigatória de `--backup-only` é:
+
+```text
+validar policy atual
+→ validar a identidade exata da unit Philips Folder
+→ validar parâmetros e allowlist
+→ criar backup isolado
+→ verificar manifest/checksum/owner/mode
+→ emitir o identificador do backup
+```
+
+`--backup-only` não altera a policy, allowlist, unit, serviço, banco ou transporte.
+
 A ordem obrigatória de `--apply` é:
 
 ```text
 validar policy atual
 → validar parâmetros e allowlist
-→ criar backup
-→ verificar manifest/checksum/owner/mode
+→ exigir --backup-id explícito
+→ verificar backup, manifest e checksum
+→ verificar compatibilidade com Job/Destination solicitados
+→ verificar que o backup corresponde ao estado atual
 → aplicar somente cinco chaves da policy
 → validar o resultado
 ```
@@ -112,16 +128,36 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
 
 Saída esperada: `DRY_RUN=PASS`, `WOULD_APPLY=YES`, `WOULD_RELOAD=YES` e `WOULD_TRANSMIT=NO`.
 
-### Aplicação futura
+### Backup-only
 
-A instalação e o `--apply` **não fazem parte desta entrega Git-only**. Após instalação root-controlled e autorização operacional separada:
+Cria o backup root-only da policy efetivamente carregada, após verificar a unit Philips Folder. Não faz reload e não aplica nenhuma alteração:
 
 ```bash
 sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
-  --apply [mesmos parâmetros explícitos do dry-run]
+  --backup-only \
+  --env-file /etc/voxelpacs/philips-folder-bridge.env \
+  --allowlist /etc/voxelpacs/philips-folder-policy.allowlist \
+  --backup-root /var/backups/voxelpacs/philips-folder-policy-applier \
+  --expected-host <hostname-aprovado> \
+  --tenant-id 2 --destination-id 7 --job-id 519 \
+  --transport philips_non_dicom \
+  --profile submission_document --mode single_test \
+  --unit voxelpacs-philips-folder-bridge.service
 ```
 
-O `--apply` não recarrega a unit automaticamente; a separação evita misturar alteração persistente com reinício operacional.
+Saída esperada: `BACKUP_ONLY=PASS`, `BACKUP_MANIFEST=PASS`, `BACKUP_CHECKSUM=PASS`, `POLICY_CHANGED=NO` e `RELOAD=NOT_PERFORMED`.
+
+### Aplicação futura
+
+A instalação e o `--apply` **não fazem parte desta entrega Git-only**. Após o `--backup-only`, instalação root-controlled e autorização operacional separada:
+
+```bash
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --apply [mesmos parâmetros explícitos do dry-run] \
+  --backup-id <BACKUP_ID>
+```
+
+O `--apply` rejeita ausência de backup, backup incompatível com Job/Destination ou backup cujo checksum não corresponda ao estado atual. Ele não recarrega a unit automaticamente; a separação evita misturar alteração persistente com reinício operacional.
 
 ### Validação estrutural
 
@@ -148,7 +184,7 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
   rollback [mesmos parâmetros explícitos] --backup-id <BACKUP_ID>
 ```
 
-Restaura apenas as cinco chaves da policy alvo, preservando as demais configurações e segredos do EnvironmentFile. O reload continua separado.
+Restaura apenas as cinco chaves da policy alvo, preservando as demais configurações e segredos do EnvironmentFile. Exige que a policy atual corresponda ao alvo e que o backup seja compatível e íntegro. O reload continua separado.
 
 ### Reload futuro
 

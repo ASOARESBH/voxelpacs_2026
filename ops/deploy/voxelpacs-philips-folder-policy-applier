@@ -50,8 +50,9 @@ usage() {
   cat >&2 <<'USAGE'
 Usage:
   voxelpacs-philips-folder-policy-applier --dry-run [options]
+  voxelpacs-philips-folder-policy-applier --backup-only [options] --unit voxelpacs-philips-folder-bridge.service
   voxelpacs-philips-folder-policy-applier --validate [options]
-  voxelpacs-philips-folder-policy-applier --apply [options]
+  voxelpacs-philips-folder-policy-applier --apply [options] --backup-id ID
   voxelpacs-philips-folder-policy-applier rollback [--dry-run] [options] --backup-id ID
   voxelpacs-philips-folder-policy-applier --reload [options] --unit voxelpacs-philips-folder-bridge.service
 
@@ -295,13 +296,23 @@ write_backup_policy() {
   chmod 0600 "$output"
 }
 
+current_policy_checksum() {
+  {
+    printf 'PHILIPS_FOLDER_MODE=%s\n' "${CURRENT[PHILIPS_FOLDER_MODE]}"
+    printf 'PHILIPS_FOLDER_ALLOW_TENANT_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_JOB_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  } | sha256sum | awk '{print $1}'
+}
+
 manifest_value() {
   local file="$1" key="$2"
   awk -F= -v key="$key" '$1 == key { count++; value = substr($0, index($0, "=") + 1) } END { if (count == 1) print value; else exit 1 }' "$file"
 }
 
 create_backup() {
-  local timestamp backup_dir backup_id policy checksum manifest
+  local timestamp backup_dir backup_id policy checksum source_checksum manifest
   secure_directory "$BACKUP_ROOT" || {
     if [[ ! -e "$BACKUP_ROOT" ]]; then
       install -d -o root -g root -m 0700 "$BACKUP_ROOT"
@@ -316,8 +327,10 @@ create_backup() {
   chmod 0700 "$backup_dir"
   policy="$backup_dir/policy.conf"
   manifest="$backup_dir/manifest"
+  source_checksum="$(current_policy_checksum)"
   write_backup_policy "$policy"
   checksum="$(sha256sum "$policy" | awk '{print $1}')"
+  [[ "$source_checksum" == "$checksum" ]] || fail 'BACKUP_SOURCE_CHECKSUM_MISMATCH'
   {
     printf 'FORMAT=1\n'
     printf 'BACKUP_ID=%s\n' "$backup_id"
@@ -329,6 +342,7 @@ create_backup() {
     printf 'TARGET_JOB=%s\n' "$TARGET_JOB"
     printf 'TARGET_TRANSPORT=%s\n' "$TARGET_TRANSPORT"
     printf 'TARGET_PROFILE=%s\n' "$TARGET_PROFILE"
+    printf 'SOURCE_POLICY_CHECKSUM=%s\n' "$source_checksum"
     printf 'POLICY_CHECKSUM=%s\n' "$checksum"
   } > "$manifest"
   chown root:root "$manifest"
@@ -339,7 +353,7 @@ create_backup() {
 
 validate_backup_manifest() {
   local manifest="$1" key count value
-  for key in FORMAT BACKUP_ID TIMESTAMP TARGET_COMPONENT TARGET_POLICY TARGET_TENANT TARGET_DESTINATION TARGET_JOB TARGET_TRANSPORT TARGET_PROFILE POLICY_CHECKSUM; do
+  for key in FORMAT BACKUP_ID TIMESTAMP TARGET_COMPONENT TARGET_POLICY TARGET_TENANT TARGET_DESTINATION TARGET_JOB TARGET_TRANSPORT TARGET_PROFILE SOURCE_POLICY_CHECKSUM POLICY_CHECKSUM; do
     count="$(key_count "$manifest" "$key")"
     [[ "$count" == '1' ]] || fail "BACKUP_MANIFEST_${key}_COUNT_${count}"
   done
@@ -351,6 +365,7 @@ validate_backup_manifest() {
   validate_positive_id BACKUP_JOB "$(manifest_value "$manifest" TARGET_JOB)"
   [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == 'philips_non_dicom' ]] || fail 'BACKUP_TRANSPORT_MISMATCH'
   [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == 'submission_document' ]] || fail 'BACKUP_PROFILE_MISMATCH'
+  [[ "$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)" =~ ^[a-f0-9]{64}$ ]] || fail 'BACKUP_SOURCE_CHECKSUM_INVALID'
   [[ "$(manifest_value "$manifest" POLICY_CHECKSUM)" =~ ^[a-f0-9]{64}$ ]] || fail 'BACKUP_CHECKSUM_INVALID'
 }
 
@@ -373,6 +388,14 @@ verify_backup() {
   [[ "$(key_count "$policy" PHILIPS_FOLDER_DESTINATION_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
   [[ "$(key_count "$policy" PHILIPS_FOLDER_ALLOW_JOB_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
   printf 'PASS'
+}
+
+verify_backup_current_state() {
+  local id="$1" manifest expected actual
+  manifest="$(backup_dir_path "$id")/manifest"
+  expected="$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)"
+  actual="$(current_policy_checksum)"
+  [[ "$expected" == "$actual" ]] || fail 'BACKUP_SOURCE_STATE_MISMATCH'
 }
 
 verify_backup_target() {
@@ -433,6 +456,23 @@ action_dry_run() {
   printf 'DATABASE_CHANGED=NO\n'
 }
 
+action_backup_only() {
+  local backup_id
+  validate_all
+  verify_unit_identity
+  backup_id="$(create_backup)"
+  printf 'BACKUP_ONLY=PASS\n'
+  emit_target
+  printf 'UNIT_IDENTITY=VERIFIED\n'
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'BACKUP_MANIFEST=PASS\n'
+  printf 'BACKUP_CHECKSUM=PASS\n'
+  printf 'POLICY_CHANGED=NO\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
 action_validate() {
   validate_all
   policy_matches_target || fail 'EFFECTIVE_POLICY_MISMATCH'
@@ -447,9 +487,11 @@ action_validate() {
 }
 
 action_apply() {
-  local backup_id
+  local backup_id="$BACKUP_ID"
   validate_all
-  backup_id="$(create_backup)"
+  verify_backup "$backup_id" >/dev/null
+  verify_backup_target "$backup_id"
+  verify_backup_current_state "$backup_id"
   # Replace only the five policy keys, preserving all unrelated settings and secrets.
   CURRENT[PHILIPS_FOLDER_MODE]="$TARGET_MODE"
   CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]="$TARGET_TENANT"
@@ -486,14 +528,8 @@ action_apply() {
 
 action_rollback() {
   local dir policy
-  validate_required_options
-  require_root
-  validate_env_file_metadata
-  load_current_policy
-  validate_current_policy
-  parse_allowlist
-  load_target
-  validate_target_against_allowlist
+  validate_all
+  policy_matches_target || fail 'ROLLBACK_CURRENT_POLICY_MISMATCH'
   verify_backup "$BACKUP_ID" >/dev/null
   verify_backup_target "$BACKUP_ID"
   dir="$(backup_dir_path "$BACKUP_ID")"
@@ -550,6 +586,7 @@ parse_args() {
   [[ "$#" -gt 0 ]] || usage
   case "$1" in
     --dry-run) ACTION='dry-run'; shift ;;
+    --backup-only) ACTION='backup-only'; shift ;;
     --validate) ACTION='validate'; shift ;;
     --apply) ACTION='apply'; shift ;;
     --reload) ACTION='reload'; shift ;;
@@ -574,7 +611,9 @@ parse_args() {
       *) usage ;;
     esac
   done
+  [[ "$ACTION" != 'apply' || -n "$BACKUP_ID" ]] || fail 'BACKUP_ID_REQUIRED'
   [[ "$ACTION" != 'rollback' || -n "$BACKUP_ID" ]] || fail 'BACKUP_ID_REQUIRED'
+  [[ "$ACTION" != 'backup-only' || -n "$UNIT_NAME" ]] || fail 'UNIT_REQUIRED'
   [[ "$ACTION" != 'reload' || -n "$UNIT_NAME" ]] || fail 'UNIT_REQUIRED'
 }
 
@@ -582,6 +621,7 @@ main() {
   parse_args "$@"
   case "$ACTION" in
     dry-run) action_dry_run ;;
+    backup-only) action_backup_only ;;
     validate) action_validate ;;
     apply) action_apply ;;
     rollback) action_rollback ;;
