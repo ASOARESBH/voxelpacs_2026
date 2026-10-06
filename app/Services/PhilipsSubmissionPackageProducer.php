@@ -173,6 +173,7 @@ final class PhilipsSubmissionPackageProducer
             'task_site_id',
             'task_document_name',
             'task_author_id',
+            'task_author_source',
             'task_delete_file',
             'task_document_type_applicable',
             'task_document_type',

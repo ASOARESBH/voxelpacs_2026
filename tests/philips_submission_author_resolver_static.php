@@ -7,6 +7,7 @@ define('BASE_PATH', sys_get_temp_dir() . '/voxel-author-resolver-test-' . bin2he
 require_once $root . '/app/autoload.php';
 
 use App\Config\ReportDeliveryRuntimeConfig;
+use App\Contracts\PhilipsSubmissionAuthorLookup;
 use App\Services\PhilipsSubmissionAuthorResolver;
 use App\Services\PhilipsSubmissionDocumentGenerator;
 
@@ -56,6 +57,89 @@ $explicitConfiguration = [
     ],
 ];
 $resolver = new PhilipsSubmissionAuthorResolver();
+$directoryLookup = new class implements PhilipsSubmissionAuthorLookup {
+    /** @var array<int, array{id:int,tenant_id:int,nome:string,ativo:int}> */
+    public array $rows = [
+        4 => ['id' => 4, 'tenant_id' => 2, 'nome' => 'Family^Given^Middle', 'ativo' => 1],
+        5 => ['id' => 5, 'tenant_id' => 2, 'nome' => 'Nome Plano Completo', 'ativo' => 1],
+        6 => ['id' => 6, 'tenant_id' => 3, 'nome' => 'OTHER^TENANT', 'ativo' => 1],
+        7 => ['id' => 7, 'tenant_id' => 2, 'nome' => 'Inativo', 'ativo' => 0],
+    ];
+
+    public function findActiveBiMedico(int $tenantId, int $authorId): ?array
+    {
+        $row = $this->rows[$authorId] ?? null;
+        return $row !== null && $row['tenant_id'] === $tenantId && $row['ativo'] === 1 ? $row : null;
+    }
+};
+$directoryResolver = new PhilipsSubmissionAuthorResolver($directoryLookup);
+
+$directoryConfiguration = [
+    'philips_submission' => [
+        'task_author_source' => 'bi_medicos',
+        'task_author_id' => '4',
+    ],
+];
+$directoryAuthor = $directoryResolver->resolve(
+    $noClinicalMetadata,
+    $directoryConfiguration,
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_source' => 'bi_medicos'])
+);
+$expect($directoryAuthor['author_source'] === PhilipsSubmissionAuthorResolver::SOURCE_BI_MEDICOS, 'bi_medicos author source must be explicit');
+$expect($directoryAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_REAL_AUTHOR_AVAILABLE, 'bi_medicos author must be a real-author decision');
+$expect($directoryAuthor['task_author_id_resolution'] === 'RESOLVED', 'bi_medicos author ID must resolve');
+$expect($directoryAuthor['task_author_humanname_family'] === 'Family', 'Structured bi_medicos family must preserve PN components');
+$expect($directoryAuthor['task_author_humanname_given'] === 'Given', 'Structured bi_medicos given must preserve PN components');
+$expect($directoryAuthor['task_author_humanname_middle'] === 'Middle', 'Structured bi_medicos middle must preserve PN components');
+
+$flatDirectoryAuthor = $directoryResolver->resolve(
+    array_replace($noClinicalMetadata, ['task_author_id' => '5', 'task_author_source' => 'bi_medicos']),
+    $directoryConfiguration,
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_id' => '5', 'task_author_source' => 'bi_medicos'])
+);
+$expect($flatDirectoryAuthor['author_source'] === PhilipsSubmissionAuthorResolver::SOURCE_BI_MEDICOS, 'Flat bi_medicos author source must be explicit');
+$expect($flatDirectoryAuthor['task_author_humanname_family'] === 'Nome Plano Completo', 'Flat bi_medicos name must remain integral in family');
+$expect($flatDirectoryAuthor['task_author_humanname_given'] === '', 'Flat bi_medicos author given must remain empty');
+$expect($flatDirectoryAuthor['task_author_humanname_middle'] === '', 'Flat bi_medicos author middle must remain empty');
+$expect($flatDirectoryAuthor['author_humanname_flat'] === true, 'Flat bi_medicos author must use the existing flat-author contract');
+
+$controlledDirectoryAuthor = $directoryResolver->resolve(
+    array_replace($noClinicalMetadata, ['task_author_id' => '4', 'task_author_source' => 'bi_medicos']),
+    $directoryConfiguration,
+    $controlledContext,
+    array_replace($noClinicalMetadata, ['task_author_id' => '4', 'task_author_source' => 'bi_medicos'])
+);
+$expect($controlledDirectoryAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'controlled_production must not perform a live bi_medicos lookup');
+$expect($controlledDirectoryAuthor['task_author_id_resolution'] === 'SOURCE_NOT_ALLOWED_FOR_MODE', 'controlled_production source lookup must be blocked explicitly');
+
+$wrongTenantAuthor = $directoryResolver->resolve(
+    array_replace($noClinicalMetadata, ['task_author_id' => '6', 'task_author_source' => 'bi_medicos']),
+    $directoryConfiguration,
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_id' => '6', 'task_author_source' => 'bi_medicos'])
+);
+$expect($wrongTenantAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Cross-tenant bi_medicos author must fail closed');
+$expect($wrongTenantAuthor['task_author_id_resolution'] === 'NOT_FOUND', 'Cross-tenant bi_medicos author must be classified as not found');
+
+$inactiveAuthor = $directoryResolver->resolve(
+    array_replace($noClinicalMetadata, ['task_author_id' => '7', 'task_author_source' => 'bi_medicos']),
+    $directoryConfiguration,
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_id' => '7', 'task_author_source' => 'bi_medicos'])
+);
+$expect($inactiveAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Inactive bi_medicos author must fail closed');
+$expect($inactiveAuthor['task_author_id_resolution'] === 'NOT_FOUND', 'Inactive bi_medicos author must be classified as not found');
+
+$invalidSourceAuthor = $directoryResolver->resolve(
+    array_replace($noClinicalMetadata, ['task_author_source' => 'bi_users']),
+    ['philips_submission' => ['task_author_source' => 'bi_users', 'task_author_id' => '4']],
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_source' => 'bi_users'])
+);
+$expect($invalidSourceAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Unknown author source must fail closed');
+$expect($invalidSourceAuthor['task_author_id_resolution'] === 'INVALID_SOURCE', 'Unknown author source must be classified');
 
 $clinical = $resolver->resolve(
     $noClinicalMetadata,
@@ -126,6 +210,7 @@ $documentInput = array_replace([
     'task_site_id' => 'SYNTHETIC-SITE',
     'task_patient_issuer' => 'SYNTHETIC-ISSUER',
     'task_author_id' => '4',
+    'task_author_source' => 'bi_medicos',
     'task_modalities' => 'CT',
     'task_delete_file' => false,
     'task_document_type_applicable' => true,
@@ -135,11 +220,30 @@ $document = (new PhilipsSubmissionDocumentGenerator())->generate($documentInput,
 $expect(str_contains($document->content, '<task_author_humanname_family>VOXEL</task_author_humanname_family>'), 'Fallback family must be serialized only in synthetic memory');
 $expect(str_contains($document->content, '<task_author_humanname_given>AUTHOR_MISSING</task_author_humanname_given>'), 'Fallback marker must be serialized only in synthetic memory');
 $expect(str_contains($document->content, 'encoding="iso-8859-1"'), 'Fallback XML must retain ISO-8859-1 declaration');
+$expect(!str_contains($document->content, 'task_author_source'), 'Internal author source must never be serialized into XML');
 $expect(function_exists('simplexml_load_string') && simplexml_load_string($document->content) !== false, 'Fallback XML must be well formed');
+
+$structuredDirectoryDocument = (new PhilipsSubmissionDocumentGenerator())->generate(
+    array_replace($documentInput, $directoryAuthor),
+    $automaticContext
+);
+$expect(str_contains($structuredDirectoryDocument->content, '<task_author_humanname_family>Family</task_author_humanname_family>'), 'Structured bi_medicos author family must reach XML');
+$expect(str_contains($structuredDirectoryDocument->content, '<task_author_humanname_given>Given</task_author_humanname_given>'), 'Structured bi_medicos author given must reach XML');
+$expect(!str_contains($structuredDirectoryDocument->content, 'task_author_source'), 'Structured bi_medicos source must remain internal');
+$expect(function_exists('simplexml_load_string') && simplexml_load_string($structuredDirectoryDocument->content) !== false, 'Structured bi_medicos XML must be well formed');
+
+$flatDirectoryDocument = (new PhilipsSubmissionDocumentGenerator())->generate(
+    array_replace($documentInput, $flatDirectoryAuthor),
+    $automaticContext
+);
+$expect(str_contains($flatDirectoryDocument->content, '<task_author_humanname_family>Nome Plano Completo</task_author_humanname_family>'), 'Flat bi_medicos author must use the explicit flat-author contract');
+$expect(str_contains($flatDirectoryDocument->content, '<task_author_humanname_given></task_author_humanname_given>'), 'Flat bi_medicos author given must be empty in XML');
+$expect(!str_contains($flatDirectoryDocument->content, 'task_author_source'), 'Flat bi_medicos source must remain internal');
+$expect(function_exists('simplexml_load_string') && simplexml_load_string($flatDirectoryDocument->content) !== false, 'Flat bi_medicos XML must be well formed');
 
 $source = file_get_contents($root . '/app/Services/PhilipsSubmissionAuthorResolver.php');
 $expect(is_string($source), 'AuthorResolver source must be readable');
-foreach (['bi_medicos', 'bi_users', 'PDO', 'Database::', 'smbclient', 'INSERT INTO', 'UPDATE ', 'DELETE FROM'] as $forbidden) {
+foreach (['bi_users', 'PDO', 'Database::', 'smbclient', 'INSERT INTO', 'UPDATE ', 'DELETE FROM'] as $forbidden) {
     $expect(!str_contains($source, $forbidden), "AuthorResolver must not contain {$forbidden}");
 }
 $expect(!str_contains($source, "explode(' '") && !str_contains($source, "explode(\" \""), 'AuthorResolver must not split names heuristically');
@@ -148,7 +252,9 @@ $clearRuntime();
 echo "PHILIPS_SUBMISSION_AUTHOR_RESOLVER_STATIC_OK\n";
 echo "CLINICAL_PRECEDENCE=PASS\n";
 echo "EXPLICIT_CONFIGURATION=PASS\n";
-echo "TASK_AUTHOR_ID_LOOKUP=UNRESOLVED\n";
+echo "TASK_AUTHOR_ID_LOOKUP=PASS\n";
+echo "TENANT_SCOPE=PASS\n";
+echo "FLAT_AUTHOR_CONTRACT=PASS\n";
 echo "DIAGNOSTIC_FALLBACK=PASS\n";
 echo "CONTROLLED_PRODUCTION_REGRESSION=PASS\n";
 echo "ISO_8859_1=PASS\n";

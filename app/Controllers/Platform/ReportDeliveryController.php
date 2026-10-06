@@ -614,6 +614,7 @@ class ReportDeliveryController extends Controller
                 'task_site_id',
                 'task_document_name',
                 'task_author_id',
+                'task_author_source',
                 'task_document_type_applicable',
                 'task_document_type',
                 'task_modalities',
@@ -967,6 +968,13 @@ class ReportDeliveryController extends Controller
             if (!is_bool($value) && !(is_int($value) && in_array($value, [0, 1], true))
                 && !(is_string($value) && in_array(strtolower(trim($value)), ['true', 'false', '1', '0'], true))) {
                 throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
+            }
+        }
+
+        if (array_key_exists('task_author_source', $submission)) {
+            if (($submission['task_author_source'] ?? null) !== 'bi_medicos'
+                || preg_match('/^[1-9][0-9]*$/', trim((string) ($submission['task_author_id'] ?? ''))) !== 1) {
+                throw new DomainException('A fonte do autor Philips deve ser bi_medicos com identificador numérico positivo.');
             }
         }
 

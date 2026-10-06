@@ -475,6 +475,10 @@ final class ReportDeliveryRequestService
             || (int) ($submission['task_author_id'] ?? 0) <= 0) {
             throw new DomainException('Destination controlado não possui metadata submission_document completa.', 422);
         }
+        if ($dispatchMode === self::DISPATCH_MODE_PRODUCTION
+            && ($submission['task_author_source'] ?? null) === 'bi_medicos') {
+            throw new DomainException('A fonte bi_medicos deve ser resolvida somente no automatic_production.', 422);
+        }
         if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && (int) ($submission['task_site_id'] ?? 0) !== 2) {
             throw new DomainException('Destination 6 não possui SITE_ID de homologação esperado.', 422);
         }

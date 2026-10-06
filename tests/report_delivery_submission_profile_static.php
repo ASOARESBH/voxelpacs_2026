@@ -22,10 +22,11 @@ $generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentG
 $dicomPersonName = file_get_contents($root . '/app/Helpers/DicomPersonName.php');
 $snapshot = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+$request = file_get_contents($root . '/app/Services/ReportDeliveryRequestService.php');
 $versionName = file_get_contents($root . '/app/Services/ReportVersionPatientNameService.php');
 $versionMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($authorResolver) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
+expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($authorResolver) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($request) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
 
 foreach ([
     'PROFILE_PDF_ONLY',
@@ -36,6 +37,7 @@ foreach ([
     'task_site_id_alias',
     'task_document_name',
     'task_author_id',
+    'task_author_source',
     'task_delete_file',
     'task_document_type_applicable',
     '11502-2',
@@ -90,6 +92,7 @@ expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job[
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
 expect_profile(str_contains($authorResolver, "'automatic_production'"), 'Configured author resolution must be scoped to automatic production');
+expect_profile(str_contains($request, 'A fonte bi_medicos deve ser resolvida somente no automatic_production'), 'Controlled production must reject live bi_medicos author lookup');
 foreach (['task_author_humanname_family', 'task_author_humanname_given', 'task_author_humanname_middle'] as $field) {
     expect_profile(str_contains($authorResolver, "'{$field}'"), "Author resolver must accept configured {$field}");
 }
