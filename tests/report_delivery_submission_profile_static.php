@@ -87,9 +87,10 @@ expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($produce
 expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job['task_site_id_alias'] ?? '')"), 'Automatic production must pass the resolved destination alias into the delivery context');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
-expect_profile(!str_contains($producer, "'task_author_humanname_family'")
-    && !str_contains($producer, "'task_author_humanname_given'")
-    && !str_contains($producer, "'task_author_humanname_middle'"), 'Package producer must not accept configured human author names');
+expect_profile(str_contains($producer, "'automatic_production'"), 'Configured author overlay must be scoped to automatic production');
+foreach (['task_author_humanname_family', 'task_author_humanname_given', 'task_author_humanname_middle'] as $field) {
+    expect_profile(str_contains($producer, "'{$field}'"), "Automatic production must accept configured {$field}");
+}
 expect_profile(!str_contains($producer, "'task_patient_humanname_family'")
     && !str_contains($producer, "'task_patient_humanname_given'")
     && !str_contains($producer, "'task_patient_humanname_middle'"), 'Package producer must not accept administrative PatientName components');
