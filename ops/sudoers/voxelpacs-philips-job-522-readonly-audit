@@ -1,0 +1,3 @@
+# VOXEL PACS — diagnóstico read-only fixo do Job 522.
+# Sem argumentos; não concede shell, cópia, remoção, systemd ou acesso ao banco.
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-job-522-readonly-audit

@@ -149,3 +149,29 @@ jobs:
 
       - name: Run isolated policy tests
         run: sudo -n env -u SUDO_USER bash tests/philips_folder_policy_applier.sh
+
+  philips-job-522-readonly-audit:
+    name: Philips Job 522 read-only audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash and PHP syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-philips-job-522-readonly-audit
+          bash -n scripts/provision-philips-job-522-readonly-audit.sh
+          php -l bin/philips_job_522_readonly_audit.php
+          php -l tests/philips_job_522_readonly_audit_static.php
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x \
+              ops/deploy/voxelpacs-philips-job-522-readonly-audit \
+              scripts/provision-philips-job-522-readonly-audit.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Run static safety contract
+        run: php tests/philips_job_522_readonly_audit_static.php
