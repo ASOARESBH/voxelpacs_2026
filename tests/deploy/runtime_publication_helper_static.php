@@ -30,6 +30,11 @@ $expect(str_contains($helper, 'PERSISTENT_STATE_CHANGED'), 'guard de dados persi
 $expect(str_contains($helper, 'snapshot_current_runtime'), 'snapshot transacional ausente');
 $expect(str_contains($helper, 'restore_transaction'), 'rollback transacional ausente');
 $expect(str_contains($helper, 'PUBLICATION_FAILED_ROLLED_BACK'), 'rollback em falha ausente');
+$expect(str_contains($helper, 'prepare_runtime_parent_directories'), 'preparação de diretórios-pai ausente');
+$expect(str_contains($helper, "created-directories.tsv"), 'registro de diretórios criados ausente');
+$expect(str_contains($helper, 'RUNTIME_PARENT_SYMLINK_NOT_ALLOWED'), 'guard de symlink de diretório-pai ausente');
+$expect(str_contains($helper, 'restore_created_directories'), 'rollback de diretórios criados ausente');
+$expect(str_contains($helper, 'rmdir -- "$target"'), 'rollback não usa remoção não recursiva');
 $expect(str_contains($helper, 'mktemp "$parent/.voxelpacs-deploy.'), 'arquivo temporário no diretório do destino ausente');
 $expect(str_contains($helper, 'mv -f -- "$tmp" "$target"'), 'publicação atômica por arquivo ausente');
 $expect(str_contains($helper, 'WORKER_STARTED=NO'), 'invariante Worker ausente');

@@ -153,6 +153,32 @@ grep -Fxq 'synthetic-env' "$app_root/.env"
 test -d "$app_root/storage/uploads"
 test -d "$app_root/storage/report_delivery"
 
+# Publicação de namespace novo: o pai app/Contracts não existe antes do deploy.
+missing_parent_sha='4444444444444444444444444444444444444444'
+mkdir -p "$source/app/Contracts"
+printf 'new-contract\n' > "$source/app/Contracts/AuthorLookup.php"
+archive="$test_root/missing-parent.zip"
+manifest="$test_root/missing-parent.manifest.tsv"
+checksum="$test_root/missing-parent.sha256"
+(
+  cd "$source"
+  find . -type f -printf '%P\n' | sort | while IFS= read -r relative; do
+    printf '%s\t%s\n' "$relative" "$(sha256sum "$relative" | awk '{print $1}')"
+  done > "$manifest"
+  zip -q -r "$archive" .
+)
+printf '%s\n' "$(sha256sum "$archive" | awk '{print $1}')" > "$checksum"
+chmod 600 "$archive" "$manifest" "$checksum"
+prepare_valid_input "$missing_parent_sha"
+output="$(run_helper --sha "$missing_parent_sha")"
+grep -Fxq 'PRIVILEGED_DEPLOY=PASS' <<<"$output"
+test -d "$app_root/app/Contracts"
+grep -Fxq 'new-contract' "$app_root/app/Contracts/AuthorLookup.php"
+rollback_output="$(run_helper --rollback --sha "$missing_parent_sha")"
+grep -Fxq 'PRIVILEGED_DEPLOY=ROLLBACK_PASS' <<<"$rollback_output"
+test ! -e "$app_root/app/Contracts/AuthorLookup.php"
+test ! -e "$app_root/app/Contracts"
+
 # Argumentos, SHA/checksum e entradas proibidas.
 assert_blocked 'SHA_INVALID' --sha not-a-sha
 assert_blocked 'ARGUMENTS_INVALID' --shell
