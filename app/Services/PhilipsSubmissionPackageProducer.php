@@ -153,7 +153,7 @@ final class PhilipsSubmissionPackageProducer
         if (!is_array($settings)) {
             throw new PhilipsXmlFieldUnresolvedException('task_file_path');
         }
-        foreach ([
+        $configuredFields = [
             'task_file_path',
             'task_site_id',
             'task_document_name',
@@ -161,7 +161,15 @@ final class PhilipsSubmissionPackageProducer
             'task_delete_file',
             'task_document_type_applicable',
             'task_document_type',
-        ] as $field) {
+        ];
+        if ((string) ($deliveryContext['dispatch_mode'] ?? '') === 'automatic_production') {
+            $configuredFields = array_merge($configuredFields, [
+                'task_author_humanname_family',
+                'task_author_humanname_given',
+                'task_author_humanname_middle',
+            ]);
+        }
+        foreach ($configuredFields as $field) {
             if (array_key_exists($field, $settings)) {
                 $input[$field] = $settings[$field];
             }
