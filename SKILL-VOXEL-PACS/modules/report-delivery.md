@@ -15,6 +15,7 @@ O Report Delivery Hub mantém destinos, outboxes, jobs, artifacts PDF e tentativ
 | `app/Views/platform/negocios/report_delivery.php` | Configuração de destinos e ações manuais |
 | `app/Services/PhilipsFolderDeliveryService.php` | Transporte `philips_non_dicom` PDF-only e `submission_document` |
 | `app/Services/PhilipsSubmissionMetadataResolver.php` | Resolução explícita e fail-closed de metadata do submission XML |
+| `app/Services/PhilipsSubmissionAuthorResolver.php` | Precedência clínica/configuração explícita e fallback identificado somente no diagnóstico no-send |
 | `app/Services/ReportVersionPatientNameService.php` | Parser DICOM PN e validação da identidade estruturada congelada na versão |
 | `app/Services/PhilipsSubmissionDocumentGenerator.php` | Geração determinística do documento XML Philips |
 | `app/Services/PhilipsSubmissionPackageProducer.php` | Composição imutável do package PDF + XML |

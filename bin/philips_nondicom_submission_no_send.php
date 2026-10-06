@@ -7,6 +7,7 @@ use App\Services\PhilipsSubmissionDocumentGenerator;
 use App\Services\PhilipsSubmissionMetadataResolver;
 use App\Services\PhilipsSubmissionNoSendDiagnostic;
 use App\Services\PhilipsSubmissionPackageProducer;
+use App\Services\PhilipsSubmissionAuthorResolver;
 use App\Services\ReportDeliveryArtifactService;
 use App\Services\ReportDeliveryRequestSnapshotService;
 
@@ -25,6 +26,7 @@ $producer = new PhilipsSubmissionPackageProducer(
     new ReportDeliveryArtifactService(),
     new PhilipsSubmissionDocumentGenerator(),
     new PhilipsSubmissionMetadataResolver(),
+    new PhilipsSubmissionAuthorResolver(),
     new ReportDeliveryRequestSnapshotService($pdo)
 );
 $result = (new PhilipsSubmissionNoSendDiagnostic($pdo, $producer))->run((int) $tenantId, (int) $jobId);
@@ -44,6 +46,10 @@ $fields = [
     'alias_valid' => 'ALIAS_VALID',
     'canonical_binding' => 'CANONICAL_BINDING',
     'xml_serialized' => 'XML_SERIALIZED',
+    'author_source' => 'AUTHOR_SOURCE',
+    'author_decision' => 'AUTHOR_DECISION',
+    'author_fallback_used' => 'AUTHOR_FALLBACK_USED',
+    'task_author_id_resolution' => 'TASK_AUTHOR_ID_RESOLUTION',
     'artifact_written' => 'ARTIFACT_WRITTEN',
     'attempt_created' => 'ATTEMPT_CREATED',
     'job_claimed' => 'JOB_CLAIMED',

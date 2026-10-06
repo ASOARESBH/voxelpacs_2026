@@ -11,6 +11,7 @@ final class PhilipsSubmissionPackageProducer
         private readonly ReportDeliveryArtifactService $artifacts = new ReportDeliveryArtifactService(),
         private readonly PhilipsSubmissionDocumentGenerator $generator = new PhilipsSubmissionDocumentGenerator(),
         private readonly PhilipsSubmissionMetadataResolver $metadata = new PhilipsSubmissionMetadataResolver(),
+        private readonly PhilipsSubmissionAuthorResolver $authorResolver = new PhilipsSubmissionAuthorResolver(),
         private readonly ReportDeliveryRequestSnapshotService $requestSnapshot = new ReportDeliveryRequestSnapshotService()
     ) {
     }
@@ -88,10 +89,14 @@ final class PhilipsSubmissionPackageProducer
      */
     public function validateNoSend(array $job, array $configuration, array $payload): array
     {
-        $this->composeNoSend($job, $configuration, $payload);
+        $composition = $this->composeNoSend($job, $configuration, $payload);
 
         return [
             'xml_serialized' => 'PASS',
+            'author_source' => (string) ($composition['author_source'] ?? PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED),
+            'author_decision' => (string) ($composition['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED),
+            'author_fallback_used' => (string) ($composition['author_fallback_used'] ?? 'NO'),
+            'task_author_id_resolution' => (string) ($composition['task_author_id_resolution'] ?? 'NOT_PRESENT'),
             'artifact_written' => 'NO',
             'bridge_called' => 'NO',
             'smb_called' => 'NO',
@@ -105,7 +110,7 @@ final class PhilipsSubmissionPackageProducer
      * @param array<string,mixed> $job
      * @param array<string,mixed> $configuration
      * @param array<string,mixed> $payload
-     * @return array{document:PhilipsSubmissionDocument,pdf_filename:string}
+     * @return array{document:PhilipsSubmissionDocument,pdf_filename:string,author_source:string,author_decision:string,author_fallback_used:string,task_author_id_resolution:string}
      */
     public function composeNoSend(array $job, array $configuration, array $payload): array
     {
@@ -118,13 +123,17 @@ final class PhilipsSubmissionPackageProducer
 
         $pdfFilename = (new PhilipsFolderDeliveryService())->fileName($payload, $reportId, $reportVersion);
         $deliveryContext = $this->deliveryContext($job, $configuration, $payload);
-        $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext);
+        $input = $this->resolvedInput($payload, $configuration, $pdfFilename, $deliveryContext, true);
         $input['pdf_filename'] = $pdfFilename;
         $document = $this->generator->generate($input, $deliveryContext);
 
         return [
             'document' => $document,
             'pdf_filename' => $pdfFilename,
+            'author_source' => (string) ($input['author_source'] ?? PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED),
+            'author_decision' => (string) ($input['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED),
+            'author_fallback_used' => (string) ($input['author_fallback_used'] ?? 'NO'),
+            'task_author_id_resolution' => (string) ($input['task_author_id_resolution'] ?? 'NOT_PRESENT'),
         ];
     }
 
@@ -146,7 +155,13 @@ final class PhilipsSubmissionPackageProducer
     }
 
     /** @param array<string,mixed> $payload @param array<string,mixed> $configuration @param array<string,mixed> $deliveryContext @return array<string,mixed> */
-    private function resolvedInput(array $payload, array $configuration, string $pdfFilename, array $deliveryContext): array
+    private function resolvedInput(
+        array $payload,
+        array $configuration,
+        string $pdfFilename,
+        array $deliveryContext,
+        bool $diagnosticFallbackAllowed = false
+    ): array
     {
         $input = $this->metadata->resolve($payload, $deliveryContext);
         $settings = $configuration['philips_submission'] ?? null;
@@ -162,18 +177,15 @@ final class PhilipsSubmissionPackageProducer
             'task_document_type_applicable',
             'task_document_type',
         ];
-        if ((string) ($deliveryContext['dispatch_mode'] ?? '') === 'automatic_production') {
-            $configuredFields = array_merge($configuredFields, [
-                'task_author_humanname_family',
-                'task_author_humanname_given',
-                'task_author_humanname_middle',
-            ]);
-        }
         foreach ($configuredFields as $field) {
             if (array_key_exists($field, $settings)) {
                 $input[$field] = $settings[$field];
             }
         }
+        $authorResolution = $diagnosticFallbackAllowed
+            ? $this->authorResolver->resolveForNoSendDiagnostic($payload, $configuration, $deliveryContext, $input)
+            : $this->authorResolver->resolve($payload, $configuration, $deliveryContext, $input);
+        $input = array_replace($input, $authorResolution);
         $input['task_site_id'] = self::resolveTaskSiteId(
             $payload,
             $input['task_site_id'] ?? null,

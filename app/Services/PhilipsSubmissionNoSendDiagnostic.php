@@ -43,6 +43,10 @@ final class PhilipsSubmissionNoSendDiagnostic
             'alias_valid' => 'FAIL',
             'canonical_binding' => 'NOT_REVALIDATED',
             'xml_serialized' => 'NOT_EXECUTED',
+            'author_source' => PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED,
+            'author_decision' => PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED,
+            'author_fallback_used' => 'NO',
+            'task_author_id_resolution' => 'NOT_PRESENT',
             'artifact_written' => 'NO',
             'attempt_created' => 'NO',
             'job_claimed' => 'NO',
@@ -77,7 +81,7 @@ final class PhilipsSubmissionNoSendDiagnostic
             $this->assertIdentity($job, $tenantId, $jobId);
             $payload = $this->decodeObject($job['payload_json'] ?? null, 'PAYLOAD_INVALID');
             $configuration = $this->decodeObject($job['configuration_json'] ?? null, 'CONFIGURATION_INVALID');
-            $this->assertAliasSnapshot($job, $payload);
+            $this->assertAliasSnapshot($job, $payload, (string) ($job['request_dispatch_mode'] ?? ''));
             $result['alias_valid'] = 'PASS';
 
             $validation = $this->producer->validateNoSend($job, $configuration, $payload);
@@ -85,6 +89,10 @@ final class PhilipsSubmissionNoSendDiagnostic
                 throw new RuntimeException('XML_SERIALIZATION_FAILED');
             }
             $result['xml_serialized'] = 'PASS';
+            $result['author_source'] = (string) ($validation['author_source'] ?? PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED);
+            $result['author_decision'] = (string) ($validation['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED);
+            $result['author_fallback_used'] = (string) ($validation['author_fallback_used'] ?? 'NO');
+            $result['task_author_id_resolution'] = (string) ($validation['task_author_id_resolution'] ?? 'NOT_PRESENT');
             $result['canonical_binding'] = 'NOT_REVALIDATED';
             $result['status'] = 'PASS';
         } catch (Throwable $error) {
@@ -146,7 +154,7 @@ final class PhilipsSubmissionNoSendDiagnostic
             || (string) ($job['ambiente'] ?? '') !== 'producao'
             || (string) ($job['request_ambiente'] ?? '') !== 'producao'
             || (string) ($job['request_transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-            || (string) ($job['request_dispatch_mode'] ?? '') !== 'controlled_production') {
+            || !in_array((string) ($job['request_dispatch_mode'] ?? ''), ['controlled_production', 'automatic_production'], true)) {
             throw new RuntimeException('JOB_IDENTITY_MISMATCH');
         }
         if ((string) ($job['status'] ?? '') !== 'queued'
@@ -156,7 +164,7 @@ final class PhilipsSubmissionNoSendDiagnostic
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $payload */
-    private function assertAliasSnapshot(array $job, array $payload): void
+    private function assertAliasSnapshot(array $job, array $payload, string $dispatchMode): void
     {
         $destinationAlias = trim((string) ($job['task_site_id_alias'] ?? ''));
         $requestAlias = trim((string) ($job['request_task_site_id_alias'] ?? ''));
@@ -166,7 +174,7 @@ final class PhilipsSubmissionNoSendDiagnostic
             || preg_match(self::ALIAS_PATTERN, $payloadAlias) !== 1
             || !hash_equals($destinationAlias, $requestAlias)
             || !hash_equals($requestAlias, $payloadAlias)
-            || (string) ($payload['dispatch_mode'] ?? '') !== 'controlled_production') {
+            || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode) {
             throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
         }
     }

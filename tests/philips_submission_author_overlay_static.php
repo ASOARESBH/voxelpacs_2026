@@ -21,6 +21,8 @@ $reflection = new ReflectionClass(App\Services\PhilipsSubmissionPackageProducer:
 $producer = $reflection->newInstanceWithoutConstructor();
 $metadataProperty = $reflection->getProperty('metadata');
 $metadataProperty->setValue($producer, new App\Services\PhilipsSubmissionMetadataResolver());
+$authorResolverProperty = $reflection->getProperty('authorResolver');
+$authorResolverProperty->setValue($producer, new App\Services\PhilipsSubmissionAuthorResolver());
 $resolvedInput = $reflection->getMethod('resolvedInput');
 $resolvedInput->setAccessible(true);
 

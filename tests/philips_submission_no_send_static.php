@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 $diagnostic = (string) file_get_contents($root . '/app/Services/PhilipsSubmissionNoSendDiagnostic.php');
 $cli = (string) file_get_contents($root . '/bin/philips_nondicom_submission_no_send.php');
 $producer = (string) file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
+$authorResolver = (string) file_get_contents($root . '/app/Services/PhilipsSubmissionAuthorResolver.php');
 
 foreach ([
     'tenant-scoped job query' => 'j.tenant_id = :tenant_id',
@@ -14,9 +15,11 @@ foreach ([
     'frozen payload alias' => 'task_site_id_alias',
     'controlled production guard' => "controlled_production",
     'XML memory validation' => 'validateNoSend',
+    'author source output' => 'author_source',
+    'diagnostic-only author fallback' => 'resolveForNoSendDiagnostic',
     'rollback after validation' => 'rollBack',
 ] as $label => $needle) {
-    if (!str_contains($diagnostic, $needle) && !str_contains($producer, $needle)) {
+    if (!str_contains($diagnostic, $needle) && !str_contains($producer, $needle) && !str_contains($authorResolver, $needle)) {
         fwrite(STDERR, "MISSING_CONTRACT: {$label}\n");
         exit(1);
     }

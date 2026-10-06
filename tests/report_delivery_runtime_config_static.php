@@ -22,6 +22,10 @@ $managed = [
     ReportDeliveryRuntimeConfig::PHILIPS_NON_DICOM_ENABLED,
     ReportDeliveryRuntimeConfig::PHILIPS_NON_DICOM_SMB_TEST_ENABLED,
     ReportDeliveryRuntimeConfig::PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED,
+    ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_ENABLED,
+    ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_FAMILY,
+    ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_GIVEN,
+    ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_MIDDLE,
     ReportDeliveryRuntimeConfig::WORKER_KILL_SWITCH,
 ];
 
@@ -40,6 +44,16 @@ expect_runtime_flag(
 expect_runtime_flag(
     ReportDeliveryRuntimeConfig::workerKillSwitchEnabled() === false,
     'kill switch ausente deve permanecer OFF'
+);
+expect_runtime_flag(
+    ReportDeliveryRuntimeConfig::philipsAuthorFallbackEnabled() === false,
+    'fallback de autoria ausente deve permanecer OFF'
+);
+expect_runtime_flag(
+    ReportDeliveryRuntimeConfig::philipsAuthorFallbackFamily() === 'VOXEL'
+        && ReportDeliveryRuntimeConfig::philipsAuthorFallbackGiven() === 'AUTHOR_MISSING'
+        && ReportDeliveryRuntimeConfig::philipsAuthorFallbackMiddle() === '',
+    'fallback de autoria deve usar marcadores default documentados'
 );
 
 putenv(ReportDeliveryRuntimeConfig::PHILIPS_NON_DICOM_SMB_TEST_ENABLED . '=false');
@@ -62,6 +76,18 @@ putenv(ReportDeliveryRuntimeConfig::PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED 
 expect_runtime_flag(
     ReportDeliveryRuntimeConfig::smbReadOnlyTestEnabled() === true,
     'SMB read-only explicitamente ON deve ser reconhecido como ON'
+);
+
+putenv(ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_ENABLED . '=true');
+putenv(ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_FAMILY . '=SYNTHETIC');
+putenv(ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_GIVEN . '=MISSING');
+putenv(ReportDeliveryRuntimeConfig::PHILIPS_AUTHOR_FALLBACK_MIDDLE . '=');
+expect_runtime_flag(
+    ReportDeliveryRuntimeConfig::philipsAuthorFallbackEnabled() === true
+        && ReportDeliveryRuntimeConfig::philipsAuthorFallbackFamily() === 'SYNTHETIC'
+        && ReportDeliveryRuntimeConfig::philipsAuthorFallbackGiven() === 'MISSING'
+        && ReportDeliveryRuntimeConfig::philipsAuthorFallbackMiddle() === '',
+    'fallback de autoria configurado deve ser lido sem normalização indevida'
 );
 
 putenv(ReportDeliveryRuntimeConfig::WORKER_KILL_SWITCH . '=true');
@@ -104,7 +130,9 @@ expect_runtime_flag(
 expect_runtime_flag(
     str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/app/.env'")
         && !str_contains($script, "readonly DEFAULT_ENV_FILE='/var/www/voxelpacs/.env'")
-        && !str_contains($script, 'VOXEL_RUNTIME_ENV_FILE'),
+        && !str_contains($script, 'VOXEL_RUNTIME_ENV_FILE')
+        && str_contains($script, 'PHILIPS_AUTHOR_FALLBACK_ENABLED')
+        && str_contains($script, 'fallback_family_invalid'),
     'aplicador deve usar o .env da raiz efetiva do runtime sem override secundário'
 );
 expect_runtime_flag(is_string($script) && is_file($scriptPath), 'aplicador versionado de flags ausente');

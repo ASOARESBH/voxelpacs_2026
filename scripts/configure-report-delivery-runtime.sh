@@ -13,6 +13,10 @@ readonly MANAGED_KEYS=(
   PHILIPS_NON_DICOM_DELIVERY_ENABLED
   PHILIPS_NON_DICOM_SMB_TEST_ENABLED
   PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED
+  PHILIPS_AUTHOR_FALLBACK_ENABLED
+  PHILIPS_AUTHOR_FALLBACK_FAMILY
+  PHILIPS_AUTHOR_FALLBACK_GIVEN
+  PHILIPS_AUTHOR_FALLBACK_MIDDLE
   VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH
 )
 
@@ -31,7 +35,8 @@ Uso:
   configure-report-delivery-runtime.sh --apply KEY=VALUE [...]
   configure-report-delivery-runtime.sh --rollback BACKUP_DIRECTORY
 
-Somente flags booleanas allowlisted são aceitas. --dry-run não grava nada.
+Somente flags allowlisted são aceitas. Valores de fallback usam ASCII restrito.
+--dry-run não grava nada.
 --apply cria backup root-only e altera apenas as chaves informadas.
 --rollback restaura o .env.before de um backup criado por --apply.
 Nenhuma forma executa reload/restart; isso permanece uma etapa autorizada separada.
@@ -61,11 +66,22 @@ normalize_assignment() {
   is_managed_key "$key" || fail 'key_not_allowlisted'
   [[ -z "${requested_seen[$key]:-}" ]] || fail 'duplicate_assignment'
   requested_seen[$key]=1
-  case "${value,,}" in
-    1|true|yes|on) normalized_value='true' ;;
-    0|false|no|off) normalized_value='false' ;;
-    *) fail 'boolean_value_invalid' ;;
-  esac
+  if [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_FAMILY' ]]; then
+    [[ "$value" =~ ^[A-Za-z0-9._-]{1,120}$ ]] || fail 'fallback_family_invalid'
+    normalized_value="$value"
+  elif [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_GIVEN' ]]; then
+    [[ "$value" =~ ^[A-Za-z0-9._-]{1,120}$ ]] || fail 'fallback_given_invalid'
+    normalized_value="$value"
+  elif [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_MIDDLE' ]]; then
+    [[ "$value" =~ ^[A-Za-z0-9._-]{0,120}$ ]] || fail 'fallback_middle_invalid'
+    normalized_value="$value"
+  else
+    case "${value,,}" in
+      1|true|yes|on) normalized_value='true' ;;
+      0|false|no|off) normalized_value='false' ;;
+      *) fail 'boolean_value_invalid' ;;
+    esac
+  fi
   requested+=("$key")
   normalized+=("$key=$normalized_value")
 }
@@ -80,13 +96,19 @@ validate_source() {
 }
 
 print_plan() {
-  local item key value
+  local item key value display_value
   printf 'REPORT_DELIVERY_RUNTIME_CONFIGURATION=%s\n' "${mode^^}"
   printf 'TARGET_ENV=validated\n'
   for item in "${normalized[@]}"; do
     key="${item%%=*}"
     value="${item#*=}"
-    printf 'PLAN_%s=%s\n' "$key" "${value^^}"
+    display_value="$value"
+    if [[ "$key" != PHILIPS_AUTHOR_FALLBACK_FAMILY
+      && "$key" != PHILIPS_AUTHOR_FALLBACK_GIVEN
+      && "$key" != PHILIPS_AUTHOR_FALLBACK_MIDDLE ]]; then
+      display_value="${value^^}"
+    fi
+    printf 'PLAN_%s=%s\n' "$key" "$display_value"
   done
 }
 

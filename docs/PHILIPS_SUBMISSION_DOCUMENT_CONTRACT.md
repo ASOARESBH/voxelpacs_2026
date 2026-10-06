@@ -29,9 +29,9 @@ O gerador produz os campos definidos pelo contrato Philips. Campos obrigatórios
 | `task_site_id_alias` | Alias técnico ASCII `[A-Za-z0-9._-]{1,120}` configurado separadamente no Destination 7 de produção e congelado na Delivery Request/outbox; substitui somente o valor emitido no XML, nunca o binding canônico | Obrigatório no D7 controlado; proibido no D6/homologação |
 | `task_patient_issuer` | `issuer_of_patient_id` do snapshot | Obrigatório |
 | `task_author_id` | Valor explícito configurado; não é convertido de `released_by` | Obrigatório |
-| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); quando o nome é plano, preserva o valor integral | Obrigatório |
-| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name`; nome plano usa nó vazio | Obrigatório para PN estruturado; vazio permitido para autor plano |
-| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; nome plano e componente ausente viram vazio | Opcional |
+| `task_author_humanname_family` | Primeiro componente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName); em `automatic_production`, configuração explícita completa pode ser usada quando a fonte clínica estiver ausente | Obrigatório |
+| `task_author_humanname_given` | Segundo componente de `bi_pacs_estudos.referring_physician_name`; nome plano usa nó vazio; em `automatic_production`, vem da configuração explícita completa quando aplicável | Obrigatório para PN estruturado; vazio permitido para autor plano |
+| `task_author_humanname_middle` | Terceiro componente de `bi_pacs_estudos.referring_physician_name`; nome plano e componente ausente viram vazio; em `automatic_production`, vem da configuração explícita completa quando aplicável | Opcional |
 | `task_modalities` | `modalities` do estudo no snapshot, sem conversão heurística de separadores | Obrigatório |
 | `task_document_type` | `11502-2` quando `task_document_type_applicable` é verdadeiro | Condicional |
 | `task_delete_file` | Booleano explícito configurado no destino | Obrigatório |
@@ -42,7 +42,11 @@ Depois de assinatura/liberação, os quatro campos estruturados são imutáveis.
 
 `task_document_date` representa a data/hora clínica do exame, usando `bi_pacs_estudos.study_date` e `study_time`, correspondentes a StudyDate/StudyTime. A data sem horário é completada com `00:00:00`; `reports.liberado_em` e `released_by` não participam da resolução.
 
-Os três componentes `task_author_humanname_*` são resolvidos exclusivamente de `bi_pacs_estudos.referring_physician_name` (DICOM `(0008,0090)` ReferringPhysicianName). Quando o valor possui `^`, os componentes DICOM são preservados. Quando o valor é plano, o nome integral é preservado em `task_author_humanname_family`, enquanto `given` e `middle` ficam vazios; essa representação é marcada internamente como autor plano e não reutiliza `patient_name_as_family`. A configuração administrativa ainda fornece `task_author_id`, mas não pode substituir os nomes do médico solicitante. O sistema não divide nomes por espaços; a ausência do nome original continua falhando fechado.
+Os três componentes `task_author_humanname_*` são resolvidos por `PhilipsSubmissionAuthorResolver`. A precedência é: `referring_physician_name` clínico; somente em `automatic_production`, os três componentes explicitamente configurados; e, exclusivamente no diagnóstico no-send, fallback técnico default-off quando autorizado. Quando a fonte clínica possui `^`, os componentes DICOM são preservados. Quando o valor é plano, o nome integral é preservado em `task_author_humanname_family`, enquanto `given` e `middle` ficam vazios; essa representação é marcada internamente como autor plano e não reutiliza `patient_name_as_family`. A configuração administrativa fornece `task_author_id`, mas não é convertido implicitamente em `bi_medicos.id` ou `bi_users.id`, e nomes completos não são divididos por espaços, vírgulas ou heurísticas. No caminho normal de produção, ausência de autor real ou configuração explícita continua falhando fechado.
+
+### Fallback controlado de autoria
+
+`resolveForNoSendDiagnostic()` é separado de `resolve()` e somente admite o fallback para `automatic_production` quando `PHILIPS_AUTHOR_FALLBACK_ENABLED=true`. Os valores default são `VOXEL`, `AUTHOR_MISSING` e componente Middle vazio; a aplicação usa valores ASCII restritos e o diagnóstico retorna somente as categorias `AUTHOR_SOURCE=FALLBACK_MISSING_DATA`, `AUTHOR_DECISION=FALLBACK_REQUIRED`, `AUTHOR_FALLBACK_USED=YES` e `TASK_AUTHOR_ID_RESOLUTION=UNRESOLVED`. O fallback não consulta banco, não altera Request/Outbox/Job, não persiste XML, não cria artifact, não chama Bridge/SMB e não pode ser usado pelo caminho normal de transmissão.
 
 ### Override request-scoped de PatientName
 

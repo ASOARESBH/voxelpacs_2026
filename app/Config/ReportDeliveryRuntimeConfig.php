@@ -21,6 +21,10 @@ final class ReportDeliveryRuntimeConfig
     public const PHILIPS_NON_DICOM_ENABLED = 'PHILIPS_NON_DICOM_DELIVERY_ENABLED';
     public const PHILIPS_NON_DICOM_SMB_TEST_ENABLED = 'PHILIPS_NON_DICOM_SMB_TEST_ENABLED';
     public const PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED = 'PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED';
+    public const PHILIPS_AUTHOR_FALLBACK_ENABLED = 'PHILIPS_AUTHOR_FALLBACK_ENABLED';
+    public const PHILIPS_AUTHOR_FALLBACK_FAMILY = 'PHILIPS_AUTHOR_FALLBACK_FAMILY';
+    public const PHILIPS_AUTHOR_FALLBACK_GIVEN = 'PHILIPS_AUTHOR_FALLBACK_GIVEN';
+    public const PHILIPS_AUTHOR_FALLBACK_MIDDLE = 'PHILIPS_AUTHOR_FALLBACK_MIDDLE';
     public const WORKER_KILL_SWITCH = 'VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH';
 
     public static function hubEnabled(): bool
@@ -51,6 +55,26 @@ final class ReportDeliveryRuntimeConfig
     public static function smbReadOnlyTestEnabled(): bool
     {
         return self::flag(self::PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED);
+    }
+
+    public static function philipsAuthorFallbackEnabled(): bool
+    {
+        return self::flag(self::PHILIPS_AUTHOR_FALLBACK_ENABLED);
+    }
+
+    public static function philipsAuthorFallbackFamily(): string
+    {
+        return self::text(self::PHILIPS_AUTHOR_FALLBACK_FAMILY, 'VOXEL');
+    }
+
+    public static function philipsAuthorFallbackGiven(): string
+    {
+        return self::text(self::PHILIPS_AUTHOR_FALLBACK_GIVEN, 'AUTHOR_MISSING');
+    }
+
+    public static function philipsAuthorFallbackMiddle(): string
+    {
+        return self::text(self::PHILIPS_AUTHOR_FALLBACK_MIDDLE, '');
     }
 
     /**
@@ -85,6 +109,12 @@ final class ReportDeliveryRuntimeConfig
             '', '0', 'false', 'no', 'off' => false,
             default => $invalidValueDefault,
         };
+    }
+
+    private static function text(string $name, string $default): string
+    {
+        $value = self::rawValue($name);
+        return $value === null ? $default : trim($value);
     }
 
     private static function rawValue(string $name): ?string
