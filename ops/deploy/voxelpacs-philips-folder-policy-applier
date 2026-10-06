@@ -5,7 +5,6 @@
 set -Eeuo pipefail
 umask 077
 
-readonly SCRIPT_NAME="${0##*/}"
 readonly ALLOWED_UNIT='voxelpacs-philips-folder-bridge.service'
 readonly POLICY_KEYS=(
   PHILIPS_FOLDER_MODE
