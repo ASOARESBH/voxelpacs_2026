@@ -44,6 +44,7 @@ mode='publish'
 sha=''
 transaction_dir=''
 lock_fd=''
+prepare_error=''
 
 fail() {
   printf 'PRIVILEGED_DEPLOY=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -183,12 +184,104 @@ snapshot_current_runtime() {
   chmod 600 "$transaction_dir/state.tsv"
 }
 
+prepare_runtime_parent_directories() {
+  local manifest="$1" relative target parent current next created_dir created_relative uid gid mode_bits i
+  local -a missing=()
+  prepare_error='RUNTIME_PARENT_DIRECTORY_PREPARATION_FAILED'
+  : > "$transaction_dir/created-directories.tsv"
+  chmod 600 "$transaction_dir/created-directories.tsv"
+
+  while IFS=$'\t' read -r relative _; do
+    target="$APP_ROOT/$relative"
+    parent="$(dirname "$target")"
+    [[ "$parent" == "$APP_ROOT" || "$parent" == "$APP_ROOT/"* ]] || {
+      prepare_error='RUNTIME_PARENT_OUTSIDE_ROOT'
+      return 1
+    }
+
+    missing=()
+    current="$parent"
+    while [[ "$current" != "$APP_ROOT" && ! -e "$current" ]]; do
+      [[ ! -L "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_SYMLINK_NOT_ALLOWED'
+        return 1
+      }
+      missing+=("$current")
+      next="$(dirname "$current")"
+      [[ "$next" != "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_OUTSIDE_ROOT'
+        return 1
+      }
+      current="$next"
+    done
+
+    if [[ "$current" != "$APP_ROOT" ]]; then
+      [[ ! -L "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_SYMLINK_NOT_ALLOWED'
+        return 1
+      }
+      [[ -d "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_NOT_DIRECTORY'
+        return 1
+      }
+    fi
+
+    uid="$(stat -c '%u' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+    gid="$(stat -c '%g' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+    mode_bits="$(stat -c '%a' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+
+    for ((i=${#missing[@]} - 1; i >= 0; i--)); do
+      created_dir="${missing[i]}"
+      [[ ! -e "$created_dir" && ! -L "$created_dir" ]] || {
+        prepare_error='RUNTIME_PARENT_CHANGED_CONCURRENTLY'
+        return 1
+      }
+      install -d -o "$uid" -g "$gid" -m "$mode_bits" -- "$created_dir" || {
+        prepare_error='RUNTIME_PARENT_CREATE_FAILED'
+        return 1
+      }
+      created_relative="${created_dir#"$APP_ROOT"/}"
+      printf '%s\n' "$created_relative" >> "$transaction_dir/created-directories.tsv"
+    done
+  done < "$manifest"
+}
+
+restore_created_directories() {
+  local transaction="$1" relative target i
+  local -a created=()
+  [[ -f "$transaction/created-directories.tsv" ]] || return 0
+  while IFS= read -r relative; do
+    [[ -n "$relative" ]] || continue
+    created+=("$relative")
+  done < "$transaction/created-directories.tsv"
+  for ((i=${#created[@]} - 1; i >= 0; i--)); do
+    relative="${created[i]}"
+    safe_relative_path "$relative" || return 1
+    target="$APP_ROOT/$relative"
+    [[ ! -L "$target" ]] || return 1
+    [[ -d "$target" ]] || {
+      [[ ! -e "$target" ]] || return 1
+      continue
+    }
+    rmdir -- "$target" || return 1
+  done
+}
+
 install_from_stage() {
   local stage="$1" manifest="$2" relative target parent tmp uid gid mode_bits
   while IFS=$'\t' read -r relative _; do
     target="$APP_ROOT/$relative"
     parent="$(dirname "$target")"
-    [[ -d "$parent" ]] || fail 'RUNTIME_PARENT_DIRECTORY_MISSING'
+    [[ -d "$parent" && ! -L "$parent" ]] || fail 'RUNTIME_PARENT_DIRECTORY_INVALID'
     [[ ! -L "$target" ]] || fail 'RUNTIME_TARGET_SYMLINK_NOT_ALLOWED'
     if [[ -e "$target" ]]; then
       [[ -f "$target" ]] || fail 'RUNTIME_TARGET_NOT_REGULAR_FILE'
@@ -255,17 +348,23 @@ publish() {
   before_state="$(state_fingerprint)" || fail 'PERSISTENT_STATE_UNREADABLE'
   validate_artifact "$archive" "$manifest" "$checksum" "$source_sha" "$stage"
   snapshot_current_runtime "$manifest"
+  if ! prepare_runtime_parent_directories "$manifest"; then
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
+    fail "$prepare_error"
+  fi
 
   printf 'publishing\n' > "$transaction_dir/status"
   chmod 600 "$transaction_dir/status"
   if ! install_from_stage "$stage" "$manifest"; then
     restore_transaction "$transaction_dir"
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
     assert_preserved_state "$before_state"
     printf 'rolled_back_after_failure\n' > "$transaction_dir/status"
     fail 'PUBLICATION_FAILED_ROLLED_BACK'
   fi
   if ! assert_preserved_state "$before_state"; then
     restore_transaction "$transaction_dir"
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
     assert_preserved_state "$before_state"
     printf 'rolled_back_after_persistent_state_check\n' > "$transaction_dir/status"
     fail 'PERSISTENT_STATE_CHANGED_ROLLED_BACK'
@@ -291,6 +390,7 @@ rollback() {
   local before_state
   before_state="$(state_fingerprint)" || fail 'PERSISTENT_STATE_UNREADABLE'
   restore_transaction "$transaction_dir"
+  restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
   assert_preserved_state "$before_state"
   printf 'rolled_back\n' > "$transaction_dir/status"
   chmod 600 "$transaction_dir/status"
