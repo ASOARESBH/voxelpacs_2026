@@ -104,6 +104,7 @@ final class PhilipsSubmissionMetadataResolver
         foreach ([
             'task_document_name',
             'task_author_id',
+            'task_author_source',
             'task_patient_birthday',
             'task_patient_gender',
             'task_patient_issuer',

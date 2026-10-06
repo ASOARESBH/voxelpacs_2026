@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Config\ReportDeliveryRuntimeConfig;
+use App\Contracts\PhilipsSubmissionAuthorLookup;
+use App\Helpers\DicomPersonName;
+use App\Repositories\PhilipsSubmissionAuthorRepository;
 
 /**
- * Resolve a autoria humana do submission Philips sem consultar banco ou inferir
- * relações não declaradas entre task_author_id e cadastros internos.
+ * Resolve a autoria humana do submission Philips sem inferir relações não
+ * declaradas; o único lookup é explícito, tenant-scoped e limitado a bi_medicos.
  */
 final class PhilipsSubmissionAuthorResolver
 {
     public const SOURCE_CLINICAL = 'CLINICAL';
+    public const SOURCE_BI_MEDICOS = 'BI_MEDICOS';
     public const SOURCE_EXPLICIT_CONFIGURATION = 'EXPLICIT_CONFIGURATION';
     public const SOURCE_FALLBACK_MISSING_DATA = 'FALLBACK_MISSING_DATA';
     public const SOURCE_UNRESOLVED = 'UNRESOLVED';
@@ -20,6 +24,11 @@ final class PhilipsSubmissionAuthorResolver
     public const DECISION_REAL_AUTHOR_AVAILABLE = 'REAL_AUTHOR_AVAILABLE';
     public const DECISION_FALLBACK_REQUIRED = 'FALLBACK_REQUIRED';
     public const DECISION_AUTHOR_UNRESOLVED = 'AUTHOR_UNRESOLVED';
+
+    public function __construct(
+        private readonly PhilipsSubmissionAuthorLookup $authorLookup = new PhilipsSubmissionAuthorRepository()
+    ) {
+    }
 
     /**
      * Resolução normal de produção/transmissão. Nunca utiliza o fallback.
@@ -76,7 +85,11 @@ final class PhilipsSubmissionAuthorResolver
         $settings = is_array($settings) ? $settings : [];
         $dispatchMode = (string) ($deliveryContext['dispatch_mode'] ?? '');
         $taskAuthorId = $resolvedMetadata['task_author_id'] ?? ($settings['task_author_id'] ?? null);
-        $taskAuthorIdResolution = $this->taskAuthorIdResolution($taskAuthorId);
+        $rawTaskAuthorSource = $resolvedMetadata['task_author_source'] ?? ($settings['task_author_source'] ?? null);
+        $invalidTaskAuthorSource = $rawTaskAuthorSource !== null
+            && (!is_string($rawTaskAuthorSource) || trim($rawTaskAuthorSource) === '');
+        $taskAuthorSource = is_string($rawTaskAuthorSource) ? trim($rawTaskAuthorSource) : null;
+        $taskAuthorIdResolution = $this->taskAuthorIdResolution($taskAuthorId, $taskAuthorSource);
 
         $base = [
             'author_source' => self::SOURCE_UNRESOLVED,
@@ -85,6 +98,9 @@ final class PhilipsSubmissionAuthorResolver
             'author_fallback_configuration' => 'NOT_APPLICABLE',
             'task_author_id_resolution' => $taskAuthorIdResolution,
         ];
+        if ($rawTaskAuthorSource !== null) {
+            $base['task_author_source'] = $invalidTaskAuthorSource ? 'INVALID' : $taskAuthorSource;
+        }
 
         $clinical = $this->clinicalAuthor($resolvedMetadata);
         if ($clinical !== null) {
@@ -92,6 +108,31 @@ final class PhilipsSubmissionAuthorResolver
                 'author_source' => self::SOURCE_CLINICAL,
                 'author_decision' => self::DECISION_REAL_AUTHOR_AVAILABLE,
             ]);
+        }
+
+        if ($taskAuthorSource === 'bi_medicos') {
+            if ($dispatchMode !== 'automatic_production') {
+                $base['task_author_id_resolution'] = 'SOURCE_NOT_ALLOWED_FOR_MODE';
+                return $base;
+            }
+            $directoryAuthor = $this->resolveBiMedicosAuthor($deliveryContext, $taskAuthorId);
+            if ($directoryAuthor === null) {
+                $base['task_author_id_resolution'] = $this->positiveInteger($taskAuthorId) === null
+                    ? 'INVALID'
+                    : 'NOT_FOUND';
+                return $base;
+            }
+
+            return array_replace($base, $directoryAuthor, [
+                'author_source' => self::SOURCE_BI_MEDICOS,
+                'author_decision' => self::DECISION_REAL_AUTHOR_AVAILABLE,
+                'task_author_id_resolution' => 'RESOLVED',
+            ]);
+        }
+
+        if ($invalidTaskAuthorSource || ($taskAuthorSource !== null && $taskAuthorSource !== 'bi_medicos')) {
+            $base['task_author_id_resolution'] = 'INVALID_SOURCE';
+            return $base;
         }
 
         if ($dispatchMode === 'automatic_production') {
@@ -185,8 +226,11 @@ final class PhilipsSubmissionAuthorResolver
         ];
     }
 
-    private function taskAuthorIdResolution(mixed $taskAuthorId): string
+    private function taskAuthorIdResolution(mixed $taskAuthorId, mixed $taskAuthorSource): string
     {
+        if ($taskAuthorSource === 'bi_medicos') {
+            return $this->positiveInteger($taskAuthorId) === null ? 'INVALID' : 'PENDING_LOOKUP';
+        }
         if (is_string($taskAuthorId) && trim($taskAuthorId) !== '') {
             return 'UNRESOLVED';
         }
@@ -194,6 +238,74 @@ final class PhilipsSubmissionAuthorResolver
             return 'UNRESOLVED';
         }
         return 'NOT_PRESENT';
+    }
+
+    /** @return array<string,mixed>|null */
+    private function resolveBiMedicosAuthor(array $deliveryContext, mixed $taskAuthorId): ?array
+    {
+        $tenantId = $this->positiveInteger($deliveryContext['tenant_id'] ?? null);
+        $authorId = $this->positiveInteger($taskAuthorId);
+        if ($tenantId === null || $authorId === null) {
+            return null;
+        }
+
+        $author = $this->authorLookup->findActiveBiMedico($tenantId, $authorId);
+        if ($author === null
+            || (int) ($author['id'] ?? 0) !== $authorId
+            || (int) ($author['tenant_id'] ?? 0) !== $tenantId
+            || (int) ($author['ativo'] ?? 0) !== 1
+            || !is_string($author['nome'] ?? null)
+            || trim($author['nome']) === '') {
+            return null;
+        }
+
+        $name = trim($author['nome']);
+        try {
+            $components = DicomPersonName::components($name);
+            if ($components !== null) {
+                return [
+                    'task_author_humanname_family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent(
+                        $components['family'],
+                        'task_author_humanname_family'
+                    ),
+                    'task_author_humanname_given' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent(
+                        $components['given'],
+                        'task_author_humanname_given'
+                    ),
+                    'task_author_humanname_middle' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent(
+                        $components['middle'],
+                        'task_author_humanname_middle',
+                        false
+                    ),
+                    'author_humanname_flat' => false,
+                ];
+            }
+
+            return [
+                'task_author_humanname_family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent(
+                    $name,
+                    'task_author_humanname_family'
+                ),
+                'task_author_humanname_given' => '',
+                'task_author_humanname_middle' => '',
+                'author_humanname_flat' => true,
+            ];
+        } catch (PhilipsXmlFieldUnresolvedException) {
+            return null;
+        }
+    }
+
+    private function positiveInteger(mixed $value): ?int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+        if (!is_string($value) || preg_match('/^[1-9][0-9]*$/', trim($value)) !== 1) {
+            return null;
+        }
+
+        $integer = (int) trim($value);
+        return $integer > 0 ? $integer : null;
     }
 
     private function validComponent(string $value, bool $required): bool
