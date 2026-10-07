@@ -34,10 +34,10 @@ expect_automatic_payload(!str_contains($outbox, "'task_author_id'"), 'Automatic 
 expect_automatic_payload(str_contains($outbox, "'schema_version' => 2"), 'The existing payload schema version must remain stable.');
 
 $automaticPatientNameAssignments = [
-    "\$payload['patient_name_family'] = \$patientName['family'];",
-    "\$payload['patient_name_given'] = \$patientName['given'];",
-    "\$payload['patient_name_middle'] = \$patientName['middle'];",
-    "\$payload['patient_name_source'] = \$patientName['source'];",
+    "\$payload['patient_name_family'] = \$frozenPatientName['family'];",
+    "\$payload['patient_name_given'] = \$frozenPatientName['given'];",
+    "\$payload['patient_name_middle'] = \$frozenPatientName['middle'];",
+    "\$payload['patient_name_source'] = \$frozenPatientName['source'];",
 ];
 foreach ($automaticPatientNameAssignments as $patientNameAssignment) {
     $patientNamePosition = strpos($outbox, $patientNameAssignment);
@@ -46,13 +46,17 @@ foreach ($automaticPatientNameAssignments as $patientNameAssignment) {
     expect_automatic_payload(substr_count($outbox, $patientNameAssignment) === 1, 'Frozen PatientName component must have one source assignment.');
 }
 expect_automatic_payload(!str_contains($outbox, 'ReportVersionPatientNameService'), 'Outbox must not recalculate PatientName.');
-preg_match_all('/false,\s*\'automatic_production\',\s*\$patientName\s*\)/', $reportService, $automaticQueueMatches);
-expect_automatic_payload(count($automaticQueueMatches[0]) === 2, 'Both automatic release paths must pass the resolved PatientName.');
-expect_automatic_payload(substr_count($reportService, "'automatic_production',\n                    \$patientName") === 1, 'assinar must pass the resolved PatientName explicitly.');
-expect_automatic_payload(substr_count($reportService, "'automatic_production',\n                \$patientName") === 1, 'liberarAssinado must pass the resolved PatientName explicitly.');
+preg_match_all('/false,\s*\'automatic_production\',\s*\$resolvedDestinations\s*\)/', $reportService, $automaticQueueMatches);
+expect_automatic_payload(count($automaticQueueMatches[0]) === 2, 'Both automatic release paths must pass the destinations validated by the gate.');
+expect_automatic_payload(substr_count($reportService, "'automatic_production',\n                    \$resolvedDestinations") === 1, 'assinar must pass the validated destinations explicitly.');
+expect_automatic_payload(substr_count($reportService, "'automatic_production',\n                \$resolvedDestinations") === 1, 'liberarAssinado must pass the validated destinations explicitly.');
 expect_automatic_payload(!str_contains($outbox, "'controlled_production'"), 'Controlled production must remain outside the automatic queue path.');
 expect_automatic_payload(str_contains($outbox, 'createOutboxIfAbsent('), 'Outbox idempotent creation must remain in place.');
 expect_automatic_payload(str_contains($outbox, 'createJobs('), 'Job creation must remain in the existing path.');
+foreach (['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'] as $field) {
+    expect_automatic_payload(str_contains($outbox, "\$payload['{$field}']"), "Automatic payload must freeze {$field} from report_versions.");
+}
+expect_automatic_payload(str_contains($outbox, 'loadFrozenPatientName('), 'Automatic payload must load the frozen PatientName version.');
 expect_automatic_payload(str_contains($workerRepository, 'e.study_time, e.referring_physician_name, e.institution_name'), 'Worker snapshot must continue to project referring_physician_name.');
 
 echo "REPORT_DELIVERY_AUTOMATIC_PAYLOAD_STATIC_OK\n";

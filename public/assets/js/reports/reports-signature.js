@@ -85,6 +85,12 @@ window.VoxelReports.signature = (function () {
                     mostrarErro(data.msg || 'Não foi possível assinar o laudo.');
                     return;
                 }
+                if (data.liberacao_bloqueada) {
+                    modal.hide();
+                    alert(data.msg || 'Laudo assinado, mas a liberação foi bloqueada pelo destino de devolutiva.');
+                    window.location.reload();
+                    return;
+                }
                 modal.hide();
                 if (modo === 'fechar') {
                     if (typeof window.voxelRetornarWorklist === 'function') {

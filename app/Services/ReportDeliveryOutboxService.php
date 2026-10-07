@@ -23,8 +23,126 @@ class ReportDeliveryOutboxService
     }
 
     /**
+     * Verifica a compatibilidade do PatientName congelado antes da transição
+     * clínica para liberado. A assinatura pode continuar sendo persistida,
+     * mas um destino submission_document sem Given deve impedir a liberação
+     * e a criação de qualquer Outbox/Job incompatível.
+     *
+     * @return array{allowed:bool,reason:?string,destinations:array<int,array<string,mixed>>,submission_document_count:int}
+     */
+    public function assessReleaseCompatibility(
+        int $tenantId,
+        int $reportId,
+        object $estudo,
+        ?array $patientName,
+        string $dispatchMode = 'automatic_production'
+    ): array {
+        if (!$this->enabled()) {
+            return [
+                'allowed' => true,
+                'reason' => 'feature_disabled',
+                'destinations' => [],
+                'submission_document_count' => 0,
+            ];
+        }
+
+        try {
+            $destinations = $this->resolveEligibleDestinations($tenantId, $estudo, $dispatchMode);
+            $repository = new ReportDeliveryRepository($this->pdo);
+            $submissionDestinations = array_values(array_filter(
+                $destinations,
+                fn(array $destination): bool => $this->isSubmissionDocumentDestination($repository, $destination)
+            ));
+            $given = trim((string) ($patientName['given'] ?? ''));
+
+            if ($submissionDestinations !== [] && $given === '') {
+                Logger::warning('[ReportDeliveryCompatibility] Liberação bloqueada por Given ausente', [
+                    'tenant_id' => $tenantId,
+                    'report_id' => $reportId,
+                    'dispatch_mode' => $dispatchMode,
+                    'submission_document_count' => count($submissionDestinations),
+                    'reason' => 'patient_name_given_required',
+                ]);
+                return [
+                    'allowed' => false,
+                    'reason' => 'patient_name_given_required',
+                    'destinations' => $destinations,
+                    'submission_document_count' => count($submissionDestinations),
+                ];
+            }
+
+            return [
+                'allowed' => true,
+                'reason' => null,
+                'destinations' => $destinations,
+                'submission_document_count' => count($submissionDestinations),
+            ];
+        } catch (Throwable $e) {
+            // A falha de leitura do roteamento não pode criar um despacho
+            // desconhecido. O chamador mantém o ato de assinatura, mas não
+            // libera o laudo nem cria Outbox/Job nesta requisição.
+            Logger::error('[ReportDeliveryCompatibility] Não foi possível avaliar a liberação', [
+                'tenant_id' => $tenantId,
+                'report_id' => $reportId,
+                'dispatch_mode' => $dispatchMode,
+                'reason' => 'release_compatibility_unavailable',
+                'error_class' => get_class($e),
+            ]);
+            return [
+                'allowed' => false,
+                'reason' => 'release_compatibility_unavailable',
+                'destinations' => [],
+                'submission_document_count' => 0,
+            ];
+        }
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    public function resolveEligibleDestinations(
+        int $tenantId,
+        object $estudo,
+        string $dispatchMode = 'automatic_production'
+    ): array {
+        if (!$this->enabled()) {
+            return [];
+        }
+
+        $allowedEnvironments = match ($dispatchMode) {
+            'automatic_production' => ['producao'],
+            'manual_homologation' => ['homologacao'],
+            default => throw new \InvalidArgumentException('Modo de despacho inválido para devolutiva.'),
+        };
+        $estabelecimentoId = (int) ($estudo->estabelecimento_id ?? $estudo->unidade_id ?? 0) ?: null;
+        $sourceServerId = (int) ($estudo->servidor_id ?? 0) ?: null;
+        $rawInstitutionName = trim((string) ($estudo->institution_name ?? ''));
+        $institutionName = InstitutionResolverService::canonicalForTenant($tenantId, $rawInstitutionName);
+        $issuer = DicomIssuerService::sanitizeIssuer($estudo->issuer_of_patient_id ?? null);
+        $issuerNormalized = DicomIssuerService::normalize($issuer);
+        $repository = new ReportDeliveryRepository($this->pdo);
+        $eligibleDestinations = $dispatchMode === 'manual_homologation'
+            ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId)
+            : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId);
+
+        return array_values(array_filter(
+            $eligibleDestinations,
+            static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
+                && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
+                    || PhilipsFolderDeliveryService::enabled())
+                && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                    || PhilipsFolderDeliveryService::nonDicomEnabled())
+        ));
+    }
+
+    /** @param array<string,mixed> $destination */
+    private function isSubmissionDocumentDestination(ReportDeliveryRepository $repository, array $destination): bool
+    {
+        return $repository->deliveryProfileForDestination($destination)
+            === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
+    }
+
+    /**
      * @return array{created:bool,outbox_id:int|null,job_count:int,reason?:string}
-     * @param array{family:string,given:string,middle:string,source:string}|null $patientName
+     * @param array<int,array<string,mixed>>|null $resolvedDestinations
      */
     public function queueReleasedReport(
         int $tenantId,
@@ -38,7 +156,7 @@ class ReportDeliveryOutboxService
         string $reportHash,
         bool $reactivateDryRun = false,
         string $dispatchMode = 'automatic_production',
-        ?array $patientName = null
+        ?array $resolvedDestinations = null
     ): array {
         if (!$this->enabled()) {
             return ['created' => false, 'outbox_id' => null, 'job_count' => 0, 'reason' => 'feature_disabled'];
@@ -47,11 +165,9 @@ class ReportDeliveryOutboxService
         if ($tenantId <= 0 || $reportId <= 0 || $estudoId <= 0 || $reportVersion < 1) {
             throw new \InvalidArgumentException('Dados insuficientes para registrar a devolutiva do laudo.');
         }
-        $allowedEnvironments = match ($dispatchMode) {
-            'automatic_production' => ['producao'],
-            'manual_homologation' => ['homologacao'],
-            default => throw new \InvalidArgumentException('Modo de despacho inválido para devolutiva.'),
-        };
+        if (!in_array($dispatchMode, ['automatic_production', 'manual_homologation'], true)) {
+            throw new \InvalidArgumentException('Modo de despacho inválido para devolutiva.');
+        }
         $automaticDispatchDate = $dispatchMode === 'automatic_production'
             ? $this->clinicalDate($releasedAt)
             : null;
@@ -103,13 +219,12 @@ class ReportDeliveryOutboxService
             'report_sha256' => $reportHash,
         ];
         if ($dispatchMode === 'automatic_production') {
+            $frozenPatientName = $this->loadFrozenPatientName($tenantId, $reportId, $reportVersion);
+            $payload['patient_name_family'] = $frozenPatientName['family'];
+            $payload['patient_name_given'] = $frozenPatientName['given'];
+            $payload['patient_name_middle'] = $frozenPatientName['middle'];
+            $payload['patient_name_source'] = $frozenPatientName['source'];
             $payload['referring_physician_name'] = $estudo->referring_physician_name ?? null;
-            if ($patientName !== null) {
-                $payload['patient_name_family'] = $patientName['family'];
-                $payload['patient_name_given'] = $patientName['given'];
-                $payload['patient_name_middle'] = $patientName['middle'];
-                $payload['patient_name_source'] = $patientName['source'];
-            }
         }
 
         try {
@@ -124,17 +239,8 @@ class ReportDeliveryOutboxService
                 $eventKey,
                 $payload
             );
-            $eligibleDestinations = $dispatchMode === 'manual_homologation'
-                ? $repository->findManualHomologationDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId)
-                : $repository->findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId);
-            $destinations = array_values(array_filter(
-                $eligibleDestinations,
-                static fn(array $destination): bool => in_array((string) ($destination['ambiente'] ?? ''), $allowedEnvironments, true)
-                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::TRANSPORT
-                        || PhilipsFolderDeliveryService::enabled())
-                    && ((string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-                        || PhilipsFolderDeliveryService::nonDicomEnabled())
-            ));
+            $destinations = $resolvedDestinations
+                ?? $this->resolveEligibleDestinations($tenantId, $estudo, $dispatchMode);
             if ($destinations !== []) {
                 $profiles = array_values(array_unique(array_map(
                     fn(array $destination): string => $repository->deliveryProfileForDestination($destination),
@@ -197,6 +303,50 @@ class ReportDeliveryOutboxService
             ]);
             throw $e;
         }
+    }
+
+    /** @return array{family:string,given:string,middle:string,source:string} */
+    private function loadFrozenPatientName(int $tenantId, int $reportId, int $reportVersion): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT rv.patient_name_family,
+                    rv.patient_name_given,
+                    rv.patient_name_middle,
+                    rv.patient_name_source
+               FROM report_versions rv
+               INNER JOIN reports r
+                       ON r.id = rv.report_id
+                      AND r.tenant_id = :tenant_id
+              WHERE rv.report_id = :report_id
+                AND rv.versao = :report_version
+              LIMIT 2"
+        );
+        $stmt->execute([
+            ':tenant_id' => $tenantId,
+            ':report_id' => $reportId,
+            ':report_version' => $reportVersion,
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== 1) {
+            throw new \InvalidArgumentException('report_version_patient_name_unavailable');
+        }
+
+        $row = $rows[0];
+        $source = (string) ($row['patient_name_source'] ?? '');
+        if (!in_array($source, ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'], true)) {
+            throw new \InvalidArgumentException('patient_name_source_invalid');
+        }
+        $family = trim((string) ($row['patient_name_family'] ?? ''));
+        if ($family === '') {
+            throw new \InvalidArgumentException('patient_name_family');
+        }
+
+        return [
+            'family' => $family,
+            'given' => trim((string) ($row['patient_name_given'] ?? '')),
+            'middle' => trim((string) ($row['patient_name_middle'] ?? '')),
+            'source' => $source,
+        ];
     }
 
     private function enabled(): bool
