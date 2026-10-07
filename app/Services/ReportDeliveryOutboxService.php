@@ -100,6 +100,9 @@ class ReportDeliveryOutboxService
             'released_at' => $releasedAt,
             'report_sha256' => $reportHash,
         ];
+        if ($dispatchMode === 'automatic_production') {
+            $payload['referring_physician_name'] = $estudo->referring_physician_name ?? null;
+        }
 
         try {
             $repository = new ReportDeliveryRepository($this->pdo);

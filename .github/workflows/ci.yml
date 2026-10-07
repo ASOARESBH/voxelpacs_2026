@@ -81,6 +81,9 @@ jobs:
       - name: Verify Composer tree after install
         run: bash scripts/verify-composer-tree.sh
 
+      - name: Run automatic payload contract
+        run: php tests/report_delivery_automatic_payload_static.php
+
       - name: Run tests
         run: |
           test_count=$(vendor/bin/phpunit tests --list-tests | awk '/^[[:space:]]*-[[:space:]]+/ {count++} END {print count+0}')
