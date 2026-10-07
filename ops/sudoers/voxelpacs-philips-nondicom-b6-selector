@@ -1,0 +1,2 @@
+# VOXEL PACS — seletor B6.1 read-only, sem argumentos
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-nondicom-b6-selector
