@@ -39,6 +39,7 @@ transaction_rollback_pending='UNKNOWN'
 transaction_lock='UNKNOWN'
 transaction_hostname='UNKNOWN'
 transaction_reconciliation='NO'
+transaction_historical_proof='NO'
 
 fail() {
   printf 'TRANSACTION=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -217,8 +218,59 @@ stage_matches_runtime() {
   [[ "$mismatch" == 'NO' ]]
 }
 
+stage_matches_previous() {
+  local stage="$transaction_root/validated" previous="$transaction_root/previous"
+  local stage_list previous_list rel stage_hash previous_hash result='0'
+  safe_dir "$stage" || return 1
+  safe_dir "$previous" || return 1
+  stage_list="$(mktemp)"
+  previous_list="$(mktemp)"
+  /usr/bin/find "$stage" -xdev -type f -printf '%P\n' | /usr/bin/sort > "$stage_list"
+  /usr/bin/find "$previous" -xdev -type f -printf '%P\n' | /usr/bin/sort > "$previous_list"
+  if ! /usr/bin/cmp -s "$stage_list" "$previous_list"; then
+    /usr/bin/rm -f -- "$stage_list" "$previous_list"
+    return 1
+  fi
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    stage_hash="$(/usr/bin/sha256sum -- "$stage/$rel" | /usr/bin/awk '{print $1}')"
+    previous_hash="$(/usr/bin/sha256sum -- "$previous/$rel" | /usr/bin/awk '{print $1}')"
+    if [[ "$stage_hash" != "$previous_hash" ]]; then
+      result='1'
+      break
+    fi
+  done < "$stage_list"
+  /usr/bin/rm -f -- "$stage_list" "$previous_list"
+  return "$result"
+}
+
+historical_published_partial_proof() {
+  local stage="$transaction_root/validated" previous="$transaction_root/previous" required
+  [[ "$transaction_status" == 'published' ]] || return 1
+  [[ ! -e "$transaction_root/partial_publication" && ! -L "$transaction_root/partial_publication" ]] || return 1
+  [[ "$(/usr/bin/stat -c '%U:%a' "$transaction_root")" == 'root:700' ]] || return 1
+  [[ "$(/usr/bin/stat -c '%U:%a' "$stage")" == 'root:700' ]] || return 1
+  [[ "$(/usr/bin/stat -c '%U:%a' "$previous")" == 'root:700' ]] || return 1
+  [[ "$(/usr/bin/find "$stage" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || return 1
+  [[ "$(/usr/bin/find "$previous" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || return 1
+  for required in \
+    app/bootstrap.php \
+    app/autoload.php \
+    app/Config/ReportDeliveryRuntimeConfig.php \
+    public/index.php \
+    bin/report_delivery_worker.php \
+    composer.json \
+    composer.lock \
+    vendor/autoload.php; do
+    [[ -f "$stage/$required" && ! -L "$stage/$required" ]] || return 1
+  done
+  [[ ! -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]] || return 1
+  stage_matches_previous
+}
+
 read_partial_publication() {
   local partial_path="$transaction_dir/partial_publication" value
+  transaction_historical_proof='NO'
   if safe_file "$partial_path"; then
     value="$(/usr/bin/head -n 1 -- "$partial_path")"
     case "$value" in
@@ -234,6 +286,9 @@ read_partial_publication() {
     published)
       if stage_matches_runtime; then
         transaction_partial_publication='NO'
+      elif historical_published_partial_proof; then
+        transaction_partial_publication='YES'
+        transaction_historical_proof='YES'
       else
         transaction_partial_publication='YES'
       fi
@@ -295,6 +350,10 @@ classify_transaction() {
   fi
   if [[ "$transaction_status" == 'published' && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
     transaction_classification='COMPLETED'
+    return 0
+  fi
+  if [[ "$transaction_status" == 'published' && "$transaction_partial_publication" == 'YES' && "$transaction_historical_proof" == 'YES' && "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_classification='HISTORICAL_PUBLISHED_PARTIAL'
   fi
 }
 
@@ -319,6 +378,7 @@ read_transaction() {
   transaction_lock='UNKNOWN'
   transaction_hostname='UNKNOWN'
   transaction_reconciliation='NO'
+  transaction_historical_proof='NO'
 
   if ! safe_dir "$transaction_dir"; then
     read_deploy_process_state
@@ -370,6 +430,7 @@ print_result() {
   printf 'TRANSACTION_ROLLBACK_PENDING=%s\n' "$transaction_rollback_pending"
   printf 'TRANSACTION_LOCK=%s\n' "$transaction_lock"
   printf 'TRANSACTION_RECONCILIATION=%s\n' "$transaction_reconciliation"
+  printf 'TRANSACTION_HISTORICAL_PROOF=%s\n' "$transaction_historical_proof"
   printf 'CLASSIFICATION=%s\n' "$transaction_classification"
 }
 
@@ -409,8 +470,12 @@ reconcile_transaction() {
   [[ "$transaction_exists" == 'YES' ]] || fail 'TRANSACTION_NOT_FOUND'
   [[ "$transaction_target_sha" == "$sha" ]] || fail 'TRANSACTION_TARGET_SHA_MISMATCH'
   [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
-  [[ "$transaction_classification" == 'ABORTED' || "$transaction_classification" == 'STALE' ]] || fail 'TRANSACTION_NOT_ABORTED_OR_STALE'
-  [[ "$transaction_partial_publication" == 'NO' ]] || fail 'PARTIAL_PUBLICATION_NOT_RESOLVED'
+  [[ "$transaction_classification" == 'ABORTED' || "$transaction_classification" == 'STALE' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' ]] || fail 'TRANSACTION_NOT_RECONCILABLE'
+  if [[ "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' ]]; then
+    [[ "$transaction_historical_proof" == 'YES' ]] || fail 'HISTORICAL_PROOF_MISSING'
+  else
+    [[ "$transaction_partial_publication" == 'NO' ]] || fail 'PARTIAL_PUBLICATION_NOT_RESOLVED'
+  fi
   [[ "$transaction_rollback_pending" == 'NO' ]] || fail 'ROLLBACK_PENDING'
   [[ "$transaction_lock" == 'NO' ]] || fail 'TRANSACTION_LOCK_ACTIVE_OR_UNKNOWN'
   assert_reconcile_integrity

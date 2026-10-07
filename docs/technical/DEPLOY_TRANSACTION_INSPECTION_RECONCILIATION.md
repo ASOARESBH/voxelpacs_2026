@@ -8,7 +8,7 @@ O publicador `voxelpacs-deploy-runtime` recusava qualquer diretório já existen
 
 A branch adiciona:
 
-- `ops/deploy/voxelpacs-deploy-transaction`: helper root-controlled com `inspect` read-only e `reconcile` fail-closed;
+- `ops/deploy/voxelpacs-deploy-transaction`: helper root-controlled com `inspect` read-only e `reconcile` fail-closed, incluindo a classificação histórica `HISTORICAL_PUBLISHED_PARTIAL`;
 - `ops/sudoers/voxelpacs-deploy-transaction`: allowlist mínima para os dois modos e os dois callers autorizados;
 - `scripts/provision-deploy-transaction-helper.sh`: provisionamento administrativo separado, com dry-run, SHA exata e `visudo`;
 - testes isolados para os estados e proteções;
@@ -24,14 +24,16 @@ A reconciliação exige simultaneamente:
 - transação existente;
 - SHA exata;
 - nenhum processo de deploy;
-- classificação explícita `ABORTED` ou `STALE`;
-- publicação parcial = `NO`;
+- classificação explícita `ABORTED`, `STALE` ou `HISTORICAL_PUBLISHED_PARTIAL`;
+- publicação parcial = `NO`, exceto quando a prova histórica do stage/previous é integral;
 - rollback pendente = `NO`;
 - lock = `NO`;
 - owner root, modo `0700` e metadados sem symlink;
 - ausência de reconciliação anterior.
 
-Qualquer `UNKNOWN`, `ACTIVE`, `COMPLETED`, lock, publicação parcial ou pendência aborta.
+Para uma transação legada criada pelo publicador anterior, `published` com `PARTIAL_PUBLICATION=YES` não é aceito por idade ou conveniência. A exceção administrativa exige prova objetiva de que `validated` e `previous` são árvores completas, têm o mesmo conjunto e SHA dos arquivos, são root-owned `0700`, não contêm symlinks, possuem os arquivos críticos e não possuem marcador manual de publicação parcial. Essa prova preserva a transação original e não altera o runtime.
+
+Qualquer `UNKNOWN`, `ACTIVE`, `COMPLETED`, publicação parcial sem a prova histórica, lock ou pendência aborta.
 
 ## Integração com novo deploy
 

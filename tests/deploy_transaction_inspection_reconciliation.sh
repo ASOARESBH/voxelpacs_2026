@@ -165,33 +165,66 @@ wait "$lock_pid" || true
 # 10. publicação parcial bloqueia reconciliação
 make_tx rolled_back_after_failure
 printf 'YES\n' > "$tx/partial_publication"
+sudo -n chown -R root:root -- "$tx"
 if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail partial_reconciled; fi
 [[ ! -e "$tx/reconciliation/approved" ]] || fail partial_marker_created
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 11. rollback pendente bloqueia reconciliação
+# 11. publicação histórica com stage/previous completos é reconciliável
+make_tx published
+mkdir -p "$tx/previous"
+for required in \
+  app/bootstrap.php \
+  app/autoload.php \
+  app/Config/ReportDeliveryRuntimeConfig.php \
+  public/index.php \
+  bin/report_delivery_worker.php \
+  composer.json \
+  composer.lock \
+  vendor/autoload.php; do
+  mkdir -p "$tx/validated/$(dirname "$required")"
+  printf 'fixture\n' > "$tx/validated/$required"
+done
+cp -a -- "$tx/validated/." "$tx/previous/"
+sudo -n chown -R root:root -- "$tx"
+out="$(run_helper inspect --sha "$sha")"
+grep -Fxq 'TRANSACTION_PARTIAL_PUBLICATION=YES' <<<"$out"
+grep -Fxq 'TRANSACTION_HISTORICAL_PROOF=YES' <<<"$out"
+grep -Fxq 'CLASSIFICATION=HISTORICAL_PUBLISHED_PARTIAL' <<<"$out"
+out="$(run_helper reconcile --sha "$sha")"
+grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
+
+# 12. rollback pendente bloqueia reconciliação
 make_tx rolled_back_after_failure
 printf 'pending\n' > "$tx/rollback.pending"
+sudo -n chown -R root:root -- "$tx"
 if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail rollback_pending_reconciled; fi
 [[ ! -e "$tx/reconciliation/approved" ]] || fail rollback_marker_created
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 12. reconciliação preserva a transação e cria evidência
+# 13. reconciliação preserva a transação e cria evidência
 make_tx rolled_back_after_failure
 printf 'original\n' > "$tx/state.tsv"
 original_status="$(cat "$tx/status")"
+sudo -n chown -R root:root -- "$tx"
 out="$(run_helper reconcile --sha "$sha")"
 grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
 grep -Fxq 'OLD_TRANSACTION_PRESERVED=YES' <<<"$out"
 grep -Fxq 'RUNTIME_CHANGED=NO' <<<"$out"
 grep -Fxq 'NEW_DEPLOY_ALLOWED=YES' <<<"$out"
-[[ -d "$tx/reconciliation" ]] || fail evidence_dir_missing
-[[ -f "$tx/reconciliation/approved" ]] || fail approval_marker_missing
-[[ "$(cat "$tx/status")" == "$original_status" ]] || fail original_status_changed
-[[ "$(cat "$tx/state.tsv")" == original ]] || fail original_state_changed
+sudo -n test -d "$tx/reconciliation" || fail evidence_dir_missing
+sudo -n test -f "$tx/reconciliation/approved" || fail approval_marker_missing
+[[ "$(sudo -n cat "$tx/status")" == "$original_status" ]] || fail original_status_changed
+[[ "$(sudo -n cat "$tx/state.tsv")" == original ]] || fail original_state_changed
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 13. fail-closed after reconciliation: second reconciliation rejected
+# 14. fail-closed after reconciliation: second reconciliation rejected
+sudo -n chown -R root:root -- "$tx"
 if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail duplicate_reconciliation_allowed; fi
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
- # 14. inspect selects the latest publication run without replacing the root transaction
+# 15. inspect selects the latest publication run without replacing the root transaction
 sha_run='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 tx_run="$fixture_root/releases/transactions/$sha_run"
 mkdir -p "$tx_run/runs/20260101T000000Z-1/validated"
@@ -207,4 +240,4 @@ grep -Fxq 'TRANSACTION_STATUS=published' <<<"$out"
 grep -Fxq 'CLASSIFICATION=COMPLETED' <<<"$out"
 
 printf 'DEPLOY_TRANSACTION_INSPECTION_RECONCILIATION=PASS\n'
-printf 'CASES=14\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'
+printf 'CASES=15\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'
