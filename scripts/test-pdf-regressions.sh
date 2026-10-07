@@ -5,6 +5,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 bash "$ROOT/scripts/verify-composer-tree.sh"
 
 tests=(
+  tests/relatorio_medicos_pdf_memory.php
   tests/reports_pdf_layout_render_static.php
   tests/reports_pdf_qr_a4_static.php
   tests/reports_moderno_lateral_mascara.php
