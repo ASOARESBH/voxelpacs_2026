@@ -10,6 +10,8 @@ $situacao     = $report->situacao ?? $report->status ?? 'rascunho';
 $reportId     = (int) $report->id;
 $peerReview   = $peerReview ?? null;
 $peerReviewAberto = !empty($peerReview['pendente']);
+$signaturePreference = $signaturePreference ?? ['mode' => 'ambos'];
+$signatureMode = (string) ($signaturePreference['mode'] ?? 'ambos');
 
 // ── SLA Médico: tempo desde que assumiu ─────────────────────────────────────
 $slaTexto  = '';
@@ -75,6 +77,7 @@ $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? '')
      data-study-description="<?= htmlspecialchars($studyDescriptionDicom, ENT_QUOTES) ?>"
      data-readonly="<?= $readonly ? '1' : '0' ?>"
      data-status="<?= htmlspecialchars($situacao) ?>"
+     data-signature-mode="<?= htmlspecialchars($signatureMode, ENT_QUOTES) ?>"
      data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
      data-report-has-content="<?= $laudoPossuiConteudo ? '1' : '0' ?>"
      data-peer-review-pending="<?= $peerReviewAberto ? '1' : '0' ?>"
@@ -131,7 +134,7 @@ $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? '')
             </button>
             <?php endif; ?>
 
-            <?php if ($situacao === 'assinado'): ?>
+            <?php if ($situacao === 'assinado' && $signatureMode !== 'somente'): ?>
             <!-- Laudo assinado, mas ainda não liberado: permite finalizar. -->
             <button type="button" class="btn-pacs-success" id="btn-liberar"
                     title="<?= $chatPendente ? 'Conclua o CHAT antes de liberar' : 'Liberar laudo e fechar' ?>"
@@ -143,7 +146,10 @@ $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? '')
             <button type="button" class="btn-pacs-primary" id="btn-sign"
                     title="<?= $chatPendente ? 'Conclua o CHAT antes de assinar' : 'Assinar laudo (Ctrl+Enter)' ?>"
                     <?= $chatPendente ? 'disabled' : '' ?>>
-                <i class="fa fa-signature"></i> Assinar
+                <i class="fa fa-signature"></i>
+                <?= $signatureMode === 'fechar'
+                    ? htmlspecialchars(t('assinatura_preferencia.modo.fechar'))
+                    : ($signatureMode === 'somente' ? htmlspecialchars(t('assinatura_preferencia.modo.somente')) : 'Assinar') ?>
             </button>
             <?php endif; ?>
 

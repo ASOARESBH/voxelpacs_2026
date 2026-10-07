@@ -310,6 +310,11 @@ class UsuariosController extends Controller
             if (($worklistPreference['source'] ?? '') !== 'usuario') {
                 $worklistPreference['enabled'] = false;
             }
+            $reportSignaturePreference = (new \App\Services\ReportSignaturePreferenceService())->resolveForUser(
+                $id,
+                (int) $tenantId,
+                ($usuario['perfil'] ?? '') === 'medico'
+            );
             $viewerStates = ViewerAccess::statesForUser(
                 (int) $id,
                 (int) $tenantId,
@@ -322,6 +327,7 @@ class UsuariosController extends Controller
                 'modulosAtivos'=> $modulosAtivos,
                 'relatorioModulos' => $relatorioModulos,
                 'worklistPreference' => $worklistPreference,
+                'reportSignaturePreference' => $reportSignaturePreference,
                 'medicos'      => $medicos,
                 'modulos'      => self::MODULOS,
                 'modPadrao'    => self::MODULOS_PADRAO,
@@ -418,6 +424,23 @@ class UsuariosController extends Controller
                 ['tenant_id' => (int) $tenantId, 'source' => $worklistPreference['source']],
                 (int) $tenantId
             );
+            $reportSignaturePreference = (new \App\Services\ReportSignaturePreferenceService())->saveForUser(
+                $id,
+                (int) $tenantId,
+                ['mode' => $_POST['report_signature_mode'] ?? null],
+                $perfil === 'medico',
+                Auth::userId()
+            );
+            if (!empty($reportSignaturePreference['persisted'])) {
+                AuditLogger::log(
+                    'usuario.preferencia_assinatura_atualizada',
+                    'bi_user_report_signature_preferences',
+                    $id,
+                    ['tenant_id' => (int) $tenantId, 'mode' => $reportSignaturePreference['mode']],
+                    (int) $tenantId,
+                    'acesso'
+                );
+            }
 
             // Remove vínculo anterior com outro médico
             $pdo->prepare(

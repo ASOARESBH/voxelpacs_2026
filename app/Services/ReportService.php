@@ -360,6 +360,12 @@ class ReportService {
     public function assinar(int $reportId, string $modo): array {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        $modo = (new ReportSignaturePreferenceService())->effectiveMode(
+            $modo,
+            (int) (Auth::userId() ?? 0),
+            Auth::tenantId(),
+            Auth::perfilAtual() === 'medico'
+        );
 
         // 4(b) — trava de re-assinatura, mas permite concluir um ciclo de Peer Review.
         $reportSituacao = $report->situacao ?? $report->status ?? 'rascunho';
@@ -698,6 +704,14 @@ class ReportService {
     {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
+        $signaturePreference = (new ReportSignaturePreferenceService())->resolveForUser(
+            (int) (Auth::userId() ?? 0),
+            Auth::tenantId(),
+            Auth::perfilAtual() === 'medico'
+        );
+        if (($signaturePreference['mode'] ?? ReportSignaturePreferenceService::MODE_BOTH) === ReportSignaturePreferenceService::MODE_SIGN_ONLY) {
+            return ['ok' => false, 'error' => 'assinatura_preferencia_somente'];
+        }
 
         $situacao = $report->situacao ?? $report->status ?? 'rascunho';
         if ($situacao !== 'assinado') {

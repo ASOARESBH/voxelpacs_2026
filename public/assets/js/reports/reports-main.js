@@ -19,6 +19,7 @@ window.VoxelReports.main = (function () {
             studyDescription: app.dataset.studyDescription || '',
             readonly: app.dataset.readonly === '1',
             status: app.dataset.status,
+            signatureMode: app.dataset.signatureMode || 'ambos',
             chatPending: app.dataset.chatPending === '1',
             csrf: app.dataset.csrf,
         };
