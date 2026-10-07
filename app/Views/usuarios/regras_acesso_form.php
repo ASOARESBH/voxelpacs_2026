@@ -3,7 +3,12 @@
 $selectedDays = array_flip(array_filter(array_map('intval', explode(',', (string) ($regra['horario_dias_semana'] ?? '1,2,3,4,5,6,7')))));
 $dayLabels = [1 => t('usuarios.regras_acesso.seg'), 2 => t('usuarios.regras_acesso.ter'), 3 => t('usuarios.regras_acesso.qua'), 4 => t('usuarios.regras_acesso.qui'), 5 => t('usuarios.regras_acesso.sex'), 6 => t('usuarios.regras_acesso.sab'), 7 => t('usuarios.regras_acesso.dom')];
 ?>
-<div class="container-fluid py-4"><div class="mb-3"><a href="/usuarios/regras-acesso" class="text-decoration-none"><i class="fa fa-arrow-left me-1"></i><?= htmlspecialchars(t('usuarios.regras_acesso.voltar')) ?></a></div>
+<div class="container-fluid py-4">
+<?php
+$activeTab = 'regras_acesso';
+require __DIR__ . '/_navigation.php';
+?>
+<div class="mb-3"><a href="/usuarios/regras-acesso" class="text-decoration-none"><i class="fa fa-arrow-left me-1"></i><?= htmlspecialchars(t('usuarios.regras_acesso.voltar')) ?></a></div>
 <div class="row justify-content-center"><div class="col-xl-9"><div class="pacs-card p-4"><h1 class="h3 mb-1"><?= htmlspecialchars(t('usuarios.regras_acesso.editar_titulo')) ?></h1><p class="text-muted mb-4"><?= htmlspecialchars((string) $usuario['name']) ?> · <?= htmlspecialchars((string) ($usuario['perfil'] ?? '')) ?></p>
 <?php if ($erro !== ''): ?><div class="pacs-alert pacs-alert-danger"><i class="fa fa-exclamation-triangle me-2"></i><?= htmlspecialchars(t('usuarios.regras_acesso.' . $erro)) ?></div><?php endif; ?>
 <form method="post" action="/usuarios/regras-acesso/<?= (int) $usuario['id'] ?>/salvar" id="access-rule-form"><input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf) ?>">

@@ -34,6 +34,10 @@ A preferência não altera conteúdo clínico, versão, PatientName, snapshot, O
 
 As restrições opt-out de visualizadores usam `bi_user_viewers` no schema PostgreSQL `voxelpacs_mysql_source`. A leitura e gravação usam `FALSE` no PostgreSQL e `0` no MySQL para respeitar os tipos booleanos de cada dialeto. A migration aditiva `2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql` concede somente os grants de runtime necessários na tabela e na sequência; ela é separada do deploy e requer aplicação controlada.
 
+## Navegação administrativa
+
+As telas de `/usuarios`, grupos, notificações e regras de acesso usam o partial compartilhado `app/Views/usuarios/_navigation.php`. Ele mantém as quatro rotas visíveis para usuários autorizados, marca somente a rota atual como ativa e preserva a visibilidade limitada na lista principal quando o usuário não pode administrar o tenant. O estilo `.usuarios-tabs-bar`/`.usuarios-tab-btn` fica no CSS global `public/assets/css/pacs.css`, evitando que uma tela dependa de CSS inline de outra.
+
 ## Referências
 
 - [`UsuariosController`](../../app/Controllers/UsuariosController.php)
@@ -42,6 +46,8 @@ As restrições opt-out de visualizadores usam `bi_user_viewers` no schema Postg
 - [`EmailChangeController`](../../app/Controllers/Auth/EmailChangeController.php)
 - [`2026-09-22_users_email_lifecycle_postgresql.sql`](../../database/migrations/2026-09-22_users_email_lifecycle_postgresql.sql)
 - [`ReportSignaturePreferenceService`](../../app/Services/ReportSignaturePreferenceService.php)
+- [`_navigation.php`](../../app/Views/usuarios/_navigation.php)
+- [`pacs.css`](../../public/assets/css/pacs.css)
 - [`2026-10-07_report_signature_preference_postgresql.sql`](../../database/migrations/2026-10-07_report_signature_preference_postgresql.sql)
 - [`2026-10-07_report_signature_preference_mysql.sql`](../../database/migrations/2026-10-07_report_signature_preference_mysql.sql)
 - [`2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql`](../../database/migrations/2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql)
