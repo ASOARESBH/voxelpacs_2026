@@ -65,16 +65,30 @@ final class GrupoNotificacaoService
         }
 
         $pdo = $this->repo->pdo();
+        $logContext = [
+            'tenant_id' => $tenantId,
+            'grupo_id' => $groupId,
+            'boolean_binding' => 'PDO::PARAM_BOOL',
+            'boolean_fields' => ['ativo', 'canal_email', 'canal_whatsapp', 'canal_telegram'],
+            'priorities_count' => count($priorities),
+            'notification_modalities_count' => count($notificationModalities),
+            'worklist_modalities_count' => count($worklistModalities),
+        ];
         try {
             $pdo->beginTransaction();
             $this->repo->savePolicy($groupId, $tenantId, $config, $priorities, $notificationModalities, $worklistModalities);
             $pdo->commit();
+            Logger::info('[GrupoNotificacaoService::save] persistência concluída', array_merge($logContext, [
+                'transaction' => 'committed',
+            ]));
             return ['ok' => true];
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            Logger::error('[GrupoNotificacaoService::save] falha', [
-                'tenant_id' => $tenantId, 'grupo_id' => $groupId, 'error' => $e->getMessage(),
-            ]);
+            Logger::error('[GrupoNotificacaoService::save] falha', array_merge($logContext, [
+                'transaction' => 'rolled_back',
+                'exception_class' => get_class($e),
+                'error' => $e->getMessage(),
+            ]));
             return ['ok' => false, 'error' => 'persistencia_falhou'];
         }
     }
