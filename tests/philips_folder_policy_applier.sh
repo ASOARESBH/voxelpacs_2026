@@ -157,6 +157,108 @@ expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=272' 'rollback
 expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_DESTINATION_ID=6' 'rollback restored previous destination'
 pass 'rollback restore and validation'
 
+# Transition contract: atomically move the Philips Folder single-test policy
+# and its exact one-job allowlist from predecessor 519 to target 522.
+output="$($APPLIER --apply "${COMMON[@]}" --backup-id "$backup_id")"
+expect_contains "$output" 'APPLY=PASS' 're-arm predecessor policy for transition fixture'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'transition predecessor policy'
+
+TRANSITION_COMMON=(
+  --env-file "$ENV_FILE"
+  --allowlist "$ALLOWLIST"
+  --backup-root "$BACKUP_ROOT"
+  --expected-host "$HOST_NAME"
+  --tenant-id 2
+  --destination-id 7
+  --job-id 522
+  --source-job-id 519
+  --transport philips_non_dicom
+  --profile submission_document
+  --mode single_test
+)
+
+output="$($APPLIER --transition-dry-run "${TRANSITION_COMMON[@]}")"
+expect_contains "$output" 'TRANSITION_DRY_RUN=PASS' 'transition dry-run'
+expect_contains "$output" 'SOURCE_POLICY=PASS' 'transition source policy'
+expect_contains "$output" 'SOURCE_ALLOWLIST=PASS' 'transition source allowlist'
+expect_contains "$output" 'ALLOWLIST_EXACT_TARGET=YES' 'transition exact target allowlist'
+expect_contains "$output" 'TRANSMISSION=NO' 'transition dry-run transport isolation'
+pass 'transition dry-run and source guards'
+
+transition_env_before="$(sha256sum "$ENV_FILE" | awk '{print $1}')"
+transition_allowlist_before="$(sha256sum "$ALLOWLIST" | awk '{print $1}')"
+transition_backup_output="$($APPLIER --transition-backup-only "${TRANSITION_COMMON[@]}" --unit "$UNIT")"
+expect_contains "$transition_backup_output" 'TRANSITION_BACKUP_ONLY=PASS' 'transition backup-only'
+expect_contains "$transition_backup_output" 'BACKUP_POLICY_CHECKSUM=PASS' 'transition policy checksum'
+expect_contains "$transition_backup_output" 'BACKUP_ALLOWLIST_CHECKSUM=PASS' 'transition allowlist checksum'
+expect_contains "$transition_backup_output" 'POLICY_CHANGED=NO' 'transition backup policy isolation'
+expect_contains "$transition_backup_output" 'ALLOWLIST_CHANGED=NO' 'transition backup allowlist isolation'
+transition_backup_id="$(sed -n 's/^BACKUP_ID=//p' <<<"$transition_backup_output")"
+[[ "$transition_backup_id" =~ ^transition-[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+$ ]] || fail 'transition backup id format'
+[[ -f "$BACKUP_ROOT/$transition_backup_id/manifest" ]] || fail 'transition manifest missing'
+[[ -f "$BACKUP_ROOT/$transition_backup_id/policy.conf" ]] || fail 'transition policy backup missing'
+[[ -f "$BACKUP_ROOT/$transition_backup_id/allowlist" ]] || fail 'transition allowlist backup missing'
+[[ "$(sha256sum "$ENV_FILE" | awk '{print $1}')" == "$transition_env_before" ]] || fail 'transition backup changed EnvironmentFile fixture'
+[[ "$(sha256sum "$ALLOWLIST" | awk '{print $1}')" == "$transition_allowlist_before" ]] || fail 'transition backup changed allowlist fixture'
+grep -Eq '^SOURCE_ALLOWLIST_CHECKSUM=[a-f0-9]{64}$' "$BACKUP_ROOT/$transition_backup_id/manifest" || fail 'transition source allowlist checksum missing'
+pass 'transition backup-only and dual-state manifest'
+
+FAIL_MV_BIN="$TMP_DIR/fail-mv-bin"
+mkdir -p "$FAIL_MV_BIN"
+cat > "$FAIL_MV_BIN/mv" <<'MV'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${!#}" == "${VOXEL_TEST_FAIL_MV_DEST:-}" ]]; then
+  exit 77
+fi
+exec /usr/bin/mv "$@"
+MV
+chmod 700 "$FAIL_MV_BIN/mv"
+original_path="$PATH"
+export VOXEL_TEST_FAIL_MV_DEST="$ALLOWLIST"
+export PATH="$FAIL_MV_BIN:$PATH"
+expect_not_success "$APPLIER" --transition-apply "${TRANSITION_COMMON[@]}" --backup-id "$transition_backup_id"
+export PATH="$original_path"
+unset VOXEL_TEST_FAIL_MV_DEST
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'transition failure restored predecessor policy'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=519' 'transition failure restored predecessor allowlist'
+pass 'transition second-file failure triggers automatic rollback'
+
+output="$($APPLIER --transition-apply "${TRANSITION_COMMON[@]}" --backup-id "$transition_backup_id")"
+expect_contains "$output" 'TRANSITION_APPLY=PASS' 'transition apply'
+expect_contains "$output" 'BACKUP_VERIFIED=PASS' 'transition backup verification'
+expect_contains "$output" 'POLICY_CHANGED=YES' 'transition policy changed'
+expect_contains "$output" 'ALLOWLIST_CHANGED=YES' 'transition allowlist changed'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=522' 'transition target policy'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_DESTINATION_ID=7' 'transition target destination'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=522' 'transition target allowlist'
+pass 'transition apply changes both files without reload'
+
+output="$($APPLIER --validate "${TRANSITION_COMMON[@]}")"
+expect_contains "$output" 'VALIDATION=PASS' 'transition target validation'
+expect_contains "$output" 'EFFECTIVE_ALLOWLIST_JOB=522' 'transition target job validation'
+pass 'transition target effective validation'
+
+expect_not_success "$APPLIER" --transition-dry-run "${TRANSITION_COMMON[@]}" --source-job-id 518
+pass 'transition rejects wrong predecessor job'
+expect_not_success "$APPLIER" --transition-dry-run "${TRANSITION_COMMON[@]}" --unit "$UNIT"
+pass 'transition dry-run rejects implicit unit control'
+
+output="$($APPLIER transition-rollback --dry-run "${TRANSITION_COMMON[@]}" --backup-id "$transition_backup_id")"
+expect_contains "$output" 'TRANSITION_ROLLBACK_DRY_RUN=PASS' 'transition rollback dry-run'
+expect_contains "$output" 'ROLLBACK_COMPATIBILITY=PASS' 'transition rollback compatibility'
+expect_contains "$output" 'WOULD_RESTORE_SOURCE_JOB=519' 'transition rollback source job'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=522' 'transition rollback dry-run policy isolation'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=522' 'transition rollback dry-run allowlist isolation'
+pass 'transition rollback dry-run'
+
+output="$($APPLIER transition-rollback "${TRANSITION_COMMON[@]}" --backup-id "$transition_backup_id")"
+expect_contains "$output" 'TRANSITION_ROLLBACK=PASS' 'transition rollback apply'
+expect_contains "$output" 'RESTORED_SOURCE_JOB=519' 'transition rollback source'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'transition rollback restored policy'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=519' 'transition rollback restored allowlist'
+pass 'transition rollback restores policy and allowlist'
+
 # Negative contract matrix.
 expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --tenant-id 3
 expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --destination-id 6
