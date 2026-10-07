@@ -142,6 +142,7 @@ class ReportDeliveryOutboxService
 
     /**
      * @return array{created:bool,outbox_id:int|null,job_count:int,reason?:string}
+     * @param array<int,array<string,mixed>>|null $resolvedDestinations
      */
     public function queueReleasedReport(
         int $tenantId,
