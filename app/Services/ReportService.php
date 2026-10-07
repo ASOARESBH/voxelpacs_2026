@@ -465,6 +465,10 @@ class ReportService {
         $user = Auth::user();
         $assinadoEm = date('Y-m-d H:i:s');
         $patientName = null;
+        $modoEfetivo = $modo;
+        $liberacaoBloqueada = false;
+        $liberacaoBloqueio = null;
+        $resolvedDestinations = null;
         if ($modo === 'fechar') {
             try {
                 $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
@@ -498,6 +502,31 @@ class ReportService {
         try {
             $pdo->beginTransaction();
 
+            // O ato médico de assinatura não depende de um destino de entrega
+            // compatível. A liberação, porém, só ocorre após esta avaliação;
+            // em caso de incompatibilidade a assinatura fica em "assinado".
+            if ($modo === 'fechar') {
+                $deliveryOutbox = new ReportDeliveryOutboxService($pdo);
+                $compatibility = $deliveryOutbox->assessReleaseCompatibility(
+                    (int) $tenantId,
+                    $reportId,
+                    $estudo,
+                    $patientName,
+                    'automatic_production'
+                );
+                $resolvedDestinations = $compatibility['destinations'];
+                if (!$compatibility['allowed']) {
+                    $liberacaoBloqueada = true;
+                    $liberacaoBloqueio = (string) ($compatibility['reason'] ?? 'release_compatibility_unavailable');
+                    $modoEfetivo = 'somente';
+                    Logger::warning('[ReportService::assinar] Assinatura persistida sem liberação', [
+                        'report_id' => $reportId,
+                        'tenant_id' => $tenantId,
+                        'reason' => $liberacaoBloqueio,
+                    ]);
+                }
+            }
+
             // Congela o layout personalizado publicado no momento da assinatura.
             $pdfSnapshotPath = null;
             // A falha de schema pendente é registrada, mas não pode bloquear a assinatura.
@@ -513,7 +542,7 @@ class ReportService {
             // substituir o instante clínico da assinatura no estudo.
             $this->repo->marcarAssinado($reportId, 'assinado');
             $this->repo->atualizarSituacaoEstudo($estudoId, 'assinado');
-            if ($modo === 'fechar') {
+            if ($modoEfetivo === 'fechar') {
                 $this->repo->marcarAssinado($reportId, 'liberado');
                 $this->repo->atualizarSituacaoEstudo($estudoId, 'liberado');
             }
@@ -531,7 +560,7 @@ class ReportService {
             // A outbox é gravada no mesmo commit clínico. A rotina não abre
             // conexões externas e permanece inativa enquanto a feature flag
             // estiver desligada no ambiente de produção.
-            if ($modo === 'fechar') {
+            if ($modoEfetivo === 'fechar') {
                 (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
                     (int) $tenantId,
                     $reportId,
@@ -541,7 +570,10 @@ class ReportService {
                     $estudo,
                     (int) $userId,
                     $assinadoEm,
-                    $hash
+                    $hash,
+                    false,
+                    'automatic_production',
+                    $resolvedDestinations
                 );
                 (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
                     (int) $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
@@ -553,7 +585,7 @@ class ReportService {
                 $peerReviewService->concluirNaTransacao(
                     (int) $peerReviewAberto->id,
                     $userId,
-                    $modo === 'fechar' ? 'liberado' : 'assinado',
+                    $modoEfetivo === 'fechar' ? 'liberado' : 'assinado',
                     $versaoNumero
                 );
             }
@@ -568,7 +600,8 @@ class ReportService {
                 'report_id' => $reportId,
                 'estudo_id' => $estudoId,
                 'tenant_id' => $tenantId,
-                'modo' => $modo,
+                'modo_solicitado' => $modo,
+                'modo_efetivo' => $modoEfetivo,
                 'versao_report' => $versaoNumero ?? null,
                 'error' => $erro,
             ]);
@@ -580,8 +613,15 @@ class ReportService {
             ];
         }
 
-        AuditLogger::log('report.assinar', 'reports', $reportId, ['crm' => $crm, 'hash' => $hash, 'modo' => $modo]);
-        if ($modo === 'fechar') {
+        AuditLogger::log('report.assinar', 'reports', $reportId, [
+            'crm' => $crm,
+            'hash' => $hash,
+            'modo_solicitado' => $modo,
+            'modo_efetivo' => $modoEfetivo,
+            'liberacao_bloqueada' => $liberacaoBloqueada,
+            'liberacao_bloqueio' => $liberacaoBloqueio,
+        ]);
+        if ($modoEfetivo === 'fechar') {
             AuditLogger::log('report.liberar', 'reports', $reportId, [
                 'origem' => 'assinar_e_fechar',
                 'hash' => $hash,
@@ -595,13 +635,14 @@ class ReportService {
                 $estudo,
                 ['nome' => $medico['nome'] ?? $user->name ?? '', 'crm' => $crm ?? ''],
                 $report,
-                $modo === 'fechar' ? 'liberado' : 'assinado'
+                $modoEfetivo === 'fechar' ? 'liberado' : 'assinado'
             );
         } catch (\Throwable $e) {
             Logger::error('[ReportService::assinar] Conectores de comunicação falharam', [
                 'report_id' => $reportId,
                 'tenant_id' => $tenantId,
-                'modo' => $modo,
+                'modo_solicitado' => $modo,
+                'modo_efetivo' => $modoEfetivo,
                 'error' => $e->getMessage(),
             ]);
                 }
@@ -609,7 +650,7 @@ class ReportService {
         // ── Notifica o VoxelCopilot sobre o laudo liberado (só quando o estudo
         // de fato é finalizado — "Somente Assinar" não dispara este webhook,
         // já que o estudo continua em 'assinado', não 'liberado') ───────────
-        if ($modo === 'fechar') {
+        if ($modoEfetivo === 'fechar') {
             try {
                 $svc = new \App\Services\CopilotWebhookService();
                 if ($tenantId) {
@@ -635,7 +676,7 @@ class ReportService {
             }
         }
 
-        $situacaoFinal = $modo === 'fechar' ? 'liberado' : 'assinado';
+        $situacaoFinal = $modoEfetivo === 'fechar' ? 'liberado' : 'assinado';
         return [
             'ok' => true,
             'situacao' => $situacaoFinal,
@@ -643,6 +684,8 @@ class ReportService {
             'hash' => $hash,
             'pdf_url' => $this->urlPublica($report) . '/pdf',
             'peer_review_concluido' => $peerReviewAberto !== null,
+            'liberacao_bloqueada' => $liberacaoBloqueada,
+            'liberacao_bloqueio' => $liberacaoBloqueio,
         ];
     }
 
@@ -692,6 +735,26 @@ class ReportService {
             return ['ok' => false, 'error' => $e->getMessage()];
         }
         $pdo = Database::getInstance();
+        $deliveryOutbox = new ReportDeliveryOutboxService($pdo);
+        $compatibility = $deliveryOutbox->assessReleaseCompatibility(
+            $tenantId,
+            $reportId,
+            $estudo,
+            $patientName,
+            'automatic_production'
+        );
+        if (!$compatibility['allowed']) {
+            Logger::warning('[ReportService::liberarAssinado] Liberação recusada por compatibilidade', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'reason' => $compatibility['reason'] ?? 'release_compatibility_unavailable',
+            ]);
+            return [
+                'ok' => false,
+                'error' => $compatibility['reason'] ?? 'release_compatibility_unavailable',
+            ];
+        }
+        $resolvedDestinations = $compatibility['destinations'];
         try {
             $pdo->beginTransaction();
             $this->repo->marcarAssinado($reportId, 'liberado');
@@ -706,7 +769,7 @@ class ReportService {
                 $estudoId,
                 $versaoNumero
             );
-            (new ReportDeliveryOutboxService($pdo))->queueReleasedReport(
+            $deliveryOutbox->queueReleasedReport(
                 $tenantId,
                 $reportId,
                 $estudoId,
@@ -715,7 +778,10 @@ class ReportService {
                 $estudo,
                 $userId,
                 $liberadoEm,
-                $hash
+                $hash,
+                false,
+                'automatic_production',
+                $resolvedDestinations
             );
             (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
                 $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,

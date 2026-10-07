@@ -259,15 +259,27 @@ class ReportsController extends Controller
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     'patient_name_unavailable'           => 'O PatientName do estudo não está disponível para assinar o laudo.',
                     'patient_name_source_invalid'       => 'A origem do nome estruturado é inválida.',
+                    'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
                     'patient_name_family'               => 'Informe Family do paciente.',
                     'patient_name_given'                => 'Informe Given do paciente.',
                     'patient_name_middle'               => 'O Middle informado é inválido.',
+                    'patient_name_given_required'       => 'O destino de devolutiva exige Given do paciente; o laudo foi assinado, mas não liberado.',
+                    'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva; o laudo foi assinado, mas não liberado.',
                     default                           => 'Erro ao assinar.',
                 };
                 $this->json(['ok' => false, 'msg' => $msg], 422);
                 return;
             }
-            $this->json(['ok' => true, 'msg' => 'Laudo assinado com sucesso.', 'situacao' => $resultado['situacao']]);
+            $msg = !empty($resultado['liberacao_bloqueada'])
+                ? $this->mensagemLiberacaoBloqueada((string) ($resultado['liberacao_bloqueio'] ?? ''))
+                : ($resultado['situacao'] === 'liberado' ? 'Laudo assinado e liberado com sucesso.' : 'Laudo assinado com sucesso.');
+            $this->json([
+                'ok' => true,
+                'msg' => $msg,
+                'situacao' => $resultado['situacao'],
+                'liberacao_bloqueada' => (bool) ($resultado['liberacao_bloqueada'] ?? false),
+                'liberacao_bloqueio' => $resultado['liberacao_bloqueio'] ?? null,
+            ]);
         } catch (\Throwable $e) {
             Logger::error('ReportsController::sign error', ['msg' => $e->getMessage(), 'report_id' => $reportId]);
             $this->json(['ok' => false, 'msg' => $e->getMessage()], 422);
@@ -1219,7 +1231,16 @@ class ReportsController extends Controller
                     $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
                     return;
                 }
-                $this->json(['ok' => true, 'situacao' => 'liberado', 'msg' => 'Laudo liberado com sucesso.', 'pdf_url' => $resultado['pdf_url'] ?? null]);
+                $this->json([
+                    'ok' => true,
+                    'situacao' => $resultado['situacao'],
+                    'msg' => !empty($resultado['liberacao_bloqueada'])
+                        ? $this->mensagemLiberacaoBloqueada((string) ($resultado['liberacao_bloqueio'] ?? ''))
+                        : 'Laudo liberado com sucesso.',
+                    'liberacao_bloqueada' => (bool) ($resultado['liberacao_bloqueada'] ?? false),
+                    'liberacao_bloqueio' => $resultado['liberacao_bloqueio'] ?? null,
+                    'pdf_url' => $resultado['pdf_url'] ?? null,
+                ]);
                 return;
             }
             // Laudo já assinado: liberar não cria uma segunda assinatura. A
@@ -1250,13 +1271,24 @@ class ReportsController extends Controller
         return match ($codigo) {
             'patient_name_unavailable' => 'O PatientName do estudo não está disponível para liberar o laudo.',
             'patient_name_source_invalid' => 'A origem do nome estruturado é inválida.',
+            'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
             'patient_name_family' => 'Informe Family do paciente.',
             'patient_name_given' => 'Informe Given do paciente.',
             'patient_name_middle' => 'O Middle informado é inválido.',
+            'patient_name_given_required' => 'O destino de devolutiva exige Given do paciente. O laudo permanece assinado e não foi liberado.',
+            'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva. O laudo permanece assinado e não foi liberado.',
             'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',
             'report_nao_assinado' => 'O laudo ainda não foi assinado.',
             'report_nao_encontrado' => 'Laudo não encontrado.',
             default => 'Não foi possível liberar o laudo.',
+        };
+    }
+
+    private function mensagemLiberacaoBloqueada(string $codigo): string
+    {
+        return match ($codigo) {
+            'patient_name_given_required' => 'Laudo assinado, mas não liberado: o destino de devolutiva exige Given do paciente. Nenhuma Outbox ou Job foi criado.',
+            default => 'Laudo assinado, mas não liberado: não foi possível validar o destino de devolutiva. Nenhuma Outbox ou Job foi criado.',
         };
     }
 

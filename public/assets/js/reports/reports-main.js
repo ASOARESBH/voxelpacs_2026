@@ -137,6 +137,14 @@ window.VoxelReports.main = (function () {
                             }
                             return;
                         }
+                        if (data.liberacao_bloqueada) {
+                            btnLiberar.disabled = false;
+                            releaseConfirm.disabled = false;
+                            releaseModal.hide();
+                            alert(data.msg || 'Laudo assinado, mas a liberação foi bloqueada pelo destino de devolutiva.');
+                            window.location.reload();
+                            return;
+                        }
                         if (typeof window.voxelRetornarWorklist === 'function') {
                             window.voxelRetornarWorklist('/estudos');
                         } else {

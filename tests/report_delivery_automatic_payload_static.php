@@ -32,6 +32,10 @@ expect_automatic_payload(!str_contains($outbox, "'task_author_id'"), 'Automatic 
 expect_automatic_payload(str_contains($outbox, "'schema_version' => 2"), 'The existing payload schema version must remain stable.');
 expect_automatic_payload(str_contains($outbox, 'createOutboxIfAbsent('), 'Outbox idempotent creation must remain in place.');
 expect_automatic_payload(str_contains($outbox, 'createJobs('), 'Job creation must remain in the existing path.');
+foreach (['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'] as $field) {
+    expect_automatic_payload(str_contains($outbox, "\$payload['{$field}']"), "Automatic payload must freeze {$field} from report_versions.");
+}
+expect_automatic_payload(str_contains($outbox, 'loadFrozenPatientName('), 'Automatic payload must load the frozen PatientName version.');
 expect_automatic_payload(str_contains($workerRepository, 'e.study_time, e.referring_physician_name, e.institution_name'), 'Worker snapshot must continue to project referring_physician_name.');
 
 echo "REPORT_DELIVERY_AUTOMATIC_PAYLOAD_STATIC_OK\n";
