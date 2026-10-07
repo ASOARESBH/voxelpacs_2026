@@ -157,9 +157,10 @@ final class RelatorioProdutividadeMedicosRepository
 
     /**
      * @param array{tenant_id:int,data_de:string,data_ate:string,base_periodo:string,unidade:string,modalidades:array<int,string>,estudo:string,medico_id:?int,pagina:int,por_pagina:int,medico_restrito_id:?int} $filtros
+     * @param bool $paginar Aplica a paginação da tela; exportações recebem o conjunto filtrado completo.
      * @return array{linhas:array<int,array<string,mixed>>,total:int,totalizadores:array<string,int|null>,porMedico:array<int,array<string,mixed>>,resumoLiberados:array{modalidades:array<string,int>,prioridades:array<string,int>}}
      */
-    public function buscar(array $filtros): array
+    public function buscar(array $filtros, bool $paginar = true): array
     {
         [$where, $params] = $this->where($filtros);
         $prioridadeSql = $this->prioridadeEfetivaSql('e');
@@ -232,9 +233,12 @@ final class RelatorioProdutividadeMedicosRepository
         $resumoLiberados = $this->resumirLiberados($all);
 
         $total = count($all);
-        $porPagina = max(1, min(100, (int) $filtros['por_pagina']));
-        $pagina = max(1, (int) $filtros['pagina']);
-        $linhas = array_slice($all, ($pagina - 1) * $porPagina, $porPagina);
+        $linhas = $all;
+        if ($paginar) {
+            $porPagina = max(1, min(100, (int) $filtros['por_pagina']));
+            $pagina = max(1, (int) $filtros['pagina']);
+            $linhas = array_slice($all, ($pagina - 1) * $porPagina, $porPagina);
+        }
 
         return compact('linhas', 'total', 'totalizadores', 'porMedico', 'resumoLiberados');
     }

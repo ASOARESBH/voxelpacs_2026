@@ -77,9 +77,7 @@ final class RelatorioMedicosController extends Controller
 
         $repository = new RelatorioProdutividadeMedicosRepository(Database::getInstance());
         $filters = $this->filters($_GET, $tenantId, $repository);
-        $filters['pagina'] = 1;
-        $filters['por_pagina'] = 5000;
-        $result = $repository->buscar($filters);
+        $result = $repository->buscar($filters, paginar: false);
 
         $export = new RelatorioExportService();
         $tenantNome = TenantContext::name() ?: 'VOXEL PACS';
