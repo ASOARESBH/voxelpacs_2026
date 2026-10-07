@@ -536,7 +536,7 @@ class ReportService {
             // Congela o layout personalizado publicado no momento da assinatura.
             $pdfSnapshotPath = null;
             // A falha de schema pendente é registrada, mas não pode bloquear a assinatura.
-            $this->congelarTemplatePersonalizadoAssinado($report, $estudo, $pdo);
+            $this->congelarTemplateAssinado($report, $estudo, $pdo);
 
             // O registro auxiliar possui schemas históricos; o Repository faz
             // fallback sem impedir a persistência principal do laudo.
@@ -1013,11 +1013,11 @@ class ReportService {
     }
 
     /**
-     * Salva no report a versão publicada do layout personalizado escolhida pela
+     * Salva no report a versão publicada do override do layout escolhido pela
      * Unidade. A publicação posterior de outra versão não pode alterar o laudo
      * já assinado. Compatibilidade: a migration pendente não impede assinatura.
      */
-    private function congelarTemplatePersonalizadoAssinado(object $report, object $estudo, \PDO $pdo): void {
+    private function congelarTemplateAssinado(object $report, object $estudo, \PDO $pdo): void {
         if ((int) ($report->report_custom_template_id ?? 0) > 0) {
             return;
         }
@@ -1050,16 +1050,14 @@ class ReportService {
             if (!$unit) return;
 
             $layoutService = new ReportLayoutService();
-            if ($layoutService->resolverCodigo((int) ($unit['layout_id'] ?? 0)) !== 'personalizado') {
-                return;
-            }
+            $layoutCode = $layoutService->resolverCodigo((int) ($unit['layout_id'] ?? 0));
             $source = (string) ($unit['layout_source'] ?? '') === 'institution_name'
                 ? ReportCustomTemplateService::SOURCE_INSTITUTION
                 : ReportCustomTemplateService::SOURCE_UNIDADE;
             $unitId = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
                 ? (int) ($unit['institution_unit_id'] ?? 0)
                 : (int) ($unit['rich_unit_id'] ?? 0);
-            $template = (new ReportCustomTemplateService())->getPublished($tenantId, $source, $unitId);
+            $template = (new ReportCustomTemplateService())->getPublished($tenantId, $source, $unitId, $layoutCode);
             if (!$template) return;
 
             $pdo->prepare(
@@ -1071,7 +1069,7 @@ class ReportService {
                 'tenant_id' => $tenantId,
             ]);
         } catch (\Throwable $e) {
-            Logger::warning('[ReportService::congelarTemplatePersonalizadoAssinado] indisponível', [
+            Logger::warning('[ReportService::congelarTemplateAssinado] indisponível', [
                 'report_id' => $report->id ?? null,
                 'tenant_id' => $tenantId,
                 'error' => $e->getMessage(),

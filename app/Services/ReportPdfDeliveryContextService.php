@@ -113,15 +113,19 @@ final class ReportPdfDeliveryContextService
         $report = $this->applyCompanyRegistration($report, $tenantId);
 
         $layoutService = new ReportLayoutService();
-        $templateCodigo = $layoutService->resolverCodigo(
+        $selectedTemplateCodigo = $layoutService->resolverCodigo(
             (int) ($report['report_layout_template_id'] ?? 0)
         );
+        $templateCodigo = $selectedTemplateCodigo;
         $customTemplate = null;
-        if ($templateCodigo === 'personalizado') {
-            $customService = new ReportCustomTemplateService();
+        $customService = new ReportCustomTemplateService();
+        if ($customService->isLayoutEditable($selectedTemplateCodigo)) {
             $snapshotId = (int) ($report['report_custom_template_id'] ?? 0);
             if ($snapshotId > 0) {
                 $customTemplate = $customService->getById($snapshotId, $tenantId);
+                if ($customTemplate !== null && $customService->normalizeLayoutCode($customTemplate['layout_code'] ?? null) !== $selectedTemplateCodigo) {
+                    $customTemplate = null;
+                }
             }
             if ($customTemplate === null) {
                 $source = (string) ($report['report_layout_template_source'] ?? '') === 'institution_name'
@@ -131,10 +135,12 @@ final class ReportPdfDeliveryContextService
                     ? (int) ($report['institution_unit_id'] ?? 0)
                     : (int) ($report['rich_unit_id'] ?? 0);
                 if ($unitId > 0) {
-                    $customTemplate = $customService->getPublished($tenantId, $source, $unitId);
+                    $customTemplate = $customService->getPublished($tenantId, $source, $unitId, $selectedTemplateCodigo);
                 }
             }
-            if ($customTemplate === null) {
+            if ($customTemplate !== null) {
+                $templateCodigo = 'personalizado';
+            } elseif ($selectedTemplateCodigo === 'personalizado') {
                 $templateCodigo = ReportLayoutService::PADRAO;
             }
         }

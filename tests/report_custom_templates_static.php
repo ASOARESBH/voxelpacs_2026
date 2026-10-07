@@ -26,15 +26,23 @@ $reports = $read($root . '/app/Controllers/ReportsController.php');
 $signer = $read($root . '/app/Services/ReportService.php');
 $layout = $read($root . '/app/Services/ReportLayoutService.php');
 $view = $read($root . '/app/Views/unidades/template_personalizado.php');
+$unitEdit = $read($root . '/app/Views/unidades/edit.php');
+$unitRichEdit = $read($root . '/app/Views/unidades/nova.php');
 $pdfPartial = $read($root . '/app/Views/reports/pdf/templates/_personalizado.php');
 $routes = $read($root . '/routes/web.php');
 $migration = $read($root . '/database/migrations/2026-08-18_report_custom_templates.sql');
+$layoutMigration = $read($root . '/database/migrations/2026-10-07_report_custom_templates_layout_postgresql.sql');
+$layoutMigrationMysql = $read($root . '/database/migrations/2026-10-07_report_custom_templates_layout_mysql.sql');
 
 $assert(str_contains($migration, 'CREATE TABLE IF NOT EXISTS `report_custom_templates`'), 'Migration deve criar a tabela versionada.');
 $assert(str_contains($migration, 'report_custom_template_id'), 'Migration deve congelar a versão no report.');
 $assert(!str_contains(strtoupper($migration), 'INFORMATION_SCHEMA'), 'Migration nova não pode usar INFORMATION_SCHEMA.');
 $assert(!preg_match('/\b(PROCEDURE|TRIGGER|PREPARE)\b/i', $migration), 'Migration não pode usar procedures, triggers ou SQL dinâmico.');
 $assert(str_contains($migration, "'personalizado'"), 'Migration deve semear o quinto layout Personalizado.');
+$assert(str_contains($layoutMigration, 'ADD COLUMN IF NOT EXISTS layout_code'), 'Migration deve adicionar layout_code de forma idempotente.');
+$assert(str_contains($layoutMigration, 'idx_rct_tenant_unit_layout_status'), 'Migration deve indexar consultas por layout e status.');
+$assert(str_contains($layoutMigrationMysql, 'layout_code'), 'Migration MySQL deve adicionar layout_code.');
+$assert(str_contains($layoutMigrationMysql, 'idx_rct_tenant_unit_layout_status'), 'Migration MySQL deve indexar consultas por layout e status.');
 
 $assert(str_contains($service, "SOURCE_INSTITUTION = 'institution_name'"), 'Service deve distinguir a origem real da Unidade.');
 $assert(str_contains($service, "STATUS_DRAFT = 'rascunho'"), 'Service deve manter rascunho.');
@@ -44,6 +52,9 @@ $assert(str_contains($service, 'ReportClinicalHtmlSanitizer::sanitizeAndNormaliz
 $assert(str_contains($service, 'sanitizeCss'), 'Service deve sanitizar CSS.');
 $assert(str_contains($service, "'laudo.corpo'"), 'Service deve oferecer corpo de laudo no catálogo de variáveis.');
 $assert(str_contains($service, 'mockContext'), 'Preview deve depender de contexto fictício.');
+$assert(str_contains($service, 'EDITABLE_LAYOUTS'), 'Service deve manter allowlist de layouts editáveis.');
+$assert(str_contains($service, 'defaultPayloadForLayout'), 'Service deve fornecer preview preenchido por layout.');
+$assert(str_contains($service, 'layout_code = :layout_code'), 'Rascunhos/publicações devem ser separados por layout.');
 
 $assert(str_contains($controller, 'guardAdmin'), 'Controller deve proteger o editor por perfil.');
 $assert(str_contains($controller, 'guardCsrf'), 'Controller deve validar CSRF em POSTs.');
@@ -56,9 +67,13 @@ $assert(str_contains($routes, 'template-personalizado/preview'), 'Rotas devem ex
 $assert(str_contains($layout, "'personalizado'"), 'Allowlist de layout deve aceitar Personalizado.');
 $assert(str_contains($reports, 'ReportCustomTemplateService'), 'PDF deve resolver a versão publicada personalizada.');
 $assert(str_contains($reports, 'layout personalizado sem versão publicada; aplicado fallback'), 'PDF deve manter fallback seguro quando não houver publicação.');
-$assert(str_contains($signer, 'congelarTemplatePersonalizadoAssinado'), 'Assinatura deve congelar a versão publicada.');
+$assert(str_contains($signer, 'congelarTemplateAssinado'), 'Assinatura deve congelar a versão publicada de qualquer layout.');
+$assert(str_contains($reports, 'selectedTemplateCodigo'), 'PDF deve respeitar o layout selecionado antes de procurar override.');
 $assert(str_contains($view, 'sandbox="allow-same-origin"'), 'Preview deve ser isolado em iframe sem scripts.');
-$assert(str_contains($view, 'dados fictícios'), 'Preview deve declarar uso de dados fictícios.');
+$assert(str_contains($view, "t('unidades.template_editor.seguranca_texto')"), 'Preview deve declarar uso de dados fictícios via i18n.');
+$assert(str_contains($view, 'template-layout-switch'), 'Editor deve permitir trocar o layout-base.');
+$assert(str_contains($unitEdit, 'rawurlencode($layoutCode)'), 'Tela de unidade deve oferecer edição por código de layout.');
+$assert(str_contains($unitRichEdit, 'rawurlencode($layoutCode)'), 'Tela rica de unidade deve oferecer edição por código de layout.');
 $assert(str_contains($pdfPartial, 'renderReport'), 'Partial personalizado deve reutilizar o serviço central.');
 
 $clean = ReportCustomTemplateService::sanitizeHtml('<script>alert(1)</script><p onclick="x()">Seguro</p><style>@import url(https://x); .a{background:url(javascript:x)}</style>');
@@ -68,6 +83,7 @@ $assert(!str_contains(strtolower($clean), '@import'), 'Sanitização deve remove
 $assert(!str_contains(strtolower($clean), 'javascript:'), 'Sanitização deve remover javascript no CSS.');
 
 $preview = (new ReportCustomTemplateService())->renderPreview([
+    'layout_code' => 'corporativo_faixa',
     'header_mode' => 'html',
     'header_content' => '<h1>{{unidade.nome}}</h1>',
     'body_mode' => 'texto',
@@ -78,6 +94,16 @@ $preview = (new ReportCustomTemplateService())->renderPreview([
 $assert(str_contains($preview, 'Clínica Exemplo VOXEL'), 'Preview deve substituir dados fictícios de Unidade.');
 $assert(str_contains($preview, 'PACIENTE DE EXEMPLO'), 'Preview deve substituir dados fictícios de Paciente.');
 $assert(!str_contains($preview, '{{paciente.nome}}'), 'Preview não pode deixar placeholder conhecido sem resolver.');
+$assert(str_contains($preview, 'voxel-layout-corporativo_faixa'), 'Preview deve aplicar o tema visual do layout-base.');
+
+foreach (['classico_centralizado', 'moderno_lateral', 'corporativo_faixa', 'minimalista', 'personalizado'] as $layoutCode) {
+    $defaults = (new ReportCustomTemplateService())->defaultPayloadForLayout($layoutCode);
+    foreach (['header_content', 'body_content', 'footer_content'] as $section) {
+        $assert(trim((string) ($defaults[$section] ?? '')) !== '', "Layout {$layoutCode} deve ter exemplo preenchido em {$section}.");
+    }
+    $layoutPreview = (new ReportCustomTemplateService())->renderPreview($defaults);
+    $assert(str_contains($layoutPreview, 'voxel-layout-' . $layoutCode), "Preview deve preservar o tema {$layoutCode}.");
+}
 
 $rendered = (new ReportCustomTemplateService())->renderReport([
     'header_content' => '<p>{{paciente.nome}}</p>',

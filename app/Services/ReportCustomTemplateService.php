@@ -19,6 +19,9 @@ final class ReportCustomTemplateService
 
     private const MODES = ['texto', 'html'];
     private const SOURCES = [self::SOURCE_INSTITUTION, self::SOURCE_UNIDADE];
+    private const EDITABLE_LAYOUTS = [
+        'classico_centralizado', 'moderno_lateral', 'corporativo_faixa', 'minimalista', 'personalizado',
+    ];
     private const ALLOWED_TAGS = [
         'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'span', 'div',
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li',
@@ -31,6 +34,67 @@ final class ReportCustomTemplateService
         return in_array($source, self::SOURCES, true);
     }
 
+    public function normalizeLayoutCode(?string $layoutCode): string
+    {
+        $layoutCode = trim((string) $layoutCode);
+        return in_array($layoutCode, self::EDITABLE_LAYOUTS, true) ? $layoutCode : 'personalizado';
+    }
+
+    public function isLayoutEditable(string $layoutCode): bool
+    {
+        return in_array($layoutCode, self::EDITABLE_LAYOUTS, true);
+    }
+
+    /** Defaults seguros e preenchidos para visualizar cada layout antes de editar. */
+    public function defaultPayloadForLayout(string $layoutCode): array
+    {
+        $layoutCode = $this->normalizeLayoutCode($layoutCode);
+        $defaults = [
+            'classico_centralizado' => [
+                'header_mode' => 'html',
+                'header_content' => '<div style="text-align:center;border-bottom:2px solid #003366;padding-bottom:12px"><div>{{unidade.logo}}</div><h1 style="color:#003366">{{unidade.nome}}</h1><p>{{unidade.cnpj}} · {{unidade.endereco}}</p></div>',
+                'body_mode' => 'html',
+                'body_content' => '<div style="background:#f0f4f8;border-left:4px solid #003366;padding:12px"><h2>{{paciente.nome}}</h2><p>Nascimento: {{paciente.data_nascimento}} · Prontuário: {{paciente.id}}</p><p>Exame: {{exame.descricao}} · Modalidade: {{exame.modalidade}} · Data: {{exame.data}}</p></div><h2 style="text-align:center;color:#003366">{{laudo.titulo}}</h2><div>{{laudo.corpo}}</div>',
+                'footer_mode' => 'html',
+                'footer_content' => '<div style="text-align:center;border-top:2px solid #003366;padding-top:10px">{{assinatura.imagem}}<br><strong>{{medico.nome}}</strong><br>{{medico.crm}} · {{assinatura.data}}<br>{{qrcode}}</div>',
+            ],
+            'moderno_lateral' => [
+                'header_mode' => 'html',
+                'header_content' => '<div style="display:flex;gap:18px;align-items:center;border-bottom:2px solid #1d4ed8;padding-bottom:12px"><div>{{unidade.logo}}</div><div><h1 style="color:#1d4ed8">{{unidade.nome}}</h1><p>{{unidade.cnpj}}</p><p>{{unidade.endereco}}</p></div></div>',
+                'body_mode' => 'html',
+                'body_content' => '<div style="text-align:center"><h2>{{laudo.titulo}}</h2><p><strong>{{paciente.nome}}</strong> · {{paciente.data_nascimento}} · {{paciente.id}}</p><p>{{exame.modalidade}} · {{exame.descricao}} · {{exame.data}}</p></div><div style="margin-top:18px;text-align:justify">{{laudo.corpo}}</div>',
+                'footer_mode' => 'html',
+                'footer_content' => '<div style="border-top:1px solid #cbd5e1;padding-top:10px;display:flex;justify-content:space-between"><span>{{unidade.nome}}</span><span>{{medico.nome}} · {{medico.crm}}</span></div>',
+            ],
+            'corporativo_faixa' => [
+                'header_mode' => 'html',
+                'header_content' => '<div style="background:#145a8c;color:#fff;padding:16px;display:flex;gap:16px;align-items:center"><div>{{unidade.logo}}</div><div><h1>{{unidade.nome}}</h1><p>{{unidade.cnpj}}</p></div></div>',
+                'body_mode' => 'html',
+                'body_content' => '<table><tr><td style="background:#f8fafc;padding:10px"><strong>Paciente</strong><br>{{paciente.nome}}<br>{{paciente.data_nascimento}} · {{paciente.id}}</td><td style="background:#f8fafc;padding:10px"><strong>Exame</strong><br>{{exame.descricao}}<br>{{exame.modalidade}} · {{exame.data}}</td></tr></table><h2 style="color:#0f3d63">{{laudo.titulo}}</h2><div>{{laudo.corpo}}</div>',
+                'footer_mode' => 'html',
+                'footer_content' => '<div style="text-align:right;border-top:2px solid #0f3d63;padding-top:10px">{{assinatura.imagem}}<br><strong>{{medico.nome}}</strong> · {{medico.crm}}<br>{{unidade.endereco}}</div>',
+            ],
+            'minimalista' => [
+                'header_mode' => 'html',
+                'header_content' => '<div style="border-bottom:1px solid #ddd;padding-bottom:10px;display:flex;justify-content:space-between"><strong>{{unidade.nome}}</strong><span>{{unidade.endereco}}</span></div>',
+                'body_mode' => 'html',
+                'body_content' => '<p><strong>{{paciente.nome}}</strong> · {{paciente.data_nascimento}} · {{paciente.id}} · {{exame.modalidade}}</p><h2>{{laudo.titulo}}</h2><div style="margin-top:24px;text-align:justify">{{laudo.corpo}}</div>',
+                'footer_mode' => 'html',
+                'footer_content' => '<div style="text-align:center;color:#777">{{assinatura.imagem}}<br>{{medico.nome}} · {{medico.crm}}<br>{{unidade.nome}} · {{unidade.endereco}}</div>',
+            ],
+            'personalizado' => [
+                'header_mode' => 'html',
+                'header_content' => '<div style="text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:12px">{{unidade.logo}}<h1>{{unidade.nome}}</h1><p>{{unidade.endereco}}</p></div>',
+                'body_mode' => 'html',
+                'body_content' => '<h2>{{laudo.titulo}}</h2><p><strong>{{paciente.nome}}</strong> · {{exame.descricao}} · {{exame.data}}</p><div>{{laudo.corpo}}</div>',
+                'footer_mode' => 'html',
+                'footer_content' => '<div style="border-top:1px solid #cbd5e1;padding-top:10px">{{assinatura.imagem}}<br>{{medico.nome}} · {{medico.crm}}<br>{{unidade.nome}}</div>',
+            ],
+        ];
+        $defaults[$layoutCode]['layout_code'] = $layoutCode;
+        return $defaults[$layoutCode];
+    }
+
     public function normalizarPayload(array $input): array
     {
         $payload = [];
@@ -39,18 +103,20 @@ final class ReportCustomTemplateService
             $payload[$section . '_mode'] = in_array($mode, self::MODES, true) ? $mode : 'texto';
             $payload[$section . '_content'] = self::sanitizeHtml((string) ($input[$section . '_content'] ?? ''));
         }
+        $payload['layout_code'] = $this->normalizeLayoutCode($input['layout_code'] ?? null);
         return $payload;
     }
 
-    public function getDraft(int $tenantId, string $source, int $unitId): ?array
+    public function getDraft(int $tenantId, string $source, int $unitId, ?string $layoutCode = null): ?array
     {
         if (!$this->isSourceValid($source) || $tenantId <= 0 || $unitId <= 0) {
             return null;
         }
+        $layoutCode = $this->normalizeLayoutCode($layoutCode);
         $stmt = Database::getInstance()->prepare(
             'SELECT * FROM report_custom_templates
              WHERE tenant_id = :tenant_id AND unit_source = :unit_source AND unit_id = :unit_id
-               AND status = :status
+               AND status = :status AND layout_code = :layout_code
              ORDER BY updated_at DESC, id DESC LIMIT 1'
         );
         $stmt->execute([
@@ -58,19 +124,21 @@ final class ReportCustomTemplateService
             'unit_source' => $source,
             'unit_id' => $unitId,
             'status' => self::STATUS_DRAFT,
+            'layout_code' => $layoutCode,
         ]);
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
     }
 
-    public function getPublished(int $tenantId, string $source, int $unitId): ?array
+    public function getPublished(int $tenantId, string $source, int $unitId, ?string $layoutCode = null): ?array
     {
         if (!$this->isSourceValid($source) || $tenantId <= 0 || $unitId <= 0) {
             return null;
         }
+        $layoutCode = $this->normalizeLayoutCode($layoutCode);
         $stmt = Database::getInstance()->prepare(
             'SELECT * FROM report_custom_templates
              WHERE tenant_id = :tenant_id AND unit_source = :unit_source AND unit_id = :unit_id
-               AND status = :status
+               AND status = :status AND layout_code = :layout_code
              ORDER BY version DESC, id DESC LIMIT 1'
         );
         $stmt->execute([
@@ -78,6 +146,7 @@ final class ReportCustomTemplateService
             'unit_source' => $source,
             'unit_id' => $unitId,
             'status' => self::STATUS_PUBLISHED,
+            'layout_code' => $layoutCode,
         ]);
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
     }
@@ -92,14 +161,16 @@ final class ReportCustomTemplateService
         return $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
     }
 
-    public function saveDraft(int $tenantId, string $source, int $unitId, array $payload, int $userId): array
+    public function saveDraft(int $tenantId, string $source, int $unitId, array $payload, int $userId, ?string $layoutCode = null): array
     {
         if (!$this->isSourceValid($source)) {
             throw new \InvalidArgumentException('Origem de unidade inválida.');
         }
+        $layoutCode = $this->normalizeLayoutCode($layoutCode ?? ($payload['layout_code'] ?? null));
         $payload = $this->normalizarPayload($payload);
+        $payload['layout_code'] = $layoutCode;
         $pdo = Database::getInstance();
-        $draft = $this->getDraft($tenantId, $source, $unitId);
+        $draft = $this->getDraft($tenantId, $source, $unitId, $layoutCode);
         $params = $payload + [
             'tenant_id' => $tenantId,
             'unit_source' => $source,
@@ -111,36 +182,38 @@ final class ReportCustomTemplateService
             $params['id'] = (int) $draft['id'];
             $pdo->prepare(
                 'UPDATE report_custom_templates SET
+                    layout_code = :layout_code,
                     header_mode = :header_mode, header_content = :header_content,
                     body_mode = :body_mode, body_content = :body_content,
                     footer_mode = :footer_mode, footer_content = :footer_content,
                     updated_by = :updated_by
                  WHERE id = :id AND tenant_id = :tenant_id AND status = \'rascunho\''
             )->execute($params);
-            return $this->getDraft($tenantId, $source, $unitId) ?? $draft;
+            return $this->getDraft($tenantId, $source, $unitId, $layoutCode) ?? $draft;
         }
 
         $params['created_by'] = $userId;
         $pdo->prepare(
             'INSERT INTO report_custom_templates
-                (tenant_id, unit_source, unit_id, status, version,
+                (tenant_id, unit_source, unit_id, status, version, layout_code,
                  header_mode, header_content, body_mode, body_content, footer_mode, footer_content,
                  created_by, updated_by)
              VALUES
-                (:tenant_id, :unit_source, :unit_id, \'rascunho\', 0,
+                (:tenant_id, :unit_source, :unit_id, \'rascunho\', 0, :layout_code,
                  :header_mode, :header_content, :body_mode, :body_content, :footer_mode, :footer_content,
                  :created_by, :updated_by)'
         )->execute($params);
 
-        return $this->getDraft($tenantId, $source, $unitId) ?? [];
+        return $this->getDraft($tenantId, $source, $unitId, $layoutCode) ?? [];
     }
 
-    public function publishDraft(int $tenantId, string $source, int $unitId, int $userId): ?array
+    public function publishDraft(int $tenantId, string $source, int $unitId, int $userId, ?string $layoutCode = null): ?array
     {
         $pdo = Database::getInstance();
         $pdo->beginTransaction();
         try {
-            $draft = $this->getDraft($tenantId, $source, $unitId);
+            $layoutCode = $this->normalizeLayoutCode($layoutCode);
+            $draft = $this->getDraft($tenantId, $source, $unitId, $layoutCode);
             if (!$draft) {
                 $pdo->rollBack();
                 return null;
@@ -149,18 +222,18 @@ final class ReportCustomTemplateService
             $versionStmt = $pdo->prepare(
                 'SELECT COALESCE(MAX(version), 0) FROM report_custom_templates
                  WHERE tenant_id = :tenant_id AND unit_source = :unit_source AND unit_id = :unit_id
-                   AND status = \'publicado\' FOR UPDATE'
+                   AND status = \'publicado\' AND layout_code = :layout_code FOR UPDATE'
             );
-            $versionStmt->execute(['tenant_id' => $tenantId, 'unit_source' => $source, 'unit_id' => $unitId]);
+            $versionStmt->execute(['tenant_id' => $tenantId, 'unit_source' => $source, 'unit_id' => $unitId, 'layout_code' => $layoutCode]);
             $nextVersion = ((int) $versionStmt->fetchColumn()) + 1;
 
             $stmt = $pdo->prepare(
                 'INSERT INTO report_custom_templates
-                    (tenant_id, unit_source, unit_id, status, version,
+                    (tenant_id, unit_source, unit_id, status, version, layout_code,
                      header_mode, header_content, body_mode, body_content, footer_mode, footer_content,
                      created_by, updated_by, published_by, published_at)
                  VALUES
-                    (:tenant_id, :unit_source, :unit_id, \'publicado\', :version,
+                    (:tenant_id, :unit_source, :unit_id, \'publicado\', :version, :layout_code,
                      :header_mode, :header_content, :body_mode, :body_content, :footer_mode, :footer_content,
                      :created_by, :updated_by, :published_by, NOW())'
             );
@@ -169,6 +242,7 @@ final class ReportCustomTemplateService
                 'unit_source' => $source,
                 'unit_id' => $unitId,
                 'version' => $nextVersion,
+                'layout_code' => $layoutCode,
                 'header_mode' => $draft['header_mode'],
                 'header_content' => $draft['header_content'],
                 'body_mode' => $draft['body_mode'],
@@ -200,6 +274,8 @@ final class ReportCustomTemplateService
             'unidade.nome' => 'Clínica Exemplo VOXEL',
             'unidade.cnpj' => '12.345.678/0001-90',
             'unidade.endereco' => 'Av. Exemplo, 1000 — Centro, Belo Horizonte/MG',
+            'unidade.telefone' => '(31) 3333-0000',
+            'unidade.email' => 'contato@exemplo.voxelpacs.com.br',
             'unidade.logo' => '<span class="voxel-placeholder-image">LOGO DA UNIDADE</span>',
             'unidade.qrcode' => $this->institutionalQrMarkup('https://exemplo.voxelpacs.com.br'),
             'unidade.site' => $this->institutionalLinkMarkup('https://exemplo.voxelpacs.com.br', 'Site institucional'),
@@ -231,6 +307,7 @@ final class ReportCustomTemplateService
 
     public function renderPreview(array $payload): string
     {
+        $payload['layout_code'] = $this->normalizeLayoutCode($payload['layout_code'] ?? null);
         return $this->renderDocument($this->normalizarPayload($payload), $this->mockContext());
     }
 
@@ -275,6 +352,8 @@ final class ReportCustomTemplateService
                 $report['unidade_complemento'] ?? '', $report['unidade_bairro'] ?? '',
                 $report['unidade_cidade'] ?? '', $report['unidade_estado'] ?? '',
             ]))),
+            'unidade.telefone' => (string) ($report['unidade_telefone'] ?? ''),
+            'unidade.email' => (string) ($report['unidade_email'] ?? ''),
             'unidade.logo' => $logo,
             'unidade.qrcode' => $institutionalQr,
             'unidade.site' => $institutionalSite,
@@ -302,22 +381,37 @@ final class ReportCustomTemplateService
             'assinatura.imagem' => $signature,
             'assinatura.data' => $formatDate($report['assinado_em'] ?? null, true),
         ];
+        $template['layout_code'] = $this->normalizeLayoutCode($template['layout_code'] ?? null);
         return $this->renderDocument($template, $context);
     }
 
     public function renderDocument(array $template, array $context): string
     {
+        $layoutCode = $this->normalizeLayoutCode($template['layout_code'] ?? null);
         $header = $this->replaceVariables((string) ($template['header_content'] ?? ''), $context);
         $body = $this->replaceVariables((string) ($template['body_content'] ?? ''), $context);
         $footer = $this->replaceVariables((string) ($template['footer_content'] ?? ''), $context);
 
         return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'
             . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-            . '<style>html,body{margin:0;padding:0;background:#f1f5f9;color:#1f2937;font-family:Arial,Helvetica,sans-serif}.voxel-custom-page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:16mm 15mm 22mm;position:relative}.voxel-custom-header{min-height:12mm}.voxel-custom-body{margin-top:7mm;line-height:1.5}.voxel-custom-body p{margin:0 0 2px}.voxel-custom-body h1,.voxel-custom-body h2,.voxel-custom-body h3,.voxel-custom-body h4,.voxel-custom-body h5,.voxel-custom-body h6{margin:4px 0 2px;line-height:1.25}.voxel-custom-body ul,.voxel-custom-body ol{margin:0 0 3px 18px;padding:0}.voxel-custom-body li{margin:0}.voxel-custom-body table{width:100%;border-collapse:collapse;margin:.3rem 0}.voxel-custom-footer{margin-top:12mm;border-top:1px solid #cbd5e1;padding-top:5mm;color:#475569;font-size:10px}.voxel-unit-logo{max-width:180px;max-height:70px;object-fit:contain}.voxel-signature-image{max-width:220px;max-height:70px;object-fit:contain}.voxel-institutional-qr{width:78px;height:78px;display:inline-block}.voxel-institutional-link{color:#1d4ed8;text-decoration:underline}.voxel-placeholder-image{display:inline-block;border:1px dashed #94a3b8;padding:8px;color:#64748b;font-size:10px}@media print{body{background:#fff}.voxel-custom-page{width:auto;min-height:0;margin:0;box-shadow:none;padding:14mm 14mm 20mm}.voxel-custom-header{position:fixed;top:8mm;left:14mm;right:14mm}.voxel-custom-body{margin-top:28mm}.voxel-custom-footer{position:fixed;bottom:8mm;left:14mm;right:14mm}}</style>'
-            . '</head><body><main class="voxel-custom-page"><header class="voxel-custom-header">' . $header
+            . '<style>' . $this->themeCss($layoutCode) . '</style>'
+            . '</head><body><main class="voxel-custom-page voxel-layout-' . htmlspecialchars($layoutCode, ENT_QUOTES, 'UTF-8') . '"><header class="voxel-custom-header">' . $header
             . '</header><section class="voxel-custom-body">' . $body
             . '</section><footer class="voxel-custom-footer">' . $footer
             . '</footer></main></body></html>';
+    }
+
+    private function themeCss(string $layoutCode): string
+    {
+        $base = 'html,body{margin:0;padding:0;background:#f1f5f9;color:#1f2937;font-family:Arial,Helvetica,sans-serif}.voxel-custom-page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:16mm 15mm 22mm;position:relative}.voxel-custom-header{min-height:12mm}.voxel-custom-body{margin-top:7mm;line-height:1.5}.voxel-custom-body p{margin:0 0 2px}.voxel-custom-body h1,.voxel-custom-body h2,.voxel-custom-body h3,.voxel-custom-body h4,.voxel-custom-body h5,.voxel-custom-body h6{margin:4px 0 2px;line-height:1.25}.voxel-custom-body ul,.voxel-custom-body ol{margin:0 0 3px 18px;padding:0}.voxel-custom-body li{margin:0}.voxel-custom-body table{width:100%;border-collapse:collapse;margin:.3rem 0}.voxel-custom-footer{margin-top:12mm;border-top:1px solid #cbd5e1;padding-top:5mm;color:#475569;font-size:10px}.voxel-unit-logo{max-width:180px;max-height:70px;object-fit:contain}.voxel-signature-image{max-width:220px;max-height:70px;object-fit:contain}.voxel-institutional-qr{width:78px;height:78px;display:inline-block}.voxel-institutional-link{color:#1d4ed8;text-decoration:underline}.voxel-placeholder-image{display:inline-block;border:1px dashed #94a3b8;padding:8px;color:#64748b;font-size:10px}@media print{body{background:#fff}.voxel-custom-page{width:auto;min-height:0;margin:0;box-shadow:none;padding:14mm 14mm 20mm}.voxel-custom-header{position:fixed;top:8mm;left:14mm;right:14mm}.voxel-custom-body{margin-top:28mm}.voxel-custom-footer{position:fixed;bottom:8mm;left:14mm;right:14mm}}';
+        $themes = [
+            'classico_centralizado' => '.voxel-layout-classico_centralizado .voxel-custom-header{text-align:center}.voxel-layout-classico_centralizado .voxel-custom-footer{text-align:center}',
+            'moderno_lateral' => '.voxel-layout-moderno_lateral .voxel-custom-header{border-left:4px solid #1d4ed8;padding-left:10px}.voxel-layout-moderno_lateral .voxel-custom-body{text-align:center}',
+            'corporativo_faixa' => '.voxel-layout-corporativo_faixa .voxel-custom-header{background:#145a8c;color:#fff;padding:10px}.voxel-layout-corporativo_faixa .voxel-custom-footer{text-align:right;border-top:2px solid #0f3d63}',
+            'minimalista' => '.voxel-layout-minimalista .voxel-custom-page{padding-top:22mm}.voxel-layout-minimalista .voxel-custom-body{margin-top:16mm}.voxel-layout-minimalista .voxel-custom-footer{text-align:center;color:#64748b}',
+            'personalizado' => '',
+        ];
+        return $base . ($themes[$layoutCode] ?? '');
     }
 
     private function replaceVariables(string $html, array $context): string
