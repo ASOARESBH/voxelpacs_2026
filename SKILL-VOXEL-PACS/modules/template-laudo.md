@@ -14,27 +14,27 @@ O módulo controla exclusivamente a **apresentação** do laudo na visualizaçã
 | `minimalista` | Minimalista | Partial PHP fixo |
 | `personalizado` | Personalizado | Versão publicada por Unidade, renderizada no dispatcher existente |
 
-A resolução é centralizada em `App\Services\ReportLayoutService`. O PDF continua entrando por `ReportsController::pdf()` e `app/Views/reports/pdf.php`; a opção personalizada apenas fornece um partial adicional, sem criar rota paralela de geração de documento.
+A resolução é centralizada em `App\Services\ReportLayoutService`. O PDF continua entrando por `ReportsController::pdf()` e `app/Views/reports/pdf.php`; um override publicado fornece o conteúdo editável do layout selecionado, sem criar rota paralela de geração de documento.
 
 ## Unidades coexistentes
 
 O sistema mantém dois cadastros de Unidade. O Sistema A é prioritário em produção e usa `bi_negocio_institution_names` na rota `/unidades/{id}/edit`; o Sistema B usa `bi_unidades` nas rotas `/unidades/{id}/editar`. Por isso `report_custom_templates` armazena `unit_source` e `unit_id`. Toda leitura e escrita exige `tenant_id` da sessão e valida a Unidade antes de operar.
 
-## Personalizado: rascunho, publicação e histórico
+## Overrides por layout: rascunho, publicação e histórico
 
-`report_custom_templates` guarda um rascunho editável e versões publicadas imutáveis para cada Unidade. O administrador salva o rascunho sem alterar documentos emitidos. Ao publicar, é criada uma nova versão incremental; a versão anterior permanece preservada. A publicação também seleciona `personalizado` como layout visual da Unidade.
+`report_custom_templates` guarda um rascunho editável e versões publicadas imutáveis por Unidade, origem e `layout_code`. O administrador pode editar Clássico Centralizado, Moderno Lateral, Corporativo com Faixa, Minimalista ou Personalizado. Ao publicar, é criada uma nova versão incremental apenas daquele layout; a versão anterior permanece preservada. Publicar um override não muda a seleção visual da Unidade, exceto pela compatibilidade histórica do fluxo Personalizado.
 
-Quando o médico assina, `ReportService::congelarTemplatePersonalizadoAssinado()` registra o ID da versão publicada em `reports.report_custom_template_id`. Assim, uma publicação posterior não altera a apresentação de um laudo já assinado. Se a Unidade estiver com Personalizado selecionado, mas não tiver publicação válida, `ReportsController::pdf()` usa o fallback `classico_centralizado` e registra um aviso técnico.
+Quando o médico assina, `ReportService::congelarTemplateAssinado()` registra o ID da versão publicada em `reports.report_custom_template_id` somente quando o override corresponde ao layout selecionado. Assim, uma publicação posterior não altera a apresentação de um laudo já assinado. Se a Unidade estiver com Personalizado selecionado, mas não tiver publicação válida, `ReportsController::pdf()` usa o fallback `classico_centralizado` e registra um aviso técnico. Layouts nativos sem override continuam usando seus partials fixos.
 
 ## Editor e preview
 
-O editor dedicado é acessado pelo botão **Editar layout** dentro do quinto card em Unidade. Ele contém os blocos **Cabeçalho**, **Corpo** e **Rodapé**, alternáveis entre Texto (Quill via `voxel-quill-factory.js`) e HTML (textarea monoespaçado sem dependência adicional). O preview é enviado por POST com CSRF e exibido em `iframe sandbox="allow-same-origin"`; ele só usa dados fictícios, nunca IDs ou dados de paciente reais.
+O editor dedicado é acessado pelo botão **Editar layout** em cada card de Unidade. O seletor superior troca o layout-base sem misturar rascunhos. Ele contém os blocos **Cabeçalho**, **Corpo** e **Rodapé**, alternáveis entre Texto (Quill via `voxel-quill-factory.js`) e HTML (textarea monoespaçado sem dependência adicional). Quando ainda não existe rascunho, o servidor carrega um exemplo preenchido específico do layout. O preview é enviado por POST com CSRF e exibido em `iframe sandbox="allow-same-origin"`; ele só usa dados fictícios, nunca IDs ou dados de paciente reais.
 
 ## Placeholders permitidos
 
 | Categoria | Placeholders |
 |---|---|
-| Unidade | `{{unidade.nome}}`, `{{unidade.logo}}`, `{{unidade.cnpj}}`, `{{unidade.endereco}}` |
+| Unidade | `{{unidade.nome}}`, `{{unidade.logo}}`, `{{unidade.cnpj}}`, `{{unidade.endereco}}`, `{{unidade.telefone}}`, `{{unidade.email}}` |
 | Canais institucionais | `{{unidade.qrcode}}`, `{{unidade.site}}`, `{{unidade.instagram}}`, `{{unidade.facebook}}` |
 | Paciente | `{{paciente.nome}}`, `{{paciente.data_nascimento}}`, `{{paciente.id}}` |
 | Exame | `{{exame.modalidade}}`, `{{exame.data}}`, `{{exame.descricao}}`, `{{exame.prontuario}}`, `{{exame.acesso}}` |
@@ -54,7 +54,7 @@ A edição, preview, rascunho e publicação exigem sessão autenticada de super
 
 ## Migration e validação
 
-Execute `database/migrations/2026-08-18_report_custom_templates.sql` uma única vez após backup. Ela cria a tabela versionada, adiciona a referência congelada no `reports` e semeia o quinto layout. Valide com:
+Execute `database/migrations/2026-08-18_report_custom_templates.sql` uma única vez após backup para a estrutura original. Para esta funcionalidade, execute também `database/migrations/2026-10-07_report_custom_templates_layout_postgresql.sql` ou a versão MySQL/MariaDB, conforme o banco. A segunda migration adiciona `layout_code`; **não é executada automaticamente pelo deploy**. Valide com:
 
 ```bash
 php tests/report_custom_templates_static.php
@@ -62,3 +62,5 @@ php -l app/Services/ReportCustomTemplateService.php
 php -l app/Controllers/ReportCustomTemplateController.php
 node --check public/assets/js/unidades/template-personalizado.js
 ```
+
+`MIGRATION_REQUIRED = YES` até a coluna `report_custom_templates.layout_code` e seu índice existirem no banco operacional. Antes da execução, faça backup lógico, valide o dialeto e confirme o rollback controlado; sem a migration, não publicar nem abrir o editor em produção.

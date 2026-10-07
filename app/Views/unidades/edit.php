@@ -314,7 +314,7 @@ $templateAtualId = (int) ($u['report_layout_template_id'] ?? 0);
                 <div class="d-flex flex-column gap-2" id="templateLaudoGrid">
                     <?php foreach ($templatesLaudo as $tpl):
                         $tplId = (int) $tpl['id'];
-                        $isPersonalizado = ($tpl['codigo'] ?? '') === 'personalizado';
+                        $layoutCode = (string) ($tpl['codigo'] ?? '');
                         $selecionado = $templateAtualId === $tplId || (!$templateAtualId && $tpl['codigo'] === 'classico_centralizado');
                     ?>
                     <div class="template-laudo-card-sm <?= $selecionado ? 'selected' : '' ?>"
@@ -324,9 +324,9 @@ $templateAtualId = (int) ($u['report_layout_template_id'] ?? 0);
                             <i class="fa fa-check-circle template-laudo-check-sm"></i>
                         </div>
                         <div class="template-laudo-desc-sm"><?= htmlspecialchars($tpl['descricao'] ?? '') ?></div>
-                        <?php if ($isPersonalizado): ?>
-                        <a href="/unidades/<?= (int) $id ?>/template-personalizado" class="btn btn-outline-primary btn-sm mt-2 w-100" onclick="event.stopPropagation();">
-                            <i class="fa fa-pen-to-square me-1"></i>Editar layout
+                        <?php if ($layoutCode !== ''): ?>
+                        <a href="/unidades/<?= (int) $id ?>/template-personalizado?layout=<?= rawurlencode($layoutCode) ?>" class="btn btn-outline-primary btn-sm mt-2 w-100" onclick="event.stopPropagation();">
+                            <i class="fa fa-pen-to-square me-1"></i><?= htmlspecialchars(t('unidades.template_editor.editar_layout')) ?>
                         </a>
                         <?php endif; ?>
                     </div>

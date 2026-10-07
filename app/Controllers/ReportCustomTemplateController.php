@@ -7,6 +7,7 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\ReportCustomTemplateService;
+use App\Services\ReportLayoutService;
 
 final class ReportCustomTemplateController extends Controller
 {
@@ -71,12 +72,12 @@ final class ReportCustomTemplateController extends Controller
     {
         if ($source === ReportCustomTemplateService::SOURCE_INSTITUTION) {
             $stmt = $this->pdo->prepare(
-                'SELECT id, descricao AS nome, institution_name FROM bi_negocio_institution_names
+                'SELECT id, descricao AS nome, institution_name, report_layout_template_id FROM bi_negocio_institution_names
                  WHERE id = :id AND tenant_id = :tenant_id LIMIT 1'
             );
         } else {
             $stmt = $this->pdo->prepare(
-                'SELECT id, COALESCE(NULLIF(nome_fantasia, \'\'), razao_social, \'Unidade\') AS nome, NULL AS institution_name
+                'SELECT id, COALESCE(NULLIF(nome_fantasia, \'\'), razao_social, \'Unidade\') AS nome, NULL AS institution_name, report_layout_template_id
                  FROM bi_unidades WHERE id = :id AND tenant_id = :tenant_id LIMIT 1'
             );
         }
@@ -121,14 +122,23 @@ final class ReportCustomTemplateController extends Controller
         $source = $this->sourceFromRoute($source);
         $tenantId = $this->tenantId();
         $unit = $this->findUnit($source, $unitId, $tenantId);
-        $draft = $this->service->getDraft($tenantId, $source, $unitId);
-        $published = $this->service->getPublished($tenantId, $source, $unitId);
+        $layoutService = new ReportLayoutService();
+        $selectedLayoutCode = $layoutService->resolverCodigo((int) ($unit['report_layout_template_id'] ?? 0));
+        $layoutCode = $this->service->normalizeLayoutCode($_GET['layout'] ?? $selectedLayoutCode);
+        $draft = $this->service->getDraft($tenantId, $source, $unitId, $layoutCode);
+        if ($draft === null) {
+            $draft = $this->service->defaultPayloadForLayout($layoutCode);
+        }
+        $published = $this->service->getPublished($tenantId, $source, $unitId, $layoutCode);
         $this->view('unidades/template_personalizado', [
             'unit' => $unit,
             'unitId' => $unitId,
             'unitSource' => $source,
             'draft' => $draft,
             'published' => $published,
+            'layoutCode' => $layoutCode,
+            'selectedLayoutCode' => $selectedLayoutCode,
+            'layoutCatalog' => $layoutService->listarCatalogo(),
             'csrfToken' => $this->csrfToken(),
             'includeQuill' => true,
             'includeTemplateCustomEditor' => true,
@@ -152,16 +162,17 @@ final class ReportCustomTemplateController extends Controller
         $source = $this->sourceFromRoute($source);
         $tenantId = $this->tenantId();
         $this->findUnit($source, $unitId, $tenantId);
+        $layoutCode = $this->service->normalizeLayoutCode($_POST['layout_code'] ?? null);
         try {
-            $this->service->saveDraft($tenantId, $source, $unitId, $_POST, (int) Auth::userId());
-            $_SESSION['success'] = 'Rascunho do template personalizado salvo.';
+            $this->service->saveDraft($tenantId, $source, $unitId, $_POST, (int) Auth::userId(), $layoutCode);
+            $_SESSION['success'] = 'Rascunho do template do layout salvo.';
         } catch (\Throwable $e) {
             Logger::error('[ReportCustomTemplateController] erro ao salvar rascunho', [
                 'tenant_id' => $tenantId, 'unit_id' => $unitId, 'source' => $source, 'error' => $e->getMessage(),
             ]);
-            $_SESSION['error'] = 'Não foi possível salvar o rascunho do template.';
+            $_SESSION['error'] = 'Não foi possível salvar o rascunho do layout.';
         }
-        header('Location: ' . $this->editorUrl($source, $unitId));
+        header('Location: ' . $this->editorUrl($source, $unitId, $layoutCode));
         exit;
     }
 
@@ -172,21 +183,24 @@ final class ReportCustomTemplateController extends Controller
         $source = $this->sourceFromRoute($source);
         $tenantId = $this->tenantId();
         $this->findUnit($source, $unitId, $tenantId);
+        $layoutCode = $this->service->normalizeLayoutCode($_POST['layout_code'] ?? null);
         try {
-            $this->service->saveDraft($tenantId, $source, $unitId, $_POST, (int) Auth::userId());
-            $published = $this->service->publishDraft($tenantId, $source, $unitId, (int) Auth::userId());
+            $this->service->saveDraft($tenantId, $source, $unitId, $_POST, (int) Auth::userId(), $layoutCode);
+            $published = $this->service->publishDraft($tenantId, $source, $unitId, (int) Auth::userId(), $layoutCode);
             if (!$published) {
-                throw new \RuntimeException('Rascunho não encontrado para publicação.');
+                throw new \RuntimeException('Rascunho do layout não encontrado para publicação.');
             }
-            $this->selecionarLayoutPersonalizado($source, $unitId, $tenantId);
-            $_SESSION['success'] = 'Template personalizado publicado na versão ' . (int) $published['version'] . '.';
+            if ($layoutCode === 'personalizado') {
+                $this->selecionarLayoutPersonalizado($source, $unitId, $tenantId);
+            }
+            $_SESSION['success'] = 'Template do layout publicado na versão ' . (int) $published['version'] . '.';
         } catch (\Throwable $e) {
             Logger::error('[ReportCustomTemplateController] erro ao publicar template', [
                 'tenant_id' => $tenantId, 'unit_id' => $unitId, 'source' => $source, 'error' => $e->getMessage(),
             ]);
-            $_SESSION['error'] = 'Não foi possível publicar o template personalizado.';
+            $_SESSION['error'] = 'Não foi possível publicar o layout.';
         }
-        header('Location: ' . $this->editorUrl($source, $unitId));
+        header('Location: ' . $this->editorUrl($source, $unitId, $layoutCode));
         exit;
     }
 
@@ -207,11 +221,12 @@ final class ReportCustomTemplateController extends Controller
         }
     }
 
-    private function editorUrl(string $source, int $unitId): string
+    private function editorUrl(string $source, int $unitId, ?string $layoutCode = null): string
     {
-        return $source === ReportCustomTemplateService::SOURCE_INSTITUTION
+        $url = $source === ReportCustomTemplateService::SOURCE_INSTITUTION
             ? '/unidades/' . $unitId . '/template-personalizado'
             : '/unidades/' . $unitId . '/editar/template-personalizado';
+        return $url . '?layout=' . rawurlencode($this->service->normalizeLayoutCode($layoutCode));
     }
 
     public function saveInstitution(int $id): void { $this->save(ReportCustomTemplateService::SOURCE_INSTITUTION, $id); }

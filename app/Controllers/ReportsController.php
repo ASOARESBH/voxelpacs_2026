@@ -713,14 +713,18 @@ class ReportsController extends Controller
             // Unidade resolvida via institution_name; sem unidade vinculada ou sem
             // template escolhido, cai no padrão (classico_centralizado).
             $layoutService = new \App\Services\ReportLayoutService();
-            $templateCodigo = $layoutService
+            $selectedTemplateCodigo = $layoutService
                 ->resolverCodigo(isset($data['report_layout_template_id']) ? (int) $data['report_layout_template_id'] : null);
+            $templateCodigo = $selectedTemplateCodigo;
             $customTemplate = null;
-            if ($templateCodigo === 'personalizado') {
-                $customService = new \App\Services\ReportCustomTemplateService();
+            $customService = new \App\Services\ReportCustomTemplateService();
+            if ($customService->isLayoutEditable($selectedTemplateCodigo)) {
                 $snapshotId = (int) ($data['report_custom_template_id'] ?? 0);
                 if ($snapshotId > 0) {
                     $customTemplate = $customService->getById($snapshotId, (int) $data['tenant_id']);
+                    if ($customTemplate !== null && $customService->normalizeLayoutCode($customTemplate['layout_code'] ?? null) !== $selectedTemplateCodigo) {
+                        $customTemplate = null;
+                    }
                 }
                 if ($customTemplate === null) {
                     $origem = (string) ($data['report_layout_template_source'] ?? '') === 'institution_name'
@@ -729,9 +733,11 @@ class ReportsController extends Controller
                     $unidadeId = $origem === \App\Services\ReportCustomTemplateService::SOURCE_INSTITUTION
                         ? (int) ($data['institution_unit_id'] ?? 0)
                         : (int) ($data['rich_unit_id'] ?? 0);
-                    $customTemplate = $customService->getPublished((int) $data['tenant_id'], $origem, $unidadeId);
+                    $customTemplate = $customService->getPublished((int) $data['tenant_id'], $origem, $unidadeId, $selectedTemplateCodigo);
                 }
-                if ($customTemplate === null) {
+                if ($customTemplate !== null) {
+                    $templateCodigo = 'personalizado';
+                } elseif ($selectedTemplateCodigo === 'personalizado') {
                     Logger::warning('ReportsController::pdf layout personalizado sem versão publicada; aplicado fallback', [
                         'report_id' => $reportId, 'tenant_id' => $data['tenant_id'] ?? null,
                     ]);
