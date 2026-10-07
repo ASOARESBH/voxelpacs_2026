@@ -178,3 +178,29 @@ jobs:
 
       - name: Run static safety contract
         run: php tests/philips_job_522_readonly_audit_static.php
+
+  philips-nondicom-b6-selector:
+    name: Philips Non-DICOM B6.1 read-only selector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash and PHP syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-philips-nondicom-b6-selector
+          bash -n scripts/provision-philips-nondicom-b6-selector.sh
+          php -l bin/philips_nondicom_b6_selector.php
+          php -l tests/philips_nondicom_b6_selector_static.php
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x \
+              ops/deploy/voxelpacs-philips-nondicom-b6-selector \
+              scripts/provision-philips-nondicom-b6-selector.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Run static safety contract
+        run: php tests/philips_nondicom_b6_selector_static.php
