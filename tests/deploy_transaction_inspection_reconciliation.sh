@@ -51,6 +51,8 @@ cleanup() {
   find "$fixture_root" -depth -type d -empty -delete 2>/dev/null || true
 }
 trap cleanup EXIT
+rc=0
+trap 'rc=$?; printf "TEST=FAIL\nLINE=%s\nSTATUS=%s\n" "$LINENO" "$rc" >&2; exit "$rc"' ERR
 
 fixture_helper="$fixture_root/helper"
 cp -- "$helper" "$fixture_helper"
