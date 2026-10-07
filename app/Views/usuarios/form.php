@@ -83,6 +83,12 @@ $errorMsgs = [
     </a>
 </div>
 
+<?php
+$activeTab = 'usuarios';
+$showAdminTabs = true;
+require __DIR__ . '/_navigation.php';
+?>
+
 <!-- Alerta de erro -->
 <?php if ($error && isset($errorMsgs[$error])): ?>
 <div class="pacs-alert pacs-alert-danger mb-4">
