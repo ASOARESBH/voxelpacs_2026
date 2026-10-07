@@ -150,8 +150,14 @@ make_tx rolled_back_after_failure
   sleep 4
 ) &
 lock_pid=$!
-sleep 0.2
-out="$(run_helper inspect --sha "$sha")" || true
+out=''
+for _ in {1..100}; do
+  out="$(run_helper inspect --sha "$sha")" || true
+  if grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"; then
+    break
+  fi
+  sleep 0.05
+done
 grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"
 grep -Fxq 'CLASSIFICATION=ACTIVE' <<<"$out"
 wait "$lock_pid" || true
