@@ -24,6 +24,7 @@ class ReportDeliveryOutboxService
 
     /**
      * @return array{created:bool,outbox_id:int|null,job_count:int,reason?:string}
+     * @param array{family:string,given:string,middle:string,source:string}|null $patientName
      */
     public function queueReleasedReport(
         int $tenantId,
@@ -36,7 +37,8 @@ class ReportDeliveryOutboxService
         string $releasedAt,
         string $reportHash,
         bool $reactivateDryRun = false,
-        string $dispatchMode = 'automatic_production'
+        string $dispatchMode = 'automatic_production',
+        ?array $patientName = null
     ): array {
         if (!$this->enabled()) {
             return ['created' => false, 'outbox_id' => null, 'job_count' => 0, 'reason' => 'feature_disabled'];
@@ -102,6 +104,12 @@ class ReportDeliveryOutboxService
         ];
         if ($dispatchMode === 'automatic_production') {
             $payload['referring_physician_name'] = $estudo->referring_physician_name ?? null;
+            if ($patientName !== null) {
+                $payload['patient_name_family'] = $patientName['family'];
+                $payload['patient_name_given'] = $patientName['given'];
+                $payload['patient_name_middle'] = $patientName['middle'];
+                $payload['patient_name_source'] = $patientName['source'];
+            }
         }
 
         try {

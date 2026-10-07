@@ -541,7 +541,10 @@ class ReportService {
                     $estudo,
                     (int) $userId,
                     $assinadoEm,
-                    $hash
+                    $hash,
+                    false,
+                    'automatic_production',
+                    $patientName
                 );
                 (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
                     (int) $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
@@ -715,7 +718,10 @@ class ReportService {
                 $estudo,
                 $userId,
                 $liberadoEm,
-                $hash
+                $hash,
+                false,
+                'automatic_production',
+                $patientName
             );
             (new VoxelDesktopOutboxService($pdo))->queueReleasedReport(
                 $tenantId, $reportId, $estudoId, $versaoNumero, $report, $estudo,
