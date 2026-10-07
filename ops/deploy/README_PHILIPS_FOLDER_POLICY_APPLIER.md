@@ -159,6 +159,66 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
 
 O `--apply` rejeita ausência de backup, backup incompatível com Job/Destination ou backup cujo checksum não corresponda ao estado atual. Ele não recarrega a unit automaticamente; a separação evita misturar alteração persistente com reinício operacional.
 
+### Transição segura entre Jobs single-test
+
+Quando a allowlist atual aponta para um Job predecessor e o alvo é outro Job do mesmo tenant/Destination, o `--apply` normal bloqueia corretamente com `TARGET_JOB_NOT_ALLOWLISTED`. Para essa troca existe um fluxo explícito de transição, que aceita somente uma origem e um alvo diferentes:
+
+```bash
+COMMON=(
+  --env-file <ENV_FILE_PATH>
+  --allowlist <ALLOWLIST_PATH>
+  --backup-root <BACKUP_ROOT>
+  --expected-host <hostname-aprovado>
+  --tenant-id 2 --destination-id 7 --job-id 522
+  --source-job-id 519
+  --transport philips_non_dicom
+  --profile submission_document --mode single_test
+)
+```
+
+O fluxo obrigatório é:
+
+```text
+transition-dry-run
+→ transition-backup-only
+→ transition-apply
+→ validate
+→ reload separado da unit Philips Folder
+```
+
+Comandos:
+
+```bash
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-dry-run "${COMMON[@]}"
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-backup-only "${COMMON[@]}" \
+  --unit voxelpacs-philips-folder-bridge.service
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-apply "${COMMON[@]}" \
+  --backup-id <TRANSITION_BACKUP_ID>
+```
+
+O backup de transição preserva separadamente `policy.conf` e `allowlist`, com checksums e manifesto root-only. O `transition-apply` só prossegue quando a policy e a allowlist ainda correspondem à origem; escreve os dois arquivos a partir de temporários protegidos e restaura o predecessor se a segunda instalação ou a validação final falhar. O reload continua separado:
+
+```bash
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --reload [parâmetros do alvo] \
+  --unit voxelpacs-philips-folder-bridge.service
+```
+
+Rollback sem reload:
+
+```bash
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  transition-rollback --dry-run [parâmetros do alvo] \
+  --source-job-id 519 --backup-id <TRANSITION_BACKUP_ID>
+```
+
+O mecanismo rejeita tenant, Destination, transporte, profile, modo, origem ou alvo incompatíveis; nunca aceita múltiplos Jobs, wildcard, `destination` mode, reload da unit DICOM/C-STORE, Worker, Bridge request, SMB, banco ou transmissão.
+
 ### Validação estrutural
 
 ```bash
