@@ -34,19 +34,22 @@ foreach ([
     "private const DISPATCH_MODE = 'automatic_production'",
     "private const PR70_SHA = '1473783905d1ede4ef897fef909fdf6f8c29accf'",
     "'MODE' => 'single_test'",
-    "'EXCLUDED_JOB_522' => 'NO'",
-    "'VERSION' => 'PASS'",
+    "'EXCLUDED_JOB_522' => 0",
     'SET TRANSACTION READ ONLY',
     'ORDER BY j.created_at ASC, j.id ASC',
     'array_key_exists(\'referring_physician_name\', $payload)',
-    "return 'NOT_PROVEN'",
+    "'PR70_PROVENANCE' => 'NOT_PERSISTED'",
+    "'PR70_PROVENANCE_NOTE' => 'OUTBOX_DOES_NOT_PERSIST_PRODUCER_SHA'",
+    "'PAYLOAD_BEHAVIOR' => 'NOT_CONFIRMED'",
     'rollBack()',
     'CANDIDATE_FOUND',
     'READY_FOR_SINGLE_RUN',
-    'EXCLUDED_PR70_PROVENANCE',
+    'PRODUCTION_DATABASE_ACCESSED',
+    'RUNONE',
 ] as $marker) {
     $expect(str_contains($diagnostic, $marker), "diagnóstico sem contrato: {$marker}");
 }
+$expect(!str_contains($diagnostic, 'PR70_PAYLOAD_FIX'), 'diagnóstico manteve o contrato antigo de proveniência');
 
 foreach ([
     'INSERT INTO',
@@ -88,23 +91,37 @@ define('PHILIPS_NON_DICOM_B6_SELECTOR_LIBRARY', true);
 require_once $diagnosticPath;
 $class = '\\App\\Diagnostics\\PhilipsNonDicomB6Selector';
 $expect(class_exists($class), 'classe B6.1 não carrega');
+$expect($class::payloadBehavior(['referring_physician_name' => 'synthetic']) === 'CONFIRMED', 'payload com referring_physician_name não foi confirmado');
+$expect($class::payloadBehavior([]) === 'NOT_CONFIRMED', 'payload sem referring_physician_name foi aceito');
+$expect($class::payloadBehavior(null) === 'NOT_CONFIRMED', 'payload não parseável foi aceito');
+$expect($class::classifyProvenance(null) === 'NOT_PERSISTED', 'ausência de SHA não foi classificada como NOT_PERSISTED');
+$expect($class::classifyProvenance('1473783905d1ede4ef897fef909fdf6f8c29accf') === 'CONFIRMED', 'SHA formal correta não foi confirmada');
+$expect($class::classifyProvenance('0000000000000000000000000000000000000000') === 'NOT_CONFIRMED', 'SHA formal divergente foi aceita');
 $sanitized = $class::sanitize([
     'CANDIDATE_FOUND' => 'NO',
     'EXCLUDED_PAYLOAD_REFERRING_PHYSICIAN' => 1,
     'candidate' => [
         'PAYLOAD_REFERRING_PHYSICIAN_PRESENT' => 'YES',
+        'PAYLOAD_PARSE' => 'PASS',
+        'PAYLOAD_BEHAVIOR' => 'CONFIRMED',
         'JOB_ID' => 531,
     ],
     'patient_name' => 'not-output',
     'payload_json' => ['clinical' => 'not-output'],
     'DATABASE_CHANGED' => 'YES',
+    'PRODUCTION_DATABASE_ACCESSED' => 'NO',
+    'RUNONE' => 'unexpected',
     'TRANSMISSION' => 'YES',
 ]);
 $expect(!array_key_exists('patient_name', $sanitized), 'sanitização deixou nome clínico');
 $expect(!array_key_exists('payload_json', $sanitized), 'sanitização deixou payload bruto');
 $expect(($sanitized['candidate']['PAYLOAD_REFERRING_PHYSICIAN_PRESENT'] ?? '') === 'YES', 'presença técnica do campo foi removida');
+$expect(($sanitized['candidate']['PAYLOAD_PARSE'] ?? '') === 'PASS', 'PAYLOAD_PARSE foi removido');
+$expect(($sanitized['candidate']['PAYLOAD_BEHAVIOR'] ?? '') === 'CONFIRMED', 'PAYLOAD_BEHAVIOR foi removido');
 $expect(($sanitized['EXCLUDED_PAYLOAD_REFERRING_PHYSICIAN'] ?? 0) === 1, 'agregado do blocker foi removido');
 $expect(($sanitized['DATABASE_CHANGED'] ?? 'YES') === 'NO', 'sanitização não força banco inalterado');
+$expect(($sanitized['PRODUCTION_DATABASE_ACCESSED'] ?? 'NO') === 'YES', 'sanitização não registra acesso read-only');
+$expect(($sanitized['RUNONE'] ?? '') === 'NOT_EXECUTED', 'sanitização não força runOne ausente');
 $expect(($sanitized['TRANSMISSION'] ?? 'YES') === 'NO', 'sanitização não força transmissão ausente');
 
 fwrite(STDOUT, "PHILIPS_NON_DICOM_B6_SELECTOR_STATIC=PASS\n");

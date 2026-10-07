@@ -51,7 +51,6 @@ final class PhilipsNonDicomB6Selector
         'EXCLUDED_VERSION',
         'EXCLUDED_STUDY',
         'EXCLUDED_PAYLOAD_REFERRING_PHYSICIAN',
-        'EXCLUDED_PR70_PROVENANCE',
     ];
 
     /** @return array<string,mixed> */
@@ -73,7 +72,7 @@ final class PhilipsNonDicomB6Selector
                 $result['TOTAL_INSPECTED']++;
                 $jobId = (int) ($job['job_id'] ?? 0);
                 if ($jobId === self::EXCLUDED_JOB_ID) {
-                    $result['EXCLUDED_JOB_522'] = 'YES';
+                    $result['EXCLUDED_JOB_522']++;
                     continue;
                 }
 
@@ -81,6 +80,9 @@ final class PhilipsNonDicomB6Selector
                 if ($decision['candidate'] === true) {
                     $result['CANDIDATE_FOUND'] = 'YES';
                     $result['candidate'] = $decision['candidate_result'];
+                    $result['PAYLOAD_BEHAVIOR'] = $decision['candidate_result']['PAYLOAD_BEHAVIOR'];
+                    $result['PR70_PROVENANCE'] = $decision['candidate_result']['PR70_PROVENANCE'];
+                    $result['PR70_PROVENANCE_NOTE'] = $decision['candidate_result']['PR70_PROVENANCE_NOTE'];
                     break;
                 }
                 $result[$decision['reason']]++;
@@ -88,7 +90,6 @@ final class PhilipsNonDicomB6Selector
 
             if ($result['CANDIDATE_FOUND'] === 'YES') {
                 $result['READY_FOR_SINGLE_RUN'] = 'YES';
-                $result['PR70_PAYLOAD_FIX'] = 'CONFIRMED';
             } else {
                 $result['READY_FOR_SINGLE_RUN'] = 'NO';
             }
@@ -119,12 +120,15 @@ final class PhilipsNonDicomB6Selector
             'PROFILE' => self::PROFILE,
             'ENVIRONMENT' => self::ENVIRONMENT,
             'DISPATCH_MODE' => self::DISPATCH_MODE,
-            'EXCLUDED_JOB_522' => 'NO',
+            'EXCLUDED_JOB_522' => 0,
             'TOTAL_INSPECTED' => 0,
             'CANDIDATE_FOUND' => 'NO',
             'DATABASE' => 'NOT_CONNECTED',
-            'PR70_PAYLOAD_FIX' => 'NOT_PROVEN',
+            'PR70_PROVENANCE' => 'NOT_PERSISTED',
+            'PR70_PROVENANCE_NOTE' => 'OUTBOX_DOES_NOT_PERSIST_PRODUCER_SHA',
+            'PAYLOAD_BEHAVIOR' => 'NOT_CONFIRMED',
             'READY_FOR_SINGLE_RUN' => 'NO',
+            'PRODUCTION_DATABASE_ACCESSED' => 'YES',
             'DATABASE_CHANGED' => 'NO',
             'JOB_CHANGED' => 'NO',
             'OUTBOX_CHANGED' => 'NO',
@@ -133,6 +137,7 @@ final class PhilipsNonDicomB6Selector
             'JOB_CLAIMED' => 'NO',
             'ATTEMPT_CREATED' => 'NO',
             'WORKER' => 'NOT_STARTED',
+            'RUNONE' => 'NOT_EXECUTED',
             'BRIDGE_CALLED' => 'NO',
             'SMB' => 'NOT_EXECUTED',
             'TRANSMISSION' => 'NO',
@@ -235,12 +240,11 @@ final class PhilipsNonDicomB6Selector
         ) {
             return ['candidate' => false, 'reason' => 'EXCLUDED_OUTBOX'];
         }
-        if (!array_key_exists('referring_physician_name', $payload)) {
+        $payloadBehavior = self::payloadBehavior($payload);
+        if ($payloadBehavior !== 'CONFIRMED') {
             return ['candidate' => false, 'reason' => 'EXCLUDED_PAYLOAD_REFERRING_PHYSICIAN'];
         }
-        if ($this->provenanceFromPayload($payload) !== 'CONFIRMED') {
-            return ['candidate' => false, 'reason' => 'EXCLUDED_PR70_PROVENANCE'];
-        }
+        $provenance = self::classifyProvenance(null);
 
         $reportState = $this->reportState($pdo, $job);
         if ($reportState === 'REPORT_MISSING') {
@@ -272,6 +276,9 @@ final class PhilipsNonDicomB6Selector
                 'STUDY_LINKED' => 'YES',
                 'PAYLOAD_PARSE' => 'PASS',
                 'PAYLOAD_REFERRING_PHYSICIAN_PRESENT' => 'YES',
+                'PAYLOAD_BEHAVIOR' => $payloadBehavior,
+                'PR70_PROVENANCE' => $provenance,
+                'PR70_PROVENANCE_NOTE' => 'OUTBOX_DOES_NOT_PERSIST_PRODUCER_SHA',
                 'AUTHOR_INPUT' => 'AVAILABLE',
             ],
         ];
@@ -316,11 +323,20 @@ final class PhilipsNonDicomB6Selector
         return 'PASS';
     }
 
-    private function provenanceFromPayload(array $payload): string
+    public static function payloadBehavior(?array $payload): string
     {
-        // O schema atual não persiste a SHA do produtor por Outbox. Não usar
-        // data, ID ou schema_version como substituto de proveniência.
-        return 'NOT_PROVEN';
+        return is_array($payload) && array_key_exists('referring_physician_name', $payload)
+            ? 'CONFIRMED'
+            : 'NOT_CONFIRMED';
+    }
+
+    public static function classifyProvenance(?string $persistedSha): string
+    {
+        $persistedSha = strtolower(trim((string) ($persistedSha ?? '')));
+        if ($persistedSha === '') {
+            return 'NOT_PERSISTED';
+        }
+        return hash_equals(self::PR70_SHA, $persistedSha) ? 'CONFIRMED' : 'NOT_CONFIRMED';
     }
 
     private function dateIsEligible(mixed $value): bool
@@ -437,6 +453,8 @@ final class PhilipsNonDicomB6Selector
                 $clean = [];
                 foreach ($value as $key => $item) {
                     if (!in_array((string) $key, [
+                        'PAYLOAD_PARSE',
+                        'PAYLOAD_BEHAVIOR',
                         'PAYLOAD_REFERRING_PHYSICIAN_PRESENT',
                         'EXCLUDED_PAYLOAD_REFERRING_PHYSICIAN',
                     ], true)
@@ -457,6 +475,7 @@ final class PhilipsNonDicomB6Selector
             $clean = [];
         }
         $clean['DATABASE_CHANGED'] = 'NO';
+        $clean['PRODUCTION_DATABASE_ACCESSED'] = 'YES';
         $clean['JOB_CHANGED'] = 'NO';
         $clean['OUTBOX_CHANGED'] = 'NO';
         $clean['REPORT_CHANGED'] = 'NO';
@@ -464,6 +483,7 @@ final class PhilipsNonDicomB6Selector
         $clean['JOB_CLAIMED'] = 'NO';
         $clean['ATTEMPT_CREATED'] = 'NO';
         $clean['WORKER'] = 'NOT_STARTED';
+        $clean['RUNONE'] = 'NOT_EXECUTED';
         $clean['BRIDGE_CALLED'] = 'NO';
         $clean['SMB'] = 'NOT_EXECUTED';
         $clean['TRANSMISSION'] = 'NO';

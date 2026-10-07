@@ -45,8 +45,13 @@ A SHA de referência é:
 ```
 
 O schema atual do Outbox não persiste a SHA do produtor por evento. Portanto, o
-seletor não inventa uma chave nem aceita proveniência implícita: no estado atual,
-`PR70_PAYLOAD_FIX` permanece `NOT_PROVEN` e nenhum Job é selecionado.
+seletor não inventa uma chave nem aceita proveniência implícita. O estado é
+reportado como:
+
+```text
+PR70_PROVENANCE=NOT_PERSISTED
+PR70_PROVENANCE_NOTE=OUTBOX_DOES_NOT_PERSIST_PRODUCER_SHA
+```
 
 Não são aceitos como prova:
 
@@ -57,8 +62,15 @@ Não são aceitos como prova:
 - SHA atual do runtime sem vínculo ao Outbox.
 
 Se uma futura alteração versionada adicionar uma fonte formal de proveniência
-por Outbox, ela deverá ser incorporada explicitamente ao contrato do seletor.
-Até lá, o resultado é `PR70_PAYLOAD_FIX=NOT_PROVEN` e o Job não é selecionado.
+por Outbox, ela deverá ser incorporada explicitamente ao contrato do seletor e
+poderá produzir `PR70_PROVENANCE=CONFIRMED`. A ausência dessa evidência não
+bloqueia um candidato quando o payload persistido comprovar o comportamento:
+
+```text
+PR70_PROVENANCE=NOT_PERSISTED
+PAYLOAD_BEHAVIOR=CONFIRMED
+READY_FOR_SINGLE_RUN=YES
+```
 
 ## Instalação root-controlled
 
@@ -85,6 +97,8 @@ A regra sudoers permite apenas o helper sem argumentos para `manus-admin`.
 sudo -n /usr/local/sbin/voxelpacs-philips-nondicom-b6-selector
 ```
 
-O resultado esperado para um candidato é `CANDIDATE_FOUND=YES` e `READY_FOR_SINGLE_RUN=YES`. Qualquer `UNKNOWN`, `NOT_PROVEN` ou `BLOCKED` interrompe o fluxo.
+O resultado esperado para um candidato é `CANDIDATE_FOUND=YES`,
+`PAYLOAD_BEHAVIOR=CONFIRMED` e `READY_FOR_SINGLE_RUN=YES`. Qualquer payload
+não confirmado, gate desconhecido ou estado `BLOCKED` interrompe o fluxo.
 
 O seletor não prepara allowlist e não autoriza execução. Mesmo com `READY_FOR_SINGLE_RUN=YES`, a preparação da Bridge e o `runOne` exigem gates e autorização operacional separados.
