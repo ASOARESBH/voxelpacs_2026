@@ -141,6 +141,42 @@ jobs:
       - name: Run provisioner dry-run tests
         run: sudo -n env -u SUDO_USER bash tests/provision_restricted_drift_sync_static.sh
 
+  deploy-transaction-reconciliation:
+    name: Deploy transaction inspection and reconciliation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-deploy-transaction
+          bash -n ops/deploy/voxelpacs-deploy-runtime
+          bash -n scripts/provision-deploy-transaction-helper.sh
+          bash -n tests/deploy_transaction_inspection_reconciliation.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x \
+              ops/deploy/voxelpacs-deploy-transaction \
+              ops/deploy/voxelpacs-deploy-runtime \
+              scripts/provision-deploy-transaction-helper.sh \
+              tests/deploy_transaction_inspection_reconciliation.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Validate sudoers syntax and scope
+        run: |
+          if command -v visudo >/dev/null 2>&1; then
+            visudo -cf ops/sudoers/voxelpacs-deploy-transaction
+          else
+            echo "VISUDO=NOT_AVAILABLE"
+          fi
+
+      - name: Run isolated transaction tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy_transaction_inspection_reconciliation.sh
+
   philips-folder-policy-applier:
     name: Philips Folder policy applier
     runs-on: ubuntu-latest

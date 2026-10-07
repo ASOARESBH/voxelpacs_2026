@@ -12,6 +12,7 @@ readonly INCOMING_ROOT='/var/lib/voxelpacs/deploy/incoming'
 readonly RELEASE_ROOT='/var/lib/voxelpacs/deploy/releases'
 readonly TRANSACTION_ROOT="$RELEASE_ROOT/transactions"
 readonly LOCK_PATH='/run/lock/voxelpacs-deploy-runtime.lock'
+readonly RECONCILIATION_MARKER='reconciliation/approved'
 readonly LEGACY_FLAT_PATH="$APP_ROOT/Config/ReportDeliveryRuntimeConfig.php"
 readonly EFFECTIVE_CONFIG_REL='app/Config/ReportDeliveryRuntimeConfig.php'
 readonly REQUIRED_FILES=(
@@ -43,6 +44,7 @@ readonly ALLOWED_TOP_LEVEL=(
 mode='publish'
 sha=''
 transaction_dir=''
+transaction_run='NO'
 lock_fd=''
 prepare_error=''
 
@@ -102,18 +104,83 @@ assert_preserved_state() {
   [[ "$before" == "$after" ]] || fail 'PERSISTENT_STATE_CHANGED'
 }
 
+assert_reconciled_transaction() {
+  local root="$1" marker evidence_manifest evidence_checksum evidence_checksum_sha256 evidence_dir actual_checksum_sha256
+  marker="$root/$RECONCILIATION_MARKER"
+  [[ -d "$root" && ! -L "$root" ]] || fail 'TRANSACTION_ROOT_INVALID'
+  [[ "$(stat -c '%U:%a' "$root")" == 'root:700' ]] || fail 'TRANSACTION_ROOT_NOT_ROOT_ONLY'
+  [[ -f "$marker" && ! -L "$marker" ]] || fail 'TRANSACTION_RECONCILIATION_MISSING'
+  [[ "$(stat -c '%U:%a' "$marker")" == 'root:600' ]] || fail 'TRANSACTION_RECONCILIATION_NOT_ROOT_ONLY'
+  grep -Fqx $'reconciliation_status\tAPPROVED' "$marker" || fail 'TRANSACTION_RECONCILIATION_NOT_APPROVED'
+  grep -Fqx "target_sha"$'\t'"$sha" "$marker" || fail 'TRANSACTION_RECONCILIATION_SHA_MISMATCH'
+  grep -Fqx $'runtime_changed\tNO' "$marker" || fail 'TRANSACTION_RECONCILIATION_RUNTIME_CHANGED'
+  grep -Fqx $'original_preserved\tYES' "$marker" || fail 'TRANSACTION_RECONCILIATION_ORIGINAL_NOT_PRESERVED'
+  evidence_manifest="$(awk -F '\t' '$1 == "evidence_manifest" {print $2; exit}' "$marker")"
+  evidence_checksum="$(awk -F '\t' '$1 == "evidence_checksum" {print $2; exit}' "$marker")"
+  evidence_checksum_sha256="$(awk -F '\t' '$1 == "evidence_checksum_sha256" {print $2; exit}' "$marker")"
+  [[ "$evidence_manifest" != /* && "$evidence_manifest" != *'..'* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  [[ "$evidence_checksum" != /* && "$evidence_checksum" != *'..'* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  [[ "$evidence_manifest" == reconciliation/* && "$evidence_checksum" == reconciliation/* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  evidence_dir="$root/$(dirname "$evidence_manifest")"
+  [[ -d "$root/reconciliation" && ! -L "$root/reconciliation" ]] || fail 'TRANSACTION_EVIDENCE_DIRECTORY_INVALID'
+  [[ -d "$evidence_dir" && ! -L "$evidence_dir" ]] || fail 'TRANSACTION_EVIDENCE_DIRECTORY_INVALID'
+  [[ -f "$root/$evidence_manifest" && -f "$root/$evidence_checksum" ]] || fail 'TRANSACTION_EVIDENCE_MISSING'
+  [[ "$evidence_checksum_sha256" =~ ^[0-9a-f]{64}$ ]] || fail 'TRANSACTION_EVIDENCE_CHECKSUM_FORMAT_INVALID'
+  actual_checksum_sha256="$(sha256sum -- "$root/$evidence_checksum" | awk '{print $1}')"
+  [[ "$actual_checksum_sha256" == "$evidence_checksum_sha256" ]] || fail 'TRANSACTION_EVIDENCE_CHECKSUM_MISMATCH'
+  (cd "$evidence_dir" && sha256sum -c "$(basename "$evidence_checksum")" >/dev/null) || fail 'TRANSACTION_EVIDENCE_CHECKSUM_MISMATCH'
+}
+
+prepare_transaction_dir() {
+  local transaction_root="$TRANSACTION_ROOT/$sha" run_id run_root
+  transaction_run='NO'
+  if [[ ! -e "$transaction_root" ]]; then
+    mkdir -p -- "$transaction_root"
+    chmod 700 "$transaction_root"
+    transaction_dir="$transaction_root"
+    printf 'target_sha=%s\ncreated_at=%s\n' "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$transaction_dir/metadata"
+    chmod 600 "$transaction_dir/metadata"
+    return 0
+  fi
+  assert_reconciled_transaction "$transaction_root"
+  run_id="$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+  run_root="$transaction_root/runs"
+  if [[ -L "$run_root" || ( -e "$run_root" && ! -d "$run_root" ) ]]; then
+    fail 'TRANSACTION_RUNS_ROOT_INVALID'
+  fi
+  mkdir -p -- "$run_root"
+  chmod 700 "$run_root"
+  transaction_dir="$run_root/$run_id"
+  [[ ! -e "$transaction_dir" && ! -L "$transaction_dir" ]] || fail 'TRANSACTION_RUN_ALREADY_EXISTS'
+  mkdir -- "$transaction_dir"
+  chmod 700 "$transaction_dir"
+  printf 'target_sha=%s\ncreated_at=%s\nrun_parent=%s\n' "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$transaction_root" > "$transaction_dir/metadata"
+  chmod 600 "$transaction_dir/metadata"
+  transaction_run='YES'
+}
+
+resolve_rollback_transaction() {
+  local transaction_root="$TRANSACTION_ROOT/$sha" latest
+  transaction_dir="$transaction_root"
+  if [[ -d "$transaction_root/runs" && ! -L "$transaction_root/runs" ]]; then
+    latest="$(find "$transaction_root/runs" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2- || true)"
+    [[ -n "$latest" ]] && transaction_dir="$latest"
+  fi
+}
+
 assert_allowed_archive_entries() {
-  local archive="$1" entry top
+  local archive="$1" entry top allowed_top allowed
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     [[ "$entry" != */ ]] || continue
     safe_relative_path "$entry" || fail 'ARCHIVE_PATH_NOT_ALLOWED'
     top="${entry%%/*}"
     [[ "$top" == "$entry" ]] || top="${entry%%/*}"
-    case "$top" in
-      .htaccess|VERSAO.txt|app|public|bin|routes|lang|cron|config|composer.json|composer.lock|vendor) ;;
-      *) fail 'ARCHIVE_TOP_LEVEL_NOT_ALLOWED' ;;
-    esac
+    allowed='NO'
+    for allowed_top in "${ALLOWED_TOP_LEVEL[@]}"; do
+      [[ "$allowed_top" == "$top" ]] && allowed='YES'
+    done
+    [[ "$allowed" == 'YES' ]] || fail 'ARCHIVE_TOP_LEVEL_NOT_ALLOWED'
   done < <(unzip -Z1 "$archive")
 }
 
@@ -338,10 +405,7 @@ publish() {
   [[ "$APP_ROOT" != '/var/www/voxelpacs' ]] || fail 'PARENT_ROOT_IS_NOT_RUNTIME_ROOT'
   [[ -d "$INCOMING_ROOT" && -d "$RELEASE_ROOT" ]] || fail 'DEPLOY_ROOT_NOT_PROVISIONED'
   mkdir -p -- "$TRANSACTION_ROOT"
-  transaction_dir="$TRANSACTION_ROOT/$sha"
-  [[ ! -e "$transaction_dir" ]] || fail 'TRANSACTION_ALREADY_EXISTS'
-  mkdir -p -- "$transaction_dir"
-  chmod 700 "$transaction_dir"
+  prepare_transaction_dir
   stage="$transaction_dir/validated"
   mkdir -p -- "$stage"
   chmod 700 "$stage"
@@ -377,6 +441,7 @@ publish() {
   printf 'PRIVILEGED_DEPLOY=PASS\n'
   printf 'SOURCE_SHA_PREFIX=%s…\n' "${sha:0:12}"
   printf 'PUBLICATION_MODE=ATOMIC_PER_FILE_WITH_TRANSACTION_ROLLBACK\n'
+  printf 'TRANSACTION_RUN=%s\n' "$transaction_run"
   printf 'RUNTIME_ROOT=APP_ROOT\n'
   printf 'ENV_PRESERVED=YES\nSTORAGE_PRESERVED=YES\nUPLOADS_PRESERVED=YES\nREPORT_DELIVERY_PRESERVED=YES\n'
   printf 'LEGACY_FLAT_PRESERVED=YES\n'
@@ -384,7 +449,7 @@ publish() {
 }
 
 rollback() {
-  transaction_dir="$TRANSACTION_ROOT/$sha"
+  resolve_rollback_transaction
   [[ -d "$transaction_dir" ]] || fail 'ROLLBACK_TRANSACTION_NOT_FOUND'
   [[ "$(cat "$transaction_dir/status" 2>/dev/null || true)" == 'published' ]] || fail 'ROLLBACK_TRANSACTION_NOT_PUBLISHED'
   local before_state
