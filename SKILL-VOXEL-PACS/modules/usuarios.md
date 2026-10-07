@@ -26,6 +26,12 @@ Auditorias registram IDs técnicos, tenant, motivo e hashes SHA-256 dos endereç
 
 As migrations `2026-09-22_users_email_lifecycle_postgresql.sql` e `2026-09-22_users_email_lifecycle_mysql.sql` são aditivas, não executam backfill e permanecem separadas do deploy. Aplicação exige backup lógico, preflight do schema efetivo, janela autorizada e validação pós-DDL. A consolidação de contas duplicadas existentes não faz parte desta implementação.
 
+## Preferência de finalização da assinatura
+
+Em `/usuarios/{id}/edit`, o perfil `medico` possui a preferência tenant-scoped `bi_user_report_signature_preferences.signature_mode`: `ambos` mantém os dois botões; `somente` permite apenas assinar e mantém o laudo pendente de liberação; `fechar` permite apenas Assinar e Fechar. O formulário usa opções exclusivas e o backend impõe a mesma regra, portanto ocultar o botão é apenas usabilidade, não controle de segurança.
+
+A preferência não altera conteúdo clínico, versão, PatientName, snapshot, Outbox, Job ou XML. Ela é consultada no Laudário e aplicada antes de `ReportService::assinar()`/`liberarAssinado()`. Sem a migration `2026-10-07_report_signature_preference_{postgresql,mysql}.sql`, o sistema conserva o comportamento atual (`ambos`) e informa que a configuração ainda não está ativa. A migration é separada do deploy e exige `MIGRATION_REQUIRED = YES`.
+
 ## Referências
 
 - [`UsuariosController`](../../app/Controllers/UsuariosController.php)
@@ -33,3 +39,6 @@ As migrations `2026-09-22_users_email_lifecycle_postgresql.sql` e `2026-09-22_us
 - [`UserEmailChangeService`](../../app/Services/UserEmailChangeService.php)
 - [`EmailChangeController`](../../app/Controllers/Auth/EmailChangeController.php)
 - [`2026-09-22_users_email_lifecycle_postgresql.sql`](../../database/migrations/2026-09-22_users_email_lifecycle_postgresql.sql)
+- [`ReportSignaturePreferenceService`](../../app/Services/ReportSignaturePreferenceService.php)
+- [`2026-10-07_report_signature_preference_postgresql.sql`](../../database/migrations/2026-10-07_report_signature_preference_postgresql.sql)
+- [`2026-10-07_report_signature_preference_mysql.sql`](../../database/migrations/2026-10-07_report_signature_preference_mysql.sql)

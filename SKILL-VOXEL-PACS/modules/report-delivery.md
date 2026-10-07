@@ -78,6 +78,7 @@ O diagnóstico complementar `bin/philips_nondicom_pdf_readonly.php` exige `--rea
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.
 - Consumido por: tela administrativa `/platform/negocios/{id}/report-delivery`, rota manual por Job ID e worker de entrega.
+- A preferência `bi_user_report_signature_preferences.signature_mode` é um gate de ação do usuário no Laudário: `somente` bloqueia a liberação manual e impede `modo=fechar`; ela não altera `report_versions`, PatientName, payload congelado, Outbox, Job, XML, Worker, Bridge ou SMB. O Outbox só é criado pelos fluxos de assinatura/liberação já existentes depois que o modo efetivo é aceito.
 
 ## Flags runtime e kill switch
 

@@ -10,6 +10,7 @@ use App\Services\ReportAccessService;
 use App\Repositories\ReportRepository;
 use App\Repositories\EstudosRepository;
 use App\Services\ReportChatService;
+use App\Services\ReportSignaturePreferenceService;
 class ReportsController extends Controller
 {
     private ReportService $reportService;
@@ -110,6 +111,11 @@ class ReportsController extends Controller
             $stmt->execute(['uid' => Auth::userId(), 'tid' => \App\Core\TenantContext::id()]);
             $medicoIdLogado = (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable $ex) {}
+        $signaturePreference = (new ReportSignaturePreferenceService())->resolveForUser(
+            (int) (Auth::userId() ?? 0),
+            Auth::tenantId(),
+            Auth::perfilAtual() === 'medico'
+        );
 
         // A tela do Laudário precisa conhecer o mesmo contexto visual do PDF para
         // que a unidade que escolheu Moderno Lateral veja o documento no próprio
@@ -134,6 +140,7 @@ class ReportsController extends Controller
             // Título recebe somente a projeção visual do PN DICOM autorizado.
             'page_title'        => 'Laudo — ' . (\App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente'),
             'medicoIdLogado'    => $medicoIdLogado,
+            'signaturePreference' => $signaturePreference,
             'canViewStudyInformation' => $medicoIdLogado > 0,
             'reportLayoutCodigo' => $reportLayoutCodigo,
             'reportVisual'       => $contextoVisual,
@@ -228,6 +235,12 @@ class ReportsController extends Controller
         // reports-signature.js manda report_id, não id.
         $reportId = (int) ($input['report_id'] ?? $input['id'] ?? 0);
         $modo     = ($input['modo'] ?? 'somente') === 'fechar' ? 'fechar' : 'somente';
+        $modo = (new ReportSignaturePreferenceService())->effectiveMode(
+            $modo,
+            (int) (Auth::userId() ?? 0),
+            Auth::tenantId(),
+            Auth::perfilAtual() === 'medico'
+        );
 
         try {
             // A tela de texto livre envia o conteúdo junto da assinatura. Salva
@@ -276,6 +289,7 @@ class ReportsController extends Controller
             $this->json([
                 'ok' => true,
                 'msg' => $msg,
+                'modo_efetivo' => $modo,
                 'situacao' => $resultado['situacao'],
                 'liberacao_bloqueada' => (bool) ($resultado['liberacao_bloqueada'] ?? false),
                 'liberacao_bloqueio' => $resultado['liberacao_bloqueio'] ?? null,
@@ -1200,8 +1214,21 @@ class ReportsController extends Controller
         $reportId = (int) ($input['report_id'] ?? 0);
         if (!$reportId) { $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422); return; }
         try {
-                        $report = (new ReportAccessService())->findAuthorizedReport($reportId);
+            $report = (new ReportAccessService())->findAuthorizedReport($reportId);
             if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
+            $signaturePreference = (new ReportSignaturePreferenceService())->resolveForUser(
+                (int) (Auth::userId() ?? 0),
+                Auth::tenantId(),
+                Auth::perfilAtual() === 'medico'
+            );
+            if (($signaturePreference['mode'] ?? ReportSignaturePreferenceService::MODE_BOTH) === ReportSignaturePreferenceService::MODE_SIGN_ONLY) {
+                $this->json([
+                    'ok' => false,
+                    'error' => 'assinatura_preferencia_somente',
+                    'msg' => t('assinatura_preferencia.erro.somente'),
+                ], 422);
+                return;
+            }
             if ((new ReportChatService())->hasPending($reportId, (int) Auth::tenantId())) {
                 Logger::warning('ReportsController::liberar bloqueado por CHAT pendente', [
                     'report_id' => $reportId, 'tenant_id' => Auth::tenantId(), 'usuario_id' => Auth::userId(),
@@ -1277,6 +1304,7 @@ class ReportsController extends Controller
             'patient_name_middle' => 'O Middle informado é inválido.',
             'patient_name_given_required' => 'O destino de devolutiva exige Given do paciente. O laudo permanece assinado e não foi liberado.',
             'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva. O laudo permanece assinado e não foi liberado.',
+            'assinatura_preferencia_somente' => t('assinatura_preferencia.erro.somente'),
             'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',
             'report_nao_assinado' => 'O laudo ainda não foi assinado.',
             'report_nao_encontrado' => 'Laudo não encontrado.',

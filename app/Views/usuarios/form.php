@@ -9,6 +9,7 @@ $relatorioSubmodulos = $relatorioSubmodulos ?? [];
 $viewerCatalog = $viewerCatalog ?? [];
 $viewerStates = $viewerStates ?? [];
 $worklistPreference = $worklistPreference ?? ['enabled' => false, 'sort_mode' => 'recentes', 'priority_order' => 'urgencia_primeiro', 'medical_status_order' => []];
+$reportSignaturePreference = $reportSignaturePreference ?? ['mode' => 'ambos', 'available' => false, 'persisted' => false];
 $title         = $title         ?? 'Usuário';
 $error         = $error         ?? '';
 $isEdit        = $usuario !== null;
@@ -23,6 +24,7 @@ $val = function (string $campo) use ($usuario): string {
 $perfilAtual  = $isEdit ? ($usuario['perfil'] ?? 'viewer') : 'viewer';
 $medicoAtual  = $isEdit ? (int)($usuario['medico_id'] ?? 0) : 0;
 $action       = $isEdit ? '/usuarios/' . $val('id') . '/update' : '/usuarios';
+$signatureMode = (string) ($reportSignaturePreference['mode'] ?? 'ambos');
 $worklistStatusOrder = array_values(array_filter((array) ($worklistPreference['medical_status_order'] ?? []), static fn ($status): bool => in_array($status, ['pendente', 'a_laudar', 'em_laudo', 'rascunho', 'assinado', 'peer_review'], true)));
 foreach (['pendente', 'a_laudar', 'em_laudo', 'rascunho', 'assinado', 'peer_review'] as $defaultStatus) {
     if (!in_array($defaultStatus, $worklistStatusOrder, true)) $worklistStatusOrder[] = $defaultStatus;
@@ -297,6 +299,28 @@ $errorMsgs = [
             </small>
             <?php endif; ?>
         </div>
+        <div id="cardAssinaturaPreferencia" class="mt-4" style="<?= $perfilAtual === 'medico' ? '' : 'display:none;' ?>">
+            <div class="form-section-title"><i class="fa fa-signature me-2"></i><?= htmlspecialchars(t('assinatura_preferencia.titulo')) ?></div>
+            <p style="font-size:.8rem;color:var(--pacs-text-muted);margin-bottom:.65rem;">
+                <?= htmlspecialchars(t('assinatura_preferencia.ajuda')) ?>
+            </p>
+            <div class="worklist-pref-grid">
+                <?php foreach (['ambos', 'somente', 'fechar'] as $mode): ?>
+                    <label class="worklist-choice">
+                        <input type="radio" name="report_signature_mode" value="<?= $mode ?>" <?= $signatureMode === $mode ? 'checked' : '' ?>>
+                        <span>
+                            <strong><?= htmlspecialchars(t('assinatura_preferencia.modo.' . $mode)) ?></strong>
+                            <small><?= htmlspecialchars(t('assinatura_preferencia.modo.' . $mode . '_ajuda')) ?></small>
+                        </span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <?php if (empty($reportSignaturePreference['available'])): ?>
+                <small style="display:block;color:var(--pacs-text-muted);font-size:.72rem;margin-top:.5rem;">
+                    <i class="fa fa-circle-info me-1"></i><?= htmlspecialchars(t('assinatura_preferencia.migration_pendente')) ?>
+                </small>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -417,6 +441,8 @@ function onPerfilChange(perfil) {
     if (cardMedico) {
         cardMedico.style.display = (perfil === 'medico') ? '' : '';
     }
+    const cardAssinaturaPreferencia = document.getElementById('cardAssinaturaPreferencia');
+    if (cardAssinaturaPreferencia) cardAssinaturaPreferencia.style.display = perfil === 'medico' ? '' : 'none';
     atualizarPreferenciasMedicas();
     atualizarVisualizadoresPorPerfil();
 }
