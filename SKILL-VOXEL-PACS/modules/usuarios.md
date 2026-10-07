@@ -32,6 +32,8 @@ Em `/usuarios/{id}/edit`, o perfil `medico` possui a preferência tenant-scoped 
 
 A preferência não altera conteúdo clínico, versão, PatientName, snapshot, Outbox, Job ou XML. Ela é consultada no Laudário e aplicada antes de `ReportService::assinar()`/`liberarAssinado()`. Sem a migration `2026-10-07_report_signature_preference_{postgresql,mysql}.sql`, o sistema conserva o comportamento atual (`ambos`) e informa que a configuração ainda não está ativa. A migration é separada do deploy e exige `MIGRATION_REQUIRED = YES`.
 
+As restrições opt-out de visualizadores usam `bi_user_viewers` no schema PostgreSQL `voxelpacs_mysql_source`. A leitura e gravação usam `FALSE` no PostgreSQL e `0` no MySQL para respeitar os tipos booleanos de cada dialeto. A migration aditiva `2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql` concede somente os grants de runtime necessários na tabela e na sequência; ela é separada do deploy e requer aplicação controlada.
+
 ## Referências
 
 - [`UsuariosController`](../../app/Controllers/UsuariosController.php)
@@ -42,3 +44,4 @@ A preferência não altera conteúdo clínico, versão, PatientName, snapshot, O
 - [`ReportSignaturePreferenceService`](../../app/Services/ReportSignaturePreferenceService.php)
 - [`2026-10-07_report_signature_preference_postgresql.sql`](../../database/migrations/2026-10-07_report_signature_preference_postgresql.sql)
 - [`2026-10-07_report_signature_preference_mysql.sql`](../../database/migrations/2026-10-07_report_signature_preference_mysql.sql)
+- [`2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql`](../../database/migrations/2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql)
