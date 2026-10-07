@@ -142,8 +142,9 @@ final class ViewerAccess
             $pdo = Database::getInstance();
             if (!self::restrictionStoreAvailable($pdo)) return self::$disabledCache[$cacheKey];
             $table = self::restrictionStoreTable();
+            $disabledPredicate = SqlHelper::isPostgres() ? 'habilitado = FALSE' : 'habilitado = 0';
             $stmt = $pdo->prepare(
-                "SELECT viewer_key FROM {$table} WHERE user_id = ? AND tenant_id = ? AND habilitado = 0"
+                "SELECT viewer_key FROM {$table} WHERE user_id = ? AND tenant_id = ? AND {$disabledPredicate}"
             );
             $stmt->execute([$userId, $tenantId]);
             foreach ($stmt->fetchAll(\PDO::FETCH_COLUMN) as $viewerKey) {

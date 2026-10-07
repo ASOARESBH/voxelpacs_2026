@@ -90,6 +90,9 @@ jobs:
       - name: Run report signature preference contract
         run: php tests/report_signature_preference_static.php
 
+      - name: Run viewer access contract
+        run: php tests/viewer_access_static.php
+
       - name: Run tests
         run: |
           test_count=$(vendor/bin/phpunit tests --list-tests | awk '/^[[:space:]]*-[[:space:]]+/ {count++} END {print count+0}')

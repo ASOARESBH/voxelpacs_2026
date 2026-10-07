@@ -710,11 +710,11 @@ class UsuariosController extends Controller
         if (!$desabilitados) return [];
 
         $sql = SqlHelper::isPostgres()
-            ? "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON CONFLICT (user_id, tenant_id, viewer_key) DO UPDATE SET habilitado = EXCLUDED.habilitado, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()"
+            ? "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,FALSE,?) ON CONFLICT (user_id, tenant_id, viewer_key) DO UPDATE SET habilitado = EXCLUDED.habilitado, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()"
             : "INSERT INTO {$table} (user_id, tenant_id, viewer_key, habilitado, updated_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado = VALUES(habilitado), updated_by_user_id = VALUES(updated_by_user_id), updated_at = CURRENT_TIMESTAMP";
         $insert = $pdo->prepare($sql);
         foreach ($desabilitados as $viewerKey) {
-            $insert->execute([$userId, $tenantId, $viewerKey, 0, Auth::userId()]);
+            $insert->execute([$userId, $tenantId, $viewerKey, Auth::userId()]);
         }
         return $desabilitados;
     }

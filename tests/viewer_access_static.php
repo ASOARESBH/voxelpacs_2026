@@ -44,6 +44,7 @@ $form = viewerSource('app/Views/usuarios/form.php');
 $access = viewerSource('app/Core/Access/ViewerAccess.php');
 $mysql = viewerSource('database/migrations/2026-09-02_visualizadores_habilitados_usuario_mysql.sql');
 $postgres = viewerSource('database/migrations/2026-09-02_visualizadores_habilitados_usuario_postgresql.sql');
+$postgresPrivileges = viewerSource('database/migrations/2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql');
 
 viewerMustContain($estudos, 'ViewerAccess::isUserEnabled(\'voxel_view\')', 'Voxel View não possui guarda individual no emissor autenticado.');
 viewerMustContain($estudos, 'ViewerRegistry::keyForDesktopViewer($viewer)', 'Viewers desktop não derivam uma chave centralizada para a guarda.');
@@ -72,10 +73,17 @@ viewerMustContain($form, 'input.onclick = (event) => event.preventDefault()', 'A
 viewerMustContain($access, "'bi_user_viewers'", 'Camada de acesso não consulta tabela tenant-scoped.');
 viewerMustContain($access, 'POSTGRES_RESTRICTION_TABLE', 'Camada de acesso não fixa o schema operacional PostgreSQL da tabela de restrições.');
 viewerMustContain($access, "to_regclass('", 'Camada de acesso não verifica a tabela PostgreSQL fora do search_path legado.');
+viewerMustContain($access, "habilitado = FALSE", 'Leitura PostgreSQL ainda compara booleano com inteiro.');
+viewerMustContain($access, "habilitado = 0", 'Leitura MySQL das restrições não foi preservada.');
 viewerMustContain($access, 'Auth::isPlatformAdmin() || Auth::perfilAtual() === \'admin\'', 'Camada de acesso não preserva bypass administrativo.');
+viewerMustContain($usuarios, 'VALUES (?,?,?,FALSE,?)', 'Gravação PostgreSQL ainda envia literal inteiro para coluna booleana.');
+viewerMustContain($usuarios, 'VALUES (?,?,?,?,?)', 'Gravação MySQL das restrições não foi preservada.');
 viewerMustContain($mysql, 'UNIQUE KEY `uq_user_viewer_tenant` (`user_id`, `tenant_id`, `viewer_key`)', 'Migration MySQL sem unicidade tenant-scoped.');
 viewerMustContain($postgres, 'voxelpacs_mysql_source.bi_user_viewers', 'Migration PostgreSQL fora do schema operacional.');
 viewerMustContain($postgres, 'UNIQUE (user_id, tenant_id, viewer_key)', 'Migration PostgreSQL sem unicidade tenant-scoped.');
+viewerMustContain($postgresPrivileges, 'GRANT USAGE ON SCHEMA voxelpacs_mysql_source TO voxelpacs_homolog', 'Migration de privilégios não concede USAGE no schema operacional.');
+viewerMustContain($postgresPrivileges, 'GRANT SELECT, INSERT, UPDATE, DELETE', 'Migration de privilégios não concede o conjunto mínimo de operações da edição.');
+viewerMustContain($postgresPrivileges, 'bi_user_viewers_id_seq', 'Migration de privilégios não concede acesso à sequência da tabela.');
 
 $locales = ['pt_BR', 'en', 'es'];
 $keys = [];
