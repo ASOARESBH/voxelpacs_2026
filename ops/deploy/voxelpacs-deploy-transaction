@@ -168,8 +168,8 @@ read_lock_state() {
     return 0
   fi
   device_dec=$((16#$device_hex))
-  device_major=$((device_dec >> 8))
-  device_minor=$((device_dec & 255))
+  device_major=$(((device_dec >> 8) & 0xfff))
+  device_minor=$(((device_dec & 0xff) | ((device_dec >> 12) & 0xffffff00)))
   device="$(printf '%x:%02x' "$device_major" "$device_minor")"
   if /usr/bin/grep -Eq "[[:space:]]${device}:${inode}[[:space:]]" /proc/locks; then
     transaction_lock='YES'
