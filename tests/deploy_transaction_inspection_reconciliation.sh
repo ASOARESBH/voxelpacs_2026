@@ -164,6 +164,13 @@ for _ in {1..200}; do
 done
 [[ -f "$lock_ready" ]]
 out="$(run_helper inspect --sha "$sha")"
+if ! grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"; then
+  for _ in {1..20}; do
+    sleep 0.02
+    out="$(run_helper inspect --sha "$sha")"
+    grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out" && break
+  done
+fi
 grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"
 grep -Fxq 'CLASSIFICATION=ACTIVE' <<<"$out"
 wait "$lock_pid" || true
