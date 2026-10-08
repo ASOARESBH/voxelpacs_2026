@@ -1,6 +1,8 @@
 <?php
 namespace App\Repositories;
 
+use App\Core\Auth;
+use App\Services\UserStudyScopeService;
 use PDO;
 
 /**
@@ -64,29 +66,58 @@ final class RelatorioProdutividadeMedicosRepository
     /** @return array<int,array{id:int,nome:string}> */
     public function medicos(int $tenantId): array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, nome
-               FROM bi_medicos
-              WHERE tenant_id = :tenant_id
-                AND ativo = 1
-              ORDER BY nome'
+        $where = [];
+        $params = [':tenant_id' => $tenantId];
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'productivity_doctors'
         );
-        $stmt->execute([':tenant_id' => $tenantId]);
+        $scopeSql = $where ? ' AND ' . implode(' AND ', $where) : '';
+        $stmt = $this->pdo->prepare(
+            'SELECT DISTINCT m.id, m.nome
+               FROM bi_medicos m
+               INNER JOIN bi_pacs_estudos e
+                       ON e.tenant_id = m.tenant_id
+                      AND e.usuario_responsavel_id = m.usuario_id
+              WHERE m.tenant_id = :tenant_id
+                AND m.ativo = 1
+                ' . $scopeSql . '
+              ORDER BY m.nome'
+        );
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /** @return array<int,string> */
     public function unidades(int $tenantId): array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT DISTINCT institution_name
-               FROM bi_pacs_estudos
-              WHERE tenant_id = :tenant_id
-                AND institution_name IS NOT NULL
-                AND BTRIM(institution_name) <> \'\'
-              ORDER BY institution_name'
+        $where = [
+            'e.tenant_id = :tenant_id',
+            'e.institution_name IS NOT NULL',
+            "BTRIM(e.institution_name) <> ''",
+        ];
+        $params = [':tenant_id' => $tenantId];
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'productivity_units'
         );
-        $stmt->execute([':tenant_id' => $tenantId]);
+        $stmt = $this->pdo->prepare(
+            'SELECT DISTINCT e.institution_name
+               FROM bi_pacs_estudos e
+              WHERE ' . implode(' AND ', $where) . '
+              ORDER BY e.institution_name'
+        );
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
@@ -133,14 +164,27 @@ final class RelatorioProdutividadeMedicosRepository
         // laudos concluídos no período. Códigos adicionais presentes no tenant entram ao final.
         $catalogo = array_fill_keys(self::MODALIDADES_WORKLIST, true);
         $descobertas = [];
-        $stmt = $this->pdo->prepare(
-            'SELECT DISTINCT modalities
-               FROM bi_pacs_estudos
-              WHERE tenant_id = :tenant_id
-                AND modalities IS NOT NULL
-                AND BTRIM(modalities) <> \'\''
+        $where = [
+            'e.tenant_id = :tenant_id',
+            'e.modalities IS NOT NULL',
+            "BTRIM(e.modalities) <> ''",
+        ];
+        $params = [':tenant_id' => $tenantId];
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'productivity_modalities'
         );
-        $stmt->execute([':tenant_id' => $tenantId]);
+        $stmt = $this->pdo->prepare(
+            'SELECT DISTINCT e.modalities
+               FROM bi_pacs_estudos e
+              WHERE ' . implode(' AND ', $where)
+        );
+        $stmt->execute($params);
 
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $modalities) {
             foreach (explode('\\', (string) $modalities) as $modality) {
@@ -152,7 +196,11 @@ final class RelatorioProdutividadeMedicosRepository
         }
         $extras = array_keys($descobertas);
         sort($extras);
-        return array_merge(self::MODALIDADES_WORKLIST, $extras);
+        return (new UserStudyScopeService($this->pdo))->allowedModalitiesForUser(
+            (int) Auth::userId(),
+            $tenantId,
+            array_merge(self::MODALIDADES_WORKLIST, $extras)
+        );
     }
 
     /**
@@ -257,6 +305,16 @@ final class RelatorioProdutividadeMedicosRepository
             ':data_de' => $filtros['data_de'] . ' 00:00:00-03',
             ':data_ate' => $filtros['data_ate'] . ' 23:59:59.999999-03',
         ];
+
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) ($filtros['usuario_id'] ?? Auth::userId()),
+            (int) $filtros['tenant_id'],
+            'e.modalities',
+            'e.institution_name',
+            'productivity_scope'
+        );
 
         $periodoColuna = match ($filtros['base_periodo']) {
             'estudo' => 'e.study_date',

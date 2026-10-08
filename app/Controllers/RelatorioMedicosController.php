@@ -188,6 +188,7 @@ final class RelatorioMedicosController extends Controller
 
         return [
             'tenant_id' => $tenantId,
+            'usuario_id' => (int) Auth::userId(),
             'data_de' => $base['data_de'],
             'data_ate' => $base['data_ate'],
             'periodo' => $base['periodo'],

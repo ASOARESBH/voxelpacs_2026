@@ -13,6 +13,7 @@ use App\Core\Access\ViewerRegistry;
 use App\Services\UserAccessMailService;
 use App\Services\UserEmailChangeService;
 use App\Services\WorklistPreferenceService;
+use App\Services\UserStudyScopeService;
 
 /**
  * UsuariosController — Módulo de Usuários do Negócio (tenant), incluindo restrições opt-out de visualizadores.
@@ -122,6 +123,8 @@ class UsuariosController extends Controller
         $tenantId = TenantContext::id();
         $pdo      = Database::getInstance();
         $medicos  = [];
+        $formDados = $_SESSION['form_dados'] ?? [];
+        unset($_SESSION['form_dados']);
 
         if ($tenantId) {
             try {
@@ -138,6 +141,7 @@ class UsuariosController extends Controller
         }
 
         $viewerStates = ViewerAccess::statesForUser(0, (int) $tenantId, 'viewer');
+        $studyScope = (new UserStudyScopeService($pdo))->formDataWithInput(0, (int) $tenantId, (array) $formDados);
         $this->view('usuarios/form', [
             'usuario'      => null,
             'modulosAtivos'=> [],
@@ -149,6 +153,8 @@ class UsuariosController extends Controller
             'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
             'viewerCatalog' => ViewerRegistry::all(),
             'viewerStates' => $viewerStates,
+            'studyScope'   => $studyScope,
+            'formDados'    => $formDados,
             'title'        => 'Novo Usuário',
             'error'        => $_GET['error'] ?? '',
         ], 'pacs');
@@ -231,6 +237,17 @@ class UsuariosController extends Controller
                 $this->vincularMedico($pdo, $medicoId, $userId, $tenantId);
             }
 
+            $studyScopeResult = (new UserStudyScopeService($pdo))->saveForUser(
+                $userId,
+                (int) $tenantId,
+                $_POST,
+                (string) $perfil,
+                Auth::userId()
+            );
+            if (!$studyScopeResult['ok']) {
+                throw new \RuntimeException('study_scope_' . (string) ($studyScopeResult['error'] ?? 'invalid'));
+            }
+
             $pdo->commit();
 
             $mailResult = (new UserAccessMailService())->sendInvitation($pdo, $userId, $tenantId, $email, $name);
@@ -247,6 +264,7 @@ class UsuariosController extends Controller
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
+            $_SESSION['form_dados'] = $_POST;
             Logger::error('[UsuariosController::store] falha controlada', ['error_class' => get_class($e)]);
             $this->redirect('/usuarios/create?error=erro_interno');
         }
@@ -262,6 +280,8 @@ class UsuariosController extends Controller
 
         $pdo      = Database::getInstance();
         $tenantId = TenantContext::id();
+        $formDados = $_SESSION['form_dados'] ?? [];
+        unset($_SESSION['form_dados']);
 
         try {
             $stmt = $pdo->prepare("
@@ -321,6 +341,11 @@ class UsuariosController extends Controller
                 (string) ($usuario['perfil'] ?? 'viewer'),
                 (string) ($usuario['role'] ?? '')
             );
+            $studyScope = (new UserStudyScopeService($pdo))->formDataWithInput(
+                (int) $id,
+                (int) $tenantId,
+                (array) $formDados
+            );
 
             $this->view('usuarios/form', [
                 'usuario'      => $usuario,
@@ -334,6 +359,8 @@ class UsuariosController extends Controller
                 'relatorioSubmodulos' => self::RELATORIO_SUBMODULOS,
                 'viewerCatalog' => ViewerRegistry::all(),
                 'viewerStates' => $viewerStates,
+                'studyScope'   => $studyScope,
+                'formDados'    => $formDados,
                 'title'        => 'Editar Usuário',
                 'error'        => $_GET['error'] ?? '',
             ], 'pacs');
@@ -381,6 +408,7 @@ class UsuariosController extends Controller
         }
 
         try {
+            $pdo->beginTransaction();
             $stmtRole = $pdo->prepare('SELECT role, email FROM bi_users WHERE id = ? LIMIT 1');
             $stmtRole->execute([$id]);
             $target = $stmtRole->fetch(\PDO::FETCH_ASSOC) ?: [];
@@ -452,6 +480,19 @@ class UsuariosController extends Controller
                 $this->vincularMedico($pdo, $medicoId, $id, $tenantId);
             }
 
+            $studyScopeResult = (new UserStudyScopeService($pdo))->saveForUser(
+                $id,
+                (int) $tenantId,
+                $_POST,
+                (string) $perfil,
+                Auth::userId()
+            );
+            if (!$studyScopeResult['ok']) {
+                throw new \RuntimeException('study_scope_' . (string) ($studyScopeResult['error'] ?? 'invalid'));
+            }
+
+            $pdo->commit();
+
             $emailResult = null;
             if ($email !== '' && $email !== $currentEmail) {
                 $emailResult = (new UserEmailChangeService())->request(
@@ -474,8 +515,15 @@ class UsuariosController extends Controller
             $this->redirect('/usuarios?sucesso=' . ($emailResult !== null && $emailResult['ok'] ? 'email_alteracao_solicitada' : 'usuario_atualizado'));
 
         } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $_SESSION['form_dados'] = $_POST;
             Logger::error('[UsuariosController::update] falha controlada', ['error_class' => get_class($e)]);
-            $this->redirect('/usuarios/' . $id . '/edit?error=erro_interno');
+            $error = str_starts_with($e->getMessage(), 'study_scope_')
+                ? 'escopo_invalido'
+                : 'erro_interno';
+            $this->redirect('/usuarios/' . $id . '/edit?error=' . $error);
         }
     }
 

@@ -4,12 +4,8 @@ $isEdit           = !empty($medico) && !empty($medico['id'] ?? $medico->id ?? nu
 $medicoId         = $isEdit ? (int) (is_array($medico) ? ($medico['id'] ?? 0) : ($medico->id ?? 0)) : 0;
 $action           = $isEdit ? '/medicos/' . $medicoId . '/update' : '/medicos';
 $usuarios         = $usuarios ?? [];
-$unidades         = $unidades ?? [];
-$unidadesMarcadas = $unidadesMarcadas ?? [];
 $erros            = $erros ?? [];
 $estados          = \App\Core\Estados::all();
-$podeGerenciarUnidades = \App\Core\Auth::isPlatformAdmin()
-    || (\App\Core\Auth::user()?->role === 'admin');
 
 // Aba inicial (só relevante em modo edição, onde a tela usa abas) — aceita
 // ?aba=dados|copilot|mascaras, caindo em 'dados' para qualquer valor inválido/ausente.
@@ -131,44 +127,6 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
     align-items: center;
     justify-content: flex-end;
     gap: .75rem;
-}
-
-/* Checkbox de unidades */
-.medico-unidade-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: .4rem;
-    padding: .3rem .75rem;
-    font-size: .8rem;
-    font-weight: 500;
-    background: rgba(26,86,219,.08);
-    border: 1px solid rgba(26,86,219,.25);
-    border-radius: 20px;
-    cursor: pointer;
-    transition: background .15s, border-color .15s;
-    color: var(--pacs-text, #e2e8f0);
-}
-.medico-unidade-chip:hover {
-    background: rgba(26,86,219,.18);
-    border-color: rgba(26,86,219,.5);
-}
-.medico-unidade-chip input[type="checkbox"] {
-    accent-color: var(--pacs-primary, #1a56db);
-    width: 13px;
-    height: 13px;
-}
-.medico-unidade-chip.is-locked {
-    cursor: not-allowed;
-    opacity: .62;
-    background: rgba(136,146,164,.08);
-    border-color: rgba(136,146,164,.28);
-}
-.medico-unidade-chip.is-locked:hover {
-    background: rgba(136,146,164,.08);
-    border-color: rgba(136,146,164,.28);
-}
-.medico-unidade-chip.is-locked input[type="checkbox"] {
-    cursor: not-allowed;
 }
 
 /* ── Card de máscara ─────────────────────────────────────────────────────────────────── */
@@ -723,32 +681,17 @@ $usuarioIdAtual = (int) (is_array($medico) ? ($medico['usuario_id'] ?? 0) : ($me
             </div>
         </div>
 
-        <!-- Unidades DICOM -->
-        <?php if (!empty($unidades)): ?>
-        <div>
-            <label class="medico-label">Unidades (InstitutionName DICOM)</label>
-            <div style="display:flex;flex-wrap:wrap;gap:.5rem;padding:.85rem;background:var(--pacs-input-bg,#252b3b);border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;">
-                <?php foreach ($unidades as $unidade): ?>
-                    <?php $unidadeMarcada = in_array($unidade, $unidadesMarcadas, true); ?>
-                    <label class="medico-unidade-chip<?= !$podeGerenciarUnidades ? ' is-locked' : '' ?>">
-                        <input type="checkbox"
-                               name="unidades[]"
-                               value="<?= htmlspecialchars($unidade, ENT_QUOTES, 'UTF-8') ?>"
-                               <?= $unidadeMarcada ? 'checked' : '' ?>
-                               <?= !$podeGerenciarUnidades ? 'disabled' : '' ?>>
-                        <?= htmlspecialchars($unidade, ENT_QUOTES, 'UTF-8') ?>
-                    </label>
-                <?php endforeach; ?>
-            </div>
-            <?php if ($podeGerenciarUnidades): ?>
-                <span class="medico-hint">Selecione as unidades onde este médico atua.</span>
+        <div class="medico-hint" style="margin-top:.5rem;padding:.75rem;border:1px solid var(--pacs-border,#3a3f4b);border-radius:6px;">
+            <strong style="display:block;margin-bottom:.25rem;"><?= htmlspecialchars(t('medicos.form.visibilidade_usuario_titulo')) ?></strong>
+            <span><?= htmlspecialchars(t('medicos.form.visibilidade_usuario_ajuda')) ?></span>
+            <?php if ($usuarioIdAtual > 0): ?>
+                <a href="/usuarios/<?= $usuarioIdAtual ?>/edit" style="display:inline-block;margin-top:.4rem;color:var(--pacs-primary);">
+                    <i class="fa fa-arrow-up-right-from-square me-1"></i><?= htmlspecialchars(t('medicos.form.visibilidade_usuario_editar')) ?>
+                </a>
             <?php else: ?>
-                <p class="medico-hint" style="margin:.5rem 0 0;">
-                    <i class="fa fa-lock me-1"></i> Somente um administrador pode alterar as unidades vinculadas.
-                </p>
+                <span style="display:block;margin-top:.4rem;"><?= htmlspecialchars(t('medicos.form.visibilidade_usuario_sem_vinculo')) ?></span>
             <?php endif; ?>
         </div>
-        <?php endif; ?>
     </div>
 
 <?php if ($isEdit): ?>

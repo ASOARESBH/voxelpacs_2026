@@ -180,3 +180,11 @@ Aberturas no OHIF, VOXEL Desktop, RadiAnt e Weasis exigem `Auth::tenantId()` nã
 
 ## Última análise
 2026-08-27
+
+## Escopo individual por instituição e modalidade — 2026-10-08
+
+`UserStudyScopeService` acrescenta uma allowlist por usuário às consultas da Worklist, aos gates de abertura OHIF/Desktop e aos downloads em lote. Quando configurada e ativa, a regra exige `institution_name` autorizado e que todas as modalidades armazenadas em `bi_pacs_estudos.modalities` estejam permitidas para aquela instituição. O escopo individual é aplicado em conjunto com tenant, grupos, posse médica e permissões existentes; não substitui nenhum deles.
+
+Reports, Gestão de Exames e os relatórios de estudos/produtividade também reaplicam o predicado na consulta ou no segundo gate. Opções de unidade, médico, solicitante e modalidade são carregadas a partir da mesma coorte visível, evitando que filtros administrativos revelem nomes fora do escopo. O matching de `InstitutionName` continua usando a normalização canônica do `InstitutionResolverService`, mas a comparação final com o estudo preserva o valor DICOM armazenado.
+
+Quando a migration ainda não está aplicada, ou quando não existe configuração individual ativa para o usuário, o comportamento anterior permanece. A opção persistida `*` não é expandida para uma lista finita, preservando modalidades futuras. A projeção `bi_medico_unidades` continua existindo para o SLA durante a transição e não é mais editável na tela de médicos.

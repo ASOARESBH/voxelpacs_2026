@@ -29,7 +29,9 @@ use App\Core\Database;
 use App\Core\Logger;
 use App\Core\TenantContext;
 use App\Services\InstitutionResolverService;
+use App\Services\GrupoModalidadeService;
 use App\Services\OrthancService;
+use App\Services\UserStudyScopeService;
 
 class DownloadLoteController extends Controller
 {
@@ -85,7 +87,7 @@ class DownloadLoteController extends Controller
             // tenant_id é preenchido somente após o roteamento seguro pelo par
             // Institution Name + Issuer. Exigir novamente apenas o nome da
             // instituição poderia negar uma unidade válida ou reabrir ambiguidade.
-            $sql = "SELECT id, orthanc_id, servidor_id
+            $sql = "SELECT id, orthanc_id, servidor_id, institution_name, modalities
                     FROM bi_pacs_estudos
                     WHERE id IN ({$placeholders})
                       AND tenant_id = ?";
@@ -103,6 +105,22 @@ class DownloadLoteController extends Controller
                     'msg' => 'Um ou mais estudos selecionados não estão disponíveis para download.',
                 ]);
                 return;
+            }
+
+            $userScope = new UserStudyScopeService($pdo);
+            $groupScopeService = new GrupoModalidadeService();
+            $groupScope = $groupScopeService->scopeForUser((int) $userId, (int) $tenantId);
+            foreach ($estudos as $estudo) {
+                if (!$userScope->allowsStudy($estudo, (int) $userId, (int) $tenantId)
+                    || (!empty($groupScope['restricted'])
+                        && !$groupScopeService->allowsStoredModalities((string) ($estudo['modalities'] ?? ''), $groupScope))) {
+                    http_response_code(403);
+                    echo json_encode([
+                        'ok' => false,
+                        'msg' => 'Um ou mais estudos selecionados não estão disponíveis para download.',
+                    ]);
+                    return;
+                }
             }
 
             // ── 4. Traduzir IDs VOXEL → orthanc_id ───────────────────────

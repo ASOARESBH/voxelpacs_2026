@@ -40,7 +40,7 @@ final class ReportAccessService
         }
 
         $stmt = $this->pdo->prepare(
-            "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+            "SELECT r.*, e.institution_name, e.modalities, e.usuario_responsavel_id,
                     {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
@@ -69,7 +69,7 @@ final class ReportAccessService
         }
 
         $stmt = $this->pdo->prepare(
-            "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+            "SELECT r.*, e.institution_name, e.modalities, e.usuario_responsavel_id,
                     {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
@@ -94,7 +94,7 @@ final class ReportAccessService
         }
 
         $stmt = $this->pdo->prepare(
-            "SELECT r.*, e.institution_name, e.usuario_responsavel_id,
+            "SELECT r.*, e.institution_name, e.modalities, e.usuario_responsavel_id,
                     {$this->peerReviewSelectSql()}
                     e.study_instance_uid, e.situacao AS estudo_situacao
              FROM reports r
@@ -146,6 +146,16 @@ final class ReportAccessService
             return false;
         }
 
+        if (!(new UserStudyScopeService($this->pdo))->allowsStudy($estudo, (int) Auth::userId(), $currentTenantId)) {
+            Logger::warning('[ReportAccessService] estudo fora do escopo individual de visualização', [
+                'estudo_id' => (int) ($estudo->id ?? 0),
+                'usuario_id' => Auth::userId(),
+                'tenant_id' => $currentTenantId,
+                'motivo' => 'escopo_usuario_instituicao_modalidade',
+            ]);
+            return false;
+        }
+
         // bi_pacs_estudos pode não ter tenant_id. Nesse schema, a vinculação
         // segura ao tenant é feita por InstitutionName, como na Worklist.
         if ($studyTenantId === 0 && !$authorizedPeerReview) {
@@ -172,6 +182,7 @@ final class ReportAccessService
             'id' => (int) ($estudo->id ?? 0),
             'tenant_id' => $studyTenantId ?: $currentTenantId,
             'institution_name' => $institutionName,
+            'modalities' => $estudo->modalities ?? '',
             'usuario_responsavel_id' => $estudo->usuario_responsavel_id ?? null,
             'situacao' => $estudo->situacao ?? null,
             'peer_review_aberta' => $authorizedPeerReview ? 1 : 0,
@@ -195,6 +206,8 @@ final class ReportAccessService
 
         if ($reportTenantId <= 0 || $currentTenantId <= 0 || $reportTenantId !== $currentTenantId) {
             $reason = 'tenant_divergente';
+        } elseif (!(new UserStudyScopeService($this->pdo))->allowsStudy($resource, (int) Auth::userId(), $currentTenantId)) {
+            $reason = 'escopo_usuario_instituicao_modalidade';
         } elseif ($perfil === 'medico' && (!$medicoId || $medicoId <= 0)) {
             // Falha fechada: um login médico sem cadastro ativo vinculado não
             // pode herdar o escopo integral do tenant.
