@@ -94,7 +94,6 @@ final class PhilipsFolderGatewayBridgeClient
                     ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
                 ],
             ]);
-            $startedAt = microtime(true);
             $body = curl_exec($curl);
             $errno = curl_errno($curl);
             $curlError = '';
@@ -105,16 +104,7 @@ final class PhilipsFolderGatewayBridgeClient
             }
             $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
             try {
-                $curlInfo = curl_getinfo($curl);
-                $this->logCurlDiagnostics(
-                    $jobId,
-                    $destinationId,
-                    $body,
-                    $errno,
-                    $curlError,
-                    is_array($curlInfo) ? $curlInfo : [],
-                    (int) round((microtime(true) - $startedAt) * 1000)
-                );
+                $this->logCurlDiagnostics($body, $errno, $curlError, $httpCode);
             } catch (\Throwable) {
                 // Diagnóstico é best-effort e nunca pode alterar o resultado da entrega.
             }
@@ -339,7 +329,6 @@ final class PhilipsFolderGatewayBridgeClient
                         ...($envelope['value'] === '' ? [] : ['X-VOXEL-Secret-Envelope: ' . $envelope['value']]),
                     ],
                 ]);
-                $startedAt = microtime(true);
                 $body = curl_exec($curl);
                 $errno = curl_errno($curl);
                 $curlError = '';
@@ -349,8 +338,7 @@ final class PhilipsFolderGatewayBridgeClient
                 }
                 $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
                 try {
-                    $curlInfo = curl_getinfo($curl);
-                    $this->logCurlDiagnostics($jobId, $destinationId, $body, $errno, $curlError, is_array($curlInfo) ? $curlInfo : [], (int) round((microtime(true) - $startedAt) * 1000));
+                    $this->logCurlDiagnostics($body, $errno, $curlError, $httpCode);
                 } catch (\Throwable) {
                 }
             } finally {
@@ -463,8 +451,7 @@ final class PhilipsFolderGatewayBridgeClient
             }
             $httpCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
             try {
-                $curlInfo = curl_getinfo($curl);
-                $this->logCurlDiagnostics($jobId, $destinationId, $body, $errno, $curlError, is_array($curlInfo) ? $curlInfo : [], 0);
+                $this->logCurlDiagnostics($body, $errno, $curlError, $httpCode);
             } catch (\Throwable) {
             }
         } finally {
@@ -675,39 +662,23 @@ final class PhilipsFolderGatewayBridgeClient
         return $result;
     }
 
-    private function logCurlDiagnostics(
-        int $jobId,
-        int $destinationId,
-        mixed $body,
-        int $errno,
-        string $curlError,
-        array $curlInfo,
-        int $durationMs
-    ): void {
+    private function logCurlDiagnostics(mixed $body, int $errno, string $curlError, int $httpCode): void
+    {
         if (getenv(self::CURL_DIAGNOSTICS_ENV) !== '1') {
             return;
         }
 
         $isResponse = is_string($body);
-        $httpCode = (int) ($curlInfo['http_code'] ?? 0);
-        $category = $isResponse ? $this->httpStatusCategory($httpCode) : $this->curlFailureCategory($errno, $curlError);
-        \App\Core\Logger::info('[PhilipsFolderGatewayBridgeClient] CURL_DIAGNOSTIC_TEMP', [
-            'job_id' => $jobId,
-            'destination_id' => $destinationId,
-            'duration_ms' => max(0, $durationMs),
-            'curl_result' => $isResponse ? 'RESPONSE' : 'ERROR',
-            'curl_errno' => $errno,
-            'curl_error_category' => $isResponse ? 'none' : $category,
-            'curl_error_detail_sanitized' => $isResponse ? 'none' : $this->sanitizedCurlError($curlError),
-            'http_status' => $httpCode,
-            'http_status_category' => $isResponse ? $category : 'none',
-            'primary_ip' => $this->safeInfoValue($curlInfo, 'primary_ip'),
-            'local_ip' => $this->safeInfoValue($curlInfo, 'local_ip'),
-            'connect_time_ms' => $this->infoMilliseconds($curlInfo, 'connect_time'),
-            'appconnect_time_ms' => $this->infoMilliseconds($curlInfo, 'appconnect_time'),
-            'starttransfer_time_ms' => $this->infoMilliseconds($curlInfo, 'starttransfer_time'),
-            'total_time_ms' => $this->infoMilliseconds($curlInfo, 'total_time'),
-            'response_size_bytes' => $isResponse ? strlen($body) : 0,
+        $responseReasonCategory = $isResponse
+            ? ($this->responseReasonCategory($body) ?? 'UNCLASSIFIED_RESPONSE')
+            : 'NOT_APPLICABLE';
+        \App\Core\Logger::sanitized('[PhilipsFolderGatewayBridgeClient] CURL_DIAGNOSTIC_SANITIZED', [
+            'HTTP_STATUS' => max(0, $httpCode),
+            'CURL_ERRNO' => max(0, $errno),
+            'CURL_ERROR_CATEGORY' => $isResponse
+                ? 'NOT_APPLICABLE'
+                : $this->curlFailureCategory($errno, $curlError),
+            'RESPONSE_REASON_CATEGORY' => $responseReasonCategory,
         ]);
     }
 
@@ -733,52 +704,6 @@ final class PhilipsFolderGatewayBridgeClient
             return 'TLS_MTLS_FAILURE';
         }
         return 'OTHER_CURL_FAILURE';
-    }
-
-    private function sanitizedCurlError(string $curlError): string
-    {
-        $message = strtolower(trim($curlError));
-        if ($message === '') {
-            return 'NO_ERROR_MESSAGE';
-        }
-        if (str_contains($message, 'certificate') || str_contains($message, 'ssl') || str_contains($message, 'tls')) {
-            return 'TLS_ERROR_DETAIL';
-        }
-        if (str_contains($message, 'timed out') || str_contains($message, 'timeout')) {
-            return 'TIMEOUT_DETAIL';
-        }
-        if (str_contains($message, 'resolve') || str_contains($message, 'route')) {
-            return 'DNS_OR_ROUTE_DETAIL';
-        }
-        if (str_contains($message, 'connect')) {
-            return 'TCP_CONNECT_DETAIL';
-        }
-        if (str_contains($message, 'empty reply') || str_contains($message, 'reset')) {
-            return 'CONNECTION_CLOSED_DETAIL';
-        }
-        return 'OTHER_CURL_DETAIL';
-    }
-
-    private function httpStatusCategory(int $httpCode): string
-    {
-        return match (true) {
-            $httpCode >= 200 && $httpCode < 300 => 'HTTP_2XX',
-            $httpCode >= 300 && $httpCode < 400 => 'HTTP_3XX',
-            $httpCode >= 400 && $httpCode < 500 => 'HTTP_4XX',
-            $httpCode >= 500 && $httpCode < 600 => 'HTTP_5XX',
-            default => 'HTTP_OTHER',
-        };
-    }
-
-    private function infoMilliseconds(array $curlInfo, string $key): int
-    {
-        return max(0, (int) round(((float) ($curlInfo[$key] ?? 0)) * 1000));
-    }
-
-    private function safeInfoValue(array $curlInfo, string $key): string
-    {
-        $value = trim((string) ($curlInfo[$key] ?? ''));
-        return $value === '' ? 'absent' : $value;
     }
 
     private function allowedBridgeUrl(string $baseUrl, string $url, int $jobId): bool
