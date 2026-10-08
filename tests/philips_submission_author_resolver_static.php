@@ -163,6 +163,76 @@ $expect($explicit['task_author_humanname_family'] === 'CONFIGURED-FAMILY', 'Conf
 $expect($explicit['task_author_humanname_given'] === 'CONFIGURED-GIVEN', 'Configured given must be explicit');
 $expect($explicit['task_author_humanname_middle'] === 'CONFIGURED-MIDDLE', 'Configured middle must be explicit');
 
+$defaultConfiguration = [
+    'philips_submission' => [
+        'task_author_source' => 'default',
+        'task_author_id' => '999',
+        'task_author_humanname_family' => 'Autor Padrão Não Cadastrado',
+    ],
+];
+$defaultAuthor = $resolver->resolve(
+    $noClinicalMetadata,
+    $defaultConfiguration,
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_source' => 'default', 'task_author_id' => '999'])
+);
+$expect($defaultAuthor['author_source'] === PhilipsSubmissionAuthorResolver::SOURCE_DEFAULT_CONFIGURATION, 'Default author source must be explicit');
+$expect($defaultAuthor['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_REAL_AUTHOR_AVAILABLE, 'Default author must be a real configured decision');
+$expect($defaultAuthor['task_author_id'] === '999', 'Default author must force technical ID 999');
+$expect($defaultAuthor['task_author_id_resolution'] === 'DEFAULT_999', 'Default author ID resolution must be classified');
+$expect($defaultAuthor['task_author_humanname_family'] === 'Autor Padrão Não Cadastrado', 'Default author text must remain integral in family');
+$expect($defaultAuthor['task_author_humanname_given'] === '', 'Default author given must remain empty');
+$expect($defaultAuthor['task_author_humanname_middle'] === '', 'Default author middle must remain empty');
+$expect($defaultAuthor['author_humanname_flat'] === true, 'Default author must use the flat-author contract');
+$invalidDefaultId = $resolver->resolve(
+    $noClinicalMetadata,
+    array_replace($defaultConfiguration, ['philips_submission' => array_replace($defaultConfiguration['philips_submission'], ['task_author_id' => '998'])]),
+    $automaticContext,
+    array_replace($noClinicalMetadata, ['task_author_source' => 'default', 'task_author_id' => '998'])
+);
+$expect($invalidDefaultId['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Default author with a non-999 ID must fail closed');
+$expect($invalidDefaultId['task_author_id_resolution'] === 'INVALID_DEFAULT_ID', 'Invalid default author ID must be classified');
+$defaultAuthorDocument = (new PhilipsSubmissionDocumentGenerator())->generate(
+    array_replace([
+        'pdf_filename' => 'VOXEL_SYNTHETIC_DEFAULT_AUTHOR.pdf',
+        'task_patient_id' => 'SYNTH-PATIENT',
+        'task_patient_humanname_family' => 'PATIENT',
+        'task_patient_humanname_given' => 'SYNTHETIC',
+        'task_patient_humanname_middle' => '',
+        'task_document_name' => 'SYNTHETIC REPORT',
+        'task_document_date' => '20261006101112',
+        'task_image_date' => '20261006101112',
+        'task_file_path' => '/synthetic/inbox/VOXEL_SYNTHETIC_DEFAULT_AUTHOR.pdf',
+        'task_accession_number' => 'SYNTH-ACCESSION',
+        'task_document_mimetype' => 'application/pdf',
+        'task_patient_birthday' => '19800101',
+        'task_patient_gender' => 'F',
+        'task_site_id' => 'SYNTHETIC-SITE',
+        'task_patient_issuer' => 'SYNTHETIC-ISSUER',
+        'task_author_id' => '4',
+        'task_modalities' => 'CT',
+        'task_delete_file' => false,
+        'task_document_type_applicable' => true,
+        'task_document_type' => '11502-2',
+    ], $defaultAuthor),
+    $automaticContext
+);
+$defaultAuthorXmlText = mb_convert_encoding('Autor Padrão Não Cadastrado', 'ISO-8859-1', 'UTF-8');
+$expect(str_contains($defaultAuthorDocument->content, '<task_author_id>999</task_author_id>'), 'Default author ID 999 must reach XML');
+$expect(str_contains($defaultAuthorDocument->content, '<task_author_humanname_family>' . $defaultAuthorXmlText . '</task_author_humanname_family>'), 'Default author text must reach XML integral');
+$expect(str_contains($defaultAuthorDocument->content, '<task_author_humanname_given></task_author_humanname_given>'), 'Default author given must be empty in XML');
+$expect(str_contains($defaultAuthorDocument->content, '<task_author_humanname_middle></task_author_humanname_middle>'), 'Default author middle must be empty in XML');
+$expect(!str_contains($defaultAuthorDocument->content, 'task_author_source'), 'Default author source must remain internal');
+
+$controlledDefault = $resolver->resolve(
+    $noClinicalMetadata,
+    $defaultConfiguration,
+    $controlledContext,
+    array_replace($noClinicalMetadata, ['task_author_source' => 'default', 'task_author_id' => '999'])
+);
+$expect($controlledDefault['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Default author must not alter controlled production');
+$expect($controlledDefault['task_author_id_resolution'] === 'SOURCE_NOT_ALLOWED_FOR_MODE', 'Controlled production default source must be blocked explicitly');
+
 $clearRuntime();
 $disabled = $resolver->resolveForNoSendDiagnostic($noClinicalMetadata, [], $automaticContext, $noClinicalMetadata);
 $expect($disabled['author_source'] === PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED, 'Disabled fallback must remain unresolved');
@@ -252,6 +322,7 @@ $clearRuntime();
 echo "PHILIPS_SUBMISSION_AUTHOR_RESOLVER_STATIC_OK\n";
 echo "CLINICAL_PRECEDENCE=PASS\n";
 echo "EXPLICIT_CONFIGURATION=PASS\n";
+echo "DEFAULT_AUTOMATIC_AUTHOR=PASS\n";
 echo "TASK_AUTHOR_ID_LOOKUP=PASS\n";
 echo "TENANT_SCOPE=PASS\n";
 echo "FLAT_AUTHOR_CONTRACT=PASS\n";

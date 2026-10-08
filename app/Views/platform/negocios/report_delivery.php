@@ -257,6 +257,8 @@ $transportLabels = [
                                     </div>
                                     <div class="col-md-8"><label class="form-label" for="nondicom-task-document-name"><?= $escape(t('philips_non_dicom.task_document_name_label')) ?></label><input class="form-control" id="nondicom-task-document-name" data-submission-field data-field="task_document_name" data-required></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-author-id"><?= $escape(t('philips_non_dicom.task_author_id_label')) ?></label><input class="form-control" id="nondicom-task-author-id" data-submission-field data-field="task_author_id" data-required></div>
+                                    <div class="col-md-4"><label class="form-label" for="nondicom-task-author-source"><?= $escape(t('philips_non_dicom.task_author_source_label')) ?></label><select class="form-select" id="nondicom-task-author-source" data-submission-field data-field="task_author_source" aria-describedby="nondicom-task-author-source-help"><option value=""><?= $escape(t('philips_non_dicom.task_author_source_clinical')) ?></option><option value="bi_medicos"><?= $escape(t('philips_non_dicom.task_author_source_bi_medicos')) ?></option><option value="default"><?= $escape(t('philips_non_dicom.task_author_source_default')) ?></option></select><div class="form-text" id="nondicom-task-author-source-help"><?= $escape(t('philips_non_dicom.task_author_source_select_help')) ?></div></div>
+                                    <div class="col-md-8"><label class="form-label" for="nondicom-task-author-name"><?= $escape(t('philips_non_dicom.task_author_name_label')) ?></label><input class="form-control" id="nondicom-task-author-name" data-submission-field data-field="task_author_humanname_family" aria-describedby="nondicom-task-author-name-help"><div class="form-text" id="nondicom-task-author-name-help"><?= $escape(t('philips_non_dicom.task_author_name_help')) ?></div></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-tenant-context"><?= $escape(t('philips_non_dicom.tenant_label')) ?></label><input class="form-control" id="nondicom-tenant-context" value="<?= $escape(($tenant['nome'] ?? $tenant['razao_social'] ?? '') . ' (#' . (int) ($tenant['id'] ?? 0) . ')') ?>" readonly><div class="form-text"><?= $escape(t('philips_non_dicom.tenant_help')) ?></div></div>
                                     <div class="col-12"><div class="form-text"><?= $escape(t('philips_non_dicom.task_author_source_help')) ?></div></div>
                                     <div class="col-md-4"><label class="form-label" for="nondicom-task-type-applicable"><?= $escape(t('philips_non_dicom.task_document_type_applicable_label')) ?></label><select class="form-select" id="nondicom-task-type-applicable" data-submission-field data-field="task_document_type_applicable" data-required><option value="1"><?= $escape(t('philips_non_dicom.sim')) ?></option><option value="0"><?= $escape(t('philips_non_dicom.nao')) ?></option></select></div>
@@ -601,6 +603,9 @@ $transportLabels = [
     const serverPacs = document.getElementById('destination-server-pacs');
     const siteIdField = document.getElementById('nondicom-task-site-id');
     const taskSiteAliasField = document.getElementById('nondicom-task-site-id-alias');
+    const taskAuthorSourceField = document.getElementById('nondicom-task-author-source');
+    const taskAuthorIdField = document.getElementById('nondicom-task-author-id');
+    const taskAuthorNameField = document.getElementById('nondicom-task-author-name');
     const enabled = document.getElementById('destination-enabled');
     const productionConfirmation = document.getElementById('destination-confirm-production-activation');
     const productionConfirmationBox = document.getElementById('production-activation-confirmation');
@@ -674,7 +679,9 @@ $transportLabels = [
             });
         }
         syncTaskSiteAliasRequirement();
+        syncTaskAuthorSource();
         populateActiveFields();
+        syncTaskAuthorSource();
     }
 
     function populateActiveFields() {
@@ -717,6 +724,22 @@ $transportLabels = [
         if (!active) taskSiteAliasField.value = '';
     }
 
+    function syncTaskAuthorSource() {
+        if (!taskAuthorSourceField || !taskAuthorIdField || !taskAuthorNameField) return;
+        const active = transport.value === 'philips_non_dicom'
+            && submissionProfile
+            && submissionProfile.value === 'submission_document';
+        const isDefault = active && taskAuthorSourceField.value === 'default';
+        taskAuthorNameField.required = isDefault;
+        taskAuthorIdField.readOnly = isDefault;
+        if (isDefault) {
+            taskAuthorIdField.value = '999';
+            taskAuthorIdField.title = <?= json_encode(t('philips_non_dicom.task_author_default_id_title'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        } else {
+            taskAuthorIdField.removeAttribute('title');
+        }
+    }
+
     function setSelectedInstitutions(rawNames) {
         const selected = new Set(String(rawNames || '').split('||').filter(Boolean));
         institutionSelectors.forEach((input) => { input.checked = selected.has(input.value); });
@@ -734,6 +757,7 @@ $transportLabels = [
         productionConfirmation.required = confirmationRequired;
         if (!production) productionConfirmation.checked = false;
         syncServerPacsRequirement();
+        syncTaskAuthorSource();
     }
 
     function syncServerPacsRequirement() {
@@ -1163,6 +1187,10 @@ $transportLabels = [
     transport.addEventListener('change', () => { currentConfig = {}; renderTransportFields(); syncServerPacsRequirement(); });
     if (serverPacs) serverPacs.addEventListener('change', syncSiteIdFromServer);
     if (submissionProfile) submissionProfile.addEventListener('change', renderTransportFields);
+    if (taskAuthorSourceField) taskAuthorSourceField.addEventListener('change', () => {
+        if (taskAuthorSourceField.value !== 'default' && taskAuthorNameField) taskAuthorNameField.value = '';
+        syncTaskAuthorSource();
+    });
     environment.addEventListener('change', () => { syncEnvironment(); syncTaskSiteAliasRequirement(); });
     enabled.addEventListener('change', syncEnvironment);
     document.querySelectorAll('.toggle-secret').forEach((button) => {
