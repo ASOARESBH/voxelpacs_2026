@@ -28,6 +28,8 @@ A classificação é fail-closed:
 
 Idade nunca é suficiente para classificar `STALE`. Publicação parcial não comprovada, rollback pendente, lock ativo, SHA divergente, owner/mode inválidos ou qualquer campo desconhecido bloqueiam a reconciliação. A classificação histórica só é aceita quando o status `published` é válido, o stage e o snapshot `previous` têm exatamente o mesmo conjunto e SHA dos arquivos, ambos são root-owned `0700`, não há symlinks, os arquivos críticos estão presentes e não existe `partial_publication` manual.
 
+O modo `inspect` também retorna `TRANSACTION_HISTORICAL_PROOF_REASON` como categoria técnica agregada, sem caminho ou conteúdo. Os valores incluem `PROVEN`, `STAGE_PREVIOUS_MISMATCH`, `REQUIRED_ARTIFACT_MISSING`, `VALIDATED_STAGE_NOT_SAFE`, `PREVIOUS_STAGE_NOT_SAFE`, `VALIDATED_STAGE_OWNER_MODE_INVALID`, `PREVIOUS_STAGE_OWNER_MODE_INVALID`, `VALIDATED_CONTAINS_SYMLINK`, `PREVIOUS_CONTAINS_SYMLINK`, `TRANSACTION_ROOT_OWNER_MODE_INVALID` e `EXPLICIT_PARTIAL_MARKER`.
+
 ## Evidência preservada
 
 O reconcile cria, dentro da transação existente:

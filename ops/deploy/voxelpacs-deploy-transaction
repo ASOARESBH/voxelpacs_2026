@@ -40,6 +40,7 @@ transaction_lock='UNKNOWN'
 transaction_hostname='UNKNOWN'
 transaction_reconciliation='NO'
 transaction_historical_proof='NO'
+transaction_historical_proof_reason='NOT_EVALUATED'
 
 fail() {
   printf 'TRANSACTION=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -246,13 +247,43 @@ stage_matches_previous() {
 
 historical_published_partial_proof() {
   local stage="$transaction_root/validated" previous="$transaction_root/previous" required
-  [[ "$transaction_status" == 'published' ]] || return 1
-  [[ ! -e "$transaction_root/partial_publication" && ! -L "$transaction_root/partial_publication" ]] || return 1
-  [[ "$(/usr/bin/stat -c '%U:%a' "$transaction_root")" == 'root:700' ]] || return 1
-  [[ "$(/usr/bin/stat -c '%U:%a' "$stage")" == 'root:700' ]] || return 1
-  [[ "$(/usr/bin/stat -c '%U:%a' "$previous")" == 'root:700' ]] || return 1
-  [[ "$(/usr/bin/find "$stage" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || return 1
-  [[ "$(/usr/bin/find "$previous" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || return 1
+  transaction_historical_proof_reason='NOT_PROVEN'
+  if [[ "$transaction_status" != 'published' ]]; then
+    transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+    return 1
+  fi
+  if [[ -e "$transaction_root/partial_publication" || -L "$transaction_root/partial_publication" ]]; then
+    transaction_historical_proof_reason='EXPLICIT_PARTIAL_MARKER'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$transaction_root" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='TRANSACTION_ROOT_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if ! safe_dir "$stage"; then
+    transaction_historical_proof_reason='VALIDATED_STAGE_NOT_SAFE'
+    return 1
+  fi
+  if ! safe_dir "$previous"; then
+    transaction_historical_proof_reason='PREVIOUS_STAGE_NOT_SAFE'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$stage" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='VALIDATED_STAGE_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$previous" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='PREVIOUS_STAGE_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if [[ "$(/usr/bin/find "$stage" -xdev -type l | /usr/bin/wc -l)" -ne 0 ]]; then
+    transaction_historical_proof_reason='VALIDATED_CONTAINS_SYMLINK'
+    return 1
+  fi
+  if [[ "$(/usr/bin/find "$previous" -xdev -type l | /usr/bin/wc -l)" -ne 0 ]]; then
+    transaction_historical_proof_reason='PREVIOUS_CONTAINS_SYMLINK'
+    return 1
+  fi
   for required in \
     app/bootstrap.php \
     app/autoload.php \
@@ -262,30 +293,45 @@ historical_published_partial_proof() {
     composer.json \
     composer.lock \
     vendor/autoload.php; do
-    [[ -f "$stage/$required" && ! -L "$stage/$required" ]] || return 1
+    if [[ ! -f "$stage/$required" || -L "$stage/$required" ]]; then
+      transaction_historical_proof_reason='REQUIRED_ARTIFACT_MISSING'
+      return 1
+    fi
   done
-  [[ ! -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]] || return 1
-  stage_matches_previous
+  if [[ -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]]; then
+    transaction_historical_proof_reason='LEGACY_FLAT_CONFIG_PRESENT'
+    return 1
+  fi
+  if ! stage_matches_previous; then
+    transaction_historical_proof_reason='STAGE_PREVIOUS_MISMATCH'
+    return 1
+  fi
+  transaction_historical_proof_reason='PROVEN'
+  return 0
 }
 
 read_partial_publication() {
   local partial_path="$transaction_dir/partial_publication" value
   transaction_historical_proof='NO'
+  transaction_historical_proof_reason='NOT_EVALUATED'
   if safe_file "$partial_path"; then
     value="$(/usr/bin/head -n 1 -- "$partial_path")"
     case "$value" in
       YES|NO) transaction_partial_publication="$value" ;;
       *) transaction_partial_publication='UNKNOWN' ;;
     esac
+    transaction_historical_proof_reason='EXPLICIT_PARTIAL_MARKER'
     return 0
   fi
   case "$transaction_status" in
     publishing)
       transaction_partial_publication='YES'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
       ;;
     published)
       if stage_matches_runtime; then
         transaction_partial_publication='NO'
+        transaction_historical_proof_reason='NOT_REQUIRED_RUNTIME_MATCH'
       elif historical_published_partial_proof; then
         transaction_partial_publication='YES'
         transaction_historical_proof='YES'
@@ -295,12 +341,15 @@ read_partial_publication() {
       ;;
     rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check)
       transaction_partial_publication='NO'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
       ;;
     aborted|stale|rollback_pending|UNKNOWN)
       transaction_partial_publication='UNKNOWN'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
       ;;
     *)
       transaction_partial_publication='UNKNOWN'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
       ;;
   esac
 }
@@ -379,6 +428,7 @@ read_transaction() {
   transaction_hostname='UNKNOWN'
   transaction_reconciliation='NO'
   transaction_historical_proof='NO'
+  transaction_historical_proof_reason='NOT_EVALUATED'
 
   if ! safe_dir "$transaction_dir"; then
     read_deploy_process_state
@@ -431,6 +481,7 @@ print_result() {
   printf 'TRANSACTION_LOCK=%s\n' "$transaction_lock"
   printf 'TRANSACTION_RECONCILIATION=%s\n' "$transaction_reconciliation"
   printf 'TRANSACTION_HISTORICAL_PROOF=%s\n' "$transaction_historical_proof"
+  printf 'TRANSACTION_HISTORICAL_PROOF_REASON=%s\n' "$transaction_historical_proof_reason"
   printf 'CLASSIFICATION=%s\n' "$transaction_classification"
 }
 
