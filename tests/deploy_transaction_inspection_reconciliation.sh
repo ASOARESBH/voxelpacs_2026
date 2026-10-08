@@ -26,6 +26,13 @@ for marker in \
   'resolve_rollback_transaction'; do
   grep -Fq -- "$marker" "$publisher" || fail "publisher_contract_missing:$marker"
 done
+for marker in \
+  '--upgrade' \
+  'EXISTING_HELPER_MISSING_FOR_UPGRADE' \
+  'EXISTING_SUDOERS_MISSING_FOR_UPGRADE' \
+  'UPGRADE_APPLIED='; do
+  grep -Fq -- "$marker" "$provisioner" || fail "provisioner_upgrade_contract_missing:$marker"
+done
 if grep -Fq "TRANSACTION_ALREADY_EXISTS" "$publisher"; then fail stale_transaction_rejection_removed; fi
 
 for forbidden in \

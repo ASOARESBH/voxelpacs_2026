@@ -50,9 +50,11 @@ O provisionador não é executado por este PR em produção:
 ```text
 sudo -n bash scripts/provision-deploy-transaction-helper.sh --expected-sha <SHA> --dry-run
 sudo -n bash scripts/provision-deploy-transaction-helper.sh --expected-sha <SHA>
+sudo -n bash scripts/provision-deploy-transaction-helper.sh --expected-sha <SHA> --upgrade --dry-run
+sudo -n bash scripts/provision-deploy-transaction-helper.sh --expected-sha <SHA> --upgrade
 ```
 
-O segundo comando exige operação administrativa separada. A instalação cria somente o helper e o arquivo sudoers mínimo; não modifica o runtime, transação, banco, Worker, Bridge ou Host2.
+Os dois primeiros comandos fazem instalação única. Os dois últimos são a atualização controlada de uma instalação existente: exigem helper e sudoers regulares, root-owned e com modos `0750`/`0440`, validam a nova fonte pela SHA do checkout, usam arquivos temporários e preservam cópias locais root-only para restauração se a segunda substituição falhar. `--dry-run` nunca escreve. Nenhum modo modifica o runtime da aplicação, transação, banco, Worker, Bridge ou Host2.
 
 ## Limites
 
