@@ -24,6 +24,7 @@ backup_sha=''
 reload_bridge='NO'
 workdir=''
 lock_fd=''
+bridge_instances='NOT_CHECKED'
 
 fail() {
   printf 'BRIDGE_PUBLISH=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -186,10 +187,14 @@ installed_sha256="$(/usr/bin/sha256sum -- "$RUNTIME_FILE" | /usr/bin/awk '{print
 if [[ "$reload_bridge" == 'YES' ]]; then
   /usr/bin/systemctl restart "$BRIDGE_UNIT"
   /usr/bin/systemctl is-active --quiet "$BRIDGE_UNIT" || fail 'BRIDGE_RESTART_FAILED'
-  [[ "$(/usr/bin/pgrep -fc '[p]hilips_folder_bridge.py')" -eq 1 ]] || fail 'BRIDGE_INSTANCE_COUNT_INVALID'
+  bridge_pid="$(/usr/bin/systemctl show -p MainPID --value "$BRIDGE_UNIT")"
+  [[ "$bridge_pid" =~ ^[1-9][0-9]*$ ]] || fail 'BRIDGE_MAINPID_INVALID'
+  bridge_command="$(/usr/bin/ps -p "$bridge_pid" -o args=)"
+  [[ "$bridge_command" == *'/usr/bin/python3 /opt/voxelpacs/report-delivery-gateway/philips_folder_bridge.py'* ]] || fail 'BRIDGE_MAINPID_BINDING_INVALID'
+  bridge_instances='1'
   bridge_reload='PASS'
 else
   bridge_reload='NOT_EXECUTED'
 fi
 
-printf 'APPLY=PASS\nSOURCE_SHA=%s\nSOURCE_SHA256_PREFIX=%s…\nINSTALLED_SHA256_PREFIX=%s…\nBACKUP=PASS\nBACKUP_SHA256_PREFIX=%s…\nBRIDGE_RELOAD=%s\nBRIDGE_INSTANCES=%s\nBRIDGE_POLICY_CHANGED=NO\nDICOM_CSTORE=NOT_CHANGED\nSMB=NOT_EXECUTED\nTRANSMISSION=NO\n' "$source_sha" "${source_sha256:0:12}" "${installed_sha256:0:12}" "${current_sha256:0:12}" "$bridge_reload" "$(/usr/bin/pgrep -fc '[p]hilips_folder_bridge.py')"
+printf 'APPLY=PASS\nSOURCE_SHA=%s\nSOURCE_SHA256_PREFIX=%s…\nINSTALLED_SHA256_PREFIX=%s…\nBACKUP=PASS\nBACKUP_SHA256_PREFIX=%s…\nBRIDGE_RELOAD=%s\nBRIDGE_INSTANCES=%s\nBRIDGE_POLICY_CHANGED=NO\nDICOM_CSTORE=NOT_CHANGED\nSMB=NOT_EXECUTED\nTRANSMISSION=NO\n' "$source_sha" "${source_sha256:0:12}" "${installed_sha256:0:12}" "${current_sha256:0:12}" "$bridge_reload" "$bridge_instances"
