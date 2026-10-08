@@ -9,6 +9,7 @@
 ```text
 sudo -n /usr/local/sbin/voxelpacs-deploy-transaction inspect --sha <40-hex-sha>
 sudo -n /usr/local/sbin/voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>
+sudo -n /usr/local/sbin/voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc
 ```
 
 O helper aceita somente caller `manus-admin` ou `manus-deploy` via sudoers. Não aceita path, shell, comando, ambiente, motivo livre, banco, `systemctl`, `rm -rf`, `rsync` ou acesso a secrets.
@@ -32,7 +33,9 @@ O modo `inspect` também retorna `TRANSACTION_HISTORICAL_PROOF_REASON` como cate
 
 Quando a comparação alcança as árvores, `inspect` também retorna `TRANSACTION_PROOF_SET_MISMATCHES` (`YES`/`NO`/`NOT_EVALUATED`) e `TRANSACTION_PROOF_HASH_MISMATCHES` (contagem não negativa ou `NOT_EVALUATED`). Nenhum valor contém nomes de arquivos.
 
-Quando o conjunto coincide, a contagem total é subdividida em `TRANSACTION_PROOF_HASH_MISMATCH_APP`, `TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER` e `TRANSACTION_PROOF_HASH_MISMATCH_OTHER`. São contagens agregadas; qualquer divergência continua bloqueando a prova histórica.
+Quando o conjunto coincide, a contagem total é subdividida em `TRANSACTION_PROOF_HASH_MISMATCH_APP`, `TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER` e `TRANSACTION_PROOF_HASH_MISMATCH_OTHER`. São contagens agregadas; qualquer divergência continua bloqueando a prova histórica normal.
+
+O modo `reconcile-historical` é uma exceção versionada, root-only e exclusiva do SHA D9. Ele aceita somente a assinatura formalmente correlacionada ao delta da PR74 e ao metadata Composer gerado: conjunto stage/previous igual, 3 mismatches de hash, sendo 2 em `app/`, 0 em `public/`, 1 em `vendor/composer/`, 0 em `vendor/` restante e 0 em outras áreas. Exige `published`, sem processo, lock ou rollback pendente, e registra a razão agregada `historical_d9_expected_delta_app2_vendor_composer1`. Outro SHA, contagem, área ou conjunto divergente permanece bloqueado.
 
 ## Evidência preservada
 

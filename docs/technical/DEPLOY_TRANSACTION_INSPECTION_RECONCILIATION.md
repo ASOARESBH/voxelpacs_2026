@@ -9,7 +9,7 @@ O publicador `voxelpacs-deploy-runtime` recusava qualquer diretório já existen
 A branch adiciona:
 
 - `ops/deploy/voxelpacs-deploy-transaction`: helper root-controlled com `inspect` read-only e `reconcile` fail-closed, incluindo a classificação histórica `HISTORICAL_PUBLISHED_PARTIAL`;
-- `ops/sudoers/voxelpacs-deploy-transaction`: allowlist mínima para os dois modos e os dois callers autorizados;
+- `ops/sudoers/voxelpacs-deploy-transaction`: allowlist mínima para os modos e os dois callers autorizados;
 - `scripts/provision-deploy-transaction-helper.sh`: provisionamento administrativo separado, com dry-run, SHA exata, `visudo` e modo `--upgrade` idempotente para instalações existentes;
 - testes isolados para os estados e proteções;
 - documentação operacional;
@@ -42,6 +42,8 @@ O inspector emite `TRANSACTION_HISTORICAL_PROOF_REASON` com uma categoria agrega
 Quando as árvores são comparadas, ele também emite `TRANSACTION_PROOF_SET_MISMATCHES` e `TRANSACTION_PROOF_HASH_MISMATCHES` como estado/contagem agregados, sem nomes de arquivo.
 
 A contagem de hashes é decomposta nas categorias `app`, `public`, `vendor/composer`, `vendor` residual e `other`; essa decomposição é apenas diagnóstica e não transforma divergência em prova.
+
+O modo adicional `reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc` é uma exceção estreita para a transação D9 já correlacionada: exige `published`, sem processo/lock/rollback, conjunto stage/previous igual e exatamente `3` mismatches (`app=2`, `public=0`, `vendor/composer=1`, `vendor residual=0`, `other=0`). Outro SHA, contagem ou categoria permanece `UNKNOWN` e bloqueado. A evidência registra a razão agregada, preserva a transação e não toca no runtime.
 
 ## Integração com novo deploy
 

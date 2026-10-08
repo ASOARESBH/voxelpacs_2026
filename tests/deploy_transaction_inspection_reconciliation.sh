@@ -26,6 +26,9 @@ for marker in \
   'resolve_rollback_transaction'; do
   grep -Fq -- "$marker" "$publisher" || fail "publisher_contract_missing:$marker"
 done
+for marker in 'reconcile-historical' 'HISTORICAL_D9_SHA'; do
+  grep -Fq -- "$marker" "$helper" || fail "helper_contract_missing:$marker"
+done
 for marker in \
   '--upgrade' \
   'EXISTING_HELPER_MISSING_FOR_UPGRADE' \
@@ -216,7 +219,51 @@ out="$(run_helper reconcile --sha "$sha")"
 grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 12. rollback pendente bloqueia reconciliação
+# 14. D9 histórico: somente a assinatura formalmente comprovada é aceita
+sha='d9abd9dec1302654afa2a6f556064212d503c0bc'
+tx="$fixture_root/releases/transactions/$sha"
+rm -f -- "$fixture_root/app/fixture.txt"
+make_tx published
+mkdir -p "$tx/previous"
+cp -a -- "$tx/validated/." "$tx/previous/"
+for required in \
+  app/bootstrap.php \
+  app/autoload.php \
+  app/Config/ReportDeliveryRuntimeConfig.php \
+  public/index.php \
+  bin/report_delivery_worker.php \
+  composer.json \
+  composer.lock \
+  vendor/autoload.php \
+  app/historical-one.php \
+  app/historical-two.php \
+  vendor/composer/historical.php; do
+  mkdir -p "$tx/validated/$(dirname "$required")"
+  mkdir -p "$tx/previous/$(dirname "$required")"
+  printf 'same\n' > "$tx/validated/$required"
+  printf 'same\n' > "$tx/previous/$required"
+done
+printf 'stage-one\n' > "$tx/validated/app/historical-one.php"
+printf 'stage-two\n' > "$tx/validated/app/historical-two.php"
+printf 'stage-composer\n' > "$tx/validated/vendor/composer/historical.php"
+chmod 0700 "$tx/previous"
+sudo -n chown -R root:root -- "$tx"
+out="$(run_helper inspect --sha "$sha")"
+grep -Fxq 'TRANSACTION_HISTORICAL_PROOF_REASON=STAGE_PREVIOUS_MISMATCH' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCHES=3' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCH_APP=2' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC=0' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER=1' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER=0' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCH_OTHER=0' <<<"$out"
+out="$(run_helper reconcile-historical --sha "$sha")"
+grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
+grep -Fxq 'RECONCILIATION_STATUS=APPROVED' <<<"$out"
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
+
+# 15. rollback pendente bloqueia reconciliação
+sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+tx="$fixture_root/releases/transactions/$sha"
 make_tx rolled_back_after_failure
 printf 'pending\n' > "$tx/rollback.pending"
 sudo -n chown -R root:root -- "$tx"
@@ -224,7 +271,7 @@ if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail rollback_pending
 [[ ! -e "$tx/reconciliation/approved" ]] || fail rollback_marker_created
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 13. reconciliação preserva a transação e cria evidência
+# 16. reconciliação preserva a transação e cria evidência
 make_tx rolled_back_after_failure
 printf 'original\n' > "$tx/state.tsv"
 original_status="$(cat "$tx/status")"
@@ -248,6 +295,7 @@ sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 # 15. inspect selects the latest publication run without replacing the root transaction
 sha_run='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 tx_run="$fixture_root/releases/transactions/$sha_run"
+printf 'fixture\n' > "$fixture_root/app/fixture.txt"
 mkdir -p "$tx_run/runs/20260101T000000Z-1/validated"
 chmod 0700 "$tx_run" "$tx_run/runs" "$tx_run/runs/20260101T000000Z-1" "$tx_run/runs/20260101T000000Z-1/validated"
 printf 'rolled_back_after_failure\n' > "$tx_run/status"
@@ -261,4 +309,4 @@ grep -Fxq 'TRANSACTION_STATUS=published' <<<"$out"
 grep -Fxq 'CLASSIFICATION=COMPLETED' <<<"$out"
 
 printf 'DEPLOY_TRANSACTION_INSPECTION_RECONCILIATION=PASS\n'
-printf 'CASES=15\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'
+printf 'CASES=16\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'
