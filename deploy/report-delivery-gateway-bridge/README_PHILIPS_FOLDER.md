@@ -14,6 +14,8 @@ voxelpacs-philips-folder-bridge.service
 
 `voxelpacs-report-delivery-bridge.service` executa `bridge_server.py` e permanece reservado ao contrato DICOM/C-STORE. Ele não é o transportador do Destination 7 e não deve ser apontado para PDF+XML.
 
+O código da unidade Philips é atualizado somente pelo publisher root-controlled `scripts/publish-philips-folder-bridge.sh`. O publisher exige o hostname canônico, SHA da `main`, SHA-256 do arquivo, validação AST Python e caminhos fixos; `--dry-run` não grava, `--apply` cria backup root-only e substitui atomicamente apenas `philips_folder_bridge.py`, e `--rollback-sha` restaura somente um backup validado. `--reload` reinicia exclusivamente `voxelpacs-philips-folder-bridge.service` e confirma uma instância ativa. O publisher não altera EnvironmentFile, allowlist, DICOM/C-STORE, Worker, banco, SMB ou transmissão.
+
 Para o primeiro envio controlado do Destination 7, o fragmento `philips_folder_bridge.destination7.single_test.env.example` documenta somente o escopo não secreto `tenant=2`, `destination=7`, `mode=single_test` e o placeholder do Job. O Job real deve ser preenchido apenas no EnvironmentFile root-owned após preflight e autorização separada; o fragmento não é instalável diretamente.
 
 ## Limites obrigatórios
