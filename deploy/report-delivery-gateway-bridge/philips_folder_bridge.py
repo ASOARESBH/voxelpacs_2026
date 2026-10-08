@@ -329,6 +329,34 @@ class Handler(BaseHTTPRequestHandler):
                 len(payload),
             )
 
+    def log_policy_rejection(
+        self,
+        job_id: int,
+        tenant_id: object,
+        destination_id: object,
+        failure_stage: str,
+    ) -> None:
+        safe_job = str(job_id) if isinstance(job_id, int) and job_id > 0 else "unknown"
+        safe_tenant = str(tenant_id) if re.fullmatch(r"[0-9]{1,20}", str(tenant_id)) else "unknown"
+        safe_destination = (
+            str(destination_id)
+            if re.fullmatch(r"[0-9]{1,20}", str(destination_id))
+            else "unknown"
+        )
+        safe_stage = failure_stage if failure_stage in {
+            "PACKAGE_PRECHECK",
+            "PATIENT_NAME_POLICY",
+            "ENVELOPE_POLICY",
+        } else "unknown"
+        LOG.warning(
+            "event=philips_policy_rejected job_id=%s tenant_id=%s "
+            "destination_id=%s failure_stage=%s reason_category=policy_rejected",
+            safe_job,
+            safe_tenant,
+            safe_destination,
+            safe_stage,
+        )
+
     def log_envelope_diagnostics(
         self,
         job_id: int,
@@ -578,6 +606,7 @@ class Handler(BaseHTTPRequestHandler):
             and (POLICY.mode == "destination" or job_id == POLICY.allowed_job_id)
         )
         if not permitted:
+            self.log_policy_rejection(job_id, tenant_id, destination_id_header, "PACKAGE_PRECHECK")
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         if abs(int(time.time()) - request_time) > MAX_CLOCK_SKEW_SECONDS:
@@ -596,6 +625,7 @@ class Handler(BaseHTTPRequestHandler):
             or delivery_profile_header != "submission_document"
             or transport_header != "philips_non_dicom"
         ):
+            self.log_policy_rejection(job_id, tenant_id, destination_id_header, "PATIENT_NAME_POLICY")
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         if allow_patient_name_as_family and (
@@ -606,6 +636,7 @@ class Handler(BaseHTTPRequestHandler):
             or delivery_profile_header != "submission_document"
             or transport_header != "philips_non_dicom"
         ):
+            self.log_policy_rejection(job_id, tenant_id, destination_id_header, "PATIENT_NAME_POLICY")
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         envelope = self.headers.get("X-VOXEL-Secret-Envelope", "")
@@ -643,6 +674,7 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(HTTPStatus.UNAUTHORIZED, {"error": "invalid_signature"})
             return
         if not envelope or POLICY.envelope_private_key is None or POLICY.transport != "smb":
+            self.log_policy_rejection(job_id, tenant_id, destination_id_header, "ENVELOPE_POLICY")
             self.respond(HTTPStatus.FORBIDDEN, {"error": "policy_rejected"})
             return
         stage_diagnostics = stage_diagnostics_enabled(
