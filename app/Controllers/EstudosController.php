@@ -14,6 +14,7 @@ use App\Services\DesktopStudyLaunchService;
 use App\Services\InstitutionResolverService;
 use App\Services\GrupoModalidadeService;
 use App\Services\PedidoMedicoService;
+use App\Services\UserStudyScopeService;
 use App\Services\WorklistPreferenceService;
 
 /**
@@ -130,6 +131,7 @@ class EstudosController extends Controller
             $modalidadeService = new GrupoModalidadeService();
             $modalityScope = $modalidadeService->scopeForUser($usuarioLogadoId, $tenantId);
             $modalidadeService->appendStudyScope($where, $params, $modalityScope);
+            (new UserStudyScopeService())->appendStudyScope($where, $params, $usuarioLogadoId, $tenantId);
         }
 
         return compact('where', 'params', 'institutionNames', 'usaInstitutionFilter', 'isMedicoFiltro', 'modalityScope');
@@ -138,6 +140,9 @@ class EstudosController extends Controller
     private function podeAbrirPorModalidade(array $estudo, ?int $tenantId, bool $bypassGlobal): bool
     {
         if (!$tenantId || $bypassGlobal || !(int) Auth::userId()) return true;
+        if (!(new UserStudyScopeService())->allowsStudy($estudo, (int) Auth::userId(), (int) $tenantId)) {
+            return false;
+        }
         $service = new GrupoModalidadeService();
         $scope = $service->scopeForUser((int) Auth::userId(), (int) $tenantId);
         return $service->allowsStoredModalities((string) ($estudo['modalities'] ?? ''), $scope);
@@ -599,6 +604,14 @@ class EstudosController extends Controller
             }
         }
 
+        if ($tenantId && $usuarioLogadoId > 0) {
+            $unidades = (new UserStudyScopeService())->allowedInstitutionNamesForUser(
+                $usuarioLogadoId,
+                (int) $tenantId,
+                $unidades
+            );
+        }
+
         // ── Médicos para o dropdown ───────────────────────────────────────────────────────
         // Fonte: bi_medicos (cadastro oficial) — não mais DISTINCT assumido_por dos estudos.
         // Regra de visibilidade:
@@ -814,7 +827,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_name, modalities, tenant_id, servidor_id
+                "SELECT id, orthanc_id, study_instance_uid, patient_name, institution_name, modalities, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );
             $stmt->execute($params);
@@ -985,7 +998,7 @@ class EstudosController extends Controller
                 $where .= ' AND 1=0';
             }
             $stmt = $pdo->prepare(
-                "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name, modalities,
+                "SELECT id, orthanc_id, study_instance_uid, patient_id, patient_name, institution_name, modalities,
                         accession_number, tenant_id, servidor_id
                  FROM bi_pacs_estudos WHERE {$where} LIMIT 1"
             );

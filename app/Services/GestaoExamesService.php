@@ -34,6 +34,7 @@ class GestaoExamesService
     {
         $study = $this->repo->findStudyContext($studyId, $tenantId);
         if (!$study) return null;
+        if (!$this->userStudyScopeAllows($study, $currentUserId, $tenantId)) return null;
 
         $reportSituacao = strtolower(trim((string) ($study['report_situacao'] ?? '')));
         $chatPending = ($study['chat_status'] ?? '') === 'pendente';
@@ -102,6 +103,10 @@ class GestaoExamesService
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
             }
+            if (!$this->userStudyScopeAllows($study, $userId, $tenantId)) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
             if ((string) ($study['situacao'] ?? '') === 'pendente') {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_pendente'];
@@ -165,6 +170,10 @@ class GestaoExamesService
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
             }
+            if (!$this->userStudyScopeAllows($study, $userId, $tenantId)) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
             if ((string) ($study['situacao'] ?? '') === 'pendente') {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_pendente'];
@@ -220,6 +229,10 @@ class GestaoExamesService
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
             }
+            if (!$this->userStudyScopeAllows($study, $userId, $tenantId)) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'estudo_nao_encontrado'];
+            }
             if ((string) ($study['situacao'] ?? '') === 'pendente') {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'chat_pendente'];
@@ -258,11 +271,18 @@ class GestaoExamesService
     {
         if ($bypassGlobal) return true;
         if ($userId <= 0) return false;
+        $study = $this->repo->findStudyAccessContext($studyId, $tenantId);
+        if (!$study || !$this->userStudyScopeAllows($study, $userId, $tenantId)) return false;
         $groups = new GrupoModalidadeService();
         $scope = $groups->scopeForUser($userId, $tenantId);
         if (empty($scope['restricted'])) return true;
-        $modalities = $this->repo->findStudyModalities($studyId, $tenantId);
-        return $modalities !== null && $groups->allowsStoredModalities($modalities, $scope);
+        return $groups->allowsStoredModalities((string) ($study['modalities'] ?? ''), $scope);
+    }
+
+    private function userStudyScopeAllows(array $study, int $userId, int $tenantId): bool
+    {
+        if ($userId <= 0 || $tenantId <= 0) return false;
+        return (new UserStudyScopeService($this->repo->pdo()))->allowsStudy($study, $userId, $tenantId);
     }
 
     private function priorityAudit(int $studyId, int $tenantId): array

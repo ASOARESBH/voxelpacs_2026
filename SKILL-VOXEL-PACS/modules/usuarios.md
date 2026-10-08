@@ -40,6 +40,14 @@ As regras de notificação por grupo usam as colunas booleanas de `bi_grupo_noti
 
 As telas de `/usuarios`, grupos, notificações e regras de acesso usam o partial compartilhado `app/Views/usuarios/_navigation.php`. Ele mantém as quatro rotas visíveis para usuários autorizados, marca somente a rota atual como ativa e preserva a visibilidade limitada na lista principal quando o usuário não pode administrar o tenant. O estilo `.usuarios-tabs-bar`/`.usuarios-tab-btn` fica no CSS global `public/assets/css/pacs.css`, evitando que uma tela dependa de CSS inline de outra.
 
+## Visibilidade individual de estudos
+
+`/usuarios/create` e `/usuarios/{id}/edit` exibem o card **Visibilidade de Estudos** abaixo do vínculo com médico. A política é por usuário e pode ser configurada para qualquer perfil; ela não concede módulos, abertura de imagens, assinatura, liberação ou administração, que continuam sob RBAC e os gates próprios. Cada regra é uma combinação tenant-scoped de `InstitutionName` e modalidade; `*` significa todas as modalidades daquela instituição, inclusive as que o PACS venha a receber no futuro.
+
+`UserStudyScopeService` é a fonte única para carregar instituições/modalidades, validar novamente o tenant e persistir a configuração. A ausência das tabelas mantém o comportamento legado. Médicos já vinculados com `bi_medico_unidades` são pré-preenchidos como política ativa com `*`; médicos sem unidades legadas não recebem uma política vazia que bloquearia seu acesso. A projeção legada continua sendo atualizada quando a nova política é salva, preservando o motor de SLA durante a transição.
+
+O endpoint de médicos não aceita mais `unidades[]` como fonte de alteração. A visibilidade deve ser ajustada no cadastro do usuário vinculado. O POST de usuários exige guard administrativo, vínculo tenant-scoped e CSRF, e rejeita instituição/modalidade que não pertença ao catálogo do tenant.
+
 ## Referências
 
 - [`UsuariosController`](../../app/Controllers/UsuariosController.php)
@@ -53,3 +61,6 @@ As telas de `/usuarios`, grupos, notificações e regras de acesso usam o partia
 - [`2026-10-07_report_signature_preference_postgresql.sql`](../../database/migrations/2026-10-07_report_signature_preference_postgresql.sql)
 - [`2026-10-07_report_signature_preference_mysql.sql`](../../database/migrations/2026-10-07_report_signature_preference_mysql.sql)
 - [`2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql`](../../database/migrations/2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql)
+- [`UserStudyScopeService`](../../app/Services/UserStudyScopeService.php)
+- [`2026-10-08_user_study_scope_postgresql.sql`](../../database/migrations/2026-10-08_user_study_scope_postgresql.sql)
+- [`2026-10-08_user_study_scope_mysql.sql`](../../database/migrations/2026-10-08_user_study_scope_mysql.sql)

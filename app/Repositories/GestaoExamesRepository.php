@@ -58,6 +58,7 @@ class GestaoExamesRepository
                 e.tenant_id,
                 e.study_instance_uid,
                 e.patient_name,
+                e.institution_name,
                 e.modalities,
                 e.study_description,
                 e.study_description_manual,
@@ -99,6 +100,7 @@ class GestaoExamesRepository
             $fallback = $this->pdo->prepare("
                 SELECT
                     e.id, e.tenant_id, e.study_instance_uid, e.patient_name,
+                    e.institution_name,
                     e.modalities, e.study_description, 0 AS study_description_manual,
                     NULL AS medico_solicitante_manual,
                     COALESCE(e.referring_physician_name, '') AS medico_solicitante_exibicao,
@@ -126,7 +128,7 @@ class GestaoExamesRepository
     {
         $stmt = $this->pdo->prepare("
             SELECT
-                id, tenant_id, study_instance_uid, situacao, modalities, study_description,
+                id, tenant_id, study_instance_uid, institution_name, situacao, modalities, study_description,
                 medico_solicitante_manual,
                 informacoes_manual,
                 COALESCE(dicom_priority, '') AS dicom_priority,
@@ -194,6 +196,20 @@ class GestaoExamesRepository
         $stmt->execute(['study_id' => $studyId, 'tenant_id' => $tenantId]);
         $value = $stmt->fetchColumn();
         return $value === false ? null : (string) $value;
+    }
+
+    /** Contexto mínimo para reaplicar a política individual sem carregar PHI. */
+    public function findStudyAccessContext(int $studyId, int $tenantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, tenant_id, institution_name, modalities
+             FROM bi_pacs_estudos
+             WHERE id = :study_id AND tenant_id = :tenant_id
+             LIMIT 1'
+        );
+        $stmt->execute(['study_id' => $studyId, 'tenant_id' => $tenantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
     }
 
     public function updateManualRequestingPhysician(int $studyId, int $tenantId, ?string $value, int $userId): void

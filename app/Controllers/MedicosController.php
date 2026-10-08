@@ -96,16 +96,6 @@ class MedicosController extends Controller
         ]));
     }
 
-    /**
-     * Vínculo médico ↔ Unidade DICOM altera o escopo clínico da Worklist.
-     * Por regra de segurança, somente admin do tenant ou superadmin pode gravá-lo.
-     */
-    private function podeGerenciarUnidades(): bool
-    {
-        return \App\Core\Auth::isPlatformAdmin()
-            || (\App\Core\Auth::user()?->role === 'admin');
-    }
-
     public function store(): void
     {
         $this->denyIfRestricted();
@@ -118,7 +108,7 @@ class MedicosController extends Controller
             'post_keys' => implode(',', array_keys($_POST)),
         ]);
 
-        $resultado = $this->service->cadastrar($_POST, $tenantId, $this->podeGerenciarUnidades());
+        $resultado = $this->service->cadastrar($_POST, $tenantId);
 
         if (!$resultado['ok']) {
             Logger::error('[MedicosController::store] Cadastro falhou — redirecionando com erros', [
@@ -167,7 +157,7 @@ class MedicosController extends Controller
             $medico = array_merge($medico, $formDados);
         }
 
-                $form = $this->service->dadosFormulario($tenantId, $id);
+        $form = $this->service->dadosFormulario($tenantId);
 
         // Busca token Copilot existente para este médico
         $copilotToken   = null;
@@ -215,10 +205,9 @@ class MedicosController extends Controller
             'post_nome' => $_POST['nome'] ?? '(vazio)',
         ]);
 
-        // Não bloqueia a atualização geral do próprio médico. Para perfis não
-        // administrativos, o serviço ignora apenas unidades[] e preserva os
-        // vínculos existentes, inclusive contra POST forjado.
-        $resultado = $this->service->atualizar($id, $_POST, $tenantId, $this->podeGerenciarUnidades());
+        // A visibilidade por InstitutionName/modalidade é administrada em
+        // Usuários. O serviço não aceita mais unidades[] neste endpoint.
+        $resultado = $this->service->atualizar($id, $_POST, $tenantId);
 
         if (!$resultado['ok']) {
             Logger::error('[MedicosController::update] Atualização falhou', [

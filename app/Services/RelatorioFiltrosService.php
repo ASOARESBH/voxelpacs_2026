@@ -9,6 +9,7 @@
  */
 namespace App\Services;
 
+use App\Core\Auth;
 use App\Repositories\RelatorioEstudosRepository;
 
 class RelatorioFiltrosService
@@ -40,6 +41,11 @@ class RelatorioFiltrosService
         [$dataDe, $dataAte] = $this->resolverPeriodo($periodo, $get['data_de'] ?? '', $get['data_ate'] ?? '');
 
         $unidadesAutorizadas = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        $unidadesAutorizadas = (new UserStudyScopeService())->allowedInstitutionNamesForUser(
+            (int) Auth::userId(),
+            $tenantId,
+            $unidadesAutorizadas
+        );
 
         $unidade = trim($get['unidade'] ?? '');
         // Deny-by-default: só aceita a unidade do request se ela pertencer à lista autorizada do tenant.
@@ -63,6 +69,7 @@ class RelatorioFiltrosService
 
         return [
             'tenant_id'                     => $tenantId,
+            'usuario_id'                    => (int) Auth::userId(),
             'institution_names_autorizadas' => $unidadesAutorizadas,
             'periodo'                       => $periodo,
             'data_de'                       => $dataDe,
@@ -85,6 +92,11 @@ class RelatorioFiltrosService
     public function opcoes(int $tenantId, string $unidadeSelecionada = ''): array
     {
         $unidadesAutorizadas = InstitutionResolverService::getInstitutionNamesByTenant($tenantId);
+        $unidadesAutorizadas = (new UserStudyScopeService())->allowedInstitutionNamesForUser(
+            (int) Auth::userId(),
+            $tenantId,
+            $unidadesAutorizadas
+        );
         $unidadesParaModalidade = $unidadeSelecionada !== '' ? [$unidadeSelecionada] : $unidadesAutorizadas;
 
         return [
