@@ -791,7 +791,12 @@ final class PhilipsFolderGatewayBridgeClient
     private function responseReasonCategory(string $body): ?string
     {
         $response = json_decode($body, true);
-        $reason = is_array($response) ? (string) ($response['reason_category'] ?? '') : '';
+        $reason = is_array($response)
+            ? (string) ($response['reason_category'] ?? ($response['error'] ?? ''))
+            : '';
+        if ($reason === 'policy_rejected') {
+            return 'gateway_policy_rejected';
+        }
         $allowed = [
             'connectivity',
             'timeout',
