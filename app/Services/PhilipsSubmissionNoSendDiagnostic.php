@@ -18,6 +18,8 @@ use Throwable;
 final class PhilipsSubmissionNoSendDiagnostic
 {
     private const ALIAS_PATTERN = '/^[A-Za-z0-9._-]{1,120}$/';
+    private const AUTOMATIC_MODE = 'automatic_production';
+    private const CONTROLLED_MODE = 'controlled_production';
 
     public function __construct(
         private readonly PDO $pdo,
@@ -78,11 +80,28 @@ final class PhilipsSubmissionNoSendDiagnostic
             $result['request_status'] = (string) ($job['request_status'] ?? '');
             $result['attempt_count'] = (int) ($job['attempt_count'] ?? -1);
 
-            $this->assertIdentity($job, $tenantId, $jobId);
             $payload = $this->decodeObject($job['payload_json'] ?? null, 'PAYLOAD_INVALID');
             $configuration = $this->decodeObject($job['configuration_json'] ?? null, 'CONFIGURATION_INVALID');
-            $this->assertAliasSnapshot($job, $payload, (string) ($job['request_dispatch_mode'] ?? ''));
+            $dispatchMode = $this->dispatchMode($payload, $job);
+            $result['alias_source'] = $dispatchMode === self::AUTOMATIC_MODE
+                ? 'runtime_destination_context'
+                : 'frozen_request_payload';
+            $this->assertIdentity($job, $payload, $tenantId, $jobId, $dispatchMode);
+            $this->assertPayloadIdentity($job, $payload, $tenantId, $dispatchMode);
+            $this->assertAliasSnapshot($job, $payload, $dispatchMode);
             $result['alias_valid'] = 'PASS';
+
+            if ($dispatchMode === self::AUTOMATIC_MODE) {
+                $snapshot = (new \App\Repositories\ReportDeliveryRequestRepository($this->pdo))->findReportVersion(
+                    $tenantId,
+                    (int) ($job['report_id'] ?? 0),
+                    (int) ($job['report_version'] ?? 0)
+                );
+                if ($snapshot === null || !$this->canonicalBindingPass($tenantId, $job, $snapshot)) {
+                    throw new RuntimeException('CANONICAL_BINDING_MISMATCH');
+                }
+                $result['canonical_binding'] = 'PASS';
+            }
 
             $validation = $this->producer->validateNoSend($job, $configuration, $payload);
             if (($validation['xml_serialized'] ?? 'FAIL') !== 'PASS') {
@@ -93,7 +112,6 @@ final class PhilipsSubmissionNoSendDiagnostic
             $result['author_decision'] = (string) ($validation['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED);
             $result['author_fallback_used'] = (string) ($validation['author_fallback_used'] ?? 'NO');
             $result['task_author_id_resolution'] = (string) ($validation['task_author_id_resolution'] ?? 'NOT_PRESENT');
-            $result['canonical_binding'] = 'NOT_REVALIDATED';
             $result['status'] = 'PASS';
         } catch (Throwable $error) {
             $result['failure_code'] = $this->failureCode($error);
@@ -113,8 +131,11 @@ final class PhilipsSubmissionNoSendDiagnostic
             "SELECT j.id, j.outbox_id, j.destination_id, j.tenant_id, j.estabelecimento_id,
                     j.transport, j.delivery_profile, j.status, j.attempt_count,
                     o.delivery_request_id, o.report_id, o.report_version, o.estudo_id,
-                    o.payload_json,
+                    o.status AS outbox_status,
+                    o.event_type, o.payload_json,
                     d.ambiente, d.transport AS destination_transport,
+                    d.enabled AS destination_enabled, d.disparar_na_liberacao AS destination_auto,
+                    d.servidor_pacs_id AS destination_server_id,
                     d.task_site_id_alias, d.configuration_json,
                     r.status AS request_status,
                     r.destination_id AS request_destination_id,
@@ -139,22 +160,34 @@ final class PhilipsSubmissionNoSendDiagnostic
         return is_array($row) ? $row : null;
     }
 
-    /** @param array<string,mixed> $job */
-    private function assertIdentity(array $job, int $tenantId, int $jobId): void
+    /** @param array<string,mixed> $job @param array<string,mixed> $payload */
+    private function assertIdentity(array $job, array $payload, int $tenantId, int $jobId, string $dispatchMode): void
     {
         if ((int) ($job['id'] ?? 0) !== $jobId || (int) ($job['tenant_id'] ?? 0) !== $tenantId) {
             throw new RuntimeException('TENANT_SCOPE_MISMATCH');
         }
         if ((int) ($job['destination_id'] ?? 0) !== 7
-            || (int) ($job['request_destination_id'] ?? 0) !== 7
             || (string) ($job['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($job['destination_transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($job['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
-            || (string) ($job['request_delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
             || (string) ($job['ambiente'] ?? '') !== 'producao'
+            || (string) ($job['outbox_status'] ?? '') !== 'queued'
+            || (int) ($job['destination_enabled'] ?? 0) !== 1
+            || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode
+            || !in_array($dispatchMode, [self::CONTROLLED_MODE, self::AUTOMATIC_MODE], true)) {
+            throw new RuntimeException('JOB_IDENTITY_MISMATCH');
+        }
+        if ($dispatchMode === self::AUTOMATIC_MODE) {
+            if ((int) ($job['delivery_request_id'] ?? 0) > 0
+                || (int) ($job['destination_auto'] ?? 0) !== 1
+                || (string) ($job['event_type'] ?? '') !== 'report.released') {
+                throw new RuntimeException('JOB_IDENTITY_MISMATCH');
+            }
+        } elseif ((int) ($job['request_destination_id'] ?? 0) !== 7
+            || (string) ($job['request_delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
             || (string) ($job['request_ambiente'] ?? '') !== 'producao'
             || (string) ($job['request_transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-            || !in_array((string) ($job['request_dispatch_mode'] ?? ''), ['controlled_production', 'automatic_production'], true)) {
+            || (string) ($job['request_dispatch_mode'] ?? '') !== self::CONTROLLED_MODE) {
             throw new RuntimeException('JOB_IDENTITY_MISMATCH');
         }
         if ((string) ($job['status'] ?? '') !== 'queued'
@@ -164,9 +197,38 @@ final class PhilipsSubmissionNoSendDiagnostic
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $payload */
+    private function assertPayloadIdentity(array $job, array $payload, int $tenantId, string $dispatchMode): void
+    {
+        if ($dispatchMode === self::CONTROLLED_MODE) {
+            return;
+        }
+        foreach ([
+            'tenant_id' => $tenantId,
+            'report_id' => (int) ($job['report_id'] ?? 0),
+            'report_version' => (int) ($job['report_version'] ?? 0),
+            'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+            'dispatch_mode' => self::AUTOMATIC_MODE,
+        ] as $field => $expected) {
+            if ((string) ($payload[$field] ?? '') !== (string) $expected) {
+                throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
+            }
+        }
+        if ((int) ($payload['delivery_request_id'] ?? 0) > 0
+            || trim((string) ($payload['task_site_id_alias'] ?? '')) !== '') {
+            throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
+        }
+    }
+
+    /** @param array<string,mixed> $job @param array<string,mixed> $payload */
     private function assertAliasSnapshot(array $job, array $payload, string $dispatchMode): void
     {
         $destinationAlias = trim((string) ($job['task_site_id_alias'] ?? ''));
+        if ($dispatchMode === self::AUTOMATIC_MODE) {
+            if (preg_match(self::ALIAS_PATTERN, $destinationAlias) !== 1) {
+                throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
+            }
+            return;
+        }
         $requestAlias = trim((string) ($job['request_task_site_id_alias'] ?? ''));
         $payloadAlias = trim((string) ($payload['task_site_id_alias'] ?? ''));
         if (preg_match(self::ALIAS_PATTERN, $destinationAlias) !== 1
@@ -177,6 +239,44 @@ final class PhilipsSubmissionNoSendDiagnostic
             || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode) {
             throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
         }
+    }
+
+    /** @param array<string,mixed> $payload @param array<string,mixed> $job */
+    private function dispatchMode(array $payload, array $job): string
+    {
+        $payloadMode = trim((string) ($payload['dispatch_mode'] ?? ''));
+        $requestMode = trim((string) ($job['request_dispatch_mode'] ?? ''));
+        if ($payloadMode === self::AUTOMATIC_MODE && $requestMode === '') {
+            return self::AUTOMATIC_MODE;
+        }
+        if ($payloadMode === self::CONTROLLED_MODE && $requestMode === self::CONTROLLED_MODE) {
+            return self::CONTROLLED_MODE;
+        }
+        throw new RuntimeException('JOB_IDENTITY_MISMATCH');
+    }
+
+    /** @param array<string,mixed> $job @param array<string,mixed> $report */
+    private function canonicalBindingPass(int $tenantId, array $job, array $report): bool
+    {
+        $destinationServerId = (int) ($job['destination_server_id'] ?? 0);
+        $studyServerId = (int) ($report['estudo_servidor_id'] ?? 0);
+        if ($destinationServerId <= 0 || $destinationServerId !== $studyServerId) {
+            return false;
+        }
+        $server = (new \App\Repositories\ReportDeliveryRequestRepository($this->pdo))
+            ->findTenantPacsServer($tenantId, $destinationServerId);
+        if (!$server) {
+            return false;
+        }
+        $configuration = json_decode((string) ($job['configuration_json'] ?? '{}'), true);
+        $submission = is_array($configuration['philips_submission'] ?? null)
+            ? $configuration['philips_submission']
+            : [];
+        return trim((string) ($submission['task_site_id'] ?? '')) !== ''
+            && hash_equals(
+                trim((string) ($submission['task_site_id'] ?? '')),
+                trim((string) ($server['nome'] ?? ''))
+            );
     }
 
     /** @return array<string,mixed> */

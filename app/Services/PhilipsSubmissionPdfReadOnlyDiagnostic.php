@@ -17,6 +17,8 @@ use Throwable;
 final class PhilipsSubmissionPdfReadOnlyDiagnostic
 {
     private const ALIAS_PATTERN = '/^[A-Za-z0-9._-]{1,120}$/';
+    private const AUTOMATIC_MODE = 'automatic_production';
+    private const CONTROLLED_MODE = 'controlled_production';
 
     public function __construct(
         private readonly PDO $pdo,
@@ -93,16 +95,17 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             $snapshotService = $this->snapshots ?? new ReportDeliveryRequestSnapshotService($this->pdo, $requestRepository);
             $request = $requestId > 0 ? $requestRepository->findRequest($tenantId, $requestId) : null;
             $destination = $destinationId > 0 ? $requestRepository->findDestination($tenantId, $destinationId) : null;
-            if ($request === null || $destination === null) {
-                throw new RuntimeException('REQUEST_DESTINATION_NOT_FOUND');
+            if ($destination === null) {
+                throw new RuntimeException('DESTINATION_NOT_FOUND');
             }
 
-            $this->assertIdentity($job, $request, $destination, $tenantId, $jobId);
             $payload = $this->decodeObject($job['payload_json'] ?? null, 'PAYLOAD_INVALID');
             $configuration = $this->decodeObject($destination['configuration_json'] ?? null, 'CONFIGURATION_INVALID');
-            $this->assertPayloadIdentity($job, $request, $payload, $tenantId);
+            $dispatchMode = $this->dispatchMode($payload, $request);
+            $this->assertIdentity($job, $request, $destination, $payload, $tenantId, $jobId, $dispatchMode);
+            $this->assertPayloadIdentity($job, $request, $payload, $tenantId, $dispatchMode);
 
-            $aliasPass = $this->aliasSnapshotPass($destination, $request, $payload);
+            $aliasPass = $this->aliasSnapshotPass($destination, $request, $payload, $dispatchMode);
             $result['task_site_id_alias_validation'] = $aliasPass ? 'PASS' : 'FAIL';
             $result['task_site_id_alias'] = $aliasPass ? 'VALID_FROZEN_ASCII' : 'INVALID_OR_DRIFTED';
             if (!$aliasPass) {
@@ -119,18 +122,30 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             }
             $result['snapshot'] = 'PASS';
 
-            $digestChecks = $this->digestChecks($tenantId, $requestId, $request, $destination, $reportSnapshot);
-            $result['snapshot_digest'] = $digestChecks['snapshot_digest'] ? 'PASS' : 'FAIL';
-            $result['destination_digest'] = $digestChecks['destination_digest'] ? 'PASS' : 'FAIL';
-            $result['destination_timestamp_validation'] = $digestChecks['destination_timestamp'] ? 'PASS' : 'FAIL';
-            if (!$digestChecks['snapshot_digest']) {
-                throw new RuntimeException('SNAPSHOT_DIGEST_MISMATCH');
-            }
-            if (!$digestChecks['destination_digest']) {
-                throw new RuntimeException('DESTINATION_DIGEST_MISMATCH');
-            }
-            if (!$digestChecks['destination_timestamp']) {
-                throw new RuntimeException('DESTINATION_CHANGED_AFTER_AUTHORIZATION');
+            $digestChecks = $dispatchMode === self::CONTROLLED_MODE
+                ? $this->digestChecks($tenantId, $requestId, $request, $destination, $reportSnapshot)
+                : [
+                    'snapshot_digest' => true,
+                    'destination_digest' => true,
+                    'destination_timestamp' => true,
+                ];
+            if ($dispatchMode === self::CONTROLLED_MODE) {
+                $result['snapshot_digest'] = $digestChecks['snapshot_digest'] ? 'PASS' : 'FAIL';
+                $result['destination_digest'] = $digestChecks['destination_digest'] ? 'PASS' : 'FAIL';
+                $result['destination_timestamp_validation'] = $digestChecks['destination_timestamp'] ? 'PASS' : 'FAIL';
+                if (!$digestChecks['snapshot_digest']) {
+                    throw new RuntimeException('SNAPSHOT_DIGEST_MISMATCH');
+                }
+                if (!$digestChecks['destination_digest']) {
+                    throw new RuntimeException('DESTINATION_DIGEST_MISMATCH');
+                }
+                if (!$digestChecks['destination_timestamp']) {
+                    throw new RuntimeException('DESTINATION_CHANGED_AFTER_AUTHORIZATION');
+                }
+            } else {
+                $result['snapshot_digest'] = 'NOT_APPLICABLE';
+                $result['destination_digest'] = 'NOT_APPLICABLE';
+                $result['destination_timestamp_validation'] = 'NOT_APPLICABLE';
             }
 
             $canonicalPass = $this->canonicalBindingPass($tenantId, $destination, $reportSnapshot);
@@ -141,8 +156,10 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             }
 
             $job['delivery_request_id'] = $requestId;
-            $job['dispatch_mode'] = (string) ($request['dispatch_mode'] ?? '');
+            $job['dispatch_mode'] = $dispatchMode;
             $job['ambiente'] = (string) ($destination['ambiente'] ?? '');
+            $job['delivery_profile'] = PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
+            $job['task_site_id_alias'] = (string) ($destination['task_site_id_alias'] ?? '');
             $job['pdf_revision_id'] = (int) ($request['pdf_revision_id'] ?? 0);
 
             $pdf = $this->readImmutablePdf($job);
@@ -175,7 +192,10 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
                 throw new RuntimeException('XML_VALIDATION_FAILED');
             }
 
-            $correlationPass = $this->correlates($document, $payload, $aliasPass, $pdfValid, $pdfGenerated);
+            $expectedAlias = $dispatchMode === self::AUTOMATIC_MODE
+                ? trim((string) ($destination['task_site_id_alias'] ?? ''))
+                : trim((string) ($payload['task_site_id_alias'] ?? ''));
+            $correlationPass = $this->correlates($document, $aliasPass, $pdfValid, $pdfGenerated, $expectedAlias);
             $result['pdf_xml_correlation'] = $correlationPass ? 'PASS' : 'FAIL';
             if (!$correlationPass) {
                 throw new RuntimeException('PDF_XML_CORRELATION_FAILED');
@@ -201,6 +221,7 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
                     j.transport, j.delivery_profile, j.status, j.attempt_count,
                     j.locked_at, j.locked_by,
                     o.delivery_request_id, o.report_id, o.report_version, o.estudo_id,
+                    o.event_type,
                     o.payload_json, o.status AS outbox_status
                FROM pacs_report_delivery_jobs j
                INNER JOIN pacs_report_delivery_outbox o
@@ -214,42 +235,73 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
         return is_array($row) ? $row : null;
     }
 
-    /** @param array<string,mixed> $job @param array<string,mixed> $request @param array<string,mixed> $destination */
-    private function assertIdentity(array $job, array $request, array $destination, int $tenantId, int $jobId): void
+    /** @param array<string,mixed> $job @param array<string,mixed>|null $request @param array<string,mixed> $destination @param array<string,mixed> $payload */
+    private function assertIdentity(
+        array $job,
+        ?array $request,
+        array $destination,
+        array $payload,
+        int $tenantId,
+        int $jobId,
+        string $dispatchMode
+    ): void
     {
         if ((int) ($job['id'] ?? 0) !== $jobId
             || (int) ($job['tenant_id'] ?? 0) !== $tenantId
-            || (int) ($request['tenant_id'] ?? 0) !== $tenantId
             || (int) ($destination['tenant_id'] ?? 0) !== $tenantId
             || (int) ($job['destination_id'] ?? 0) !== 7
-            || (int) ($request['destination_id'] ?? 0) !== 7
             || (int) ($destination['id'] ?? 0) !== 7
-            || (int) ($request['report_id'] ?? 0) !== (int) ($job['report_id'] ?? 0)
-            || (int) ($request['report_version'] ?? 0) !== (int) ($job['report_version'] ?? 0)
-            || (int) ($request['estudo_id'] ?? 0) !== (int) ($job['estudo_id'] ?? 0)
             || (string) ($job['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($job['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
             || (string) ($destination['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($destination['ambiente'] ?? '') !== 'producao'
-            || (string) ($request['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
-            || (string) ($request['ambiente'] ?? '') !== 'producao'
-            || (string) ($request['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
-            || (string) ($request['dispatch_mode'] ?? '') !== 'controlled_production'
+            || (int) ($destination['enabled'] ?? 0) !== 1
+            || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode
             || (string) ($job['status'] ?? '') !== 'queued'
             || (string) ($job['outbox_status'] ?? '') !== 'queued'
-            || (string) ($request['status'] ?? '') !== 'armed'
             || (int) ($job['attempt_count'] ?? -1) !== 0
             || ($job['locked_at'] ?? null) !== null
             || ($job['locked_by'] ?? null) !== null
         ) {
             throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
         }
+        if ($dispatchMode === self::AUTOMATIC_MODE) {
+            if ($request !== null
+                || (int) ($job['delivery_request_id'] ?? 0) > 0
+                || (int) ($destination['disparar_na_liberacao'] ?? 0) !== 1
+                || (string) ($job['event_type'] ?? '') !== 'report.released'
+                || (int) ($job['report_id'] ?? 0) !== (int) ($payload['report_id'] ?? 0)
+                || (int) ($job['report_version'] ?? 0) !== (int) ($payload['report_version'] ?? 0)
+                || (int) ($job['estudo_id'] ?? 0) !== (int) ($payload['estudo_id'] ?? 0)) {
+                throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+            }
+        } elseif ($request === null
+            || (int) ($request['tenant_id'] ?? 0) !== $tenantId
+            || (int) ($request['destination_id'] ?? 0) !== 7
+            || (int) ($request['report_id'] ?? 0) !== (int) ($job['report_id'] ?? 0)
+            || (int) ($request['report_version'] ?? 0) !== (int) ($job['report_version'] ?? 0)
+            || (int) ($request['estudo_id'] ?? 0) !== (int) ($job['estudo_id'] ?? 0)
+            || (string) ($request['transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            || (string) ($request['ambiente'] ?? '') !== 'producao'
+            || (string) ($request['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
+            || (string) ($request['dispatch_mode'] ?? '') !== self::CONTROLLED_MODE
+            || (string) ($request['status'] ?? '') !== 'armed') {
+            throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+        }
     }
 
-    /** @param array<string,mixed> $destination @param array<string,mixed> $request @param array<string,mixed> $payload */
-    private function aliasSnapshotPass(array $destination, array $request, array $payload): bool
+    /** @param array<string,mixed> $destination @param array<string,mixed>|null $request @param array<string,mixed> $payload */
+    private function aliasSnapshotPass(array $destination, ?array $request, array $payload, string $dispatchMode): bool
     {
         $destinationAlias = trim((string) ($destination['task_site_id_alias'] ?? ''));
+        if ($dispatchMode === self::AUTOMATIC_MODE) {
+            return preg_match(self::ALIAS_PATTERN, $destinationAlias) === 1
+                && !array_key_exists('task_site_id_alias', $payload)
+                && !array_key_exists('delivery_request_id', $payload);
+        }
+        if ($request === null) {
+            return false;
+        }
         $requestAlias = trim((string) ($request['task_site_id_alias'] ?? ''));
         $payloadAlias = trim((string) ($payload['task_site_id_alias'] ?? ''));
         return preg_match(self::ALIAS_PATTERN, $destinationAlias) === 1
@@ -260,9 +312,36 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             && (string) ($payload['dispatch_mode'] ?? '') === 'controlled_production';
     }
 
-    /** @param array<string,mixed> $job @param array<string,mixed> $request @param array<string,mixed> $payload */
-    private function assertPayloadIdentity(array $job, array $request, array $payload, int $tenantId): void
+    /** @param array<string,mixed> $job @param array<string,mixed>|null $request @param array<string,mixed> $payload */
+    private function assertPayloadIdentity(
+        array $job,
+        ?array $request,
+        array $payload,
+        int $tenantId,
+        string $dispatchMode
+    ): void
     {
+        if ($dispatchMode === self::AUTOMATIC_MODE) {
+            foreach ([
+                'tenant_id' => $tenantId,
+                'report_id' => (int) ($job['report_id'] ?? 0),
+                'report_version' => (int) ($job['report_version'] ?? 0),
+                'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+                'dispatch_mode' => self::AUTOMATIC_MODE,
+            ] as $field => $expected) {
+                if ((string) ($payload[$field] ?? '') !== (string) $expected) {
+                    throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
+                }
+            }
+            if ((int) ($payload['delivery_request_id'] ?? 0) > 0
+                || trim((string) ($payload['task_site_id_alias'] ?? '')) !== '') {
+                throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
+            }
+            return;
+        }
+        if ($request === null) {
+            throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
+        }
         $expected = [
             'tenant_id' => $tenantId,
             'report_id' => (int) ($job['report_id'] ?? 0),
@@ -283,6 +362,20 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
                 throw new RuntimeException('PAYLOAD_IDENTITY_MISMATCH');
             }
         }
+    }
+
+    /** @param array<string,mixed> $payload @param array<string,mixed>|null $request */
+    private function dispatchMode(array $payload, ?array $request): string
+    {
+        $payloadMode = trim((string) ($payload['dispatch_mode'] ?? ''));
+        $requestMode = trim((string) ($request['dispatch_mode'] ?? ''));
+        if ($payloadMode === self::AUTOMATIC_MODE && $request === null && $requestMode === '') {
+            return self::AUTOMATIC_MODE;
+        }
+        if ($payloadMode === self::CONTROLLED_MODE && $request !== null && $requestMode === self::CONTROLLED_MODE) {
+            return self::CONTROLLED_MODE;
+        }
+        throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
     }
 
     /** @param array<string,mixed> $request @param array<string,mixed> $destination @param array<string,mixed> $report @return array{snapshot_digest:bool,destination_digest:bool,destination_timestamp:bool} */
@@ -386,10 +479,10 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
 
     private function correlates(
         PhilipsSubmissionDocument $document,
-        array $payload,
         bool $aliasPass,
         bool $pdfValid,
-        bool $pdfGenerated
+        bool $pdfGenerated,
+        string $expectedAlias
     ): bool {
         if (!$aliasPass || !$pdfValid || !$pdfGenerated) {
             return false;
@@ -409,10 +502,9 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             }
             $taskFileName = (string) ($xml->document->task_file_name ?? '');
             $taskSiteId = (string) ($xml->document->task_site_id ?? '');
-            $alias = trim((string) ($payload['task_site_id_alias'] ?? ''));
             return $taskFileName === $document->pdfFilename
                 && $taskSiteId !== ''
-                && hash_equals($taskSiteId, $alias);
+                && hash_equals($taskSiteId, trim($expectedAlias));
         } finally {
             libxml_clear_errors();
             libxml_use_internal_errors($previous);
