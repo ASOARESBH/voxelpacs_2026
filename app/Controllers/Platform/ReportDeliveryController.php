@@ -832,7 +832,10 @@ class ReportDeliveryController extends Controller
             }
             $decoded['philips_submission']['task_site_id'] = $serverName;
         }
-        $this->validateTransportConfiguration($transport, $decoded);
+        $allowDefaultAuthor = $isPhilipsSubmissionDocument
+            && $environment === 'producao'
+            && !empty($_POST['disparar_na_liberacao']);
+        $this->validateTransportConfiguration($transport, $decoded, $allowDefaultAuthor);
         if ($secret !== '') {
             $decodedSecret = json_decode($secret, true);
             if (!is_array($decodedSecret) || json_last_error() !== JSON_ERROR_NONE) {
@@ -860,7 +863,7 @@ class ReportDeliveryController extends Controller
     }
 
     /** @param array<string,mixed> $configuration */
-    private function validateTransportConfiguration(string $transport, array $configuration): void
+    private function validateTransportConfiguration(string $transport, array $configuration, bool $allowDefaultAuthor = false): void
     {
         $host = trim((string) ($configuration['host'] ?? ''));
         $port = (int) ($configuration['port'] ?? 0);
@@ -936,13 +939,13 @@ class ReportDeliveryController extends Controller
                 throw new DomainException('Configuração SMB Non-DICOM inválida.');
             }
             if ($profile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
-                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null);
+                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null, $allowDefaultAuthor);
             }
         }
     }
 
     /** @param mixed $submission */
-    private function validatePhilipsSubmissionConfiguration(mixed $submission): void
+    private function validatePhilipsSubmissionConfiguration(mixed $submission, bool $allowDefaultAuthor = false): void
     {
         if (!is_array($submission)) {
             throw new DomainException('Configure o contrato Philips XML antes de habilitar este perfil.');
@@ -972,9 +975,29 @@ class ReportDeliveryController extends Controller
         }
 
         if (array_key_exists('task_author_source', $submission)) {
-            if (($submission['task_author_source'] ?? null) !== 'bi_medicos'
-                || preg_match('/^[1-9][0-9]*$/', trim((string) ($submission['task_author_id'] ?? ''))) !== 1) {
-                throw new DomainException('A fonte do autor Philips deve ser bi_medicos com identificador numérico positivo.');
+            $authorSource = $submission['task_author_source'] ?? null;
+            if (!is_string($authorSource) || !in_array($authorSource, ['bi_medicos', 'default'], true)) {
+                throw new DomainException('A fonte do autor Philips deve ser bi_medicos ou default.');
+            }
+            if ($authorSource === 'bi_medicos'
+                && preg_match('/^[1-9][0-9]*$/', trim((string) ($submission['task_author_id'] ?? ''))) !== 1) {
+                throw new DomainException('A fonte bi_medicos exige identificador numérico positivo.');
+            }
+            if ($authorSource === 'default') {
+                if (!$allowDefaultAuthor) {
+                    throw new DomainException('A fonte default do autor Philips exige disparo automático em produção.');
+                }
+                $defaultAuthorName = $submission['task_author_humanname_family'] ?? null;
+                if (trim((string) ($submission['task_author_id'] ?? '')) !== '999') {
+                    throw new DomainException('A fonte default exige o identificador técnico 999.');
+                }
+                if (!is_string($defaultAuthorName)
+                    || trim($defaultAuthorName) === ''
+                    || strlen($defaultAuthorName) > 1000
+                    || preg_match('//u', $defaultAuthorName) !== 1
+                    || preg_match('/[\x00-\x1F\x7F]/', $defaultAuthorName) === 1) {
+                    throw new DomainException('Informe o texto do autor padrão para o perfil Philips XML.');
+                }
             }
         }
 

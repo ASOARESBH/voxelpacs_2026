@@ -17,6 +17,7 @@ final class PhilipsSubmissionAuthorResolver
 {
     public const SOURCE_CLINICAL = 'CLINICAL';
     public const SOURCE_BI_MEDICOS = 'BI_MEDICOS';
+    public const SOURCE_DEFAULT_CONFIGURATION = 'DEFAULT_CONFIGURATION';
     public const SOURCE_EXPLICIT_CONFIGURATION = 'EXPLICIT_CONFIGURATION';
     public const SOURCE_FALLBACK_MISSING_DATA = 'FALLBACK_MISSING_DATA';
     public const SOURCE_UNRESOLVED = 'UNRESOLVED';
@@ -110,6 +111,29 @@ final class PhilipsSubmissionAuthorResolver
             ]);
         }
 
+        if ($taskAuthorSource === 'default') {
+            if ($dispatchMode !== 'automatic_production') {
+                $base['task_author_id_resolution'] = 'SOURCE_NOT_ALLOWED_FOR_MODE';
+                return $base;
+            }
+            if ($taskAuthorIdResolution !== 'DEFAULT_999') {
+                $base['task_author_id_resolution'] = 'INVALID_DEFAULT_ID';
+                return $base;
+            }
+            $defaultAuthor = $this->defaultConfiguredAuthor($settings);
+            if ($defaultAuthor === null) {
+                $base['task_author_id_resolution'] = 'DEFAULT_TEXT_MISSING';
+                return $base;
+            }
+
+            return array_replace($base, $defaultAuthor, [
+                'task_author_id' => '999',
+                'author_source' => self::SOURCE_DEFAULT_CONFIGURATION,
+                'author_decision' => self::DECISION_REAL_AUTHOR_AVAILABLE,
+                'task_author_id_resolution' => 'DEFAULT_999',
+            ]);
+        }
+
         if ($taskAuthorSource === 'bi_medicos') {
             if ($dispatchMode !== 'automatic_production') {
                 $base['task_author_id_resolution'] = 'SOURCE_NOT_ALLOWED_FOR_MODE';
@@ -130,7 +154,7 @@ final class PhilipsSubmissionAuthorResolver
             ]);
         }
 
-        if ($invalidTaskAuthorSource || ($taskAuthorSource !== null && $taskAuthorSource !== 'bi_medicos')) {
+        if ($invalidTaskAuthorSource || ($taskAuthorSource !== null && !in_array($taskAuthorSource, ['bi_medicos', 'default'], true))) {
             $base['task_author_id_resolution'] = 'INVALID_SOURCE';
             return $base;
         }
@@ -197,6 +221,29 @@ final class PhilipsSubmissionAuthorResolver
         ];
     }
 
+    /** @param array<string,mixed> $settings @return array<string,mixed>|null */
+    private function defaultConfiguredAuthor(array $settings): ?array
+    {
+        $family = $settings['task_author_humanname_family'] ?? null;
+        if (!is_string($family) || trim($family) === '') {
+            return null;
+        }
+
+        try {
+            return [
+                'task_author_humanname_family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent(
+                    $family,
+                    'task_author_humanname_family'
+                ),
+                'task_author_humanname_given' => '',
+                'task_author_humanname_middle' => '',
+                'author_humanname_flat' => true,
+            ];
+        } catch (PhilipsXmlFieldUnresolvedException) {
+            return null;
+        }
+    }
+
     /** @return array{status:string,fields?:array<string,mixed>} */
     private function fallbackConfiguration(bool $diagnosticAllowed, string $dispatchMode): array
     {
@@ -228,6 +275,9 @@ final class PhilipsSubmissionAuthorResolver
 
     private function taskAuthorIdResolution(mixed $taskAuthorId, mixed $taskAuthorSource): string
     {
+        if ($taskAuthorSource === 'default') {
+            return $taskAuthorId === '999' || $taskAuthorId === 999 ? 'DEFAULT_999' : 'INVALID';
+        }
         if ($taskAuthorSource === 'bi_medicos') {
             return $this->positiveInteger($taskAuthorId) === null ? 'INVALID' : 'PENDING_LOOKUP';
         }

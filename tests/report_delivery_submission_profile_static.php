@@ -38,6 +38,9 @@ foreach ([
     'task_document_name',
     'task_author_id',
     'task_author_source',
+    'default',
+    '999',
+    'task_author_humanname_family',
     'task_delete_file',
     'task_document_type_applicable',
     '11502-2',
@@ -53,6 +56,8 @@ foreach ([
     'data-field="task_site_id"',
     'data-field="task_document_name"',
     'data-field="task_author_id"',
+    'data-field="task_author_source"',
+    'data-field="task_author_humanname_family"',
     'task_author_source_help',
     'data-field="task_document_type_applicable"',
     'data-field="task_document_type"',
@@ -83,6 +88,10 @@ expect_profile(
     str_contains($view, "task_site_id_alias: taskSiteAliasField ? taskSiteAliasField.value.trim() : ''"),
     'View capture diagnostics must expose only the sanitized alias field'
 );
+expect_profile(
+    str_contains($view, "if (taskAuthorSourceField.value !== 'default' && taskAuthorNameField) taskAuthorNameField.value = ''"),
+    'View must clear the default author text when another author source is selected'
+);
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
 expect_profile(str_contains($producer, 'PhilipsSubmissionAuthorResolver') && str_contains($producer, 'resolveForNoSendDiagnostic'), 'Package producer must use the dedicated author resolver and isolate diagnostic fallback');
@@ -92,6 +101,10 @@ expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job[
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
 expect_profile(str_contains($authorResolver, "'automatic_production'"), 'Configured author resolution must be scoped to automatic production');
+expect_profile(str_contains($authorResolver, "'task_author_source' => 'default'") || str_contains($authorResolver, "SOURCE_DEFAULT_CONFIGURATION"), 'Default author resolution must be explicit');
+expect_profile(str_contains($authorResolver, "'task_author_id' => '999'"), 'Default author resolution must force technical ID 999');
+expect_profile(str_contains($controller, '$allowDefaultAuthor'), 'Controller must compute an explicit default-author permission');
+expect_profile(str_contains($controller, 'A fonte default do autor Philips exige disparo automático em produção.'), 'Controller must reject default author outside automatic production');
 expect_profile(str_contains($request, 'A fonte bi_medicos deve ser resolvida somente no automatic_production'), 'Controlled production must reject live bi_medicos author lookup');
 foreach (['task_author_humanname_family', 'task_author_humanname_given', 'task_author_humanname_middle'] as $field) {
     expect_profile(str_contains($authorResolver, "'{$field}'"), "Author resolver must accept configured {$field}");
