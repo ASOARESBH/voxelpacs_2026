@@ -86,6 +86,8 @@ Desde 2026-09-28, `App\Config\ReportDeliveryRuntimeConfig` é a fonte única de 
 
 `scripts/configure-report-delivery-runtime.sh` é o aplicador allowlisted e reversível para uma fonte de ambiente autorizada. `--dry-run` não grava; `--apply` exige root e cria backup root-only; `--rollback` restaura apenas um backup sob a raiz autorizada. O mecanismo não reinicia serviço, acessa banco, Bridge, SMB ou Windows. A existência do código versionado não prova aplicação no runtime.
 
+O helper `ops/deploy/voxelpacs-philips-folder-policy-applier` aceita dois modos de policy da Philips Folder: `single_test`, com exatamente um Job positivo, e `destination`, com `jobs=0` como sentinela explícito para restringir a policy ao tenant/Destination. O modo destination somente valida/aplica arquivos root-owned com backup e checksum; não inicia Worker, não chama Bridge, não acessa SMB e não altera DICOM/C-STORE. A ativação operacional continua separada e exige piloto aceito, fila histórica inelegível, novo Job automático validado, reload exclusivo da Bridge e autorização específica.
+
 O artefato runtime deve preservar o layout versionado: `app/*` é publicado em `APP_ROOT/app/*`, enquanto `public/*`, `bin/*`, `routes/*` e `lang/*` permanecem relativos a `APP_ROOT`. O builder `scripts/build-runtime-artifact.sh` valida essa topologia, exige `app/Config/ReportDeliveryRuntimeConfig.php` no caminho aninhado, rejeita a cópia plana legada e exclui `.env`, `storage`, `uploads`, logs, backups, testes, documentação, scripts e migrations. `scripts/build.sh` é apenas o wrapper compatível do builder; `scripts/deploy.sh` extrai somente em `APP_ROOT` e não executa Composer nem chmod recursivo no host.
 
 ## Padrões seguidos

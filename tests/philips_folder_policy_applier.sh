@@ -259,6 +259,61 @@ expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'transiti
 expect_contains "$(cat "$ALLOWLIST")" 'jobs=519' 'transition rollback restored allowlist'
 pass 'transition rollback restores policy and allowlist'
 
+# Destination-mode contract: allow the tenant/Destination policy with no job
+# wildcard; job=0 is the only representation accepted for this mode.
+single_allowlist_saved="$TMP_DIR/single-allowlist-saved"
+cp "$ALLOWLIST" "$single_allowlist_saved"
+DEST_ALLOWLIST="$TMP_DIR/destination-allowlist"
+cat > "$DEST_ALLOWLIST" <<'ALLOW'
+tenant_id=2
+destination_id=7
+jobs=0
+transport=philips_non_dicom
+profile=submission_document
+mode=destination
+ALLOW
+chmod 600 "$DEST_ALLOWLIST"
+DEST_COMMON=(--env-file "$ENV_FILE" --allowlist "$DEST_ALLOWLIST" --backup-root "$BACKUP_ROOT" --expected-host "$HOST_NAME" --tenant-id 2 --destination-id 7 --job-id 0 --transport philips_non_dicom --profile submission_document --mode destination)
+
+output="$($APPLIER --dry-run "${DEST_COMMON[@]}")"
+expect_contains "$output" 'DRY_RUN=PASS' 'destination dry-run'
+expect_contains "$output" 'TARGET_JOB=0' 'destination job sentinel'
+expect_contains "$output" 'MODE=destination' 'destination mode output'
+pass 'destination dry-run with job zero'
+
+expect_not_success "$APPLIER" --dry-run "${DEST_COMMON[@]}" --job-id 519
+bad_destination_allowlist="$TMP_DIR/bad-destination-allowlist"
+sed 's/^jobs=0$/jobs=519/' "$DEST_ALLOWLIST" > "$bad_destination_allowlist"
+chmod 600 "$bad_destination_allowlist"
+expect_not_success "$APPLIER" --dry-run "${DEST_COMMON[@]}" --allowlist "$bad_destination_allowlist"
+bad_single_allowlist="$TMP_DIR/bad-single-allowlist"
+sed 's/^jobs=519$/jobs=0/' "$single_allowlist_saved" > "$bad_single_allowlist"
+chmod 600 "$bad_single_allowlist"
+expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --allowlist "$bad_single_allowlist"
+expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --job-id 0
+pass 'destination rejects positive job and nonzero allowlist sentinel'
+
+destination_backup_output="$($APPLIER --backup-only "${DEST_COMMON[@]}" --unit "$UNIT")"
+expect_contains "$destination_backup_output" 'BACKUP_ONLY=PASS' 'destination backup-only'
+destination_backup_id="$(sed -n 's/^BACKUP_ID=//p' <<<"$destination_backup_output")"
+output="$($APPLIER --apply "${DEST_COMMON[@]}" --backup-id "$destination_backup_id")"
+expect_contains "$output" 'APPLY=PASS' 'destination apply'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_MODE=destination' 'destination mode applied'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=0' 'destination job sentinel applied'
+
+output="$($APPLIER --validate "${DEST_COMMON[@]}")"
+expect_contains "$output" 'VALIDATION=PASS' 'destination validation'
+expect_contains "$output" 'BRIDGE_MODE_DESTINATION=PASS' 'destination mode validation'
+expect_contains "$output" 'EFFECTIVE_ALLOWLIST_JOB=0' 'destination allowlist validation'
+pass 'destination apply and effective validation'
+
+output="$($APPLIER rollback "${DEST_COMMON[@]}" --backup-id "$destination_backup_id")"
+expect_contains "$output" 'ROLLBACK=PASS' 'destination rollback'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_MODE=single_test' 'destination rollback mode'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'destination rollback source job'
+cp "$single_allowlist_saved" "$ALLOWLIST"
+pass 'destination rollback restores previous single-test policy'
+
 # Negative contract matrix.
 expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --tenant-id 3
 expect_not_success "$APPLIER" --dry-run "${COMMON[@]}" --destination-id 6

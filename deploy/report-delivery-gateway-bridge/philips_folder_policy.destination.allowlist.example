@@ -1,0 +1,8 @@
+# Review-only allowlist. Do not install directly.
+# Destination mode is for restricted automatic operation only after separate approval.
+tenant_id=2
+destination_id=7
+jobs=0
+transport=philips_non_dicom
+profile=submission_document
+mode=destination
