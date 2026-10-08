@@ -164,6 +164,13 @@ for _ in {1..200}; do
 done
 [[ -f "$lock_ready" ]]
 out="$(run_helper inspect --sha "$sha")"
+if ! grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"; then
+  for _ in {1..20}; do
+    sleep 0.02
+    out="$(run_helper inspect --sha "$sha")"
+    grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out" && break
+  done
+fi
 grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"
 grep -Fxq 'CLASSIFICATION=ACTIVE' <<<"$out"
 wait "$lock_pid" || true
@@ -197,6 +204,8 @@ out="$(run_helper inspect --sha "$sha")"
 grep -Fxq 'TRANSACTION_PARTIAL_PUBLICATION=YES' <<<"$out"
 grep -Fxq 'TRANSACTION_HISTORICAL_PROOF=YES' <<<"$out"
 grep -Fxq 'TRANSACTION_HISTORICAL_PROOF_REASON=PROVEN' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_SET_MISMATCHES=NO' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_HASH_MISMATCHES=0' <<<"$out"
 grep -Fxq 'CLASSIFICATION=HISTORICAL_PUBLISHED_PARTIAL' <<<"$out"
 out="$(run_helper reconcile --sha "$sha")"
 grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"

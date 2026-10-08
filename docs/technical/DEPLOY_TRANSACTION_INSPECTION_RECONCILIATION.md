@@ -39,6 +39,8 @@ O modo `--upgrade` não aceita cópia manual: valida a instalação anterior, ma
 
 O inspector emite `TRANSACTION_HISTORICAL_PROOF_REASON` com uma categoria agregada da primeira pré-condição não comprovada, sem paths, conteúdo ou dados clínicos. `PROVEN` só aparece quando todas as validações de owner/mode, symlink, artefatos requeridos e igualdade `validated`/`previous` passam.
 
+Quando as árvores são comparadas, ele também emite `TRANSACTION_PROOF_SET_MISMATCHES` e `TRANSACTION_PROOF_HASH_MISMATCHES` como estado/contagem agregados, sem nomes de arquivo.
+
 ## Integração com novo deploy
 
 Após o marcador aprovado, o publicador mantém a transação histórica e cria uma execução nova em:
