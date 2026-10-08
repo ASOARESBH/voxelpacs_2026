@@ -41,6 +41,8 @@ O inspector emite `TRANSACTION_HISTORICAL_PROOF_REASON` com uma categoria agrega
 
 Quando as árvores são comparadas, ele também emite `TRANSACTION_PROOF_SET_MISMATCHES` e `TRANSACTION_PROOF_HASH_MISMATCHES` como estado/contagem agregados, sem nomes de arquivo.
 
+A contagem de hashes é decomposta nas categorias `app`, `public`, `vendor/composer`, `vendor` residual e `other`; essa decomposição é apenas diagnóstica e não transforma divergência em prova.
+
 ## Integração com novo deploy
 
 Após o marcador aprovado, o publicador mantém a transação histórica e cria uma execução nova em:

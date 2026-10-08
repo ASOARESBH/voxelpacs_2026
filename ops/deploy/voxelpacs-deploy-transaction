@@ -43,6 +43,11 @@ transaction_historical_proof='NO'
 transaction_historical_proof_reason='NOT_EVALUATED'
 transaction_proof_set_mismatches='NOT_EVALUATED'
 transaction_proof_hash_mismatches='NOT_EVALUATED'
+transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+transaction_proof_hash_mismatch_other='NOT_EVALUATED'
 
 fail() {
   printf 'TRANSACTION=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -159,7 +164,7 @@ read_deploy_process_state() {
 }
 
 read_lock_state() {
-  local device_hex device_dec device_major device_minor device inode
+  local device_hex device_dec device_major device_minor device_major_hex device_minor_hex inode
   transaction_lock='NO'
   if [[ ! -e "$LOCK_PATH" ]]; then
     return 0
@@ -173,8 +178,24 @@ read_lock_state() {
   device_dec=$((16#$device_hex))
   device_major=$(((device_dec >> 8) & 0xfff))
   device_minor=$(((device_dec & 0xff) | ((device_dec >> 12) & 0xffffff00)))
-  device="$(printf '%x:%02x' "$device_major" "$device_minor")"
-  if /usr/bin/grep -Eq "[[:space:]]${device}:${inode}[[:space:]]" /proc/locks; then
+  device_major_hex="$(printf '%x' "$device_major")"
+  device_minor_hex="$(printf '%x' "$device_minor")"
+  if /usr/bin/awk -v want_major="$device_major_hex" -v want_minor="$device_minor_hex" -v want_inode="$inode" '
+    function normalized(value) {
+      sub(/^0+/, "", value)
+      return value == "" ? "0" : tolower(value)
+    }
+    {
+      split($6, device_parts, ":")
+      if (normalized(device_parts[1]) == normalized(want_major) &&
+          normalized(device_parts[2]) == normalized(want_minor) &&
+          device_parts[3] == want_inode) {
+        found=1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' /proc/locks; then
     transaction_lock='YES'
   fi
 }
@@ -226,6 +247,11 @@ stage_matches_previous() {
   local stage_list previous_list rel stage_hash previous_hash result='0' mismatch_count='0'
   transaction_proof_set_mismatches='NOT_EVALUATED'
   transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
   safe_dir "$stage" || return 1
   safe_dir "$previous" || return 1
   stage_list="$(mktemp)"
@@ -238,6 +264,11 @@ stage_matches_previous() {
     return 1
   fi
   transaction_proof_set_mismatches='NO'
+  transaction_proof_hash_mismatch_app='0'
+  transaction_proof_hash_mismatch_public='0'
+  transaction_proof_hash_mismatch_vendor_composer='0'
+  transaction_proof_hash_mismatch_vendor_other='0'
+  transaction_proof_hash_mismatch_other='0'
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     stage_hash="$(/usr/bin/sha256sum -- "$stage/$rel" | /usr/bin/awk '{print $1}')"
@@ -245,6 +276,13 @@ stage_matches_previous() {
     if [[ "$stage_hash" != "$previous_hash" ]]; then
       mismatch_count=$((mismatch_count + 1))
       result='1'
+      case "$rel" in
+        app/*) transaction_proof_hash_mismatch_app=$((transaction_proof_hash_mismatch_app + 1)) ;;
+        public/*) transaction_proof_hash_mismatch_public=$((transaction_proof_hash_mismatch_public + 1)) ;;
+        vendor/composer/*) transaction_proof_hash_mismatch_vendor_composer=$((transaction_proof_hash_mismatch_vendor_composer + 1)) ;;
+        vendor/*) transaction_proof_hash_mismatch_vendor_other=$((transaction_proof_hash_mismatch_vendor_other + 1)) ;;
+        *) transaction_proof_hash_mismatch_other=$((transaction_proof_hash_mismatch_other + 1)) ;;
+      esac
     fi
   done < "$stage_list"
   transaction_proof_hash_mismatches="$mismatch_count"
@@ -257,6 +295,11 @@ historical_published_partial_proof() {
   transaction_historical_proof_reason='NOT_PROVEN'
   transaction_proof_set_mismatches='NOT_EVALUATED'
   transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
   if [[ "$transaction_status" != 'published' ]]; then
     transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
     return 1
@@ -440,6 +483,11 @@ read_transaction() {
   transaction_historical_proof_reason='NOT_EVALUATED'
   transaction_proof_set_mismatches='NOT_EVALUATED'
   transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
 
   if ! safe_dir "$transaction_dir"; then
     read_deploy_process_state
@@ -495,6 +543,11 @@ print_result() {
   printf 'TRANSACTION_HISTORICAL_PROOF_REASON=%s\n' "$transaction_historical_proof_reason"
   printf 'TRANSACTION_PROOF_SET_MISMATCHES=%s\n' "$transaction_proof_set_mismatches"
   printf 'TRANSACTION_PROOF_HASH_MISMATCHES=%s\n' "$transaction_proof_hash_mismatches"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_APP=%s\n' "$transaction_proof_hash_mismatch_app"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC=%s\n' "$transaction_proof_hash_mismatch_public"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER=%s\n' "$transaction_proof_hash_mismatch_vendor_composer"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER=%s\n' "$transaction_proof_hash_mismatch_vendor_other"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_OTHER=%s\n' "$transaction_proof_hash_mismatch_other"
   printf 'CLASSIFICATION=%s\n' "$transaction_classification"
 }
 
