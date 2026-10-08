@@ -276,14 +276,15 @@ validate_transition_source() {
   load_target
   validate_source_job_option
 
-  [[ "${CURRENT[PHILIPS_FOLDER_MODE]}" == "$TARGET_MODE" ]] || fail 'SOURCE_POLICY_MODE_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_MODE]}" == 'single_test' ]] || fail 'SOURCE_POLICY_MODE_MISMATCH'
   [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}" == "$TARGET_TENANT" ]] || fail 'SOURCE_POLICY_TENANT_MISMATCH'
   [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'SOURCE_POLICY_DESTINATION_MISMATCH'
   [[ "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'SOURCE_POLICY_BINDING_MISMATCH'
   [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}" == "$SOURCE_JOB" ]] || fail 'SOURCE_POLICY_JOB_MISMATCH'
   [[ "${ALLOWLIST[jobs]}" == "$SOURCE_JOB" ]] || fail 'SOURCE_ALLOWLIST_JOB_MISMATCH'
+  [[ "${ALLOWLIST[mode]}" == 'single_test' ]] || fail 'SOURCE_ALLOWLIST_MODE_MISMATCH'
 
-  for key in tenant_id destination_id transport profile mode; do
+  for key in tenant_id destination_id transport profile; do
     [[ "${ALLOWLIST[$key]}" == "${TARGET[$key]}" ]] || fail "SOURCE_ALLOWLIST_${key^^}_MISMATCH"
   done
 }
@@ -531,11 +532,17 @@ validate_transition_backup_manifest() {
   [[ "$(manifest_value "$manifest" FORMAT)" == '2' ]] || fail 'TRANSITION_BACKUP_FORMAT_UNSUPPORTED'
   [[ "$(manifest_value "$manifest" TARGET_COMPONENT)" == 'philips_folder_bridge_policy_transition' ]] || fail 'TRANSITION_BACKUP_COMPONENT_MISMATCH'
   [[ "$(manifest_value "$manifest" UNIT)" == "$ALLOWED_UNIT" ]] || fail 'TRANSITION_BACKUP_UNIT_MISMATCH'
-  [[ "$(manifest_value "$manifest" TARGET_POLICY)" == 'single_test' ]] || fail 'TRANSITION_BACKUP_POLICY_UNSUPPORTED'
+  value="$(manifest_value "$manifest" TARGET_POLICY)"
+  [[ "$value" == 'single_test' || "$value" == 'destination' ]] || fail 'TRANSITION_BACKUP_POLICY_UNSUPPORTED'
   validate_positive_id TRANSITION_SOURCE_JOB "$(manifest_value "$manifest" SOURCE_JOB)"
   validate_positive_id TRANSITION_TARGET_TENANT "$(manifest_value "$manifest" TARGET_TENANT)"
   validate_positive_id TRANSITION_TARGET_DESTINATION "$(manifest_value "$manifest" TARGET_DESTINATION)"
-  validate_positive_id TRANSITION_TARGET_JOB "$(manifest_value "$manifest" TARGET_JOB)"
+  value="$(manifest_value "$manifest" TARGET_JOB)"
+  if [[ "$(manifest_value "$manifest" TARGET_POLICY)" == 'single_test' ]]; then
+    validate_positive_id TRANSITION_TARGET_JOB "$value"
+  else
+    [[ "$value" == '0' ]] || fail 'TRANSITION_DESTINATION_TARGET_JOB_MUST_BE_ZERO'
+  fi
   [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == 'philips_non_dicom' ]] || fail 'TRANSITION_BACKUP_TRANSPORT_MISMATCH'
   [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == 'submission_document' ]] || fail 'TRANSITION_BACKUP_PROFILE_MISMATCH'
   for key in SOURCE_POLICY_CHECKSUM POLICY_CHECKSUM SOURCE_ALLOWLIST_CHECKSUM ALLOWLIST_CHECKSUM; do

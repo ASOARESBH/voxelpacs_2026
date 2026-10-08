@@ -216,9 +216,9 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
 
 O `--reload` continua separado, exige a mesma policy efetiva e valida exclusivamente `voxelpacs-philips-folder-bridge.service`. Nenhuma etapa deste mecanismo inicia Worker, executa Job, chama Bridge, acessa SMB ou altera DICOM/C-STORE.
 
-### Transição segura entre Jobs single-test
+### Transição segura de policy
 
-Quando a allowlist atual aponta para um Job predecessor e o alvo é outro Job do mesmo tenant/Destination, o `--apply` normal bloqueia corretamente com `TARGET_JOB_NOT_ALLOWLISTED`. Para essa troca existe um fluxo explícito de transição, que aceita somente uma origem e um alvo diferentes:
+Quando a allowlist atual aponta para um Job predecessor, o `--apply` normal bloqueia corretamente se o alvo não for a policy efetiva. Para essa troca existe um fluxo explícito de transição: a origem deve ser sempre `single_test` com um único Job positivo; o alvo pode ser outro `single_test` ou `destination` com `job=0`.
 
 ```bash
 COMMON=(
@@ -274,7 +274,38 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
   --source-job-id 519 --backup-id <TRANSITION_BACKUP_ID>
 ```
 
-O mecanismo rejeita tenant, Destination, transporte, profile, modo, origem ou alvo incompatíveis; a transição continua exclusiva de `single_test` para `single_test` e nunca aceita múltiplos Jobs, wildcard, `destination` mode, reload da unit DICOM/C-STORE, Worker, Bridge request, SMB, banco ou transmissão.
+O mecanismo rejeita tenant, Destination, transporte, profile, modo, origem ou alvo incompatíveis; a transição nunca aceita origem `destination`, múltiplos Jobs, wildcard, Job positivo no alvo `destination`, reload da unit DICOM/C-STORE, Worker, Bridge request, SMB, banco ou transmissão.
+
+Para promover a policy atual de um piloto single-test para automação restrita por tenant/Destination:
+
+```bash
+DESTINATION_TRANSITION=(
+  --env-file <ENV_FILE_PATH>
+  --allowlist <ALLOWLIST_PATH>
+  --backup-root <BACKUP_ROOT>
+  --expected-host <hostname-aprovado>
+  --tenant-id 2 --destination-id 7 --job-id 0
+  --source-job-id 542
+  --transport philips_non_dicom
+  --profile submission_document --mode destination
+)
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-dry-run "${DESTINATION_TRANSITION[@]}"
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-backup-only "${DESTINATION_TRANSITION[@]}" \
+  --unit voxelpacs-philips-folder-bridge.service
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --transition-apply "${DESTINATION_TRANSITION[@]}" \
+  --backup-id <TRANSITION_BACKUP_ID>
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --validate "${DESTINATION_TRANSITION[@]}"
+```
+
+O `transition-apply` escreve atomicamente o EnvironmentFile e a allowlist, valida o alvo e restaura os dois arquivos a partir do backup se a segunda instalação ou a validação final falhar. O reload continua separado.
 
 ### Validação estrutural
 
