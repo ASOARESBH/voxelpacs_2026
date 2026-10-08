@@ -34,7 +34,9 @@ foreach ([
     'SOURCE_CHECKSUM_MISMATCH',
     'INSTALLED_CHECKSUM_MISMATCH',
     'systemctl restart "$BRIDGE_UNIT"',
-    "pgrep -fc '[p]hilips_folder_bridge.py'",
+    'systemctl show -p MainPID --value "$BRIDGE_UNIT"',
+    'ps -p "$bridge_pid" -o args=',
+    'BRIDGE_MAINPID_BINDING_INVALID',
     'DICOM_CSTORE=NOT_CHANGED',
     'SMB=NOT_EXECUTED',
     'TRANSMISSION=NO',
@@ -47,6 +49,7 @@ foreach (['scp ', 'rsync ', 'smbclient', 'DROP ', 'TRUNCATE ', 'INSERT ', 'UPDAT
 }
 
 expect_bridge_publisher(substr_count($script, 'systemctl restart "$BRIDGE_UNIT"') === 1, 'Somente a unidade Philips pode ser reiniciada');
+expect_bridge_publisher(!str_contains($script, 'pgrep -fc'), 'Publisher não pode contar o próprio comando de busca');
 expect_bridge_publisher(str_contains($script, 'BRIDGE_POLICY_CHANGED=NO'), 'Publisher não declara policy inalterada');
 expect_bridge_publisher(str_contains($script, 'ast.parse'), 'Publisher não valida sintaxe Python antes da publicação');
 
