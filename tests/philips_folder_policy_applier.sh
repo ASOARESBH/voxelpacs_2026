@@ -259,6 +259,51 @@ expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'transiti
 expect_contains "$(cat "$ALLOWLIST")" 'jobs=519' 'transition rollback restored allowlist'
 pass 'transition rollback restores policy and allowlist'
 
+# Destination transition contract: move the existing single-test policy for
+# source job 519 to tenant/Destination mode with the explicit job=0 sentinel.
+DESTINATION_TRANSITION_COMMON=(
+  --env-file "$ENV_FILE"
+  --allowlist "$ALLOWLIST"
+  --backup-root "$BACKUP_ROOT"
+  --expected-host "$HOST_NAME"
+  --tenant-id 2
+  --destination-id 7
+  --job-id 0
+  --source-job-id 519
+  --transport philips_non_dicom
+  --profile submission_document
+  --mode destination
+)
+
+output="$($APPLIER --transition-dry-run "${DESTINATION_TRANSITION_COMMON[@]}")"
+expect_contains "$output" 'TRANSITION_DRY_RUN=PASS' 'destination transition dry-run'
+expect_contains "$output" 'TARGET_JOB=0' 'destination transition job sentinel'
+expect_contains "$output" 'MODE=destination' 'destination transition mode'
+pass 'single-test to destination transition dry-run'
+
+destination_transition_backup_output="$($APPLIER --transition-backup-only "${DESTINATION_TRANSITION_COMMON[@]}" --unit "$UNIT")"
+expect_contains "$destination_transition_backup_output" 'TRANSITION_BACKUP_ONLY=PASS' 'destination transition backup-only'
+destination_transition_backup_id="$(sed -n 's/^BACKUP_ID=//p' <<<"$destination_transition_backup_output")"
+output="$($APPLIER --transition-apply "${DESTINATION_TRANSITION_COMMON[@]}" --backup-id "$destination_transition_backup_id")"
+expect_contains "$output" 'TRANSITION_APPLY=PASS' 'destination transition apply'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_MODE=destination' 'destination transition policy mode'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=0' 'destination transition policy sentinel'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=0' 'destination transition allowlist sentinel'
+expect_contains "$(cat "$ALLOWLIST")" 'mode=destination' 'destination transition allowlist mode'
+
+output="$($APPLIER --validate "${DESTINATION_TRANSITION_COMMON[@]}")"
+expect_contains "$output" 'VALIDATION=PASS' 'destination transition validation'
+expect_contains "$output" 'BRIDGE_MODE_DESTINATION=PASS' 'destination transition validation mode'
+pass 'single-test to destination transition apply and validate'
+
+output="$($APPLIER transition-rollback "${DESTINATION_TRANSITION_COMMON[@]}" --backup-id "$destination_transition_backup_id")"
+expect_contains "$output" 'TRANSITION_ROLLBACK=PASS' 'destination transition rollback'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_MODE=single_test' 'destination transition rollback mode'
+expect_contains "$(cat "$ENV_FILE")" 'PHILIPS_FOLDER_ALLOW_JOB_ID=519' 'destination transition rollback job'
+expect_contains "$(cat "$ALLOWLIST")" 'jobs=519' 'destination transition rollback allowlist'
+expect_contains "$(cat "$ALLOWLIST")" 'mode=single_test' 'destination transition rollback allowlist mode'
+pass 'single-test to destination transition rollback'
+
 # Destination-mode contract: allow the tenant/Destination policy with no job
 # wildcard; job=0 is the only representation accepted for this mode.
 single_allowlist_saved="$TMP_DIR/single-allowlist-saved"
