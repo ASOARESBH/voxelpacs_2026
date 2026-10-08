@@ -10,6 +10,7 @@
 sudo -n /usr/local/sbin/voxelpacs-deploy-transaction inspect --sha <40-hex-sha>
 sudo -n /usr/local/sbin/voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>
 sudo -n /usr/local/sbin/voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc
+sudo -n /usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha <40-hex-sha>
 ```
 
 O helper aceita somente caller `manus-admin` ou `manus-deploy` via sudoers. Não aceita path, shell, comando, ambiente, motivo livre, banco, `systemctl`, `rm -rf`, `rsync` ou acesso a secrets.
@@ -25,6 +26,7 @@ A classificação é fail-closed:
 | `aborted`/rollback explícito, sem publicação parcial | `ABORTED` | permitido |
 | marcador explícito `stale`, sem publicação parcial | `STALE` | permitido |
 | `published`, stage/previous completos, root-only, sem symlinks e sem marcador manual de partial | `HISTORICAL_PUBLISHED_PARTIAL` | permitido |
+| `published`, publicação parcial, árvores root-only seguras, divergência agregada comprovada e comando versionado explícito | `HISTORICAL_PUBLISHED_PARTIAL_RECONCILED` | permitido pelo `reconcile-partial` |
 | qualquer evidência insuficiente | `UNKNOWN` | bloqueado |
 
 Idade nunca é suficiente para classificar `STALE`. Publicação parcial não comprovada, rollback pendente, lock ativo, SHA divergente, owner/mode inválidos ou qualquer campo desconhecido bloqueiam a reconciliação. A classificação histórica só é aceita quando o status `published` é válido, o stage e o snapshot `previous` têm exatamente o mesmo conjunto e SHA dos arquivos, ambos são root-owned `0700`, não há symlinks, os arquivos críticos estão presentes e não existe `partial_publication` manual.
@@ -36,6 +38,10 @@ Quando a comparação alcança as árvores, `inspect` também retorna `TRANSACTI
 Quando o conjunto coincide, a contagem total é subdividida em `TRANSACTION_PROOF_HASH_MISMATCH_APP`, `TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER` e `TRANSACTION_PROOF_HASH_MISMATCH_OTHER`. São contagens agregadas; qualquer divergência continua bloqueando a prova histórica normal.
 
 O modo `reconcile-historical` é uma exceção versionada, root-only e exclusiva do SHA D9. Ele aceita somente a assinatura formalmente correlacionada ao delta da PR74 e ao metadata Composer gerado: conjunto stage/previous igual, 3 mismatches de hash, sendo 2 em `app/`, 0 em `public/`, 1 em `vendor/composer/`, 0 em `vendor/` restante e 0 em outras áreas. Exige `published`, sem processo, lock ou rollback pendente, e registra a razão agregada `historical_d9_expected_delta_app2_vendor_composer1`. Outro SHA, contagem, área ou conjunto divergente permanece bloqueado.
+
+O modo `reconcile-partial` é o procedimento administrativo versionado para uma publicação parcial já reconhecida operacionalmente, quando a prova histórica normal não pode exigir igualdade entre `validated` e `previous`. Ele aceita qualquer SHA somente quando o status é `published`, não há processo de deploy, lock ou rollback pendente, a transação e as árvores `validated`/`previous` são root-owned `0700`, não existem symlinks, os artefatos críticos estão presentes, não existe arquivo manual `partial_publication` e a comparação agregada demonstra divergência de conjunto ou pelo menos uma divergência de hash. O comando não recebe caminho, manifesto, motivo, shell ou parâmetro livre; a autorização operacional fica restrita ao caller e ao SHA no sudoers.
+
+Esse modo **não altera** `status`, `pid`, `rollback.pending`, `state.tsv`, `validated` ou `previous`. Ele somente cria a evidência root-only e o marcador `reconciliation/approved` através do helper versionado, com classificação `HISTORICAL_PUBLISHED_PARTIAL_OPERATOR_APPROVED`, `runtime_changed=NO` e `original_preserved=YES`. O publicador usa esse marcador apenas para abrir uma nova run; backup verificável, artefato, drift e SHA da `main` continuam sendo gates independentes.
 
 ## Evidência preservada
 
@@ -67,4 +73,4 @@ Os dois primeiros comandos fazem instalação única. Os dois últimos são a at
 
 ## Limites
 
-Este mecanismo não executa deploy, rollback, migration, Worker, Job, Bridge, SMB, transmissão ou DICOM. A instalação em produção e qualquer `inspect`/`reconcile` de produção exigem autorização operacional separada.
+Este mecanismo não executa deploy, rollback, migration, Worker, Job, Bridge, SMB, transmissão ou DICOM. A instalação em produção e qualquer `inspect`/`reconcile`/`reconcile-partial` de produção exigem autorização operacional separada. Após uma reconciliação parcial aprovada, repetir backup e drift compare antes de iniciar o deploy integral.
