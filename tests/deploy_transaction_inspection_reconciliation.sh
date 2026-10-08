@@ -26,9 +26,11 @@ for marker in \
   'resolve_rollback_transaction'; do
   grep -Fq -- "$marker" "$publisher" || fail "publisher_contract_missing:$marker"
 done
-for marker in 'reconcile-historical' 'HISTORICAL_D9_SHA'; do
+for marker in 'reconcile-historical' 'reconcile-partial' 'HISTORICAL_D9_SHA'; do
   grep -Fq -- "$marker" "$helper" || fail "helper_contract_missing:$marker"
 done
+grep -Fq -- 'manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha [a-f0-9]*' "$sudoers" || fail sudoers_partial_rule_missing_admin
+grep -Fq -- 'manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha [a-f0-9]*' "$sudoers" || fail sudoers_partial_rule_missing_deploy
 for marker in \
   '--upgrade' \
   'EXISTING_HELPER_MISSING_FOR_UPGRADE' \
@@ -186,7 +188,47 @@ if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail partial_reconcil
 [[ ! -e "$tx/reconciliation/approved" ]] || fail partial_marker_created
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 11. publicação histórica com stage/previous completos é reconciliável
+# 11. publicação parcial com stage/previous divergentes exige o modo explícito
+sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+tx="$fixture_root/releases/transactions/$sha"
+rm -f -- "$fixture_root/app/fixture.txt"
+make_tx published
+mkdir -p "$tx/previous"
+chmod 0700 "$tx/previous"
+for required in \
+  app/bootstrap.php \
+  app/autoload.php \
+  app/Config/ReportDeliveryRuntimeConfig.php \
+  public/index.php \
+  bin/report_delivery_worker.php \
+  composer.json \
+  composer.lock \
+  vendor/autoload.php; do
+  mkdir -p "$tx/validated/$(dirname "$required")"
+  printf 'stage\n' > "$tx/validated/$required"
+done
+mkdir -p "$tx/previous/app"
+printf 'previous\n' > "$tx/previous/app/bootstrap.php"
+sudo -n chown -R root:root -- "$tx"
+out="$(run_helper inspect --sha "$sha")"
+grep -Fxq 'TRANSACTION_PARTIAL_PUBLICATION=YES' <<<"$out"
+grep -Fxq 'TRANSACTION_PROOF_SET_MISMATCHES=YES' <<<"$out"
+grep -Fxq 'CLASSIFICATION=UNKNOWN' <<<"$out"
+original_status="$(sudo -n cat "$tx/status")"
+out="$(run_helper reconcile-partial --sha "$sha")"
+grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
+grep -Fxq 'RECONCILIATION_MODE=PARTIAL' <<<"$out"
+grep -Fxq 'OLD_TRANSACTION_PRESERVED=YES' <<<"$out"
+grep -Fxq 'RUNTIME_CHANGED=NO' <<<"$out"
+[[ "$(sudo -n cat "$tx/status")" == "$original_status" ]] || fail partial_status_changed
+out="$(run_helper inspect --sha "$sha")"
+grep -Fxq 'TRANSACTION_RECONCILIATION=YES' <<<"$out"
+grep -Fxq 'TRANSACTION_RECONCILIATION_CLASSIFICATION=HISTORICAL_PUBLISHED_PARTIAL_OPERATOR_APPROVED' <<<"$out"
+grep -Fxq 'CLASSIFICATION=HISTORICAL_PUBLISHED_PARTIAL_RECONCILED' <<<"$out"
+if run_helper reconcile-partial --sha "$sha" >/dev/null 2>&1; then fail duplicate_partial_reconciliation_allowed; fi
+sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
+
+# 12. publicação histórica com stage/previous completos é reconciliável
 make_tx published
 mkdir -p "$tx/previous"
 for required in \
@@ -219,7 +261,7 @@ out="$(run_helper reconcile --sha "$sha")"
 grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 14. D9 histórico: somente a assinatura formalmente comprovada é aceita
+# 13. D9 histórico: somente a assinatura formalmente comprovada é aceita
 sha='d9abd9dec1302654afa2a6f556064212d503c0bc'
 tx="$fixture_root/releases/transactions/$sha"
 rm -f -- "$fixture_root/app/fixture.txt"
@@ -261,7 +303,7 @@ grep -Fxq 'TRANSACTION_RECONCILED=YES' <<<"$out"
 grep -Fxq 'RECONCILIATION_STATUS=APPROVED' <<<"$out"
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 15. rollback pendente bloqueia reconciliação
+# 14. rollback pendente bloqueia reconciliação
 sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 tx="$fixture_root/releases/transactions/$sha"
 make_tx rolled_back_after_failure
@@ -271,7 +313,7 @@ if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail rollback_pending
 [[ ! -e "$tx/reconciliation/approved" ]] || fail rollback_marker_created
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 16. reconciliação preserva a transação e cria evidência
+# 15. reconciliação preserva a transação e cria evidência
 make_tx rolled_back_after_failure
 printf 'original\n' > "$tx/state.tsv"
 original_status="$(cat "$tx/status")"
@@ -287,12 +329,12 @@ sudo -n test -f "$tx/reconciliation/approved" || fail approval_marker_missing
 [[ "$(sudo -n cat "$tx/state.tsv")" == original ]] || fail original_state_changed
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 14. fail-closed after reconciliation: second reconciliation rejected
+# 16. fail-closed after reconciliation: second reconciliation rejected
 sudo -n chown -R root:root -- "$tx"
 if run_helper reconcile --sha "$sha" >/dev/null 2>&1; then fail duplicate_reconciliation_allowed; fi
 sudo -n chown -R "$(id -u):$(id -g)" -- "$tx"
 
-# 15. inspect selects the latest publication run without replacing the root transaction
+# 17. inspect selects the latest publication run without replacing the root transaction
 sha_run='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 tx_run="$fixture_root/releases/transactions/$sha_run"
 printf 'fixture\n' > "$fixture_root/app/fixture.txt"
@@ -309,4 +351,4 @@ grep -Fxq 'TRANSACTION_STATUS=published' <<<"$out"
 grep -Fxq 'CLASSIFICATION=COMPLETED' <<<"$out"
 
 printf 'DEPLOY_TRANSACTION_INSPECTION_RECONCILIATION=PASS\n'
-printf 'CASES=16\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'
+printf 'CASES=17\nREAD_ONLY_INSPECT=PASS\nFAIL_CLOSED=PASS\nPRESERVATION=PASS\nNO_PRODUCTION=PASS\n'

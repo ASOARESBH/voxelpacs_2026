@@ -47,7 +47,9 @@ done
 [[ -z "$(/usr/bin/git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || fail 'WORKTREE_NOT_CLEAN'
 [[ -f "$HELPER_SOURCE" && -f "$SUDOERS_SOURCE" ]] || fail 'SOURCE_FILE_MISSING'
 /usr/bin/bash -n "$HELPER_SOURCE" || fail 'HELPER_SYNTAX_INVALID'
-/usr/bin/grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:[[:space:]]+/usr/local/sbin/voxelpacs-deploy-transaction (inspect|reconcile) --sha \[a-f0-9\]\*' "$SUDOERS_SOURCE" || fail 'SUDOERS_ADMIN_RULE_MISSING'
+/usr/bin/grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:[[:space:]]+/usr/local/sbin/voxelpacs-deploy-transaction (inspect|reconcile|reconcile-partial) --sha \[a-f0-9\]\*' "$SUDOERS_SOURCE" || fail 'SUDOERS_ADMIN_RULE_MISSING'
+/usr/bin/grep -Eq '^manus-deploy[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:[[:space:]]+/usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha \[a-f0-9\]\*' "$SUDOERS_SOURCE" || fail 'SUDOERS_DEPLOY_PARTIAL_RULE_MISSING'
+/usr/bin/grep -Fq -- 'reconcile-partial' "$HELPER_SOURCE" || fail 'PARTIAL_RECONCILIATION_MODE_MISSING'
 if /usr/bin/grep -Eq 'NOPASSWD:[[:space:]]+ALL' "$SUDOERS_SOURCE"; then
   fail 'GENERIC_SUDO_RULE_PRESENT'
 fi
