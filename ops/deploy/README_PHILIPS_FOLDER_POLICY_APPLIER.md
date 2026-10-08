@@ -34,10 +34,9 @@ A configuração do runtime permanece fora do Git. O helper recebe explicitament
 --expected-host NAME
 --tenant-id N
 --destination-id N
---job-id N
---transport philips_non_dicom
---profile submission_document
---mode single_test
+--job-id N|0
+--transport philips_non_dicom --profile submission_document
+--mode single_test|destination
 --unit voxelpacs-philips-folder-bridge.service
 ```
 
@@ -56,6 +55,19 @@ mode=single_test
 
 Embora o primeiro uso previsto seja o Job 519/Destination 7, os valores são argumentos e a allowlist é validada em cada execução. O código não é hardcoded para um Job específico.
 
+Para automação restrita por tenant/Destination, use uma allowlist separada:
+
+```text
+tenant_id=2
+destination_id=7
+jobs=0
+transport=philips_non_dicom
+profile=submission_document
+mode=destination
+```
+
+`jobs=0` é um sentinela fechado: só é aceito junto com `mode=destination`. O modo `single_test` exige exatamente um Job positivo; o modo `destination` não aceita lista, wildcard ou Job positivo. Ambos continuam limitados ao tenant, Destination, transporte e profile informados.
+
 ## Fail-closed
 
 A execução é bloqueada quando houver:
@@ -64,6 +76,7 @@ A execução é bloqueada quando houver:
 - host inesperado;
 - allowlist ausente, vazia, duplicada, ambígua ou incompatível;
 - tenant, Destination, Job, transporte, profile ou mode incompatíveis;
+- `jobs=0` fora de `destination`, ou Job positivo dentro de `destination`;
 - policy atual desconhecida, duplicada ou inconsistente;
 - fallback ou diagnostics ativos;
 - backup ausente, inválido, incompatível ou com checksum divergente;
@@ -159,6 +172,50 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
 
 O `--apply` rejeita ausência de backup, backup incompatível com Job/Destination ou backup cujo checksum não corresponda ao estado atual. Ele não recarrega a unit automaticamente; a separação evita misturar alteração persistente com reinício operacional.
 
+### Modo destination para automação restrita
+
+O modo `destination` não executa Worker, não chama a Bridge, não acessa SMB e não transmite. Ele somente fornece o mecanismo root-controlled para aplicar, com backup verificável, a policy restrita à combinação tenant/Destination autorizada.
+
+Pré-condições operacionais antes de qualquer aplicação:
+
+1. piloto `single_test` aceito e encerrado;
+2. nenhum Job legado elegível na fila;
+3. novo Job automático atual, tenant-scoped e validado sem envio;
+4. backup root-only da policy atual e validação do manifest/checksum;
+5. allowlist `jobs=0`, `mode=destination`, sem chaves extras;
+6. aplicação e validação pela interface oficial;
+7. reload separado exclusivamente da Philips Folder Bridge;
+8. Worker global somente após autorização operacional separada.
+
+Comandos do mecanismo, sem aplicação nesta entrega:
+
+```bash
+COMMON=(
+  --env-file <ENV_FILE_PATH>
+  --allowlist <DESTINATION_ALLOWLIST_PATH>
+  --backup-root <BACKUP_ROOT>
+  --expected-host <hostname-aprovado>
+  --tenant-id 2 --destination-id 7 --job-id 0
+  --transport philips_non_dicom
+  --profile submission_document --mode destination
+)
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --dry-run "${COMMON[@]}"
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --backup-only "${COMMON[@]}" \
+  --unit voxelpacs-philips-folder-bridge.service
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --apply "${COMMON[@]}" --backup-id <BACKUP_ID>
+
+sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
+  --validate "${COMMON[@]}"
+```
+
+O `--reload` continua separado, exige a mesma policy efetiva e valida exclusivamente `voxelpacs-philips-folder-bridge.service`. Nenhuma etapa deste mecanismo inicia Worker, executa Job, chama Bridge, acessa SMB ou altera DICOM/C-STORE.
+
 ### Transição segura entre Jobs single-test
 
 Quando a allowlist atual aponta para um Job predecessor e o alvo é outro Job do mesmo tenant/Destination, o `--apply` normal bloqueia corretamente com `TARGET_JOB_NOT_ALLOWLISTED`. Para essa troca existe um fluxo explícito de transição, que aceita somente uma origem e um alvo diferentes:
@@ -217,7 +274,7 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
   --source-job-id 519 --backup-id <TRANSITION_BACKUP_ID>
 ```
 
-O mecanismo rejeita tenant, Destination, transporte, profile, modo, origem ou alvo incompatíveis; nunca aceita múltiplos Jobs, wildcard, `destination` mode, reload da unit DICOM/C-STORE, Worker, Bridge request, SMB, banco ou transmissão.
+O mecanismo rejeita tenant, Destination, transporte, profile, modo, origem ou alvo incompatíveis; a transição continua exclusiva de `single_test` para `single_test` e nunca aceita múltiplos Jobs, wildcard, `destination` mode, reload da unit DICOM/C-STORE, Worker, Bridge request, SMB, banco ou transmissão.
 
 ### Validação estrutural
 

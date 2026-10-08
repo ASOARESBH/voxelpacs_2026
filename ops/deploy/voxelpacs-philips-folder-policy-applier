@@ -67,8 +67,8 @@ Required options for policy actions:
   --allowlist PATH
   --backup-root PATH
   --expected-host NAME
-  --tenant-id N --destination-id N --job-id N
-  --transport philips_non_dicom --profile submission_document --mode single_test
+  --tenant-id N --destination-id N --job-id N|0
+  --transport philips_non_dicom --profile submission_document --mode single_test|destination
 
 The helper is intentionally explicit. It does not use production defaults.
 USAGE
@@ -220,10 +220,12 @@ parse_allowlist() {
   validate_positive_id ALLOWLIST_DESTINATION "${ALLOWLIST[destination_id]}"
   [[ "${ALLOWLIST[transport]}" == 'philips_non_dicom' ]] || fail 'ALLOWLIST_TRANSPORT_MISMATCH'
   [[ "${ALLOWLIST[profile]}" == 'submission_document' ]] || fail 'ALLOWLIST_PROFILE_MISMATCH'
-  [[ "${ALLOWLIST[mode]}" == 'single_test' ]] || fail 'ALLOWLIST_MODE_UNSUPPORTED'
-  [[ "${ALLOWLIST[jobs]}" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]] || fail 'ALLOWLIST_JOBS_INVALID'
-  count="$(tr ',' '\n' <<< "${ALLOWLIST[jobs]}" | wc -l | tr -d ' ')"
-  [[ "$count" == '1' ]] || fail 'ALLOWLIST_MULTIPLE_JOBS'
+  [[ "${ALLOWLIST[mode]}" == 'single_test' || "${ALLOWLIST[mode]}" == 'destination' ]] || fail 'ALLOWLIST_MODE_UNSUPPORTED'
+  if [[ "${ALLOWLIST[mode]}" == 'single_test' ]]; then
+    [[ "${ALLOWLIST[jobs]}" =~ ^[1-9][0-9]*$ ]] || fail 'ALLOWLIST_JOBS_INVALID'
+  else
+    [[ "${ALLOWLIST[jobs]}" == '0' ]] || fail 'DESTINATION_ALLOWLIST_JOBS_MUST_BE_ZERO'
+  fi
 }
 
 load_target() {
@@ -237,10 +239,15 @@ load_target() {
   )
   validate_positive_id TARGET_TENANT "$TARGET_TENANT"
   validate_positive_id TARGET_DESTINATION "$TARGET_DESTINATION"
-  validate_positive_id TARGET_JOB "$TARGET_JOB"
+  if [[ "$TARGET_MODE" == 'single_test' ]]; then
+    validate_positive_id TARGET_JOB "$TARGET_JOB"
+  elif [[ "$TARGET_MODE" == 'destination' ]]; then
+    [[ "$TARGET_JOB" == '0' ]] || fail 'DESTINATION_TARGET_JOB_MUST_BE_ZERO'
+  else
+    fail 'TARGET_MODE_UNSUPPORTED'
+  fi
   [[ "$TARGET_TRANSPORT" == 'philips_non_dicom' ]] || fail 'TARGET_TRANSPORT_UNSUPPORTED'
   [[ "$TARGET_PROFILE" == 'submission_document' ]] || fail 'TARGET_PROFILE_UNSUPPORTED'
-  [[ "$TARGET_MODE" == 'single_test' ]] || fail 'TARGET_MODE_UNSUPPORTED'
 }
 
 validate_target_against_allowlist() {
@@ -478,10 +485,16 @@ validate_backup_manifest() {
   done
   [[ "$(manifest_value "$manifest" FORMAT)" == '1' ]] || fail 'BACKUP_FORMAT_UNSUPPORTED'
   [[ "$(manifest_value "$manifest" TARGET_COMPONENT)" == 'philips_folder_bridge_policy' ]] || fail 'BACKUP_COMPONENT_MISMATCH'
-  value="$(manifest_value "$manifest" TARGET_POLICY)"; [[ "$value" == 'single_test' ]] || fail 'BACKUP_POLICY_UNSUPPORTED'
+  value="$(manifest_value "$manifest" TARGET_POLICY)"
+  [[ "$value" == 'single_test' || "$value" == 'destination' ]] || fail 'BACKUP_POLICY_UNSUPPORTED'
   validate_positive_id BACKUP_TENANT "$(manifest_value "$manifest" TARGET_TENANT)"
   validate_positive_id BACKUP_DESTINATION "$(manifest_value "$manifest" TARGET_DESTINATION)"
-  validate_positive_id BACKUP_JOB "$(manifest_value "$manifest" TARGET_JOB)"
+  value="$(manifest_value "$manifest" TARGET_JOB)"
+  if [[ "$(manifest_value "$manifest" TARGET_POLICY)" == 'single_test' ]]; then
+    validate_positive_id BACKUP_JOB "$value"
+  else
+    [[ "$value" == '0' ]] || fail 'BACKUP_DESTINATION_JOB_MUST_BE_ZERO'
+  fi
   [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == 'philips_non_dicom' ]] || fail 'BACKUP_TRANSPORT_MISMATCH'
   [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == 'submission_document' ]] || fail 'BACKUP_PROFILE_MISMATCH'
   [[ "$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)" =~ ^[a-f0-9]{64}$ ]] || fail 'BACKUP_SOURCE_CHECKSUM_INVALID'
@@ -663,7 +676,11 @@ action_validate() {
   policy_matches_target || fail 'EFFECTIVE_POLICY_MISMATCH'
   printf 'VALIDATION=PASS\n'
   emit_target
-  printf 'BRIDGE_MODE_SINGLE_TEST=PASS\n'
+  if [[ "$TARGET_MODE" == 'single_test' ]]; then
+    printf 'BRIDGE_MODE_SINGLE_TEST=PASS\n'
+  else
+    printf 'BRIDGE_MODE_DESTINATION=PASS\n'
+  fi
   printf 'ALLOWLIST_JOB=%s\n' "$TARGET_JOB"
   printf 'EFFECTIVE_ALLOWLIST_JOB=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
   printf 'RELOAD=NOT_PERFORMED\n'
