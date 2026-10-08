@@ -37,6 +37,8 @@ Qualquer `UNKNOWN`, `ACTIVE`, `COMPLETED`, publicação parcial sem a prova hist
 
 O modo `--upgrade` não aceita cópia manual: valida a instalação anterior, materializa os dois novos arquivos com owner/mode mínimos, valida o sudoers antes da troca e mantém backups temporários root-only para restaurar a versão anterior se a atualização falhar no meio. O modo `--upgrade --dry-run` é somente leitura.
 
+O inspector emite `TRANSACTION_HISTORICAL_PROOF_REASON` com uma categoria agregada da primeira pré-condição não comprovada, sem paths, conteúdo ou dados clínicos. `PROVEN` só aparece quando todas as validações de owner/mode, symlink, artefatos requeridos e igualdade `validated`/`previous` passam.
+
 ## Integração com novo deploy
 
 Após o marcador aprovado, o publicador mantém a transação histórica e cria uma execução nova em:
