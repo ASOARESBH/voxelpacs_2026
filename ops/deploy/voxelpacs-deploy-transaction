@@ -18,6 +18,7 @@ readonly STATUS_FILE_NAME='status'
 readonly PID_FILE_NAME='pid'
 readonly ROLLBACK_PENDING_NAME='rollback.pending'
 readonly ALLOWED_STATUS_RE='^(publishing|published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|stale|rollback_pending)$'
+readonly HISTORICAL_D9_SHA='d9abd9dec1302654afa2a6f556064212d503c0bc'
 
 mode=''
 sha=''
@@ -48,6 +49,7 @@ transaction_proof_hash_mismatch_public='NOT_EVALUATED'
 transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
 transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
 transaction_proof_hash_mismatch_other='NOT_EVALUATED'
+historical_exception_mode='NO'
 
 fail() {
   printf 'TRANSACTION=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -57,7 +59,8 @@ fail() {
 usage() {
   printf '%s\n' \
     'uso: voxelpacs-deploy-transaction inspect --sha <40-hex-sha>' \
-    'uso: voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>' >&2
+    'uso: voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>' \
+    'uso: voxelpacs-deploy-transaction reconcile-historical --sha <40-hex-sha>' >&2
 }
 
 is_sha() {
@@ -584,11 +587,25 @@ write_file_manifest() {
 reconcile_transaction() {
   local reconciliation_root evidence_id evidence_dir metadata manifest checksum checksum_sha256 marker_tmp now owner
   read_transaction
+  if [[ "$historical_exception_mode" == 'YES' ]]; then
+    [[ "$sha" == "$HISTORICAL_D9_SHA" ]] || fail 'HISTORICAL_TARGET_NOT_ALLOWED'
+    [[ "$transaction_status" == 'published' ]] || fail 'TRANSACTION_STATUS_NOT_PUBLISHED'
+    [[ "$transaction_partial_publication" == 'YES' ]] || fail 'PARTIAL_PUBLICATION_NOT_PRESENT'
+    [[ "$transaction_proof_set_mismatches" == 'NO' ]] || fail 'HISTORICAL_SET_MISMATCH'
+    [[ "$transaction_proof_hash_mismatches" == '3' ]] || fail 'HISTORICAL_HASH_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_app" == '2' ]] || fail 'HISTORICAL_APP_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_public" == '0' ]] || fail 'HISTORICAL_PUBLIC_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_vendor_composer" == '1' ]] || fail 'HISTORICAL_VENDOR_COMPOSER_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_vendor_other" == '0' ]] || fail 'HISTORICAL_VENDOR_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_other" == '0' ]] || fail 'HISTORICAL_OTHER_COUNT_MISMATCH'
+    transaction_historical_proof='YES'
+    transaction_classification='HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA'
+  fi
   [[ "$transaction_exists" == 'YES' ]] || fail 'TRANSACTION_NOT_FOUND'
   [[ "$transaction_target_sha" == "$sha" ]] || fail 'TRANSACTION_TARGET_SHA_MISMATCH'
   [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
-  [[ "$transaction_classification" == 'ABORTED' || "$transaction_classification" == 'STALE' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' ]] || fail 'TRANSACTION_NOT_RECONCILABLE'
-  if [[ "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' ]]; then
+  [[ "$transaction_classification" == 'ABORTED' || "$transaction_classification" == 'STALE' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA' ]] || fail 'TRANSACTION_NOT_RECONCILABLE'
+  if [[ "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA' ]]; then
     [[ "$transaction_historical_proof" == 'YES' ]] || fail 'HISTORICAL_PROOF_MISSING'
   else
     [[ "$transaction_partial_publication" == 'NO' ]] || fail 'PARTIAL_PUBLICATION_NOT_RESOLVED'
@@ -609,8 +626,10 @@ reconcile_transaction() {
   checksum="$evidence_dir/checksum.sha256"
   marker_tmp="$reconciliation_root/.approved.$$"
   owner="$transaction_owner"
-  printf 'transaction_id\t%s\ntransaction_target_sha\t%s\nclassification\t%s\ncreated_at\t%s\nupdated_at\t%s\nowner\t%s\nhostname\t%s\ndeploy_process_active\t%s\npartial_publication\t%s\nrollback_pending\t%s\nlock\t%s\nreason\tadministrative_reconciliation_after_formal_abort_or_stale_classification\nreconciled_at\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
-    "$sha" "$sha" "$transaction_classification" "$transaction_created_at" "$transaction_updated_at" "$owner" "$transaction_hostname" "$deploy_process_active" "$transaction_partial_publication" "$transaction_rollback_pending" "$transaction_lock" "$now" > "$metadata"
+  reason='administrative_reconciliation_after_formal_abort_or_stale_classification'
+  [[ "$historical_exception_mode" == 'YES' ]] && reason='historical_d9_expected_delta_app2_vendor_composer1'
+  printf 'transaction_id\t%s\ntransaction_target_sha\t%s\nclassification\t%s\ncreated_at\t%s\nupdated_at\t%s\nowner\t%s\nhostname\t%s\ndeploy_process_active\t%s\npartial_publication\t%s\nrollback_pending\t%s\nlock\t%s\nreason\t%s\nreconciled_at\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
+    "$sha" "$sha" "$transaction_classification" "$transaction_created_at" "$transaction_updated_at" "$owner" "$transaction_hostname" "$deploy_process_active" "$transaction_partial_publication" "$transaction_rollback_pending" "$transaction_lock" "$reason" "$now" > "$metadata"
   /usr/bin/chmod 600 "$metadata"
   write_file_manifest "$manifest"
   /usr/bin/chmod 600 "$manifest"
@@ -650,6 +669,10 @@ case "$mode" in
     print_result
     ;;
   reconcile)
+    reconcile_transaction
+    ;;
+  reconcile-historical)
+    historical_exception_mode='YES'
     reconcile_transaction
     ;;
   *)
