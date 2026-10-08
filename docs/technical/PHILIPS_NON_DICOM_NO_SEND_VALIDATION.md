@@ -14,7 +14,7 @@ A execução exige explicitamente:
 --no-send
 ```
 
-O diagnóstico consulta o Job, Outbox, Request opcional e Destination dentro do tenant informado, inicia uma transação PostgreSQL somente-leitura e faz rollback ao final. O Job precisa estar `queued`, sem tentativa e sem lock.
+O diagnóstico consulta o Job, Outbox, Request opcional e Destination dentro do tenant informado, inicia uma transação PostgreSQL somente-leitura e faz rollback ao final. O Job precisa estar `queued`, sem tentativa e sem lock. A elegibilidade temporal usa os mesmos predicados SQL do Worker (`worker_eligible_at <= NOW()`, `next_attempt_at <= NOW()` e `automatic_dispatch_date` nula ou igual à data corrente do Worker); o diagnóstico não interpreta `worker_eligible_at` com o timezone local do PHP.
 
 A validação falha fechado quando:
 
