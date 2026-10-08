@@ -21,6 +21,7 @@ A execução:
 
 - abre uma transação PostgreSQL `READ ONLY` e faz `ROLLBACK`;
 - exige Job `queued`, Outbox `queued`, `attempt_count=0` e sem lock;
+- aplica os mesmos gates temporais do Worker: `worker_eligible_at <= NOW()`, `next_attempt_at <= NOW()` e `automatic_dispatch_date` nula ou igual à data corrente; não converte `worker_eligible_at` pelo timezone local do PHP;
 - valida tenant, Destination 7, transporte, profile e ambiente; `controlled_production` exige Request `armed`, enquanto `automatic_production` exige Outbox direto `report.released` sem Request;
 - em `controlled_production`, compara separadamente o digest autorizado da Request com o snapshot atual e o digest do Destination;
 - em `controlled_production`, valida separadamente que `destination_config_observed_at` ainda corresponde ao `updated_at` do Destination; em `automatic_production`, esses digests de autorização são `NOT_APPLICABLE`;

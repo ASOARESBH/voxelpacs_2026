@@ -43,6 +43,9 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             'request_status' => null,
             'outbox_status' => null,
             'attempt_count' => null,
+            'worker_eligibility' => 'NOT_VALIDATED',
+            'next_attempt_eligibility' => 'NOT_VALIDATED',
+            'automatic_date_eligibility' => 'NOT_VALIDATED',
             'snapshot' => 'NOT_EXECUTED',
             'snapshot_digest' => 'NOT_VALIDATED',
             'destination_digest' => 'NOT_VALIDATED',
@@ -102,6 +105,10 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             $payload = $this->decodeObject($job['payload_json'] ?? null, 'PAYLOAD_INVALID');
             $configuration = $this->decodeObject($destination['configuration_json'] ?? null, 'CONFIGURATION_INVALID');
             $dispatchMode = $this->dispatchMode($payload, $request);
+            $result['worker_eligibility'] = (string) ($job['worker_eligibility'] ?? 'FAIL');
+            $result['next_attempt_eligibility'] = (string) ($job['next_attempt_eligibility'] ?? 'FAIL');
+            $result['automatic_date_eligibility'] = (string) ($job['automatic_date_eligibility'] ?? 'FAIL');
+            $this->assertWorkerEligibility($job);
             $this->assertIdentity($job, $request, $destination, $payload, $tenantId, $jobId, $dispatchMode);
             $this->assertPayloadIdentity($job, $request, $payload, $tenantId, $dispatchMode);
 
@@ -220,6 +227,12 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             "SELECT j.id, j.outbox_id, j.destination_id, j.tenant_id, j.estabelecimento_id,
                     j.transport, j.delivery_profile, j.status, j.attempt_count,
                     j.locked_at, j.locked_by,
+                    CASE WHEN j.worker_eligible_at IS NOT NULL AND j.worker_eligible_at <= NOW()
+                         THEN 'PASS' ELSE 'FAIL' END AS worker_eligibility,
+                    CASE WHEN j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW()
+                         THEN 'PASS' ELSE 'FAIL' END AS next_attempt_eligibility,
+                    CASE WHEN j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today
+                         THEN 'PASS' ELSE 'FAIL' END AS automatic_date_eligibility,
                     o.delivery_request_id, o.report_id, o.report_version, o.estudo_id,
                     o.event_type,
                     o.payload_json, o.status AS outbox_status
@@ -230,9 +243,27 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
                 AND j.tenant_id = :tenant_id
               LIMIT 1"
         );
-        $stmt->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+        $stmt->execute([
+            ':job_id' => $jobId,
+            ':tenant_id' => $tenantId,
+            ':automatic_today' => date('Y-m-d'),
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return is_array($row) ? $row : null;
+    }
+
+    /** @param array<string,mixed> $job */
+    private function assertWorkerEligibility(array $job): void
+    {
+        if ((string) ($job['worker_eligibility'] ?? '') !== 'PASS') {
+            throw new RuntimeException('WORKER_NOT_ELIGIBLE');
+        }
+        if ((string) ($job['next_attempt_eligibility'] ?? '') !== 'PASS') {
+            throw new RuntimeException('NEXT_ATTEMPT_NOT_ELIGIBLE');
+        }
+        if ((string) ($job['automatic_date_eligibility'] ?? '') !== 'PASS') {
+            throw new RuntimeException('AUTOMATIC_DATE_NOT_ELIGIBLE');
+        }
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed>|null $request @param array<string,mixed> $destination @param array<string,mixed> $payload */
