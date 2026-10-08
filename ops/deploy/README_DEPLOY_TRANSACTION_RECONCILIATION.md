@@ -32,6 +32,8 @@ O modo `inspect` também retorna `TRANSACTION_HISTORICAL_PROOF_REASON` como cate
 
 Quando a comparação alcança as árvores, `inspect` também retorna `TRANSACTION_PROOF_SET_MISMATCHES` (`YES`/`NO`/`NOT_EVALUATED`) e `TRANSACTION_PROOF_HASH_MISMATCHES` (contagem não negativa ou `NOT_EVALUATED`). Nenhum valor contém nomes de arquivos.
 
+Quando o conjunto coincide, a contagem total é subdividida em `TRANSACTION_PROOF_HASH_MISMATCH_APP`, `TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER`, `TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER` e `TRANSACTION_PROOF_HASH_MISMATCH_OTHER`. São contagens agregadas; qualquer divergência continua bloqueando a prova histórica.
+
 ## Evidência preservada
 
 O reconcile cria, dentro da transação existente:
