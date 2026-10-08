@@ -30,6 +30,8 @@ Idade nunca é suficiente para classificar `STALE`. Publicação parcial não co
 
 O modo `inspect` também retorna `TRANSACTION_HISTORICAL_PROOF_REASON` como categoria técnica agregada, sem caminho ou conteúdo. Os valores incluem `PROVEN`, `STAGE_PREVIOUS_MISMATCH`, `REQUIRED_ARTIFACT_MISSING`, `VALIDATED_STAGE_NOT_SAFE`, `PREVIOUS_STAGE_NOT_SAFE`, `VALIDATED_STAGE_OWNER_MODE_INVALID`, `PREVIOUS_STAGE_OWNER_MODE_INVALID`, `VALIDATED_CONTAINS_SYMLINK`, `PREVIOUS_CONTAINS_SYMLINK`, `TRANSACTION_ROOT_OWNER_MODE_INVALID` e `EXPLICIT_PARTIAL_MARKER`.
 
+Quando a comparação alcança as árvores, `inspect` também retorna `TRANSACTION_PROOF_SET_MISMATCHES` (`YES`/`NO`/`NOT_EVALUATED`) e `TRANSACTION_PROOF_HASH_MISMATCHES` (contagem não negativa ou `NOT_EVALUATED`). Nenhum valor contém nomes de arquivos.
+
 ## Evidência preservada
 
 O reconcile cria, dentro da transação existente:
