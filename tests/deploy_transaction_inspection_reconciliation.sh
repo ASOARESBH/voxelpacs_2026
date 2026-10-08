@@ -146,10 +146,7 @@ wait "$process_pid" || true
 make_tx rolled_back_after_failure
 lock_ready="$fixture_root/lock.ready"
 (
-  exec 9>"$fixture_root/deploy.lock"
-  flock -n 9
-  : > "$lock_ready"
-  sleep 30
+  /usr/bin/flock -n "$fixture_root/deploy.lock" -c ": > '$lock_ready'; /bin/sleep 30"
 ) &
 lock_pid=$!
 for _ in {1..200}; do
