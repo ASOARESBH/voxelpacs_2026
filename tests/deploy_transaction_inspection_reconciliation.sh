@@ -144,20 +144,22 @@ wait "$process_pid" || true
 
 # 9. lock ativo
 make_tx rolled_back_after_failure
+lock_ready="$fixture_root/lock.ready"
 (
   exec 9>"$fixture_root/deploy.lock"
   flock -n 9
-  sleep 4
+  : > "$lock_ready"
+  sleep 30
 ) &
 lock_pid=$!
-out=''
-for _ in {1..100}; do
-  out="$(run_helper inspect --sha "$sha")" || true
-  if grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"; then
+for _ in {1..200}; do
+  if [[ -f "$lock_ready" ]]; then
     break
   fi
-  sleep 0.05
+  sleep 0.01
 done
+[[ -f "$lock_ready" ]]
+out="$(run_helper inspect --sha "$sha")"
 grep -Fxq 'TRANSACTION_LOCK=YES' <<<"$out"
 grep -Fxq 'CLASSIFICATION=ACTIVE' <<<"$out"
 wait "$lock_pid" || true
