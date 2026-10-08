@@ -321,24 +321,43 @@ sudo -n /usr/local/sbin/voxelpacs-philips-folder-policy-applier \
 
 O reload exige autorização operacional separada e não foi executado nesta entrega.
 
-## Instalação futura no Host 2
+## Provisionamento versionado no Host 2
 
 ```text
-INSTALLATION_PLAN=DOCUMENTED
-PRODUCTION_INSTALL=NO
-HOST2_CHANGED=NO
+PROVISIONER=scripts/provision-philips-folder-policy-applier.sh
+PROVISIONER_MODE=ROOT_CONTROLLED
+POLICY_APPLY=NOT_PERFORMED
+BRIDGE_RELOAD=NOT_EXECUTED
 ```
 
-Arquivos previstos, a serem instalados somente por procedimento root-controlled aprovado:
+O provisioner deve ser executado a partir de um staging mínimo derivado de uma SHA aprovada da `main`. Ele exige a SHA do commit e os SHA-256 explícitos do próprio provisioner, helper e sudoers; não depende de checkout Git no Host2:
 
 ```text
-/usr/local/sbin/voxelpacs-philips-folder-policy-applier
-/etc/voxelpacs/philips-folder-policy.allowlist
+sudo -n bash scripts/provision-philips-folder-policy-applier.sh \
+  --expected-sha <MAIN_SHA> \
+  --expected-helper-sha <HELPER_SHA256> \
+  --expected-sudoers-sha <SUDOERS_SHA256> \
+  --expected-provisioner-sha <PROVISIONER_SHA256> \
+  --upgrade --dry-run
+
+sudo -n bash scripts/provision-philips-folder-policy-applier.sh \
+  --expected-sha <MAIN_SHA> \
+  --expected-helper-sha <HELPER_SHA256> \
+  --expected-sudoers-sha <SUDOERS_SHA256> \
+  --expected-provisioner-sha <PROVISIONER_SHA256> \
+  --upgrade
 ```
 
-A allowlist deve ser `root:root`, `0600`; o helper deve ser `root:root`, `0750` ou mais restritivo conforme a regra sudo dedicada. O EnvironmentFile e todo material de mTLS/HMAC/envelope permanecem nos locais root-owned existentes e não são copiados para o repositório ou para artefatos.
+O upgrade cria backup root-only do helper/sudoers existentes e restaura o estado anterior se a instalação ou a validação final falhar. Arquivos instalados:
 
-A instalação deve validar checksum do arquivo versionado, `bash -n`, owner/mode, `--dry-run` e presença de uma regra sudoers dedicada. A unit Philips Folder somente poderá ser recarregada após `UNIT_IDENTITY=VERIFIED`. O DICOM/C-STORE é totalmente fora do escopo.
+```text
+/usr/local/sbin/voxelpacs-philips-folder-policy-applier  root:root 0750
+/etc/sudoers.d/voxelpacs-philips-folder-policy-applier   root:root 0440
+```
+
+A regra sudoers deste provisioner permite somente `--dry-run` e `--validate` para tenant 2, Destination 7, `job_id=0`, `transport=philips_non_dicom` e `mode=destination`. Não permite `apply`, `backup-only`, rollback, reload, shell ou comando genérico. A allowlist e o EnvironmentFile permanecem nos locais root-owned existentes; nenhum segredo, certificado, HMAC ou material de mTLS é copiado.
+
+O provisionamento deve validar checksum, `bash -n`, owner/mode, `visudo -cf` e o dry-run destination. A unit Philips Folder somente poderá ser recarregada após `UNIT_IDENTITY=VERIFIED` e autorização separada. O DICOM/C-STORE é totalmente fora do escopo.
 
 ## Limites
 
