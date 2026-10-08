@@ -10,7 +10,7 @@ A branch adiciona:
 
 - `ops/deploy/voxelpacs-deploy-transaction`: helper root-controlled com `inspect` read-only e `reconcile` fail-closed, incluindo a classificação histórica `HISTORICAL_PUBLISHED_PARTIAL`;
 - `ops/sudoers/voxelpacs-deploy-transaction`: allowlist mínima para os dois modos e os dois callers autorizados;
-- `scripts/provision-deploy-transaction-helper.sh`: provisionamento administrativo separado, com dry-run, SHA exata e `visudo`;
+- `scripts/provision-deploy-transaction-helper.sh`: provisionamento administrativo separado, com dry-run, SHA exata, `visudo` e modo `--upgrade` idempotente para instalações existentes;
 - testes isolados para os estados e proteções;
 - documentação operacional;
 - integração no publicador existente para aceitar somente uma transação previamente reconciliada.
@@ -34,6 +34,8 @@ A reconciliação exige simultaneamente:
 Para uma transação legada criada pelo publicador anterior, `published` com `PARTIAL_PUBLICATION=YES` não é aceito por idade ou conveniência. A exceção administrativa exige prova objetiva de que `validated` e `previous` são árvores completas, têm o mesmo conjunto e SHA dos arquivos, são root-owned `0700`, não contêm symlinks, possuem os arquivos críticos e não possuem marcador manual de publicação parcial. Essa prova preserva a transação original e não altera o runtime.
 
 Qualquer `UNKNOWN`, `ACTIVE`, `COMPLETED`, publicação parcial sem a prova histórica, lock ou pendência aborta.
+
+O modo `--upgrade` não aceita cópia manual: valida a instalação anterior, materializa os dois novos arquivos com owner/mode mínimos, valida o sudoers antes da troca e mantém backups temporários root-only para restaurar a versão anterior se a atualização falhar no meio. O modo `--upgrade --dry-run` é somente leitura.
 
 ## Integração com novo deploy
 
