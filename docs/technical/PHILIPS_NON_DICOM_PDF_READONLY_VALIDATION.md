@@ -20,12 +20,12 @@ php bin/philips_nondicom_pdf_readonly.php \
 A execução:
 
 - abre uma transação PostgreSQL `READ ONLY` e faz `ROLLBACK`;
-- exige Job `queued`, Request `armed`, Outbox `queued`, `attempt_count=0` e sem lock;
-- valida tenant, Destination 7, transporte, profile, ambiente e `controlled_production`;
-- compara separadamente o digest autorizado da Request com o snapshot atual e o digest do Destination;
-- valida separadamente que `destination_config_observed_at` ainda corresponde ao `updated_at` do Destination;
+- exige Job `queued`, Outbox `queued`, `attempt_count=0` e sem lock;
+- valida tenant, Destination 7, transporte, profile e ambiente; `controlled_production` exige Request `armed`, enquanto `automatic_production` exige Outbox direto `report.released` sem Request;
+- em `controlled_production`, compara separadamente o digest autorizado da Request com o snapshot atual e o digest do Destination;
+- em `controlled_production`, valida separadamente que `destination_config_observed_at` ainda corresponde ao `updated_at` do Destination; em `automatic_production`, esses digests de autorização são `NOT_APPLICABLE`;
 - valida o vínculo canônico `servidor_pacs_id` ↔ estudo ↔ servidor ativo do tenant;
-- confirma que o alias ASCII está congelado no Destination, Request e payload;
+- confirma que o alias ASCII está congelado no Destination, Request e payload em `controlled_production`, ou somente no contexto do Destination em `automatic_production`;
 - lê o snapshot PDF canônico imutável, ou a revisão PDF explicitamente ligada ao Job;
 - valida assinatura `%PDF-`, tamanho, SHA-256 e marcador estrutural `%%EOF`;
 - renderiza uma cópia do contexto visual oficial somente em memória;
@@ -37,7 +37,8 @@ A execução:
 A renderização em memória é uma validação técnica do caminho oficial do
 renderer. O PDF efetivamente utilizado pelo Worker continua sendo o snapshot
 imutável lido e validado; o diagnóstico não substitui esse snapshot nem cria
-uma nova versão clínica.
+uma nova versão clínica. Jobs automáticos mantêm a identidade direta do
+Outbox/Job e não recebem Request, alias ou digest artificial.
 
 ## Saída sanitizada
 
