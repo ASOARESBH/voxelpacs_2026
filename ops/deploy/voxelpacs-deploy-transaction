@@ -164,7 +164,7 @@ read_deploy_process_state() {
 }
 
 read_lock_state() {
-  local device_hex device_dec device_major device_minor device inode
+  local device_hex device_dec device_major device_minor device_major_hex device_minor_hex inode
   transaction_lock='NO'
   if [[ ! -e "$LOCK_PATH" ]]; then
     return 0
@@ -178,8 +178,24 @@ read_lock_state() {
   device_dec=$((16#$device_hex))
   device_major=$(((device_dec >> 8) & 0xfff))
   device_minor=$(((device_dec & 0xff) | ((device_dec >> 12) & 0xffffff00)))
-  device="$(printf '%x:%02x' "$device_major" "$device_minor")"
-  if /usr/bin/grep -Eq "[[:space:]]${device}:${inode}[[:space:]]" /proc/locks; then
+  device_major_hex="$(printf '%x' "$device_major")"
+  device_minor_hex="$(printf '%x' "$device_minor")"
+  if /usr/bin/awk -v want_major="$device_major_hex" -v want_minor="$device_minor_hex" -v want_inode="$inode" '
+    function normalized(value) {
+      sub(/^0+/, "", value)
+      return value == "" ? "0" : tolower(value)
+    }
+    {
+      split($6, device_parts, ":")
+      if (normalized(device_parts[1]) == normalized(want_major) &&
+          normalized(device_parts[2]) == normalized(want_minor) &&
+          device_parts[3] == want_inode) {
+        found=1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' /proc/locks; then
     transaction_lock='YES'
   fi
 }
