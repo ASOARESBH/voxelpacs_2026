@@ -55,6 +55,20 @@ expect_automatic_name(
     'Structured DICOM PN must not shift an explicitly empty Given.'
 );
 
+$structuredEmptyGivenWithFlatFallback = $service->resolve([
+    'patient_name_dicom' => 'LUIS^^SILVA',
+    'patient_name' => 'LUIS ANTONIO DA SILVA',
+]);
+expect_automatic_name(
+    $structuredEmptyGivenWithFlatFallback === [
+        'family' => 'LUIS',
+        'given' => 'ANTONIO DA',
+        'middle' => 'SILVA',
+        'source' => 'patient_name_fallback',
+    ],
+    'An empty DICOM Given must use a valid flat PatientName fallback.'
+);
+
 $original = ['patient_name' => 'LUIS ANTONIO DA SILVA'];
 $service->resolve($original);
 expect_automatic_name(
