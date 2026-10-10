@@ -154,6 +154,35 @@ if [[ "$skip_composer_install" -eq 0 ]]; then
   bash "$ROOT/scripts/verify-composer-tree.sh" --allow-missing-vendor
   composer -d "$ROOT" install --no-dev --prefer-dist --no-progress --no-interaction
 fi
+
+normalize_composer_root_reference() {
+  local installed="$ROOT/vendor/composer/installed.php"
+  [[ -f "$installed" && ! -L "$installed" ]] || fail 'composer_installed_metadata_invalid'
+  command -v python3 >/dev/null 2>&1 || fail 'composer_reference_normalizer_unavailable'
+  python3 - "$installed" "$current_sha" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+sha = sys.argv[2]
+text = path.read_text()
+root_start = text.find("    'root' => array(")
+versions_start = text.find("    'versions' => array(", root_start)
+if root_start < 0 or versions_start < 0 or versions_start <= root_start:
+    raise SystemExit('COMPOSER_ROOT_SECTION_INVALID')
+root = text[root_start:versions_start]
+needle = "'reference' => null,"
+if root.count(needle) != 1:
+    raise SystemExit('COMPOSER_ROOT_REFERENCE_SHAPE_INVALID')
+root = root.replace(needle, f"'reference' => '{sha}',", 1)
+staged = path.with_name(path.name + '.normalized')
+staged.write_text(text[:root_start] + root + text[versions_start:])
+staged.chmod(path.stat().st_mode & 0o777)
+staged.replace(path)
+PY
+}
+
+normalize_composer_root_reference
 bash "$ROOT/scripts/verify-composer-tree.sh"
 
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/voxelpacs-runtime-stage.XXXXXX")"
