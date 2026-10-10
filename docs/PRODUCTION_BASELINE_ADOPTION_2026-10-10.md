@@ -38,6 +38,8 @@ O script versionado é `scripts/capture-production-baseline.sh`. Ele:
 
 Para uma captura integral do Host 1, o script deve ser executado por um mecanismo root-controlled previamente aprovado. Não se deve ampliar `sudoers` de forma genérica nem copiar a chave privada do administrador.
 
+O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; o caller pode executar apenas `capture`, sem fornecer path, comando, shell ou destino.
+
 ## Backup protegido
 
 Antes de qualquer proposta de baseline, deve existir backup root-only verificável da release atualmente instalada. O backup usa o helper oficial:
@@ -88,7 +90,7 @@ Equivalência funcional não é inferida por coincidência de hashes. Ela exige 
 
 ## Estado desta implementação
 
-- O baseline foi preparado em branch própria a partir da `main` limpa.
+- O baseline foi preparado em branch própria a partir da `main` limpa e integrado à `main` após atualização com a base atual e checks remotos verdes.
 - A primeira leitura como `manus-admin` encontrou arquivos legados sem permissão de leitura; isso é registrado como lacuna, não mascarado como sucesso.
-- A captura integral deve usar root-controlled, sem alterar a aplicação ativa.
-- Não há autorização nesta etapa para merge, deploy, migration, Worker, Job, Bridge, SMB, Philips ou DICOM/C-STORE.
+- A captura integral deve usar o provisionador root-controlled, sem alterar a aplicação ativa.
+- O provisionamento do helper e a captura do baseline permanecem separados de deploy, migration, Worker, Job, Bridge, SMB, Philips e DICOM/C-STORE.
