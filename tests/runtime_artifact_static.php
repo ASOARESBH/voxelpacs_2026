@@ -50,6 +50,9 @@ foreach ([
     'mv -- "$tmp_checksum" "$checksum_path"',
     'CHECKSUM_FILE_VALID=YES',
     'PRODUCTION_CHANGED=NO',
+    'normalize_composer_root_reference()',
+    "COMPOSER_ROOT_REFERENCE_SHAPE_INVALID",
+    'python3 - "$installed" "$current_sha"',
 ] as $marker) {
     expect_runtime_artifact(str_contains($builder, $marker), "Builder sem proteção: {$marker}");
 }
@@ -94,6 +97,10 @@ expect_runtime_artifact(
 expect_runtime_artifact(
     !str_contains($deploy, 'composer install') && !str_contains($deploy, 'chmod -R 775'),
     'deploy.sh não pode executar Composer ou chmod recursivo no host'
+);
+expect_runtime_artifact(
+    strpos($builder, 'normalize_composer_root_reference') < strrpos($builder, 'bash "$ROOT/scripts/verify-composer-tree.sh"'),
+    'builder deve normalizar metadata Composer antes do guard final'
 );
 expect_runtime_artifact(
     str_contains($deploy, 'ENV_PRESERVED=YES')
