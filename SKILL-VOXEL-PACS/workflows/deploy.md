@@ -69,6 +69,12 @@ Antes de alterar a produção:
 
 Se backup, restauração, paridade ou drift não puderem ser validados, classificar como `BLOCKED` ou `REQUIRES_REVIEW` e não promover.
 
+### Adoção inicial do baseline de produção
+
+Quando o runtime contém divergências históricas não classificadas, não remover arquivos nem forçar o drift gate. Executar uma captura read-only com `scripts/capture-production-baseline.sh`, usando root-controlled quando o usuário SSH não possuir leitura integral. O backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
+
+O baseline deve ser preparado em branch dedicada, sem importar `.env`, credenciais, chaves, certificados, tokens, logs, uploads, PDFs, XMLs, DICOM ou vendor indiscriminadamente. Hashes não legíveis permanecem como lacuna explícita; `--require-complete` é obrigatório para declarar captura integral. A branch deve ser publicada em PR e parar antes de merge, main e deploy.
+
 ## 5. Artefato e promoção
 
 O artefato deve ser gerado exclusivamente do checkout detached do SHA confirmado. Deve excluir `.env`, storage, uploads, logs, backups e dados clínicos, salvo quando o plano de backup protegido determinar o contrário.

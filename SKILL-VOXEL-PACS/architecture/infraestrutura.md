@@ -45,3 +45,9 @@
 - O provisionamento root-owned é separado em `scripts/provision-release-backup.sh`; a allowlist fica em `ops/sudoers/voxelpacs-release-backup` e não concede shell ou comandos genéricos.
 - O backup usa `/var/backups/voxelpacs/releases/<SHA>` e `/var/backups/voxelpacs/restore-tests/<SHA>`, não segue `.env`, `storage`, uploads, logs, backups ou dados clínicos.
 - A capacidade é independente de `scripts/deploy.sh` e não foi provisionada ou executada em produção nesta alteração.
+
+## Baseline inicial de produção
+
+- `scripts/capture-production-baseline.sh` captura somente metadados e hashes, sem seguir symlinks e sem copiar `.env`, persistência, uploads, logs, backups ou dados clínicos.
+- O modo padrão registra arquivos cujo hash não pôde ser lido como `HASH_READ_PERMISSION_DENIED`; `--require-complete` falha fechado para uma captura integral.
+- O baseline é uma evidência inicial, não uma autorização de deploy. Após sua aprovação, o GitHub/main volta a ser a fonte oficial das alterações futuras.
