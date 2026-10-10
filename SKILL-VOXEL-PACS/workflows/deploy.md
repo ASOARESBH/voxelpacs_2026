@@ -71,9 +71,9 @@ Se backup, restauração, paridade ou drift não puderem ser validados, classifi
 
 ### Adoção inicial do baseline de produção
 
-Quando o runtime contém divergências históricas não classificadas, não remover arquivos nem forçar o drift gate. Executar uma captura read-only com `scripts/capture-production-baseline.sh`, usando root-controlled quando o usuário SSH não possuir leitura integral. O backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
+Quando o runtime contém divergências históricas não classificadas, não remover arquivos nem forçar o drift gate. Provisionar o mecanismo versionado com `scripts/provision-production-baseline-capture.sh`, executar o `--dry-run` e somente então a instalação root-controlled. A captura usa `scripts/capture-production-baseline.sh` por meio do wrapper fixo, sempre com `--require-complete`; o backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
 
-O baseline deve ser preparado em branch dedicada, sem importar `.env`, credenciais, chaves, certificados, tokens, logs, uploads, PDFs, XMLs, DICOM ou vendor indiscriminadamente. Hashes não legíveis permanecem como lacuna explícita; `--require-complete` é obrigatório para declarar captura integral. A branch deve ser publicada em PR e parar antes de merge, main e deploy.
+O baseline deve ser preparado em branch dedicada, sem importar `.env`, credenciais, chaves, certificados, tokens, logs, uploads, PDFs, XMLs, DICOM ou vendor indiscriminadamente. Hashes não legíveis permanecem como lacuna explícita; `--require-complete` é obrigatório para declarar captura integral. O provisionamento não publica código da aplicação, não altera a release ativa e não inicia serviços.
 
 ## 5. Artefato e promoção
 

@@ -51,3 +51,5 @@
 - `scripts/capture-production-baseline.sh` captura somente metadados e hashes, sem seguir symlinks e sem copiar `.env`, persistência, uploads, logs, backups ou dados clínicos.
 - O modo padrão registra arquivos cujo hash não pôde ser lido como `HASH_READ_PERMISSION_DENIED`; `--require-complete` falha fechado para uma captura integral.
 - O baseline é uma evidência inicial, não uma autorização de deploy. Após sua aprovação, o GitHub/main volta a ser a fonte oficial das alterações futuras.
+
+O provisionamento root-controlled da captura usa `scripts/provision-production-baseline-capture.sh`, instala o wrapper fixo em `/usr/local/sbin/voxelpacs-production-baseline-capture`, o capturador em `/usr/local/libexec/voxelpacs-capture-production-baseline` e uma regra sudoers limitada à operação `capture`. O caller não fornece origem, destino, shell ou comando; o helper não acessa banco, serviços, Worker, Bridge ou SMB.
