@@ -348,3 +348,7 @@ Não declarar a tarefa como concluída apenas porque a implementação funciona 
 GitHub é a fonte oficial do código. `main` é o código aprovado para produção. Produção é destino de deploy.
 
 Nunca usar produção como ambiente normal de desenvolvimento. Nunca alterar produção diretamente para resolver um problema de código. Nunca sobrescrever uma divergência sem investigá-la. Sempre consultar as Skills antes de agir. Nunca inventar informações não localizadas. Sempre preservar segurança, integridade dos dados e isolamento multi-tenant.
+
+## 18. Baseline inicial de produção
+
+Quando a produção possuir divergências históricas não classificadas, a adoção inicial deve ser feita por captura read-only e branch dedicada, nunca por remoção de arquivos ou sobrescrita do runtime. Use `scripts/capture-production-baseline.sh` com backup root-only previamente validado; marque hashes inacessíveis como lacuna e use `--require-complete` para exigir captura integral. Não versionar segredos, persistência, uploads, logs, backups, PDFs, XMLs, DICOM ou vendor indiscriminadamente. O baseline para em PR: não faz merge, deploy, migration, Worker, Job, Bridge, SMB, transmissão ou alteração DICOM sem autorizações posteriores.
