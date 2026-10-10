@@ -88,7 +88,7 @@ validate_capture_contract() {
 validate_wrapper_contract() {
   grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$WRAPPER_SOURCE" || fail 'WRAPPER_SOURCE_ROOT_INVALID'
   grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$WRAPPER_SOURCE" || fail 'WRAPPER_OUTPUT_ROOT_INVALID'
-  grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/libexec/voxelpacs-capture-production-baseline'" "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_PATH_INVALID'
+  grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_PATH_INVALID'
   grep -Fq '[[ "$#" -eq 1 && "$1" == '\''capture'\'' ]]' "$WRAPPER_SOURCE" || fail 'WRAPPER_ARGUMENT_CONTRACT_INVALID'
   ! grep -Eq 'eval|systemctl|smbclient|curl[[:space:]]|mysql|psql|composer|NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$WRAPPER_SOURCE" || fail 'WRAPPER_GENERIC_OPERATION_PRESENT'
   bash -n "$WRAPPER_SOURCE"
