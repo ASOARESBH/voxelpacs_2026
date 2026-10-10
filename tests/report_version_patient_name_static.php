@@ -46,6 +46,18 @@ expect_version_name(
     'Structured DICOM PN must freeze an empty Given without shifting Middle'
 );
 
+$fromDicomEmptyGivenWithFallback = $service->resolve([
+    'patient_name_dicom' => 'FAMILY^^MIDDLE',
+    'patient_name' => 'FAMILY GIVEN MIDDLE',
+]);
+expect_version_name(
+    $fromDicomEmptyGivenWithFallback['source'] === 'patient_name_fallback'
+        && $fromDicomEmptyGivenWithFallback['family'] === 'FAMILY'
+        && $fromDicomEmptyGivenWithFallback['given'] === 'GIVEN'
+        && $fromDicomEmptyGivenWithFallback['middle'] === 'MIDDLE',
+    'Empty DICOM Given must use the flat PatientName fallback when available'
+);
+
 $fromFlat = $service->resolve(['patient_name' => 'Flat Display Name']);
 expect_version_name($fromFlat['source'] === 'patient_name_fallback', 'Flat name must use the automatic fallback source');
 expect_version_name($fromFlat['family'] === 'Flat', 'Flat name must use its first token as family');

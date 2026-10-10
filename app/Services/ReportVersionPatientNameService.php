@@ -29,15 +29,18 @@ final class ReportVersionPatientNameService
             $this->value($study, 'patient_name'),
         ];
 
-        // A fonte DICOM estruturada sempre vence um valor plano eventualmente
-        // duplicado em patient_name_dicom/patient_name.
+        // Um PN DICOM completo sempre vence um valor plano eventualmente
+        // duplicado em patient_name_dicom/patient_name. Quando Given está
+        // vazio, guardamos a estrutura incompleta e tentamos o nome plano
+        // antes de manter o valor que fará o destino bloquear a liberação.
+        $incompleteDicom = null;
         foreach ($candidates as $rawPatientName) {
             $dicom = DicomPersonName::components($rawPatientName);
-            if ($dicom !== null) {
-                // Given vazio é uma posição válida do PN DICOM. A versão
-                // clínica deve congelar o valor recebido; a compatibilidade
-                // do destino Non-DICOM é validada antes da liberação.
+            if ($dicom !== null && $dicom['given'] !== '') {
                 return $this->validated($dicom['family'], $dicom['given'], $dicom['middle'], 'dicom_pn', false);
+            }
+            if ($dicom !== null && $incompleteDicom === null) {
+                $incompleteDicom = $dicom;
             }
         }
 
@@ -45,6 +48,16 @@ final class ReportVersionPatientNameService
             if (is_string($rawPatientName) && trim($rawPatientName) !== '' && !str_contains($rawPatientName, '^')) {
                 return $this->splitFlatPatientName($rawPatientName);
             }
+        }
+
+        if ($incompleteDicom !== null) {
+            return $this->validated(
+                $incompleteDicom['family'],
+                $incompleteDicom['given'],
+                $incompleteDicom['middle'],
+                'dicom_pn',
+                false
+            );
         }
 
         throw new InvalidArgumentException('patient_name_unavailable');
