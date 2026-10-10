@@ -48,8 +48,8 @@ expect_version_name(
 
 $fromFlat = $service->resolve(['patient_name' => 'Flat Display Name']);
 expect_version_name($fromFlat['source'] === 'patient_name_fallback', 'Flat name must use the automatic fallback source');
-expect_version_name($fromFlat['family'] === 'Flat Display Name', 'Flat name must be preserved entirely as family');
-expect_version_name($fromFlat['given'] === '' && $fromFlat['middle'] === '', 'Automatic flat-name fallback must leave given and middle empty');
+expect_version_name($fromFlat['family'] === 'Flat', 'Flat name must use its first token as family');
+expect_version_name($fromFlat['given'] === 'Display' && $fromFlat['middle'] === 'Name', 'Automatic flat-name fallback must map intermediate and last tokens');
 
 $missingPatientName = false;
 try {

@@ -1219,18 +1219,6 @@ class ReportsController extends Controller
         if (!$this->validarCsrf($csrfToken)) { $this->json(['ok' => false, 'msg' => 'Token inválido.'], 403); return; }
         $reportId = (int) ($input['report_id'] ?? 0);
         if (!$reportId) { $this->json(['ok' => false, 'msg' => 'report_id obrigatório.'], 422); return; }
-        $patientNameConfirmation = null;
-        if (array_key_exists('patient_name_confirmation', $input)) {
-            if (!is_array($input['patient_name_confirmation'])) {
-                $this->json([
-                    'ok' => false,
-                    'error' => 'patient_name_confirmation_invalid',
-                    'msg' => 'A confirmação manual do PatientName é inválida.',
-                ], 422);
-                return;
-            }
-            $patientNameConfirmation = $input['patient_name_confirmation'];
-        }
         try {
             $report = (new ReportAccessService())->findAuthorizedReport($reportId);
             if (!$report) { $this->json(['ok' => false, 'msg' => 'Laudo não encontrado.'], 404); return; }
@@ -1255,14 +1243,6 @@ class ReportsController extends Controller
                 return;
             }
             $situacao = $report->situacao ?? $report->status ?? 'rascunho';
-            if ($situacao !== 'assinado' && $patientNameConfirmation !== null) {
-                $this->json([
-                    'ok' => false,
-                    'error' => 'patient_name_confirmation_requires_signed',
-                    'msg' => 'A confirmação manual só pode ser usada para um laudo já assinado.',
-                ], 422);
-                return;
-            }
             // Se ainda não foi assinado, usa a mesma validação de conteúdo,
             // assinatura visual, hash e atualização de estudo do fluxo principal.
             if ($situacao !== 'assinado') {
@@ -1299,7 +1279,7 @@ class ReportsController extends Controller
             // Laudo já assinado: liberar não cria uma segunda assinatura. A
             // transição central registra auditoria, versão e apenas os efeitos
             // externos próprios de um laudo liberado.
-            $resultado = $this->reportService->liberarAssinado($reportId, $patientNameConfirmation);
+            $resultado = $this->reportService->liberarAssinado($reportId);
             if (!$resultado['ok']) {
                 $this->json(['ok' => false, 'msg' => $this->mensagemErroReport($resultado['error'] ?? '')], 422);
                 return;
@@ -1309,7 +1289,6 @@ class ReportsController extends Controller
                 'ok' => true,
                 'situacao' => 'liberado',
                 'msg' => 'Laudo liberado com sucesso.',
-                'patient_name_confirmation_applied' => (bool) ($resultado['patient_name_confirmation_applied'] ?? false),
                 'pdf_url' => $resultado['pdf_url'] ?? null,
             ]);
         } catch (\Throwable $e) {
@@ -1330,12 +1309,6 @@ class ReportsController extends Controller
             'patient_name_given' => 'Informe Given do paciente.',
             'patient_name_middle' => 'O Middle informado é inválido.',
             'patient_name_given_required' => 'O destino de devolutiva exige Given do paciente. O laudo permanece assinado e não foi liberado.',
-            'patient_name_confirmation_invalid' => 'A confirmação manual do PatientName é inválida.',
-            'patient_name_confirmation_required' => 'Confirme explicitamente a identificação do paciente antes de liberar o laudo.',
-            'patient_name_confirmation_not_required' => 'A confirmação manual só pode ser usada quando o Given original estiver vazio.',
-            'patient_name_confirmation_fields' => 'A confirmação manual contém campos não permitidos.',
-            'patient_name_confirmation_requires_signed' => 'A confirmação manual só pode ser usada para um laudo já assinado.',
-            'patient_name_component_delimiter' => 'Os componentes do PatientName não podem conter o separador DICOM ^.',
             'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva. O laudo permanece assinado e não foi liberado.',
             'assinatura_preferencia_somente' => t('assinatura_preferencia.erro.somente'),
             'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',

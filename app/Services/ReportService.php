@@ -475,17 +475,18 @@ class ReportService {
         $liberacaoBloqueada = false;
         $liberacaoBloqueio = null;
         $resolvedDestinations = null;
-        if ($modo === 'fechar') {
-            try {
-                $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
-            } catch (\InvalidArgumentException $e) {
-                Logger::warning('[ReportService::assinar] PatientName estruturado não resolvido', [
-                    'report_id' => $reportId,
-                    'tenant_id' => $tenantId,
-                    'error' => $e->getMessage(),
-                ]);
-                return ['ok' => false, 'error' => $e->getMessage()];
-            }
+        try {
+            // O snapshot estruturado é criado tanto em "somente" quanto em
+            // "fechar"; a diferença é apenas se a compatibilidade permite a
+            // transição para liberado e a criação do Outbox/Job.
+            $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
+        } catch (\InvalidArgumentException $e) {
+            Logger::warning('[ReportService::assinar] PatientName não resolvido', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => $e->getMessage()];
         }
 
         $payload = json_encode([
@@ -700,9 +701,8 @@ class ReportService {
      * assinatura. A transição é atômica e dispara somente os efeitos que
      * pertencem à liberação pública/operacional do documento.
      *
-     * @param array<string,mixed>|null $patientNameConfirmation
      */
-    public function liberarAssinado(int $reportId, ?array $patientNameConfirmation = null): array
+    public function liberarAssinado(int $reportId): array
     {
         $report = (new ReportAccessService())->findAuthorizedReport($reportId);
         if (!$report) return ['ok' => false, 'error' => 'report_nao_encontrado'];
@@ -740,16 +740,8 @@ class ReportService {
         $conteudo = ['secoes' => ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections(
             $this->extrairSecoesDoReport($report)
         )];
-        $manualConfirmationApplied = false;
         try {
             $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
-            if ($patientNameConfirmation !== null) {
-                $patientName = $this->resolveManualPatientNameConfirmation(
-                    $patientName,
-                    $patientNameConfirmation
-                );
-                $manualConfirmationApplied = true;
-            }
         } catch (\InvalidArgumentException $e) {
             Logger::warning('[ReportService::liberarAssinado] PatientName estruturado não resolvido', [
                 'report_id' => $reportId,
@@ -830,18 +822,7 @@ class ReportService {
             'origem' => 'liberacao_posterior',
             'hash' => $hash,
             'patient_name_source' => $patientName['source'],
-            'manual_confirmation' => $manualConfirmationApplied,
         ], $tenantId);
-        if ($manualConfirmationApplied) {
-            AuditLogger::log('report.patient_name.manual_confirmation', 'report_versions', $versaoNumero, [
-                'report_id' => $reportId,
-                'previous_source' => 'study_patient_name',
-                'source' => 'manual_confirmation',
-                'family_confirmed' => true,
-                'given_confirmed' => true,
-                'middle_confirmed' => $patientName['middle'] !== '',
-            ], $tenantId);
-        }
 
         $medico = ['nome' => Auth::user()?->nome ?? Auth::user()?->name ?? '', 'crm' => (string) ($report->assinatura_crm ?? '')];
         try {
@@ -875,44 +856,8 @@ class ReportService {
             'ok' => true,
             'situacao' => 'liberado',
             'liberado_em' => $liberadoEm,
-            'patient_name_confirmation_applied' => $manualConfirmationApplied,
             'pdf_url' => $this->urlPublica($report) . '/pdf',
         ];
-    }
-
-    /**
-     * Converte uma confirmação explícita em um snapshot estruturado.
-     * Nunca aceita Patient ID, Study UID ou valores livres de transporte.
-     *
-     * @param array{family?:mixed,given?:mixed,middle?:mixed,confirmed?:mixed} $confirmation
-     * @param array{family:string,given:string,middle:string,source:string} $current
-     * @return array{family:string,given:string,middle:string,source:string}
-     */
-    private function resolveManualPatientNameConfirmation(array $current, array $confirmation): array
-    {
-        if ($current['given'] !== '') {
-            throw new \InvalidArgumentException('patient_name_confirmation_not_required');
-        }
-        if (($confirmation['confirmed'] ?? null) !== true) {
-            throw new \InvalidArgumentException('patient_name_confirmation_required');
-        }
-        $unknown = array_diff(array_keys($confirmation), ['confirmed', 'family', 'given', 'middle']);
-        if ($unknown !== []) {
-            throw new \InvalidArgumentException('patient_name_confirmation_fields');
-        }
-
-        $patientName = (new ReportVersionPatientNameService())->validateStored(
-            $confirmation['family'] ?? null,
-            $confirmation['given'] ?? null,
-            $confirmation['middle'] ?? '',
-            'manual_confirmation'
-        );
-        foreach (['family', 'given', 'middle'] as $component) {
-            if (str_contains($patientName[$component], '^')) {
-                throw new \InvalidArgumentException('patient_name_component_delimiter');
-            }
-        }
-        return $patientName;
     }
 
     /** Persiste o PDF visual imutável da versão recém-criada, dentro da transação. */
