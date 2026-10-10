@@ -12,7 +12,7 @@ readonly ROOT
 readonly CAPTURE_SOURCE="$ROOT/scripts/capture-production-baseline.sh"
 readonly WRAPPER_SOURCE="$ROOT/ops/deploy/voxelpacs-production-baseline-capture"
 readonly SUDOERS_SOURCE="$ROOT/ops/sudoers/voxelpacs-production-baseline-capture"
-readonly INSTALLED_CAPTURE='/usr/local/libexec/voxelpacs-capture-production-baseline'
+readonly INSTALLED_CAPTURE='/usr/local/sbin/voxelpacs-capture-production-baseline'
 readonly INSTALLED_WRAPPER='/usr/local/sbin/voxelpacs-production-baseline-capture'
 readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-production-baseline-capture'
 readonly LOCK_PATH='/run/lock/voxelpacs-production-baseline-capture-provision.lock'
@@ -103,7 +103,6 @@ validate_sudoers() {
 }
 
 validate_install_scope() {
-  [[ -d /usr/local/libexec && ! -L /usr/local/libexec ]] || fail 'LIBEXEC_DIRECTORY_INVALID'
   [[ -d /usr/local/sbin && ! -L /usr/local/sbin ]] || fail 'SUDO_BIN_DIRECTORY_INVALID'
   [[ -d /etc/sudoers.d && ! -L /etc/sudoers.d ]] || fail 'SUDOERS_DIRECTORY_INVALID'
   [[ ! -e "$INSTALLED_CAPTURE" && ! -L "$INSTALLED_CAPTURE" ]] || fail 'CAPTURE_ALREADY_INSTALLED'

@@ -7,7 +7,7 @@ export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 
 readonly SOURCE_ROOT='/var/www/voxelpacs/app'
 readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'
-readonly CAPTURE_SCRIPT='/usr/local/libexec/voxelpacs-capture-production-baseline'
+readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'
 readonly MECHANISM_VERSION='1'
 
 fail() {

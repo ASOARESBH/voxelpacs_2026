@@ -27,7 +27,7 @@ sudo bash scripts/provision-production-baseline-capture.sh \
 Ele instala atomicamente, como `root:root`:
 
 ```text
-/usr/local/libexec/voxelpacs-capture-production-baseline  0555
+/usr/local/sbin/voxelpacs-capture-production-baseline     0555
 /usr/local/sbin/voxelpacs-production-baseline-capture      0555
 /etc/sudoers.d/voxelpacs-production-baseline-capture      0440
 ```

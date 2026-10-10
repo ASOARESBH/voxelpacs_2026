@@ -19,7 +19,7 @@ visudo -cf "$sudoers" >/dev/null || fail sudoers_syntax
 
 grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$wrapper" || fail fixed_source_root
 grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$wrapper" || fail fixed_output_root
-grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/libexec/voxelpacs-capture-production-baseline'" "$wrapper" || fail fixed_capture_path
+grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$wrapper" || fail fixed_capture_path
 grep -Fq "[[ \"\$#\" -eq 1 && \"\$1\" == 'capture' ]]" "$wrapper" || fail fixed_arguments
 grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$sudoers" || fail sudoers_command
 grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$sudoers" || fail sudoers_caller
