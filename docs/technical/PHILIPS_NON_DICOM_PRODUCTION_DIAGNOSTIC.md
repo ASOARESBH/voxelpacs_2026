@@ -8,11 +8,14 @@ Ele não cria Request, Outbox ou Job; não arma filas; não executa Worker; não
 
 ## Execução
 
-O comando é instalado em contexto isolado e deve ser executado somente pelo mecanismo administrativo allowlisted definido para o runtime, como o usuário de aplicação apropriado. O executor não aceita argumentos:
+O comando é instalado em contexto isolado e deve ser executado somente pelo mecanismo administrativo allowlisted definido para o runtime, como o usuário de aplicação apropriado. O modo sem argumentos preserva o contrato legado de `controlled_production`; o fluxo de laudo liberado sem input manual deve usar explicitamente `automatic_production`:
 
 ```text
 php /usr/local/libexec/voxelpacs/philips_nondicom_production_diagnostic.php
+php /usr/local/libexec/voxelpacs/philips_nondicom_production_diagnostic.php --dispatch-mode=automatic_production
 ```
+
+Somente os valores fechados `automatic_production` e `controlled_production` são aceitos. Argumentos adicionais ou modos desconhecidos são rejeitados antes de carregar o diagnóstico.
 
 O caminho acima é um contrato de instalação, não uma autorização para instalar ou executar em produção nesta PR. A instalação requer procedimento operacional separado, backup da configuração administrativa e validação da allowlist.
 
@@ -27,6 +30,7 @@ O diagnóstico não carrega `app/bootstrap.php`: evita sessão, criação de dir
 | Transport | `philips_non_dicom` | Deve corresponder |
 | Ambiente | `producao` | Deve corresponder |
 | Profile | `submission_document` | Deve corresponder |
+| Modo | `controlled_production` (padrão) ou `automatic_production` | Define o contrato de `disparar_na_liberacao` |
 | Report | `348` | Somente metadados |
 | Versão | `4` | Somente existência estrutural |
 
@@ -37,7 +41,7 @@ Nenhum conteúdo clínico, PDF, XML, PatientName, segredo, senha, token, cookie,
 O resultado geral é `READY` somente quando todos os gates retornam `PASS`. Qualquer `UNKNOWN`, `BLOCKED` ou ausência de evidência resulta em `overall=BLOCKED`.
 
 1. **Runtime** — flags efetivas do `ReportDeliveryRuntimeConfig`, incluindo Hub/Requests/Non-DICOM ativos, SMB test/read-only OFF e Worker kill switch OFF.
-2. **Destination 7** — tenant, transport, produção, habilitado, auto-trigger OFF, profile, protocolo SMB, gateway bridge, credencial presente e vínculo PACS.
+2. **Destination 7** — tenant, transport, produção, habilitado, profile, protocolo SMB, gateway bridge, credencial presente e vínculo PACS. Em `controlled_production`, `disparar_na_liberacao=0`; em `automatic_production`, `disparar_na_liberacao=1`. A segunda regra é a que permite que a liberação clínica encontre o Destination 7 e crie Outbox/Job sem input manual.
 3. **Tenant/PACS** — servidor PACS ativo e autorizado para o tenant, com `task_site_id` canônico correspondente. O `task_site_id_alias` é um identificador técnico ASCII separado, obrigatório para o D7 controlado, e não substitui esse binding.
 4. **Fila** — o gate usa somente Jobs tenant-scoped do Destination `7`; Jobs de outros destinos não bloqueiam D7. Outbox é exibido apenas como observação tenant-scoped, porque o schema não possui `destination_id` e não permite inferência de destino.
 5. **Worker** — unit habilitada, inativa e sem processo.
@@ -71,7 +75,7 @@ Exemplo de decisão (sem valores de ambiente):
 - Não há SQL mutável.
 - Não há chamada `smbclient`, `curl`, `scp`, `rsync` ou cliente de transporte.
 - O comando de processo é restrito a `/usr/bin/systemctl` com `is-enabled`, `is-active` e `show --property=MainPID --value`.
-- O processo não aceita argumentos arbitrários.
+- O processo aceita somente o argumento fechado `--dispatch-mode=automatic_production` ou `--dispatch-mode=controlled_production`; não aceita argumentos arbitrários.
 - O diagnóstico não publica alteração em produção. Qualquer provisionamento, allowlist, backup ou deploy é uma fase operacional independente.
 
 ## Testes locais
