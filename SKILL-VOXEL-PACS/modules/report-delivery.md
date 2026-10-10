@@ -74,6 +74,8 @@ O diagnóstico `bin/philips_nondicom_submission_no_send.php` é o gate explícit
 
 O diagnóstico complementar `bin/philips_nondicom_pdf_readonly.php` exige `--read-only-no-send` e valida o gate completo do pacote sem envio: snapshot/binding canônico, digest da Request somente no ramo controlado, PDF imutável (ou revisão explicitamente ligada), renderização visual em memória pelo renderer oficial, XML em memória e correlação PDF/XML pelo basename e alias. Ele aplica os mesmos gates temporais SQL do Worker, usa `SET TRANSACTION READ ONLY` com rollback, não persiste artefatos, não reclama Job e não chama Worker, Bridge, SMB ou DICOM. `PDF_GENERATION=PASS` significa renderização em memória válida; o PDF efetivo continua sendo o snapshot imutável lido e validado. O contrato está em `docs/technical/PHILIPS_NON_DICOM_PDF_READONLY_VALIDATION.md`; esse `PASS` também não autoriza o primeiro envio.
 
+O diagnóstico agregado `bin/philips_nondicom_production_diagnostic.php` aceita somente `--dispatch-mode=automatic_production` ou `--dispatch-mode=controlled_production`. Sem argumento, preserva `controlled_production` e exige `disparar_na_liberacao=0`; o modo automático exige `disparar_na_liberacao=1`, permitindo que a liberação clínica crie Outbox/Job sem input manual. Ambos permanecem somente leitura e não substituem os gates temporais do Worker nem autorizam transporte.
+
 ## Dependências
 
 - Depende de: `pacs_report_delivery_jobs`, `pacs_report_delivery_outbox`, `pacs_report_delivery_destinations`, `pacs_report_delivery_artifacts`, `App\Core\Audit\AuditLogger` e `ReportDeliveryWorkerRepository`.

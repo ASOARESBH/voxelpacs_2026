@@ -18,6 +18,9 @@ $expect = static function (bool $condition, string $message) use ($fail): void {
 $source = file_get_contents($diagnosticPath);
 $expect(is_string($source), 'diagnostic source is readable');
 $expect(str_contains($source, 'class PhilipsNonDicomProductionDiagnostic'), 'diagnostic class exists');
+$expect(str_contains($source, "DISPATCH_MODE_AUTOMATIC = 'automatic_production'"), 'automatic mode is explicit');
+$expect(str_contains($source, "DISPATCH_MODE_CONTROLLED = 'controlled_production'"), 'controlled mode is explicit');
+$expect(str_contains($source, "--dispatch-mode="), 'dispatch mode CLI option is explicit');
 $expect(str_contains($source, "private const TENANT_ID = 2"), 'tenant is fixed to 2');
 $expect(str_contains($source, "private const DESTINATION_ID = 7"), 'destination is fixed to 7');
 $expect(str_contains($source, 'task_site_alias_valid'), 'diagnostic validates the technical alias separately');
@@ -74,12 +77,35 @@ $destination = [
     'task_site_alias_valid' => true,
 ];
 $server = ['id' => 3, 'nome' => 'synthetic-server'];
-$expect($class::destinationGate($destination, $server) === 'PASS', 'valid production destination passes');
+$expect($class::destinationGate($destination, $server) === 'PASS', 'controlled destination passes with auto trigger off');
 $destination['auto_trigger'] = 1;
-$expect($class::destinationGate($destination, $server) === 'BLOCKED', 'automatic trigger is rejected');
+$expect($class::destinationGate($destination, $server) === 'BLOCKED', 'controlled mode rejects automatic trigger');
+$expect(
+    $class::destinationGate($destination, $server, $class::DISPATCH_MODE_AUTOMATIC) === 'PASS',
+    'automatic destination passes with auto trigger on'
+);
 $destination['auto_trigger'] = 0;
+$expect(
+    $class::destinationGate($destination, $server, $class::DISPATCH_MODE_AUTOMATIC) === 'BLOCKED',
+    'automatic mode rejects disabled release trigger'
+);
 $destination['server_pacs_id'] = 4;
 $expect($class::destinationGate($destination, $server) === 'BLOCKED', 'wrong PACS binding is rejected');
+$expect(
+    $class::normalizeDispatchMode('automatic_production') === $class::DISPATCH_MODE_AUTOMATIC,
+    'automatic mode normalizes'
+);
+$expect(
+    $class::normalizeDispatchMode('controlled_production') === $class::DISPATCH_MODE_CONTROLLED,
+    'controlled mode normalizes'
+);
+$invalidModeRejected = false;
+try {
+    $class::normalizeDispatchMode('invalid');
+} catch (InvalidArgumentException) {
+    $invalidModeRejected = true;
+}
+$expect($invalidModeRejected, 'invalid dispatch mode is rejected');
 
 $expect($class::queueGate([]) === 'PASS', 'no Destination 7 active jobs passes');
 $expect($class::queueGate(['queued' => 0, 'processing' => 0, 'retrying' => 0]) === 'PASS', 'inactive Destination 7 jobs pass');

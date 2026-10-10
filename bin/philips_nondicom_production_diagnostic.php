@@ -20,10 +20,12 @@ use Throwable;
 
 final class PhilipsNonDicomProductionDiagnostic
 {
-    private const VERSION = '1.0.0';
+    private const VERSION = '1.1.0';
     private const DEFAULT_APP_ROOT = '/var/www/voxelpacs/app';
     private const TENANT_ID = 2;
     private const DESTINATION_ID = 7;
+    public const DISPATCH_MODE_AUTOMATIC = 'automatic_production';
+    public const DISPATCH_MODE_CONTROLLED = 'controlled_production';
     private const REPORT_ID = 348;
     private const REPORT_VERSION = 4;
     private const WORKER_UNIT = 'voxelpacs-report-delivery-worker.service';
@@ -45,8 +47,21 @@ final class PhilipsNonDicomProductionDiagnostic
 
     public function __construct(
         private readonly string $appRoot = self::DEFAULT_APP_ROOT,
-        private readonly ?PDO $pdo = null
+        private readonly ?PDO $pdo = null,
+        string $dispatchMode = self::DISPATCH_MODE_CONTROLLED
     ) {
+        $this->dispatchMode = self::normalizeDispatchMode($dispatchMode);
+    }
+
+    private readonly string $dispatchMode;
+
+    public static function normalizeDispatchMode(?string $dispatchMode): string
+    {
+        return match (trim((string) $dispatchMode)) {
+            self::DISPATCH_MODE_AUTOMATIC => self::DISPATCH_MODE_AUTOMATIC,
+            self::DISPATCH_MODE_CONTROLLED => self::DISPATCH_MODE_CONTROLLED,
+            default => throw new \InvalidArgumentException('invalid_dispatch_mode'),
+        };
     }
 
     /** @return array<string,mixed> */
@@ -57,6 +72,7 @@ final class PhilipsNonDicomProductionDiagnostic
             'diagnostic' => 'philips_nondicom_production',
             'version' => self::VERSION,
             'mode' => 'READ_ONLY',
+            'dispatch_mode' => $this->dispatchMode,
             'overall' => 'BLOCKED',
             'timestamp_utc' => gmdate(DATE_ATOM),
             'hostname' => self::safeHostname((string) gethostname()),
@@ -100,7 +116,11 @@ final class PhilipsNonDicomProductionDiagnostic
             $destinationResult['task_site_match'] = ($result['tenant_pacs']['task_site_id_match'] ?? 'NO') === 'YES';
             $destinationResult['canonical_task_site_id_match'] = $result['tenant_pacs']['task_site_id_match'] ?? 'UNKNOWN';
             $result['destination_7'] = $destinationResult;
-            $result['destination_7']['status'] = self::destinationGate($destinationResult, $server);
+            $result['destination_7']['status'] = self::destinationGate(
+                $destinationResult,
+                $server,
+                $this->dispatchMode
+            );
             $result['credential_chain'] = $this->credentialState($destinationResult, $environment);
             $result['queue'] = $this->queueState($pdo);
             $result['report_candidate'] = $this->reportCandidateState($pdo);
@@ -150,8 +170,14 @@ final class PhilipsNonDicomProductionDiagnostic
     }
 
     /** @param array<string,mixed> $destination @param array<string,mixed>|null $server */
-    public static function destinationGate(array $destination, ?array $server): string
+    public static function destinationGate(
+        array $destination,
+        ?array $server,
+        string $dispatchMode = self::DISPATCH_MODE_CONTROLLED
+    ): string
     {
+        $dispatchMode = self::normalizeDispatchMode($dispatchMode);
+        $expectedAutoTrigger = $dispatchMode === self::DISPATCH_MODE_AUTOMATIC ? 1 : 0;
         if ($destination === []) {
             return 'UNKNOWN';
         }
@@ -160,7 +186,7 @@ final class PhilipsNonDicomProductionDiagnostic
             || (string) ($destination['transport'] ?? '') !== 'philips_non_dicom'
             || (string) ($destination['environment'] ?? '') !== 'producao'
             || (int) ($destination['enabled'] ?? 0) !== 1
-            || (int) ($destination['auto_trigger'] ?? 1) !== 0
+            || (int) ($destination['auto_trigger'] ?? 1) !== $expectedAutoTrigger
             || $server === null
             || (int) ($server['id'] ?? 0) !== (int) ($destination['server_pacs_id'] ?? 0)
         ) {
@@ -702,12 +728,23 @@ namespace {
     }
     $root = '/var/www/voxelpacs/app';
     require_once $root . '/app/autoload.php';
-    $diagnostic = new \App\Diagnostics\PhilipsNonDicomProductionDiagnostic($root);
     $arguments = array_slice($argv ?? [], 1);
-    if ($arguments !== []) {
+    $dispatchMode = \App\Diagnostics\PhilipsNonDicomProductionDiagnostic::DISPATCH_MODE_CONTROLLED;
+    if (count($arguments) === 1 && str_starts_with($arguments[0], '--dispatch-mode=')) {
+        try {
+            $dispatchMode = \App\Diagnostics\PhilipsNonDicomProductionDiagnostic::normalizeDispatchMode(
+                substr($arguments[0], strlen('--dispatch-mode='))
+            );
+        } catch (\InvalidArgumentException) {
+            $dispatchMode = null;
+        }
+    } elseif ($arguments !== []) {
+        $dispatchMode = null;
+    }
+    if ($dispatchMode === null) {
         echo json_encode([
             'diagnostic' => 'philips_nondicom_production',
-            'version' => '1.0.0',
+            'version' => '1.1.0',
             'mode' => 'READ_ONLY',
             'overall' => 'BLOCKED',
             'error_category' => 'ARGUMENTS_NOT_ALLOWED',
@@ -715,5 +752,6 @@ namespace {
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
         exit(64);
     }
+    $diagnostic = new \App\Diagnostics\PhilipsNonDicomProductionDiagnostic($root, null, $dispatchMode);
     echo json_encode($diagnostic->run(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 }
