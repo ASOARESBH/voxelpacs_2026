@@ -475,17 +475,18 @@ class ReportService {
         $liberacaoBloqueada = false;
         $liberacaoBloqueio = null;
         $resolvedDestinations = null;
-        if ($modo === 'fechar') {
-            try {
-                $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
-            } catch (\InvalidArgumentException $e) {
-                Logger::warning('[ReportService::assinar] PatientName estruturado não resolvido', [
-                    'report_id' => $reportId,
-                    'tenant_id' => $tenantId,
-                    'error' => $e->getMessage(),
-                ]);
-                return ['ok' => false, 'error' => $e->getMessage()];
-            }
+        try {
+            // O snapshot estruturado é criado tanto em "somente" quanto em
+            // "fechar"; a diferença é apenas se a compatibilidade permite a
+            // transição para liberado e a criação do Outbox/Job.
+            $patientName = (new ReportVersionPatientNameService())->resolve((array) $estudo);
+        } catch (\InvalidArgumentException $e) {
+            Logger::warning('[ReportService::assinar] PatientName não resolvido', [
+                'report_id' => $reportId,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+            return ['ok' => false, 'error' => $e->getMessage()];
         }
 
         $payload = json_encode([
@@ -699,6 +700,7 @@ class ReportService {
      * Promove um laudo já assinado para liberado sem criar uma segunda
      * assinatura. A transição é atômica e dispara somente os efeitos que
      * pertencem à liberação pública/operacional do documento.
+     *
      */
     public function liberarAssinado(int $reportId): array
     {
@@ -819,7 +821,8 @@ class ReportService {
         AuditLogger::log('report.liberar', 'reports', $reportId, [
             'origem' => 'liberacao_posterior',
             'hash' => $hash,
-        ]);
+            'patient_name_source' => $patientName['source'],
+        ], $tenantId);
 
         $medico = ['nome' => Auth::user()?->nome ?? Auth::user()?->name ?? '', 'crm' => (string) ($report->assinatura_crm ?? '')];
         try {
