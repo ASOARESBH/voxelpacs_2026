@@ -1,7 +1,7 @@
-# Módulo — Relatórios (Exames / SLA Médicos)
+# Módulo — Relatórios (Exames / Médicos / SLA Médicos)
 
 ## Propósito
-Menu novo `Relatórios` (sidebar, entre Cadastros e Sistema) com dois relatórios somente-leitura sobre `bi_pacs_estudos`: **Exames** (listagem filtrável/exportável) e **SLA Médicos** (cumprimento de SLA por médico responsável). Puramente analítico/gerencial — nenhuma ação de abrir/laudar estudo a partir daqui.
+Menu novo `Relatórios` (sidebar, entre Cadastros e Sistema) com três relatórios somente-leitura sobre `bi_pacs_estudos`: **Exames** (listagem filtrável/exportável), **Médicos** (produtividade, assinaturas, liberações, Peer Review e SLA por médico) e **SLA Médicos** (cumprimento de SLA por médico responsável). Puramente analítico/gerencial — nenhuma ação de abrir/laudar estudo a partir daqui.
 
 **Regra de arquitetura não-negociável**: este módulo **não usa `EstudosController` nem `EstudosRepository`** (o primeiro é documentado como alto risco/fragilidade — PDO 100% inline num Controller; o segundo é consumido por `ReportsController`, outro caminho paralelo). Toda leitura de dados vive em `RelatorioEstudosRepository`, uma camada nova e isolada, criada especificamente para não herdar nenhuma dessas fragilidades.
 
@@ -11,11 +11,13 @@ Menu novo `Relatórios` (sidebar, entre Cadastros e Sistema) com dois relatório
 | `app/Repositories/RelatorioEstudosRepository.php` | Toda SQL nova (`bi_pacs_estudos`, `bi_sla_regras`, `reports`, `bi_medicos`). Sempre exige `tenant_id` explícito. |
 | `app/Services/RelatorioFiltrosService.php` | Normaliza `$_GET` → filtros seguros; resolve opções de dropdown/chips (unidades via `InstitutionResolverService`, modalidades/médicos/solicitantes via o repositório). |
 | `app/Services/RelatorioSlaCalcService.php` | Motor de cálculo de SLA — resolução de regra, tempo decorrido, classificação verde/amarelo/vermelho/sem_sla, agregação por médico. |
-| `app/Services/RelatorioExportService.php` | Export PDF (Dompdf) + XLSX (PhpSpreadsheet), layout profissional compartilhado pelos 2 relatórios. |
+| `app/Services/RelatorioExportService.php` | Export PDF (Dompdf) + XLSX (PhpSpreadsheet), layout profissional compartilhado pelos relatórios. |
 | `app/Controllers/RelatorioEstudosController.php` | `GET /relatorios/exames` (+ `/exportar`). |
+| `app/Repositories/RelatorioProdutividadeMedicosRepository.php` | Consulta tenant-scoped de produtividade médica, totalizadores e paginação da tela. |
+| `app/Controllers/RelatorioMedicosController.php` | `GET /relatorios/medicos` (+ `/exportar`). |
 | `app/Controllers/RelatorioSlaController.php` | `GET /relatorios/sla-medicos` (+ `/exportar`). |
-| `app/Views/relatorios/{exames,sla_medicos}.php` | Telas — filtros + tabela. |
-| `app/Views/relatorios/pdf/{exames,sla_medicos}.php` | Templates HTML → Dompdf. |
+| `app/Views/relatorios/{exames,medicos,sla_medicos}.php` | Telas — filtros + tabela. |
+| `app/Views/relatorios/pdf/{exames,medicos,sla_medicos}.php` | Templates HTML → Dompdf. |
 
 ## ⚠️ Colisão de nome com código morto (não confundir)
 Já existiam `app/Controllers/RelatoriosController.php` e `app/Controllers/ExamesController.php` **antes** desta tarefa — são do módulo legado "VOXEL B.I" (o projeto começou como `voxel/bi`, ver `composer.json`), operam sobre `bi_exames`/model `Exame` (tabela de billing antiga, campo `valor_venda`), **não têm rota nenhuma em `routes/web.php`**, e a view `relatorios/index` que tentariam renderizar nem existe — é código morto, desconectado da worklist PACS atual. Por isso os controllers novos deste módulo usam nomes distintos: `RelatorioEstudosController` e `RelatorioSlaController` (singular "Relatorio", não "Relatorios"). Não reative nem reaproveite os antigos sem entender que eles apontam pra um schema totalmente diferente.
@@ -71,8 +73,11 @@ Achados durante a análise que não batiam com dados reais do schema — resolvi
 
 ## Exportação
 
+- **Relatório de Médicos — separação entre tela e exportação:** `RelatorioProdutividadeMedicosRepository::buscar()` sempre aplica o teto de segurança SQL de 5.000 exames retornados pela consulta filtrada. A tela chama o método com paginação e exibe 25 linhas por página; `RelatorioMedicosController::exportar()` chama `buscar(..., paginar: false)` e recebe todas as linhas do conjunto filtrado retornado pela consulta, sem o limite de 100 linhas da paginação da tela. O teto de 5.000 permanece como proteção operacional.
+
 - **Formato confirmado com o usuário**: XLS (`.xlsx`, `phpoffice/phpspreadsheet`), não XML. PDF via `dompdf/dompdf`, declarado em `composer.json` e bloqueado em `composer.lock`. `RelatorioExportService` segue o mesmo mecanismo HTML→Dompdf usado no laudário.
 - **Disponibilidade controlada de PDF**: `RelatorioExportService::pdfDisponivel()` valida a classe `Dompdf` antes de iniciar a exportação. Exames e SLA retornam uma tela HTTP 503 orientando o usuário a usar XLSX ou atualizar o pacote quando a biblioteca não estiver disponível, em vez de produzir erro 500.
+- **Memória e paginação do PDF de Médicos:** durante `streamPdf()`, quando o limite efetivo está abaixo de `256M`, o Service eleva `memory_limit` somente durante a requisição e restaura o valor anterior em `finally`; não altera `php.ini` nem o pool do PHP-FPM. O template de Médicos declara paginação explícita do Dompdf (`thead` repetido e linhas não divididas) para conjuntos completos maiores que uma página. O teto SQL de 5.000 continua sendo aplicado; geração em chunks/merge de múltiplos PDFs não está implementada.
 - **Deploy HostGator**: `scripts/build.sh` instala dependências de produção, mantém `vendor/` dentro do ZIP e falha o build se `vendor/dompdf/dompdf/src/Dompdf.php` não estiver presente. Isso é obrigatório porque Composer pode não estar disponível no servidor publicado.
 - Nome de arquivo: `RELATORIO_EXAMES_<AAAAMMDD_HHmm>.{pdf,xlsx}`, `RELATORIO_SLA_MEDICOS_<AAAAMMDD_HHmm>.{pdf,xlsx}`.
 - PDF usa `isPhpEnabled: true` no Dompdf só pra rodar o `<script type="text/php">` do rodapé de paginação (`page_text`) — seguro porque os templates são arquivos próprios (não HTML de terceiros) e todo dado dinâmico neles passa por `htmlspecialchars()`.

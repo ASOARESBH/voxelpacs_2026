@@ -29,6 +29,8 @@ foreach ($tracked as $path) {
 }
 
 $expect(is_file($root . '/VERSAO.txt'), 'version marker exists');
-$expect(trim((string) file_get_contents($root . '/VERSAO.txt')) === '1.0', 'version marker is 1.0');
+$version = trim((string) file_get_contents($root . '/VERSAO.txt'));
+$expect((bool) preg_match('/^\d+\.\d+$/', $version), 'main deve manter marcador de versão semântico.');
+$expect(str_contains($build, 'VERSION_MARKER_MUST_BE_1_0'), 'build de homologação deve manter a validação exclusiva da versão 1.0.');
 
 echo "HOMOLOGATION_ISOLATION_STATIC=PASS\n";

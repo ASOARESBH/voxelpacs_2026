@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+require_once $root . '/app/autoload.php';
 
 function expect_profile(bool $condition, string $message): void
 {
@@ -15,13 +16,17 @@ function expect_profile(bool $condition, string $message): void
 $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryController.php');
 $view = file_get_contents($root . '/app/Views/platform/negocios/report_delivery.php');
 $producer = file_get_contents($root . '/app/Services/PhilipsSubmissionPackageProducer.php');
+$authorResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionAuthorResolver.php');
 $resolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
+$generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
+$dicomPersonName = file_get_contents($root . '/app/Helpers/DicomPersonName.php');
 $snapshot = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+$request = file_get_contents($root . '/app/Services/ReportDeliveryRequestService.php');
 $versionName = file_get_contents($root . '/app/Services/ReportVersionPatientNameService.php');
 $versionMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($resolver) && is_string($snapshot) && is_string($outbox) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
+expect_profile(is_string($controller) && is_string($view) && is_string($producer) && is_string($authorResolver) && is_string($resolver) && is_string($generator) && is_string($dicomPersonName) && is_string($snapshot) && is_string($outbox) && is_string($request) && is_string($versionName) && is_string($versionMigration) && is_string($contract), 'All submission sources must be readable');
 
 foreach ([
     'PROFILE_PDF_ONLY',
@@ -29,8 +34,13 @@ foreach ([
     'validatePhilipsSubmissionConfiguration',
     'task_file_path',
     'task_site_id',
+    'task_site_id_alias',
     'task_document_name',
     'task_author_id',
+    'task_author_source',
+    'default',
+    '999',
+    'task_author_humanname_family',
     'task_delete_file',
     'task_document_type_applicable',
     '11502-2',
@@ -46,6 +56,8 @@ foreach ([
     'data-field="task_site_id"',
     'data-field="task_document_name"',
     'data-field="task_author_id"',
+    'data-field="task_author_source"',
+    'data-field="task_author_humanname_family"',
     'task_author_source_help',
     'data-field="task_document_type_applicable"',
     'data-field="task_document_type"',
@@ -68,13 +80,37 @@ expect_profile(
     str_contains($view, "if (key.startsWith('task_')) delete config[key];"),
     'View must remove legacy task fields from the configuration root before serialization'
 );
+expect_profile(
+    str_contains($view, "body.set('task_site_id_alias', taskSiteAliasField.value.trim())"),
+    'View must submit the technical alias explicitly, including when the browser omits a disabled control'
+);
+expect_profile(
+    str_contains($view, "task_site_id_alias: taskSiteAliasField ? taskSiteAliasField.value.trim() : ''"),
+    'View capture diagnostics must expose only the sanitized alias field'
+);
+expect_profile(
+    str_contains($view, "if (taskAuthorSourceField.value !== 'default' && taskAuthorNameField) taskAuthorNameField.value = ''"),
+    'View must clear the default author text when another author source is selected'
+);
 
 expect_profile(str_contains($producer, 'new PhilipsSubmissionMetadataResolver'), 'Package producer must use the explicit metadata resolver');
+expect_profile(str_contains($producer, 'PhilipsSubmissionAuthorResolver') && str_contains($producer, 'resolveForNoSendDiagnostic'), 'Package producer must use the dedicated author resolver and isolate diagnostic fallback');
+expect_profile(str_contains($producer, 'resolveTaskSiteId'), 'Package producer must resolve the controlled production alias explicitly');
+expect_profile(str_contains($producer, 'dispatch_mode') && str_contains($producer, 'task_site_id_alias'), 'Alias selection must be scoped to the controlled payload or automatic destination context');
+expect_profile(str_contains($producer, "'task_site_id_alias' => (string) (\$job['task_site_id_alias'] ?? '')"), 'Automatic production must pass the resolved destination alias into the delivery context');
 expect_profile(str_contains($producer, "'task_document_name'"), 'Document name must be accepted as explicit configuration');
 expect_profile(str_contains($producer, "'task_author_id'"), 'Author ID must be accepted as explicit configuration');
-expect_profile(!str_contains($producer, "'task_author_humanname_family'")
-    && !str_contains($producer, "'task_author_humanname_given'")
-    && !str_contains($producer, "'task_author_humanname_middle'"), 'Package producer must not accept configured human author names');
+expect_profile(str_contains($authorResolver, "'automatic_production'"), 'Configured author resolution must be scoped to automatic production');
+expect_profile(str_contains($authorResolver, "'task_author_source' => 'default'") || str_contains($authorResolver, "SOURCE_DEFAULT_CONFIGURATION"), 'Default author resolution must be explicit');
+expect_profile(str_contains($authorResolver, "'task_author_id' => '999'"), 'Default author resolution must force technical ID 999');
+expect_profile(str_contains($controller, '$allowDefaultAuthor'), 'Controller must compute an explicit default-author permission');
+expect_profile(str_contains($controller, 'A fonte default do autor Philips exige disparo automático em produção.'), 'Controller must reject default author outside automatic production');
+expect_profile(str_contains($request, 'A fonte bi_medicos deve ser resolvida somente no automatic_production'), 'Controlled production must reject live bi_medicos author lookup');
+foreach (['task_author_humanname_family', 'task_author_humanname_given', 'task_author_humanname_middle'] as $field) {
+    expect_profile(str_contains($authorResolver, "'{$field}'"), "Author resolver must accept configured {$field}");
+}
+expect_profile(str_contains($authorResolver, 'TASK_AUTHOR_ID_RESOLUTION') || str_contains($authorResolver, 'taskAuthorIdResolution'), 'Author resolver must not infer task_author_id as an internal medical ID');
+expect_profile(str_contains($authorResolver, 'SOURCE_FALLBACK_MISSING_DATA') && str_contains($authorResolver, 'resolveForNoSendDiagnostic'), 'Author fallback must be identifiable and no-send scoped');
 expect_profile(!str_contains($producer, "'task_patient_humanname_family'")
     && !str_contains($producer, "'task_patient_humanname_given'")
     && !str_contains($producer, "'task_patient_humanname_middle'"), 'Package producer must not accept administrative PatientName components');
@@ -90,6 +126,9 @@ expect_profile(str_contains($resolver, 'versionPatientName'), 'Resolver must pri
 expect_profile(str_contains($resolver, 'studyDocumentDate'), 'Resolver must derive document date from StudyDate/StudyTime');
 expect_profile(str_contains($resolver, 'referring_physician_name'), 'Resolver must derive author names from Referring Physician');
 expect_profile(str_contains($resolver, 'dicomPersonName'), 'Resolver must recognize structured DICOM PatientName');
+expect_profile(str_contains($resolver, 'author_humanname_flat') && str_contains($resolver, 'referringPhysicianRaw'), 'Resolver must mark flat Referring Physician names without reusing PatientName-as-family');
+expect_profile(str_contains($generator, 'author_humanname_flat') && str_contains($generator, 'optionalText($input, \'task_author_humanname_given\')'), 'Generator must allow empty author given only for the explicit flat-author context');
+expect_profile(!str_contains($dicomPersonName, 'PhilipsSubmission') && !str_contains($dicomPersonName, 'author_humanname_flat'), 'Generic DICOM PN helper must not contain Philips-specific author rules');
 expect_profile(str_contains($versionName, 'DicomPersonName::components') && str_contains($versionName, 'patient_name_fallback'), 'Version service must parse DICOM PN and persist flat names automatically as the fallback source');
 expect_profile(str_contains($versionMigration, 'patient_name_family') && str_contains($versionMigration, 'report_versions_patient_name_immutable'), 'Migration must add structured fields and immutability');
 expect_profile(!str_contains($resolver, 'explode(\' \''), 'Resolver must not split names on spaces');
@@ -97,10 +136,102 @@ expect_profile(str_contains($contract, 'pdf_only'), 'Contract must document back
 expect_profile(str_contains($contract, 'task_document_type'), 'Contract must document conditional document type');
 expect_profile(str_contains($contract, 'PatientName-as-family'), 'Contract must document the scoped PatientName family exception');
 expect_profile(str_contains($contract, 'ReferringPhysicianName') && str_contains($contract, 'StudyDate/StudyTime'), 'Contract must document clinical XML sources');
+expect_profile(str_contains($contract, 'Quando o valor é plano') && str_contains($contract, 'não reutiliza `patient_name_as_family`'), 'Contract must distinguish flat Referring Physician names from PatientName-as-family');
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = file_get_contents($root . '/lang/' . ($locale === 'pt_BR' ? 'pt_BR' : $locale) . '.php');
     expect_profile(is_string($catalog) && substr_count($catalog, 'philips_non_dicom.profile_submission_document') === 1, "{$locale} must contain the profile translation");
+}
+
+foreach ([
+    "\$result['smb_auth']",
+    "\$result['smb_pwd']",
+    "\$result['smb_return_code']",
+    "\$result['smb_classification']",
+    "\$result['nt_status_logon_failure']",
+    "\$result['result']",
+    "'SMB_WRITE' => 'NOT_EXECUTED'",
+] as $marker) {
+    expect_profile(str_contains($controller, $marker), "SMB read-only controller must map {$marker}");
+}
+expect_profile(
+    str_contains($controller, "'success' => \$probePassed")
+        && str_contains($controller, "\$probePassed ? 200 : 422"),
+    'SMB read-only controller must not report an unconfirmed probe as success'
+);
+expect_profile(
+    !str_contains($controller, "\$result['SMB_AUTH']")
+        && !str_contains($controller, "\$result['SMB_TARGET']")
+        && !str_contains($controller, "\$result['SMB_READONLY_LIST']"),
+    'SMB read-only controller must not read nonexistent uppercase client keys'
+);
+
+$d6Context = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 6,
+    'ambiente' => 'homologacao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'manual_homologation',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(['task_site_id_alias' => 'MALICIOUS'], '2', $d6Context) === '2',
+    'D6 must retain its canonical task_site_id and ignore aliases'
+);
+$d7Context = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 7,
+    'ambiente' => 'producao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'controlled_production',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(['task_site_id_alias' => 'ORTHANC-CLIENTE-A'], 'Unicode — canonical', $d7Context) === 'ORTHANC-CLIENTE-A',
+    'D7 production must use only the frozen ASCII alias'
+);
+$d7AutomaticContext = [
+    'transport' => 'philips_non_dicom',
+    'destination_id' => 7,
+    'ambiente' => 'producao',
+    'delivery_profile' => 'submission_document',
+    'dispatch_mode' => 'automatic_production',
+    'task_site_id_alias' => 'ORTHANC-CLIENTE-A',
+];
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId([], 'Unicode — canonical', $d7AutomaticContext) === 'ORTHANC-CLIENTE-A',
+    'D7 automatic production must use the resolved ASCII destination alias'
+);
+try {
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(
+        [],
+        'Unicode — canonical',
+        array_replace($d7AutomaticContext, ['task_site_id_alias' => ''])
+    );
+    expect_profile(false, 'D7 automatic production must fail closed without a valid destination alias');
+} catch (\App\Services\PhilipsXmlFieldUnresolvedException) {
+    // Expected fail-closed behavior.
+}
+expect_profile(
+    \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId(
+        ['task_site_id_alias' => 'MALICIOUS'],
+        'Unicode — canonical',
+        [
+            'transport' => 'philips_non_dicom',
+            'destination_id' => 6,
+            'ambiente' => 'producao',
+            'delivery_profile' => 'submission_document',
+            'dispatch_mode' => 'automatic_production',
+            'task_site_id_alias' => 'OTHER-DESTINATION',
+        ]
+    ) === 'Unicode — canonical',
+    'Non-D7 automatic production must retain its canonical task_site_id'
+);
+foreach ([[], ['task_site_id_alias' => ''], ['task_site_id_alias' => 'não-ascii']] as $invalidPayload) {
+    try {
+        \App\Services\PhilipsSubmissionPackageProducer::resolveTaskSiteId($invalidPayload, 'Unicode — canonical', $d7Context);
+        expect_profile(false, 'D7 production must fail closed without a valid alias');
+    } catch (\App\Services\PhilipsXmlFieldUnresolvedException) {
+        // Expected fail-closed behavior.
+    }
 }
 
 echo "REPORT_DELIVERY_SUBMISSION_PROFILE_STATIC_OK\n";

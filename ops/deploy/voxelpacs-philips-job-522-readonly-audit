@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# VOXEL PACS — helper root-controlled para auditoria read-only do Job 522.
+# O diagnóstico não aceita argumentos e não executa operações mutáveis.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly DIAGNOSTIC='/usr/local/libexec/voxelpacs/philips_job_522_readonly_audit.php'
+readonly EXPECTED_HOST='voxel-api-prod-01'
+
+fail() {
+  printf 'AUDIT=BLOCKED\nFAILURE_CATEGORY=%s\n' "$1" >&2
+  exit 64
+}
+
+[[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+[[ "$#" -eq 0 ]] || fail 'ARGUMENTS_NOT_ALLOWED'
+[[ "$(hostname -s)" == "$EXPECTED_HOST" ]] || fail 'HOST_IDENTITY_MISMATCH'
+[[ -f "$DIAGNOSTIC" && ! -L "$DIAGNOSTIC" ]] || fail 'DIAGNOSTIC_NOT_INSTALLED'
+[[ "$(stat -c '%U:%G:%a' "$DIAGNOSTIC" 2>/dev/null)" == 'root:root:750' ]] || fail 'DIAGNOSTIC_NOT_ROOT_ONLY'
+[[ -f "$APP_ROOT/app/autoload.php" && ! -L "$APP_ROOT/app/autoload.php" ]] || fail 'APP_AUTOLOAD_NOT_FOUND'
+[[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || fail 'APP_ROOT_INVALID'
+
+# No shell interpolation of runtime values and no user-controlled path/command.
+exec /usr/bin/php "$DIAGNOSTIC"

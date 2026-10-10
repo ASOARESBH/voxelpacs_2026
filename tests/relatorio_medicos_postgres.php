@@ -51,8 +51,18 @@ $result = $repo->buscar($base);
 if ((int) $result['total'] <= 0) {
     throw new RuntimeException('Nenhum laudo concluído foi retornado para o tenant de teste.');
 }
+if (count($result['linhas']) > $base['por_pagina']) {
+    throw new RuntimeException('A consulta paginada retornou mais linhas que o tamanho da página.');
+}
 if ((int) $result['totalizadores']['laudos'] !== (int) $result['total']) {
     throw new RuntimeException('Totalizador de laudos diverge do conjunto detalhado.');
+}
+$exportResult = $repo->buscar($base, paginar: false);
+if ((int) $exportResult['total'] !== (int) $result['total']) {
+    throw new RuntimeException('Exportação e tela consultaram conjuntos filtrados diferentes.');
+}
+if (count($exportResult['linhas']) !== (int) $exportResult['total']) {
+    throw new RuntimeException('Exportação não retornou todas as linhas do conjunto filtrado.');
 }
 foreach ($result['linhas'] as $line) {
     if (!in_array($line['situacao_laudo'], ['assinado', 'liberado'], true)) {

@@ -1,0 +1,1010 @@
+#!/usr/bin/env bash
+# Philips Folder Bridge policy applier.
+# Root-only operational helper. It never executes a Job, contacts the Bridge,
+# accesses SMB, changes DICOM/C-STORE, or touches the application database.
+set -Eeuo pipefail
+umask 077
+
+readonly ALLOWED_UNIT='voxelpacs-philips-folder-bridge.service'
+readonly POLICY_KEYS=(
+  PHILIPS_FOLDER_MODE
+  PHILIPS_FOLDER_ALLOW_TENANT_ID
+  PHILIPS_FOLDER_ALLOW_DESTINATION_ID
+  PHILIPS_FOLDER_DESTINATION_ID
+  PHILIPS_FOLDER_ALLOW_JOB_ID
+)
+readonly ALLOWLIST_KEYS=(tenant_id destination_id jobs transport profile mode)
+readonly TRANSITION_MANIFEST_KEYS=(FORMAT BACKUP_ID TIMESTAMP TARGET_COMPONENT TARGET_POLICY UNIT SOURCE_JOB TARGET_TENANT TARGET_DESTINATION TARGET_JOB TARGET_TRANSPORT TARGET_PROFILE SOURCE_POLICY_CHECKSUM POLICY_CHECKSUM SOURCE_ALLOWLIST_CHECKSUM ALLOWLIST_CHECKSUM)
+readonly DIAGNOSTIC_KEYS=(
+  PHILIPS_FOLDER_STAGE_DIAGNOSTICS
+  PHILIPS_FOLDER_SMB_DIAGNOSTICS
+  PHILIPS_FOLDER_ENVELOPE_DIAGNOSTICS
+  PHILIPS_FOLDER_ALLOW_MISSING_PATIENT_NAME_COMPONENTS_FOR_HOMOLOGATION
+  PHILIPS_FOLDER_ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION
+)
+
+ACTION=''
+DRY_RUN='NO'
+ENV_FILE=''
+ALLOWLIST_FILE=''
+BACKUP_ROOT=''
+BACKUP_ID=''
+EXPECTED_HOST=''
+UNIT_NAME=''
+TARGET_TENANT=''
+TARGET_DESTINATION=''
+TARGET_JOB=''
+TARGET_TRANSPORT=''
+TARGET_PROFILE=''
+TARGET_MODE=''
+SOURCE_JOB=''
+
+declare -A ALLOWLIST=()
+declare -A CURRENT=()
+declare -A TARGET=()
+
+fail() {
+  printf 'APPLY=BLOCKED\nBLOCKER=%s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage:
+  voxelpacs-philips-folder-policy-applier --dry-run [options]
+  voxelpacs-philips-folder-policy-applier --backup-only [options] --unit voxelpacs-philips-folder-bridge.service
+  voxelpacs-philips-folder-policy-applier --validate [options]
+  voxelpacs-philips-folder-policy-applier --apply [options] --backup-id ID
+  voxelpacs-philips-folder-policy-applier rollback [--dry-run] [options] --backup-id ID
+  voxelpacs-philips-folder-policy-applier --reload [options] --unit voxelpacs-philips-folder-bridge.service
+  voxelpacs-philips-folder-policy-applier --transition-dry-run [options] --source-job-id N
+  voxelpacs-philips-folder-policy-applier --transition-backup-only [options] --source-job-id N --unit voxelpacs-philips-folder-bridge.service
+  voxelpacs-philips-folder-policy-applier --transition-apply [options] --source-job-id N --backup-id ID
+  voxelpacs-philips-folder-policy-applier transition-rollback [--dry-run] [options] --source-job-id N --backup-id ID
+
+Required options for policy actions:
+  --env-file PATH
+  --allowlist PATH
+  --backup-root PATH
+  --expected-host NAME
+  --tenant-id N --destination-id N --job-id N|0
+  --transport philips_non_dicom --profile submission_document --mode single_test|destination
+
+The helper is intentionally explicit. It does not use production defaults.
+USAGE
+  exit 64
+}
+
+is_absolute_path() {
+  [[ "$1" == /* ]]
+}
+
+require_absolute_path() {
+  is_absolute_path "$2" || fail "${1}_PATH_NOT_ABSOLUTE"
+}
+
+require_root() {
+  [[ "${EUID}" -eq 0 ]] || fail 'ROOT_REQUIRED'
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "COMMAND_UNAVAILABLE_$1"
+}
+
+require_host() {
+  [[ -n "$EXPECTED_HOST" ]] || fail 'EXPECTED_HOST_REQUIRED'
+  [[ "$(hostname -s)" == "$EXPECTED_HOST" ]] || fail 'HOST_IDENTITY_MISMATCH'
+}
+
+secure_regular_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%U:%G:%a' "$path" 2>/dev/null)" == 'root:root:600' ]]
+}
+
+secure_directory() {
+  local path="$1"
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%U:%G:%a' "$path" 2>/dev/null)" == 'root:root:700' ]]
+}
+
+validate_env_file_metadata() {
+  is_absolute_path "$ENV_FILE" || fail 'ENV_FILE_PATH_NOT_ABSOLUTE'
+  secure_regular_file "$ENV_FILE" || fail 'ENV_FILE_NOT_ROOT_ONLY'
+}
+
+key_count() {
+  local file="$1" key="$2"
+  awk -F= -v key="$key" '$1 == key { count++ } END { print count + 0 }' "$file"
+}
+
+key_value() {
+  local file="$1" key="$2"
+  awk -F= -v key="$key" '$1 == key { value = substr($0, index($0, "=") + 1) } END { print value }' "$file"
+}
+
+load_current_policy() {
+  local key count value
+  CURRENT=()
+  for key in "${POLICY_KEYS[@]}"; do
+    count="$(key_count "$ENV_FILE" "$key")"
+    [[ "$count" == '1' ]] || fail "CURRENT_POLICY_${key}_COUNT_${count}"
+    value="$(key_value "$ENV_FILE" "$key")"
+    [[ -n "$value" ]] || fail "CURRENT_POLICY_${key}_EMPTY"
+    CURRENT["$key"]="$value"
+  done
+}
+
+is_boolean_off() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_optional_runtime_safety() {
+  local key count value
+  for key in "${DIAGNOSTIC_KEYS[@]}"; do
+    count="$(key_count "$ENV_FILE" "$key")"
+    [[ "$count" == '0' || "$count" == '1' ]] || fail "DUPLICATE_SAFETY_FLAG_${key}"
+    if [[ "$count" == '1' ]]; then
+      value="$(key_value "$ENV_FILE" "$key")"
+      is_boolean_off "$value" || fail "SAFETY_FLAG_NOT_OFF_${key}"
+    fi
+  done
+  count="$(key_count "$ENV_FILE" 'PHILIPS_FOLDER_FALLBACK')"
+  [[ "$count" == '0' || "$count" == '1' ]] || fail 'DUPLICATE_FALLBACK'
+  if [[ "$count" == '1' ]]; then
+    value="$(key_value "$ENV_FILE" 'PHILIPS_FOLDER_FALLBACK')"
+    [[ -z "$value" ]] || fail 'FALLBACK_CONFIGURED'
+  fi
+}
+
+validate_positive_id() {
+  [[ "$2" =~ ^[1-9][0-9]*$ ]] || fail "INVALID_${1}"
+}
+
+validate_nonnegative_job() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]] || fail 'INVALID_CURRENT_JOB'
+}
+
+validate_current_policy() {
+  local mode allow_tenant allow_destination destination job bridge_transport
+  mode="${CURRENT[PHILIPS_FOLDER_MODE]}"
+  allow_tenant="${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}"
+  allow_destination="${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}"
+  destination="${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}"
+  job="${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  [[ "$(key_count "$ENV_FILE" 'PHILIPS_FOLDER_TRANSPORT')" == '1' ]] || fail 'CURRENT_BRIDGE_TRANSPORT_COUNT_INVALID'
+  bridge_transport="$(key_value "$ENV_FILE" 'PHILIPS_FOLDER_TRANSPORT')"
+
+  [[ "$mode" == 'single_test' || "$mode" == 'destination' ]] || fail 'UNKNOWN_CURRENT_POLICY_MODE'
+  validate_positive_id CURRENT_TENANT "$allow_tenant"
+  validate_positive_id CURRENT_ALLOW_DESTINATION "$allow_destination"
+  validate_positive_id CURRENT_DESTINATION "$destination"
+  validate_nonnegative_job "$job"
+  [[ "$allow_destination" == "$destination" ]] || fail 'CURRENT_DESTINATION_BINDING_MISMATCH'
+  [[ "$bridge_transport" == 'smb' || "$bridge_transport" == 'sftp' ]] || fail 'UNKNOWN_CURRENT_BRIDGE_TRANSPORT'
+  if [[ "$mode" == 'single_test' ]]; then
+    [[ "$job" =~ ^[1-9][0-9]*$ ]] || fail 'SINGLE_TEST_WITHOUT_JOB'
+  else
+    [[ "$job" == '0' ]] || fail 'DESTINATION_MODE_WITH_JOB'
+  fi
+  validate_optional_runtime_safety
+}
+
+parse_allowlist() {
+  local line key value count
+  ALLOWLIST=()
+  [[ -f "$ALLOWLIST_FILE" && ! -L "$ALLOWLIST_FILE" ]] || fail 'ALLOWLIST_NOT_FOUND'
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "${line:0:1}" == '#' ]] && continue
+    [[ "$line" =~ ^([a-z_]+)=([^[:space:]]+)$ ]] || fail 'ALLOWLIST_SYNTAX_INVALID'
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case " ${ALLOWLIST_KEYS[*]} " in
+      *" $key "*) ;;
+      *) fail 'ALLOWLIST_UNKNOWN_KEY' ;;
+    esac
+    [[ -z "${ALLOWLIST[$key]+set}" ]] || fail 'ALLOWLIST_DUPLICATE_KEY'
+    ALLOWLIST["$key"]="$value"
+  done < "$ALLOWLIST_FILE"
+
+  for key in "${ALLOWLIST_KEYS[@]}"; do
+    [[ -n "${ALLOWLIST[$key]+set}" ]] || fail "ALLOWLIST_MISSING_${key}"
+  done
+
+  validate_positive_id ALLOWLIST_TENANT "${ALLOWLIST[tenant_id]}"
+  validate_positive_id ALLOWLIST_DESTINATION "${ALLOWLIST[destination_id]}"
+  [[ "${ALLOWLIST[transport]}" == 'philips_non_dicom' ]] || fail 'ALLOWLIST_TRANSPORT_MISMATCH'
+  [[ "${ALLOWLIST[profile]}" == 'submission_document' ]] || fail 'ALLOWLIST_PROFILE_MISMATCH'
+  [[ "${ALLOWLIST[mode]}" == 'single_test' || "${ALLOWLIST[mode]}" == 'destination' ]] || fail 'ALLOWLIST_MODE_UNSUPPORTED'
+  if [[ "${ALLOWLIST[mode]}" == 'single_test' ]]; then
+    [[ "${ALLOWLIST[jobs]}" =~ ^[1-9][0-9]*$ ]] || fail 'ALLOWLIST_JOBS_INVALID'
+  else
+    [[ "${ALLOWLIST[jobs]}" == '0' ]] || fail 'DESTINATION_ALLOWLIST_JOBS_MUST_BE_ZERO'
+  fi
+}
+
+load_target() {
+  TARGET=(
+    [tenant_id]="$TARGET_TENANT"
+    [destination_id]="$TARGET_DESTINATION"
+    [job_id]="$TARGET_JOB"
+    [transport]="$TARGET_TRANSPORT"
+    [profile]="$TARGET_PROFILE"
+    [mode]="$TARGET_MODE"
+  )
+  validate_positive_id TARGET_TENANT "$TARGET_TENANT"
+  validate_positive_id TARGET_DESTINATION "$TARGET_DESTINATION"
+  if [[ "$TARGET_MODE" == 'single_test' ]]; then
+    validate_positive_id TARGET_JOB "$TARGET_JOB"
+  elif [[ "$TARGET_MODE" == 'destination' ]]; then
+    [[ "$TARGET_JOB" == '0' ]] || fail 'DESTINATION_TARGET_JOB_MUST_BE_ZERO'
+  else
+    fail 'TARGET_MODE_UNSUPPORTED'
+  fi
+  [[ "$TARGET_TRANSPORT" == 'philips_non_dicom' ]] || fail 'TARGET_TRANSPORT_UNSUPPORTED'
+  [[ "$TARGET_PROFILE" == 'submission_document' ]] || fail 'TARGET_PROFILE_UNSUPPORTED'
+}
+
+validate_target_against_allowlist() {
+  local key
+  for key in tenant_id destination_id transport profile mode; do
+    [[ "${TARGET[$key]}" == "${ALLOWLIST[$key]}" ]] || fail "TARGET_${key^^}_NOT_ALLOWLISTED"
+  done
+  [[ "${ALLOWLIST[jobs]}" == "$TARGET_JOB" ]] || fail 'TARGET_JOB_NOT_ALLOWLISTED'
+}
+
+validate_source_job_option() {
+  [[ -n "$SOURCE_JOB" ]] || fail 'SOURCE_JOB_REQUIRED'
+  validate_positive_id SOURCE_JOB "$SOURCE_JOB"
+  [[ "$SOURCE_JOB" != "$TARGET_JOB" ]] || fail 'SOURCE_TARGET_JOB_MUST_DIFFER'
+}
+
+validate_transition_source() {
+  local key
+  validate_required_options
+  require_root
+  require_host
+  validate_env_file_metadata
+  load_current_policy
+  validate_current_policy
+  parse_allowlist
+  load_target
+  validate_source_job_option
+
+  [[ "${CURRENT[PHILIPS_FOLDER_MODE]}" == 'single_test' ]] || fail 'SOURCE_POLICY_MODE_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}" == "$TARGET_TENANT" ]] || fail 'SOURCE_POLICY_TENANT_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'SOURCE_POLICY_DESTINATION_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'SOURCE_POLICY_BINDING_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}" == "$SOURCE_JOB" ]] || fail 'SOURCE_POLICY_JOB_MISMATCH'
+  [[ "${ALLOWLIST[jobs]}" == "$SOURCE_JOB" ]] || fail 'SOURCE_ALLOWLIST_JOB_MISMATCH'
+  [[ "${ALLOWLIST[mode]}" == 'single_test' ]] || fail 'SOURCE_ALLOWLIST_MODE_MISMATCH'
+
+  for key in tenant_id destination_id transport profile; do
+    [[ "${ALLOWLIST[$key]}" == "${TARGET[$key]}" ]] || fail "SOURCE_ALLOWLIST_${key^^}_MISMATCH"
+  done
+}
+
+validate_transition_target() {
+  validate_required_options
+  require_root
+  require_host
+  validate_env_file_metadata
+  load_current_policy
+  validate_current_policy
+  parse_allowlist
+  load_target
+  validate_source_job_option
+
+  [[ "${CURRENT[PHILIPS_FOLDER_MODE]}" == "$TARGET_MODE" ]] || fail 'TARGET_POLICY_MODE_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}" == "$TARGET_TENANT" ]] || fail 'TARGET_POLICY_TENANT_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'TARGET_POLICY_DESTINATION_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || fail 'TARGET_POLICY_BINDING_MISMATCH'
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}" == "$TARGET_JOB" ]] || fail 'TARGET_POLICY_JOB_MISMATCH'
+  validate_target_against_allowlist
+}
+
+policy_matches_target() {
+  [[ "${CURRENT[PHILIPS_FOLDER_MODE]}" == "$TARGET_MODE" ]] || return 1
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}" == "$TARGET_TENANT" ]] || return 1
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || return 1
+  [[ "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}" == "$TARGET_DESTINATION" ]] || return 1
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}" == "$TARGET_JOB" ]] || return 1
+}
+
+validate_required_options() {
+  [[ -n "$ENV_FILE" ]] || fail 'ENV_FILE_REQUIRED'
+  [[ -n "$ALLOWLIST_FILE" ]] || fail 'ALLOWLIST_REQUIRED'
+  [[ -n "$BACKUP_ROOT" ]] || fail 'BACKUP_ROOT_REQUIRED'
+  [[ -n "$EXPECTED_HOST" ]] || fail 'EXPECTED_HOST_REQUIRED'
+  [[ -n "$TARGET_TENANT" && -n "$TARGET_DESTINATION" && -n "$TARGET_JOB" ]] || fail 'TARGET_IDS_REQUIRED'
+  [[ -n "$TARGET_TRANSPORT" && -n "$TARGET_PROFILE" && -n "$TARGET_MODE" ]] || fail 'TARGET_CONTEXT_REQUIRED'
+  require_absolute_path ENV_FILE "$ENV_FILE"
+  require_absolute_path ALLOWLIST "$ALLOWLIST_FILE"
+  require_absolute_path BACKUP_ROOT "$BACKUP_ROOT"
+}
+
+validate_all() {
+  validate_required_options
+  require_root
+  validate_env_file_metadata
+  load_current_policy
+  validate_current_policy
+  parse_allowlist
+  load_target
+  validate_target_against_allowlist
+}
+
+backup_dir_path() {
+  local id="$1"
+  [[ "$id" != */* && "$id" != '.' && "$id" != '..' ]] || fail 'BACKUP_ID_INVALID'
+  printf '%s/%s' "$BACKUP_ROOT" "$id"
+}
+
+write_backup_policy() {
+  local output="$1"
+  umask 077
+  {
+    printf 'PHILIPS_FOLDER_MODE=%s\n' "${CURRENT[PHILIPS_FOLDER_MODE]}"
+    printf 'PHILIPS_FOLDER_ALLOW_TENANT_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_JOB_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  } > "$output"
+  chown root:root "$output"
+  chmod 0600 "$output"
+}
+
+current_policy_checksum() {
+  {
+    printf 'PHILIPS_FOLDER_MODE=%s\n' "${CURRENT[PHILIPS_FOLDER_MODE]}"
+    printf 'PHILIPS_FOLDER_ALLOW_TENANT_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_DESTINATION_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_DESTINATION_ID]}"
+    printf 'PHILIPS_FOLDER_ALLOW_JOB_ID=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  } | sha256sum | awk '{print $1}'
+}
+
+manifest_value() {
+  local file="$1" key="$2"
+  awk -F= -v key="$key" '$1 == key { count++; value = substr($0, index($0, "=") + 1) } END { if (count == 1) print value; else exit 1 }' "$file"
+}
+
+create_backup() {
+  local timestamp backup_dir backup_id policy checksum source_checksum manifest
+  secure_directory "$BACKUP_ROOT" || {
+    if [[ ! -e "$BACKUP_ROOT" ]]; then
+      install -d -o root -g root -m 0700 "$BACKUP_ROOT"
+    else
+      fail 'BACKUP_ROOT_NOT_ROOT_ONLY'
+    fi
+  }
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_dir="$(mktemp -d "$BACKUP_ROOT/policy-${timestamp}-XXXXXX")"
+  backup_id="$(basename "$backup_dir")"
+  chown root:root "$backup_dir"
+  chmod 0700 "$backup_dir"
+  policy="$backup_dir/policy.conf"
+  manifest="$backup_dir/manifest"
+  source_checksum="$(current_policy_checksum)"
+  write_backup_policy "$policy"
+  checksum="$(sha256sum "$policy" | awk '{print $1}')"
+  [[ "$source_checksum" == "$checksum" ]] || fail 'BACKUP_SOURCE_CHECKSUM_MISMATCH'
+  {
+    printf 'FORMAT=1\n'
+    printf 'BACKUP_ID=%s\n' "$backup_id"
+    printf 'TIMESTAMP=%s\n' "$timestamp"
+    printf 'TARGET_COMPONENT=philips_folder_bridge_policy\n'
+    printf 'TARGET_POLICY=%s\n' "$TARGET_MODE"
+    printf 'TARGET_TENANT=%s\n' "$TARGET_TENANT"
+    printf 'TARGET_DESTINATION=%s\n' "$TARGET_DESTINATION"
+    printf 'TARGET_JOB=%s\n' "$TARGET_JOB"
+    printf 'TARGET_TRANSPORT=%s\n' "$TARGET_TRANSPORT"
+    printf 'TARGET_PROFILE=%s\n' "$TARGET_PROFILE"
+    printf 'SOURCE_POLICY_CHECKSUM=%s\n' "$source_checksum"
+    printf 'POLICY_CHECKSUM=%s\n' "$checksum"
+  } > "$manifest"
+  chown root:root "$manifest"
+  chmod 0600 "$manifest"
+  verify_backup "$backup_id" >/dev/null
+  printf '%s' "$backup_id"
+}
+
+allowlist_checksum() {
+  sha256sum "$ALLOWLIST_FILE" | awk '{print $1}'
+}
+
+write_transition_allowlist() {
+  local output="$1"
+  umask 077
+  {
+    printf 'tenant_id=%s\n' "$TARGET_TENANT"
+    printf 'destination_id=%s\n' "$TARGET_DESTINATION"
+    printf 'jobs=%s\n' "$TARGET_JOB"
+    printf 'transport=%s\n' "$TARGET_TRANSPORT"
+    printf 'profile=%s\n' "$TARGET_PROFILE"
+    printf 'mode=%s\n' "$TARGET_MODE"
+  } > "$output"
+  chown root:root "$output"
+  chmod 0600 "$output"
+}
+
+create_transition_backup() {
+  local timestamp backup_dir backup_id policy manifest allowlist checksum source_allowlist_checksum
+  secure_directory "$BACKUP_ROOT" || {
+    if [[ ! -e "$BACKUP_ROOT" ]]; then
+      install -d -o root -g root -m 0700 "$BACKUP_ROOT"
+    else
+      fail 'BACKUP_ROOT_NOT_ROOT_ONLY'
+    fi
+  }
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_dir="$(mktemp -d "$BACKUP_ROOT/transition-${timestamp}-XXXXXX")"
+  backup_id="$(basename "$backup_dir")"
+  chown root:root "$backup_dir"
+  chmod 0700 "$backup_dir"
+  policy="$backup_dir/policy.conf"
+  allowlist="$backup_dir/allowlist"
+  manifest="$backup_dir/manifest"
+  source_allowlist_checksum="$(allowlist_checksum)"
+  write_backup_policy "$policy"
+  install -o root -g root -m 0600 "$ALLOWLIST_FILE" "$allowlist"
+  checksum="$(sha256sum "$policy" | awk '{print $1}')"
+  {
+    printf 'FORMAT=2\n'
+    printf 'BACKUP_ID=%s\n' "$backup_id"
+    printf 'TIMESTAMP=%s\n' "$timestamp"
+    printf 'TARGET_COMPONENT=philips_folder_bridge_policy_transition\n'
+    printf 'TARGET_POLICY=%s\n' "$TARGET_MODE"
+    printf 'UNIT=%s\n' "$UNIT_NAME"
+    printf 'SOURCE_JOB=%s\n' "$SOURCE_JOB"
+    printf 'TARGET_TENANT=%s\n' "$TARGET_TENANT"
+    printf 'TARGET_DESTINATION=%s\n' "$TARGET_DESTINATION"
+    printf 'TARGET_JOB=%s\n' "$TARGET_JOB"
+    printf 'TARGET_TRANSPORT=%s\n' "$TARGET_TRANSPORT"
+    printf 'TARGET_PROFILE=%s\n' "$TARGET_PROFILE"
+    printf 'SOURCE_POLICY_CHECKSUM=%s\n' "$checksum"
+    printf 'POLICY_CHECKSUM=%s\n' "$checksum"
+    printf 'SOURCE_ALLOWLIST_CHECKSUM=%s\n' "$source_allowlist_checksum"
+    printf 'ALLOWLIST_CHECKSUM=%s\n' "$source_allowlist_checksum"
+  } > "$manifest"
+  chown root:root "$manifest"
+  chmod 0600 "$manifest"
+  verify_transition_backup "$backup_id" >/dev/null
+  printf '%s' "$backup_id"
+}
+
+validate_backup_manifest() {
+  local manifest="$1" key count value
+  for key in FORMAT BACKUP_ID TIMESTAMP TARGET_COMPONENT TARGET_POLICY TARGET_TENANT TARGET_DESTINATION TARGET_JOB TARGET_TRANSPORT TARGET_PROFILE SOURCE_POLICY_CHECKSUM POLICY_CHECKSUM; do
+    count="$(key_count "$manifest" "$key")"
+    [[ "$count" == '1' ]] || fail "BACKUP_MANIFEST_${key}_COUNT_${count}"
+  done
+  [[ "$(manifest_value "$manifest" FORMAT)" == '1' ]] || fail 'BACKUP_FORMAT_UNSUPPORTED'
+  [[ "$(manifest_value "$manifest" TARGET_COMPONENT)" == 'philips_folder_bridge_policy' ]] || fail 'BACKUP_COMPONENT_MISMATCH'
+  value="$(manifest_value "$manifest" TARGET_POLICY)"
+  [[ "$value" == 'single_test' || "$value" == 'destination' ]] || fail 'BACKUP_POLICY_UNSUPPORTED'
+  validate_positive_id BACKUP_TENANT "$(manifest_value "$manifest" TARGET_TENANT)"
+  validate_positive_id BACKUP_DESTINATION "$(manifest_value "$manifest" TARGET_DESTINATION)"
+  value="$(manifest_value "$manifest" TARGET_JOB)"
+  if [[ "$(manifest_value "$manifest" TARGET_POLICY)" == 'single_test' ]]; then
+    validate_positive_id BACKUP_JOB "$value"
+  else
+    [[ "$value" == '0' ]] || fail 'BACKUP_DESTINATION_JOB_MUST_BE_ZERO'
+  fi
+  [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == 'philips_non_dicom' ]] || fail 'BACKUP_TRANSPORT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == 'submission_document' ]] || fail 'BACKUP_PROFILE_MISMATCH'
+  [[ "$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)" =~ ^[a-f0-9]{64}$ ]] || fail 'BACKUP_SOURCE_CHECKSUM_INVALID'
+  [[ "$(manifest_value "$manifest" POLICY_CHECKSUM)" =~ ^[a-f0-9]{64}$ ]] || fail 'BACKUP_CHECKSUM_INVALID'
+}
+
+verify_backup() {
+  local id="$1" dir manifest policy expected actual
+  dir="$(backup_dir_path "$id")"
+  secure_directory "$dir" || fail 'BACKUP_DIRECTORY_NOT_ROOT_ONLY'
+  manifest="$dir/manifest"
+  policy="$dir/policy.conf"
+  secure_regular_file "$manifest" || fail 'BACKUP_MANIFEST_NOT_ROOT_ONLY'
+  secure_regular_file "$policy" || fail 'BACKUP_POLICY_NOT_ROOT_ONLY'
+  validate_backup_manifest "$manifest"
+  expected="$(manifest_value "$manifest" POLICY_CHECKSUM)"
+  actual="$(sha256sum "$policy" | awk '{print $1}')"
+  [[ "$expected" == "$actual" ]] || fail 'BACKUP_CHECKSUM_MISMATCH'
+  [[ "$(manifest_value "$manifest" BACKUP_ID)" == "$id" ]] || fail 'BACKUP_ID_MISMATCH'
+  [[ "$(key_count "$policy" PHILIPS_FOLDER_MODE)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
+  [[ "$(key_count "$policy" PHILIPS_FOLDER_ALLOW_TENANT_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
+  [[ "$(key_count "$policy" PHILIPS_FOLDER_ALLOW_DESTINATION_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
+  [[ "$(key_count "$policy" PHILIPS_FOLDER_DESTINATION_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
+  [[ "$(key_count "$policy" PHILIPS_FOLDER_ALLOW_JOB_ID)" == '1' ]] || fail 'BACKUP_POLICY_INVALID'
+  printf 'PASS'
+}
+
+validate_transition_backup_manifest() {
+  local manifest="$1" key count value
+  for key in "${TRANSITION_MANIFEST_KEYS[@]}"; do
+    count="$(key_count "$manifest" "$key")"
+    [[ "$count" == '1' ]] || fail "TRANSITION_MANIFEST_${key}_COUNT_${count}"
+  done
+  [[ "$(manifest_value "$manifest" FORMAT)" == '2' ]] || fail 'TRANSITION_BACKUP_FORMAT_UNSUPPORTED'
+  [[ "$(manifest_value "$manifest" TARGET_COMPONENT)" == 'philips_folder_bridge_policy_transition' ]] || fail 'TRANSITION_BACKUP_COMPONENT_MISMATCH'
+  [[ "$(manifest_value "$manifest" UNIT)" == "$ALLOWED_UNIT" ]] || fail 'TRANSITION_BACKUP_UNIT_MISMATCH'
+  value="$(manifest_value "$manifest" TARGET_POLICY)"
+  [[ "$value" == 'single_test' || "$value" == 'destination' ]] || fail 'TRANSITION_BACKUP_POLICY_UNSUPPORTED'
+  validate_positive_id TRANSITION_SOURCE_JOB "$(manifest_value "$manifest" SOURCE_JOB)"
+  validate_positive_id TRANSITION_TARGET_TENANT "$(manifest_value "$manifest" TARGET_TENANT)"
+  validate_positive_id TRANSITION_TARGET_DESTINATION "$(manifest_value "$manifest" TARGET_DESTINATION)"
+  value="$(manifest_value "$manifest" TARGET_JOB)"
+  if [[ "$(manifest_value "$manifest" TARGET_POLICY)" == 'single_test' ]]; then
+    validate_positive_id TRANSITION_TARGET_JOB "$value"
+  else
+    [[ "$value" == '0' ]] || fail 'TRANSITION_DESTINATION_TARGET_JOB_MUST_BE_ZERO'
+  fi
+  [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == 'philips_non_dicom' ]] || fail 'TRANSITION_BACKUP_TRANSPORT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == 'submission_document' ]] || fail 'TRANSITION_BACKUP_PROFILE_MISMATCH'
+  for key in SOURCE_POLICY_CHECKSUM POLICY_CHECKSUM SOURCE_ALLOWLIST_CHECKSUM ALLOWLIST_CHECKSUM; do
+    value="$(manifest_value "$manifest" "$key")"
+    [[ "$value" =~ ^[a-f0-9]{64}$ ]] || fail "TRANSITION_BACKUP_${key}_INVALID"
+  done
+}
+
+verify_transition_backup() {
+  local id="$1" dir manifest policy allowlist expected actual
+  dir="$(backup_dir_path "$id")"
+  secure_directory "$dir" || fail 'TRANSITION_BACKUP_DIRECTORY_NOT_ROOT_ONLY'
+  manifest="$dir/manifest"
+  policy="$dir/policy.conf"
+  allowlist="$dir/allowlist"
+  secure_regular_file "$manifest" || fail 'TRANSITION_BACKUP_MANIFEST_NOT_ROOT_ONLY'
+  secure_regular_file "$policy" || fail 'TRANSITION_BACKUP_POLICY_NOT_ROOT_ONLY'
+  secure_regular_file "$allowlist" || fail 'TRANSITION_BACKUP_ALLOWLIST_NOT_ROOT_ONLY'
+  validate_transition_backup_manifest "$manifest"
+  expected="$(manifest_value "$manifest" POLICY_CHECKSUM)"
+  actual="$(sha256sum "$policy" | awk '{print $1}')"
+  [[ "$expected" == "$actual" ]] || fail 'TRANSITION_BACKUP_POLICY_CHECKSUM_MISMATCH'
+  expected="$(manifest_value "$manifest" ALLOWLIST_CHECKSUM)"
+  actual="$(sha256sum "$allowlist" | awk '{print $1}')"
+  [[ "$expected" == "$actual" ]] || fail 'TRANSITION_BACKUP_ALLOWLIST_CHECKSUM_MISMATCH'
+  [[ "$(manifest_value "$manifest" BACKUP_ID)" == "$id" ]] || fail 'TRANSITION_BACKUP_ID_MISMATCH'
+  printf 'PASS'
+}
+
+verify_transition_backup_target() {
+  local id="$1" manifest
+  manifest="$(backup_dir_path "$id")/manifest"
+  [[ "$(manifest_value "$manifest" TARGET_POLICY)" == "$TARGET_MODE" ]] || fail 'TRANSITION_TARGET_MODE_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_TENANT)" == "$TARGET_TENANT" ]] || fail 'TRANSITION_TARGET_TENANT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_DESTINATION)" == "$TARGET_DESTINATION" ]] || fail 'TRANSITION_TARGET_DESTINATION_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_JOB)" == "$TARGET_JOB" ]] || fail 'TRANSITION_TARGET_JOB_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == "$TARGET_TRANSPORT" ]] || fail 'TRANSITION_TARGET_TRANSPORT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == "$TARGET_PROFILE" ]] || fail 'TRANSITION_TARGET_PROFILE_MISMATCH'
+  [[ "$(manifest_value "$manifest" SOURCE_JOB)" == "$SOURCE_JOB" ]] || fail 'TRANSITION_SOURCE_JOB_MISMATCH'
+}
+
+verify_transition_backup_source_state() {
+  local id="$1" manifest expected_policy actual_policy expected_allowlist actual_allowlist
+  manifest="$(backup_dir_path "$id")/manifest"
+  expected_policy="$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)"
+  actual_policy="$(current_policy_checksum)"
+  [[ "$expected_policy" == "$actual_policy" ]] || fail 'TRANSITION_SOURCE_POLICY_STATE_MISMATCH'
+  expected_allowlist="$(manifest_value "$manifest" SOURCE_ALLOWLIST_CHECKSUM)"
+  actual_allowlist="$(allowlist_checksum)"
+  [[ "$expected_allowlist" == "$actual_allowlist" ]] || fail 'TRANSITION_SOURCE_ALLOWLIST_STATE_MISMATCH'
+}
+
+verify_backup_current_state() {
+  local id="$1" manifest expected actual
+  manifest="$(backup_dir_path "$id")/manifest"
+  expected="$(manifest_value "$manifest" SOURCE_POLICY_CHECKSUM)"
+  actual="$(current_policy_checksum)"
+  [[ "$expected" == "$actual" ]] || fail 'BACKUP_SOURCE_STATE_MISMATCH'
+}
+
+verify_backup_target() {
+  local id="$1" manifest
+  manifest="$(backup_dir_path "$id")/manifest"
+  [[ "$(manifest_value "$manifest" TARGET_POLICY)" == "$TARGET_MODE" ]] || fail 'BACKUP_TARGET_MODE_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_TENANT)" == "$TARGET_TENANT" ]] || fail 'BACKUP_TARGET_TENANT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_DESTINATION)" == "$TARGET_DESTINATION" ]] || fail 'BACKUP_TARGET_DESTINATION_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_JOB)" == "$TARGET_JOB" ]] || fail 'BACKUP_TARGET_JOB_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_TRANSPORT)" == "$TARGET_TRANSPORT" ]] || fail 'BACKUP_TARGET_TRANSPORT_MISMATCH'
+  [[ "$(manifest_value "$manifest" TARGET_PROFILE)" == "$TARGET_PROFILE" ]] || fail 'BACKUP_TARGET_PROFILE_MISMATCH'
+}
+
+rewrite_policy_from_file() {
+  local policy_file="$1" temp key value
+  for key in "${POLICY_KEYS[@]}"; do
+    [[ "$(key_count "$policy_file" "$key")" == '1' ]] || fail 'RESTORE_POLICY_INVALID'
+  done
+  temp="$(mktemp "${ENV_FILE}.tmp.XXXXXX")"
+  trap 'rm -f "$temp"' RETURN
+  awk -F= -v mode="$(key_value "$policy_file" PHILIPS_FOLDER_MODE)" \
+    -v tenant="$(key_value "$policy_file" PHILIPS_FOLDER_ALLOW_TENANT_ID)" \
+    -v allow_destination="$(key_value "$policy_file" PHILIPS_FOLDER_ALLOW_DESTINATION_ID)" \
+    -v destination="$(key_value "$policy_file" PHILIPS_FOLDER_DESTINATION_ID)" \
+    -v job="$(key_value "$policy_file" PHILIPS_FOLDER_ALLOW_JOB_ID)" '
+    /^PHILIPS_FOLDER_MODE=/ { print "PHILIPS_FOLDER_MODE=" mode; next }
+    /^PHILIPS_FOLDER_ALLOW_TENANT_ID=/ { print "PHILIPS_FOLDER_ALLOW_TENANT_ID=" tenant; next }
+    /^PHILIPS_FOLDER_ALLOW_DESTINATION_ID=/ { print "PHILIPS_FOLDER_ALLOW_DESTINATION_ID=" allow_destination; next }
+    /^PHILIPS_FOLDER_DESTINATION_ID=/ { print "PHILIPS_FOLDER_DESTINATION_ID=" destination; next }
+    /^PHILIPS_FOLDER_ALLOW_JOB_ID=/ { print "PHILIPS_FOLDER_ALLOW_JOB_ID=" job; next }
+    { print }
+  ' "$ENV_FILE" > "$temp"
+  chown root:root "$temp"
+  chmod 0600 "$temp"
+  mv -f "$temp" "$ENV_FILE"
+  trap - RETURN
+}
+
+emit_target() {
+  printf 'TARGET_TENANT=%s\n' "$TARGET_TENANT"
+  printf 'TARGET_DESTINATION=%s\n' "$TARGET_DESTINATION"
+  printf 'TARGET_JOB=%s\n' "$TARGET_JOB"
+  printf 'TARGET_TRANSPORT=%s\n' "$TARGET_TRANSPORT"
+  printf 'TARGET_PROFILE=%s\n' "$TARGET_PROFILE"
+  printf 'MODE=%s\n' "$TARGET_MODE"
+}
+
+action_dry_run() {
+  validate_all
+  printf 'DRY_RUN=PASS\n'
+  emit_target
+  printf 'CURRENT_POLICY=%s\n' "${CURRENT[PHILIPS_FOLDER_MODE]}"
+  printf 'CURRENT_ALLOWLIST_JOB=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  printf 'BACKUP=WOULD_CREATE\n'
+  printf 'WOULD_APPLY=YES\n'
+  printf 'WOULD_RELOAD=YES\n'
+  printf 'WOULD_TRANSMIT=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_backup_only() {
+  local backup_id
+  validate_all
+  verify_unit_identity
+  backup_id="$(create_backup)"
+  printf 'BACKUP_ONLY=PASS\n'
+  emit_target
+  printf 'UNIT_IDENTITY=VERIFIED\n'
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'BACKUP_MANIFEST=PASS\n'
+  printf 'BACKUP_CHECKSUM=PASS\n'
+  printf 'POLICY_CHANGED=NO\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_validate() {
+  validate_all
+  policy_matches_target || fail 'EFFECTIVE_POLICY_MISMATCH'
+  printf 'VALIDATION=PASS\n'
+  emit_target
+  if [[ "$TARGET_MODE" == 'single_test' ]]; then
+    printf 'BRIDGE_MODE_SINGLE_TEST=PASS\n'
+  else
+    printf 'BRIDGE_MODE_DESTINATION=PASS\n'
+  fi
+  printf 'ALLOWLIST_JOB=%s\n' "$TARGET_JOB"
+  printf 'EFFECTIVE_ALLOWLIST_JOB=%s\n' "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}"
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_apply() {
+  local backup_id="$BACKUP_ID"
+  validate_all
+  verify_backup "$backup_id" >/dev/null
+  verify_backup_target "$backup_id"
+  verify_backup_current_state "$backup_id"
+  # Replace only the five policy keys, preserving all unrelated settings and secrets.
+  CURRENT[PHILIPS_FOLDER_MODE]="$TARGET_MODE"
+  CURRENT[PHILIPS_FOLDER_ALLOW_TENANT_ID]="$TARGET_TENANT"
+  CURRENT[PHILIPS_FOLDER_ALLOW_DESTINATION_ID]="$TARGET_DESTINATION"
+  CURRENT[PHILIPS_FOLDER_DESTINATION_ID]="$TARGET_DESTINATION"
+  CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]="$TARGET_JOB"
+  local temp
+  temp="$(mktemp "${ENV_FILE}.tmp.XXXXXX")"
+  trap 'rm -f "$temp"' RETURN
+  awk -F= -v mode="$TARGET_MODE" -v tenant="$TARGET_TENANT" -v allow_destination="$TARGET_DESTINATION" \
+    -v destination="$TARGET_DESTINATION" -v job="$TARGET_JOB" '
+    /^PHILIPS_FOLDER_MODE=/ { print "PHILIPS_FOLDER_MODE=" mode; next }
+    /^PHILIPS_FOLDER_ALLOW_TENANT_ID=/ { print "PHILIPS_FOLDER_ALLOW_TENANT_ID=" tenant; next }
+    /^PHILIPS_FOLDER_ALLOW_DESTINATION_ID=/ { print "PHILIPS_FOLDER_ALLOW_DESTINATION_ID=" allow_destination; next }
+    /^PHILIPS_FOLDER_DESTINATION_ID=/ { print "PHILIPS_FOLDER_DESTINATION_ID=" destination; next }
+    /^PHILIPS_FOLDER_ALLOW_JOB_ID=/ { print "PHILIPS_FOLDER_ALLOW_JOB_ID=" job; next }
+    { print }
+  ' "$ENV_FILE" > "$temp"
+  chown root:root "$temp"
+  chmod 0600 "$temp"
+  mv -f "$temp" "$ENV_FILE"
+  trap - RETURN
+  load_current_policy
+  validate_current_policy
+  policy_matches_target || fail 'POST_APPLY_POLICY_MISMATCH'
+  printf 'APPLY=PASS\n'
+  emit_target
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'BACKUP_VERIFIED=PASS\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+emit_transition_target() {
+  printf 'SOURCE_JOB=%s\n' "$SOURCE_JOB"
+  printf 'TARGET_TENANT=%s\n' "$TARGET_TENANT"
+  printf 'TARGET_DESTINATION=%s\n' "$TARGET_DESTINATION"
+  printf 'TARGET_JOB=%s\n' "$TARGET_JOB"
+  printf 'TARGET_TRANSPORT=%s\n' "$TARGET_TRANSPORT"
+  printf 'TARGET_PROFILE=%s\n' "$TARGET_PROFILE"
+  printf 'MODE=%s\n' "$TARGET_MODE"
+  printf 'UNIT=%s\n' "$UNIT_NAME"
+}
+
+write_transition_target_environment() {
+  local output="$1"
+  awk -F= -v mode="$TARGET_MODE" -v tenant="$TARGET_TENANT" -v allow_destination="$TARGET_DESTINATION" \
+    -v destination="$TARGET_DESTINATION" -v job="$TARGET_JOB" '
+    /^PHILIPS_FOLDER_MODE=/ { print "PHILIPS_FOLDER_MODE=" mode; next }
+    /^PHILIPS_FOLDER_ALLOW_TENANT_ID=/ { print "PHILIPS_FOLDER_ALLOW_TENANT_ID=" tenant; next }
+    /^PHILIPS_FOLDER_ALLOW_DESTINATION_ID=/ { print "PHILIPS_FOLDER_ALLOW_DESTINATION_ID=" allow_destination; next }
+    /^PHILIPS_FOLDER_DESTINATION_ID=/ { print "PHILIPS_FOLDER_DESTINATION_ID=" destination; next }
+    /^PHILIPS_FOLDER_ALLOW_JOB_ID=/ { print "PHILIPS_FOLDER_ALLOW_JOB_ID=" job; next }
+    { print }
+  ' "$ENV_FILE" > "$output"
+  chown root:root "$output"
+  chmod 0600 "$output"
+}
+
+restore_transition_files() {
+  local id="$1" dir policy allowlist
+  dir="$(backup_dir_path "$id")"
+  policy="$dir/policy.conf"
+  allowlist="$dir/allowlist"
+  verify_transition_backup "$id" >/dev/null
+  rewrite_policy_from_file "$policy"
+  install -o root -g root -m 0600 "$allowlist" "$ALLOWLIST_FILE"
+}
+
+apply_transition_files() {
+  local backup_id="$1" env_temp allowlist_temp
+  env_temp="$(mktemp "${ENV_FILE}.transition.XXXXXX")"
+  allowlist_temp="$(mktemp "${ALLOWLIST_FILE}.transition.XXXXXX")"
+  trap 'rm -f -- "$env_temp" "$allowlist_temp"' RETURN
+  write_transition_target_environment "$env_temp"
+  write_transition_allowlist "$allowlist_temp"
+  if ! mv -f -- "$env_temp" "$ENV_FILE"; then
+    fail 'TRANSITION_ENVIRONMENT_INSTALL_FAILED'
+  fi
+  if ! mv -f -- "$allowlist_temp" "$ALLOWLIST_FILE"; then
+    restore_transition_files "$backup_id" || fail 'TRANSITION_ROLLBACK_AFTER_ALLOWLIST_FAILURE_FAILED'
+    fail 'TRANSITION_ALLOWLIST_INSTALL_FAILED'
+  fi
+  trap - RETURN
+}
+
+assert_transition_source_state() {
+  [[ "${CURRENT[PHILIPS_FOLDER_ALLOW_JOB_ID]}" == "$SOURCE_JOB" ]] || fail 'TRANSITION_SOURCE_POLICY_NOT_RESTORED'
+  [[ "${ALLOWLIST[jobs]}" == "$SOURCE_JOB" ]] || fail 'TRANSITION_SOURCE_ALLOWLIST_NOT_RESTORED'
+}
+
+action_transition_dry_run() {
+  validate_transition_source
+  printf 'TRANSITION_DRY_RUN=PASS\n'
+  emit_transition_target
+  printf 'SOURCE_POLICY=PASS\n'
+  printf 'SOURCE_ALLOWLIST=PASS\n'
+  printf 'BACKUP=WOULD_CREATE\n'
+  printf 'WOULD_APPLY=YES\n'
+  printf 'WOULD_RELOAD=YES\n'
+  printf 'ALLOWLIST_EXACT_TARGET=YES\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_transition_backup_only() {
+  local backup_id
+  validate_transition_source
+  verify_unit_identity
+  backup_id="$(create_transition_backup)"
+  printf 'TRANSITION_BACKUP_ONLY=PASS\n'
+  emit_transition_target
+  printf 'UNIT_IDENTITY=VERIFIED\n'
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'BACKUP_MANIFEST=PASS\n'
+  printf 'BACKUP_POLICY_CHECKSUM=PASS\n'
+  printf 'BACKUP_ALLOWLIST_CHECKSUM=PASS\n'
+  printf 'POLICY_CHANGED=NO\n'
+  printf 'ALLOWLIST_CHANGED=NO\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_transition_apply() {
+  local backup_id="$BACKUP_ID"
+  validate_transition_source
+  verify_transition_backup "$backup_id" >/dev/null
+  verify_transition_backup_target "$backup_id"
+  verify_transition_backup_source_state "$backup_id"
+  apply_transition_files "$backup_id"
+  if ! ( validate_transition_target ); then
+    restore_transition_files "$backup_id" || fail 'TRANSITION_ROLLBACK_AFTER_VALIDATION_FAILURE_FAILED'
+    fail 'TRANSITION_POST_APPLY_VALIDATION_FAILED'
+  fi
+  printf 'TRANSITION_APPLY=PASS\n'
+  emit_transition_target
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'BACKUP_VERIFIED=PASS\n'
+  printf 'POLICY_CHANGED=YES\n'
+  printf 'ALLOWLIST_CHANGED=YES\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_transition_rollback() {
+  local backup_id="$BACKUP_ID" manifest
+  validate_transition_target
+  verify_transition_backup "$backup_id" >/dev/null
+  verify_transition_backup_target "$backup_id"
+  manifest="$(backup_dir_path "$backup_id")/manifest"
+  if [[ "$DRY_RUN" == 'YES' ]]; then
+    printf 'TRANSITION_ROLLBACK_DRY_RUN=PASS\n'
+    emit_transition_target
+    printf 'BACKUP_ID=%s\n' "$backup_id"
+    printf 'BACKUP_INTEGRITY=PASS\n'
+    printf 'ROLLBACK_COMPATIBILITY=PASS\n'
+    printf 'WOULD_RESTORE_SOURCE_JOB=%s\n' "$(manifest_value "$manifest" SOURCE_JOB)"
+    printf 'WOULD_RELOAD=YES\n'
+    printf 'TRANSMISSION=NO\n'
+    printf 'DATABASE_CHANGED=NO\n'
+    return
+  fi
+  restore_transition_files "$backup_id"
+  load_current_policy
+  validate_current_policy
+  parse_allowlist
+  assert_transition_source_state
+  printf 'TRANSITION_ROLLBACK=PASS\n'
+  emit_transition_target
+  printf 'BACKUP_ID=%s\n' "$backup_id"
+  printf 'RESTORED_SOURCE_JOB=%s\n' "$SOURCE_JOB"
+  printf 'POLICY_CHANGED=YES\n'
+  printf 'ALLOWLIST_CHANGED=YES\n'
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+action_rollback() {
+  local dir policy
+  validate_all
+  policy_matches_target || fail 'ROLLBACK_CURRENT_POLICY_MISMATCH'
+  verify_backup "$BACKUP_ID" >/dev/null
+  verify_backup_target "$BACKUP_ID"
+  dir="$(backup_dir_path "$BACKUP_ID")"
+  policy="$dir/policy.conf"
+  if [[ "$DRY_RUN" == 'YES' ]]; then
+    printf 'ROLLBACK_DRY_RUN=PASS\n'
+    emit_target
+    printf 'BACKUP_ID=%s\n' "$BACKUP_ID"
+    printf 'BACKUP_INTEGRITY=PASS\n'
+    printf 'ROLLBACK_COMPATIBILITY=PASS\n'
+    printf 'WOULD_RESTORE=YES\n'
+    printf 'WOULD_RELOAD=YES\n'
+    printf 'TRANSMISSION=NO\n'
+    printf 'DATABASE_CHANGED=NO\n'
+    return
+  fi
+  rewrite_policy_from_file "$policy"
+  load_current_policy
+  validate_current_policy
+  printf 'ROLLBACK=PASS\n'
+  emit_target
+  printf 'BACKUP_ID=%s\n' "$BACKUP_ID"
+  printf 'RESTORED_POLICY=%s\n' "${CURRENT[PHILIPS_FOLDER_MODE]}"
+  printf 'RELOAD=NOT_PERFORMED\n'
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+verify_unit_identity() {
+  local fragment execstart envs
+  [[ "$UNIT_NAME" == "$ALLOWED_UNIT" ]] || fail 'UNIT_IDENTITY_MISMATCH'
+  require_command systemctl
+  fragment="$(systemctl show -p FragmentPath --value "$UNIT_NAME" 2>/dev/null || true)"
+  execstart="$(systemctl show -p ExecStart --value "$UNIT_NAME" 2>/dev/null || true)"
+  envs="$(systemctl show -p EnvironmentFiles --value "$UNIT_NAME" 2>/dev/null || true)"
+  [[ -n "$fragment" ]] || fail 'UNIT_FRAGMENT_UNAVAILABLE'
+  [[ "$execstart" == *'philips_folder_bridge.py'* ]] || fail 'UNIT_EXECSTART_MISMATCH'
+  [[ "$envs" == *"$ENV_FILE"* ]] || fail 'UNIT_ENVIRONMENT_MISMATCH'
+}
+
+action_reload() {
+  validate_all
+  policy_matches_target || fail 'RELOAD_POLICY_MISMATCH'
+  verify_unit_identity
+  systemctl restart "$UNIT_NAME"
+  printf 'RELOAD=PASS\n'
+  printf 'UNIT_IDENTITY=VERIFIED\n'
+  printf 'UNIT=%s\n' "$UNIT_NAME"
+  printf 'TRANSMISSION=NO\n'
+  printf 'DATABASE_CHANGED=NO\n'
+}
+
+parse_args() {
+  [[ "$#" -gt 0 ]] || usage
+  case "$1" in
+    --dry-run) ACTION='dry-run'; shift ;;
+    --backup-only) ACTION='backup-only'; shift ;;
+    --validate) ACTION='validate'; shift ;;
+    --apply) ACTION='apply'; shift ;;
+    --reload) ACTION='reload'; shift ;;
+    --transition-dry-run) ACTION='transition-dry-run'; shift ;;
+    --transition-backup-only) ACTION='transition-backup-only'; shift ;;
+    --transition-apply) ACTION='transition-apply'; shift ;;
+    transition-rollback) ACTION='transition-rollback'; shift; if [[ "${1:-}" == '--dry-run' ]]; then DRY_RUN='YES'; shift; fi ;;
+    rollback) ACTION='rollback'; shift; if [[ "${1:-}" == '--dry-run' ]]; then DRY_RUN='YES'; shift; fi ;;
+    *) usage ;;
+  esac
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --env-file) ENV_FILE="${2:-}"; shift 2 ;;
+      --allowlist) ALLOWLIST_FILE="${2:-}"; shift 2 ;;
+      --backup-root) BACKUP_ROOT="${2:-}"; shift 2 ;;
+      --backup-id) BACKUP_ID="${2:-}"; shift 2 ;;
+      --expected-host) EXPECTED_HOST="${2:-}"; shift 2 ;;
+      --unit) UNIT_NAME="${2:-}"; shift 2 ;;
+      --tenant-id) TARGET_TENANT="${2:-}"; shift 2 ;;
+      --destination-id) TARGET_DESTINATION="${2:-}"; shift 2 ;;
+      --job-id) TARGET_JOB="${2:-}"; shift 2 ;;
+      --source-job-id) SOURCE_JOB="${2:-}"; shift 2 ;;
+      --transport) TARGET_TRANSPORT="${2:-}"; shift 2 ;;
+      --profile) TARGET_PROFILE="${2:-}"; shift 2 ;;
+      --mode) TARGET_MODE="${2:-}"; shift 2 ;;
+      --dry-run) DRY_RUN='YES'; shift ;;
+      *) usage ;;
+    esac
+  done
+  [[ "$ACTION" != 'apply' || -n "$BACKUP_ID" ]] || fail 'BACKUP_ID_REQUIRED'
+  [[ "$ACTION" != 'rollback' || -n "$BACKUP_ID" ]] || fail 'BACKUP_ID_REQUIRED'
+  [[ "$ACTION" != 'backup-only' || -n "$UNIT_NAME" ]] || fail 'UNIT_REQUIRED'
+  [[ "$ACTION" != 'reload' || -n "$UNIT_NAME" ]] || fail 'UNIT_REQUIRED'
+  case "$ACTION" in
+    transition-dry-run|transition-backup-only|transition-apply|transition-rollback)
+      [[ -n "$SOURCE_JOB" ]] || fail 'SOURCE_JOB_REQUIRED'
+      ;;
+  esac
+  [[ "$ACTION" != 'transition-backup-only' || -n "$UNIT_NAME" ]] || fail 'UNIT_REQUIRED'
+  case "$ACTION" in
+    transition-dry-run|transition-apply|transition-rollback)
+      [[ -z "$UNIT_NAME" ]] || fail 'UNIT_ONLY_ALLOWED_FOR_TRANSITION_BACKUP'
+      ;;
+  esac
+  [[ "$ACTION" != 'transition-apply' && "$ACTION" != 'transition-rollback' || -n "$BACKUP_ID" ]] || fail 'BACKUP_ID_REQUIRED'
+}
+
+main() {
+  parse_args "$@"
+  case "$ACTION" in
+    dry-run) action_dry_run ;;
+    backup-only) action_backup_only ;;
+    validate) action_validate ;;
+    apply) action_apply ;;
+    rollback) action_rollback ;;
+    reload) action_reload ;;
+    transition-dry-run) action_transition_dry_run ;;
+    transition-backup-only) action_transition_backup_only ;;
+    transition-apply) action_transition_apply ;;
+    transition-rollback) action_transition_rollback ;;
+    *) usage ;;
+  esac
+}
+
+main "$@"

@@ -8,21 +8,40 @@ $relatorioModulos = $relatorioModulos ?? [];
 $relatorioSubmodulos = $relatorioSubmodulos ?? [];
 $viewerCatalog = $viewerCatalog ?? [];
 $viewerStates = $viewerStates ?? [];
+$formDados = is_array($formDados ?? null) ? $formDados : [];
+$studyScope = $studyScope ?? [
+    'available' => false,
+    'configured' => false,
+    'enabled' => false,
+    'legacy' => false,
+    'migration_pending' => true,
+    'institutions' => [],
+    'modalities' => [],
+];
 $worklistPreference = $worklistPreference ?? ['enabled' => false, 'sort_mode' => 'recentes', 'priority_order' => 'urgencia_primeiro', 'medical_status_order' => []];
+$reportSignaturePreference = $reportSignaturePreference ?? ['mode' => 'ambos', 'available' => false, 'persisted' => false];
 $title         = $title         ?? 'Usuário';
 $error         = $error         ?? '';
 $isEdit        = $usuario !== null;
 $emailPending  = $isEdit && !empty(is_array($usuario) ? ($usuario['email_pendente'] ?? '') : ($usuario->email_pendente ?? ''));
 
-$val = function (string $campo) use ($usuario): string {
-    if (!$usuario) return '';
-    $v = is_array($usuario) ? ($usuario[$campo] ?? '') : ($usuario->$campo ?? '');
+$val = function (string $campo) use ($usuario, $formDados): string {
+    if (array_key_exists($campo, $formDados)) {
+        $v = $formDados[$campo];
+    } elseif (!$usuario) {
+        $v = '';
+    } else {
+        $v = is_array($usuario) ? ($usuario[$campo] ?? '') : ($usuario->$campo ?? '');
+    }
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 };
 
-$perfilAtual  = $isEdit ? ($usuario['perfil'] ?? 'viewer') : 'viewer';
-$medicoAtual  = $isEdit ? (int)($usuario['medico_id'] ?? 0) : 0;
+$perfilAtual  = array_key_exists('perfil', $formDados) ? (string) $formDados['perfil'] : ($isEdit ? ($usuario['perfil'] ?? 'viewer') : 'viewer');
+$medicoAtual  = array_key_exists('medico_id', $formDados) ? (int) $formDados['medico_id'] : ($isEdit ? (int)($usuario['medico_id'] ?? 0) : 0);
+$modulosAtivos = array_key_exists('modulos', $formDados) ? (array) $formDados['modulos'] : $modulosAtivos;
+$relatorioModulos = array_key_exists('relatorio_modulos', $formDados) ? (array) $formDados['relatorio_modulos'] : $relatorioModulos;
 $action       = $isEdit ? '/usuarios/' . $val('id') . '/update' : '/usuarios';
+$signatureMode = (string) ($reportSignaturePreference['mode'] ?? 'ambos');
 $worklistStatusOrder = array_values(array_filter((array) ($worklistPreference['medical_status_order'] ?? []), static fn ($status): bool => in_array($status, ['pendente', 'a_laudar', 'em_laudo', 'rascunho', 'assinado', 'peer_review'], true)));
 foreach (['pendente', 'a_laudar', 'em_laudo', 'rascunho', 'assinado', 'peer_review'] as $defaultStatus) {
     if (!in_array($defaultStatus, $worklistStatusOrder, true)) $worklistStatusOrder[] = $defaultStatus;
@@ -36,6 +55,7 @@ $errorMsgs = [
     'pending_other_tenant' => t('usuarios.email.error.pendente_outro_tenant'),
     'delivery'             => t('usuarios.email.error.envio'),
     'erro_interno'         => t('usuarios.email.error.interno'),
+    'escopo_invalido'      => t('usuarios.estudo_escopo.erro.invalido'),
 ];
 ?>
 
@@ -63,7 +83,27 @@ $errorMsgs = [
 .worklist-pref-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem; }
 .worklist-choice { display:flex;align-items:flex-start;gap:.55rem;padding:.65rem;border:1px solid var(--pacs-border);border-radius:7px;cursor:pointer; }
 .worklist-choice input { margin-top:.15rem;accent-color:var(--pacs-primary); }.worklist-choice strong,.worklist-choice small { display:block; }.worklist-choice strong{font-size:.8rem}.worklist-choice small{font-size:.7rem;color:var(--pacs-text-muted);margin-top:.12rem;line-height:1.35}
-.worklist-status-order { list-style:none;margin:.5rem 0 0;padding:0;max-width:480px; }.worklist-status-order li{display:flex;align-items:center;gap:.5rem;padding:.48rem .6rem;margin-bottom:.35rem;border:1px solid var(--pacs-border);border-radius:6px;background:var(--pacs-bg);}.worklist-status-order .drag{color:var(--pacs-text-muted);cursor:grab}.worklist-status-order .label{flex:1;font-size:.78rem;font-weight:700}.worklist-status-order button{border:0;background:transparent;color:var(--pacs-primary);padding:.1rem .3rem}
+	.worklist-status-order { list-style:none;margin:.5rem 0 0;padding:0;max-width:480px; }.worklist-status-order li{display:flex;align-items:center;gap:.5rem;padding:.48rem .6rem;margin-bottom:.35rem;border:1px solid var(--pacs-border);border-radius:6px;background:var(--pacs-bg);}.worklist-status-order .drag{color:var(--pacs-text-muted);cursor:grab}.worklist-status-order .label{flex:1;font-size:.78rem;font-weight:700}.worklist-status-order button{border:0;background:transparent;color:var(--pacs-primary);padding:.1rem .3rem}
+	.study-scope-toolbar { display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap; }
+	.study-scope-help { font-size:.8rem;color:var(--pacs-text-muted);margin:.5rem 0 .75rem;line-height:1.45; }
+	.study-scope-options { display:flex;flex-direction:column;gap:.6rem;margin-top:.75rem; }
+	.study-scope-institution { border:1px solid var(--pacs-border);border-radius:8px;padding:.75rem;background:rgba(79,195,247,.025); }
+	.study-scope-institution.is-selected { border-color:var(--pacs-primary);background:rgba(79,195,247,.07); }
+	.study-scope-institution-head { display:flex;align-items:center;justify-content:space-between;gap:.75rem; }
+	.study-scope-institution-label { display:flex;align-items:center;gap:.5rem;font-size:.82rem;font-weight:700;cursor:pointer;min-width:0; }
+	.study-scope-institution-label span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+	.study-scope-institution-label input,.study-scope-modality input { accent-color:var(--pacs-primary); }
+	.study-scope-actions { display:flex;align-items:center;gap:.35rem;flex-shrink:0; }
+	.study-scope-actions button { border:0;background:transparent;color:var(--pacs-primary);font-size:.7rem;padding:.2rem .35rem;cursor:pointer; }
+	.study-scope-actions button:hover { text-decoration:underline; }
+	.study-scope-summary { color:var(--pacs-text-muted);font-size:.7rem; }
+	.study-scope-modalities { display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:.35rem;margin:.65rem 0 0 1.6rem; }
+	.study-scope-modality { display:flex;align-items:center;gap:.3rem;padding:.3rem .4rem;border:1px solid var(--pacs-border);border-radius:5px;font-size:.72rem;cursor:pointer; }
+	.study-scope-modality:has(input:checked) { border-color:var(--pacs-primary);background:rgba(79,195,247,.08); }
+	.study-scope-modality.is-disabled { opacity:.45;cursor:not-allowed; }
+	.study-scope-empty { display:none;margin-top:.75rem; }
+	.study-scope-empty.is-visible { display:block; }
+	@media (max-width:640px) { .study-scope-institution-head { align-items:flex-start;flex-direction:column; }.study-scope-actions { margin-left:1.6rem; }.study-scope-modalities { margin-left:0; } }
 </style>
 
 <!-- Cabeçalho -->
@@ -80,6 +120,12 @@ $errorMsgs = [
         <i class="fa fa-arrow-left me-1"></i> Voltar
     </a>
 </div>
+
+<?php
+$activeTab = 'usuarios';
+$showAdminTabs = true;
+require __DIR__ . '/_navigation.php';
+?>
 
 <!-- Alerta de erro -->
 <?php if ($error && isset($errorMsgs[$error])): ?>
@@ -297,6 +343,108 @@ $errorMsgs = [
             </small>
             <?php endif; ?>
         </div>
+        <div id="cardAssinaturaPreferencia" class="mt-4" style="<?= $perfilAtual === 'medico' ? '' : 'display:none;' ?>">
+            <div class="form-section-title"><i class="fa fa-signature me-2"></i><?= htmlspecialchars(t('assinatura_preferencia.titulo')) ?></div>
+            <p style="font-size:.8rem;color:var(--pacs-text-muted);margin-bottom:.65rem;">
+                <?= htmlspecialchars(t('assinatura_preferencia.ajuda')) ?>
+            </p>
+            <div class="worklist-pref-grid">
+                <?php foreach (['ambos', 'somente', 'fechar'] as $mode): ?>
+                    <label class="worklist-choice">
+                        <input type="radio" name="report_signature_mode" value="<?= $mode ?>" <?= $signatureMode === $mode ? 'checked' : '' ?>>
+                        <span>
+                            <strong><?= htmlspecialchars(t('assinatura_preferencia.modo.' . $mode)) ?></strong>
+                            <small><?= htmlspecialchars(t('assinatura_preferencia.modo.' . $mode . '_ajuda')) ?></small>
+                        </span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <?php if (empty($reportSignaturePreference['available'])): ?>
+                <small style="display:block;color:var(--pacs-text-muted);font-size:.72rem;margin-top:.5rem;">
+                    <i class="fa fa-circle-info me-1"></i><?= htmlspecialchars(t('assinatura_preferencia.migration_pendente')) ?>
+                </small>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════
+     SEÇÃO 6 — VISIBILIDADE DE ESTUDOS
+════════════════════════════════════════════════════════ -->
+<?php
+$scopeAvailable = !empty($studyScope['available']);
+$scopeEnabled = !empty($studyScope['enabled']) && $scopeAvailable;
+$scopeInstitutions = (array) ($studyScope['institutions'] ?? []);
+$scopeModalities = (array) ($studyScope['modalities'] ?? []);
+?>
+<div class="pacs-card mb-3" id="cardEstudoEscopo" data-study-scope
+     data-summary-all="<?= htmlspecialchars(t('usuarios.estudo_escopo.resumo_todas'), ENT_QUOTES, 'UTF-8') ?>"
+     data-summary-none="<?= htmlspecialchars(t('usuarios.estudo_escopo.resumo_nenhuma'), ENT_QUOTES, 'UTF-8') ?>"
+     data-summary-count="<?= htmlspecialchars(t('usuarios.estudo_escopo.resumo_quantidade'), ENT_QUOTES, 'UTF-8') ?>">
+    <div class="pacs-card-body">
+        <div class="study-scope-toolbar">
+            <div class="form-section-title" style="margin-bottom:0;"><i class="fa fa-building-shield me-2"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.titulo'), ENT_QUOTES, 'UTF-8') ?></div>
+            <?php if ($scopeAvailable): ?>
+            <span class="study-scope-summary" data-study-scope-state></span>
+            <?php endif; ?>
+        </div>
+        <p class="study-scope-help"><?= htmlspecialchars(t('usuarios.estudo_escopo.ajuda'), ENT_QUOTES, 'UTF-8') ?></p>
+
+        <?php if (!$scopeAvailable): ?>
+            <div class="pacs-alert pacs-alert-info"><i class="fa fa-circle-info me-2"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.migration_pendente'), ENT_QUOTES, 'UTF-8') ?></div>
+        <?php else: ?>
+            <label class="worklist-choice" data-study-scope-toggle-wrap>
+                <input type="checkbox" name="study_scope[enabled]" value="1" data-study-scope-enabled <?= $scopeEnabled ? 'checked' : '' ?>>
+                <span><strong><?= htmlspecialchars(t('usuarios.estudo_escopo.ativar'), ENT_QUOTES, 'UTF-8') ?></strong><small><?= htmlspecialchars(t('usuarios.estudo_escopo.ativar_ajuda'), ENT_QUOTES, 'UTF-8') ?></small></span>
+            </label>
+            <?php if (!empty($studyScope['legacy'])): ?>
+                <small style="display:block;color:var(--pacs-text-muted);font-size:.72rem;margin-top:.5rem;"><i class="fa fa-clock-rotate-left me-1"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.legado_preservado'), ENT_QUOTES, 'UTF-8') ?></small>
+            <?php elseif (!$isEdit): ?>
+                <small style="display:block;color:var(--pacs-text-muted);font-size:.72rem;margin-top:.5rem;"><i class="fa fa-circle-info me-1"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.novo_desativado'), ENT_QUOTES, 'UTF-8') ?></small>
+            <?php endif; ?>
+
+            <div class="study-scope-options" data-study-scope-options>
+                <?php foreach ($scopeInstitutions as $index => $institution):
+                    $institutionName = (string) ($institution['name'] ?? '');
+                    $institutionSelected = !empty($institution['selected']);
+                    $institutionAll = !empty($institution['all']);
+                    $selectedModalities = array_map('strval', (array) ($institution['modalities'] ?? []));
+                ?>
+                <div class="study-scope-institution <?= $institutionSelected ? 'is-selected' : '' ?>" data-study-scope-institution>
+                    <input type="hidden" name="study_scope[institutions][<?= (int) $index ?>][name]" value="<?= htmlspecialchars($institutionName, ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="study-scope-institution-head">
+                        <label class="study-scope-institution-label">
+                            <input type="checkbox" name="study_scope[institutions][<?= (int) $index ?>][enabled]" value="1" data-study-scope-institution-enabled <?= $institutionSelected ? 'checked' : '' ?> aria-label="<?= htmlspecialchars(t('usuarios.estudo_escopo.aria_instituicao') . ' ' . $institutionName, ENT_QUOTES, 'UTF-8') ?>">
+                            <span><?= htmlspecialchars($institutionName, ENT_QUOTES, 'UTF-8') ?></span>
+                        </label>
+                        <div class="study-scope-actions">
+                            <label style="display:flex;align-items:center;gap:.25rem;font-size:.7rem;cursor:pointer;">
+                                <input type="checkbox" name="study_scope[institutions][<?= (int) $index ?>][all]" value="1" data-study-scope-all <?= $institutionAll ? 'checked' : '' ?> <?= !$institutionSelected ? 'disabled' : '' ?>>
+                                <span><?= htmlspecialchars(t('usuarios.estudo_escopo.todas'), ENT_QUOTES, 'UTF-8') ?></span>
+                            </label>
+                            <button type="button" data-study-scope-none><?= htmlspecialchars(t('usuarios.estudo_escopo.nenhuma'), ENT_QUOTES, 'UTF-8') ?></button>
+                            <span class="study-scope-summary" data-study-scope-summary></span>
+                        </div>
+                    </div>
+                    <div class="study-scope-modalities" data-study-scope-modalities>
+                        <?php foreach ($scopeModalities as $modality):
+                            $modality = strtoupper(trim((string) $modality));
+                            $checked = $institutionAll || in_array($modality, $selectedModalities, true);
+                        ?>
+                        <label class="study-scope-modality <?= $institutionSelected ? '' : 'is-disabled' ?>">
+                            <input type="checkbox" name="study_scope[institutions][<?= (int) $index ?>][modalities][]" value="<?= htmlspecialchars($modality, ENT_QUOTES, 'UTF-8') ?>" data-study-scope-modality <?= $checked ? 'checked' : '' ?> <?= !$institutionSelected ? 'disabled' : '' ?>>
+                            <span><?= htmlspecialchars($modality, ENT_QUOTES, 'UTF-8') ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="pacs-alert pacs-alert-warning study-scope-empty" data-study-scope-empty><i class="fa fa-triangle-exclamation me-2"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.escopo_vazio'), ENT_QUOTES, 'UTF-8') ?></div>
+            <?php if ($scopeInstitutions === []): ?>
+                <div class="pacs-alert pacs-alert-info"><i class="fa fa-circle-info me-2"></i><?= htmlspecialchars(t('usuarios.estudo_escopo.sem_instituicoes'), ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif; ?>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -394,6 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     atualizarPreferenciasMedicas();
     atualizarVisualizadoresPorPerfil();
+    inicializarEscopoEstudos();
 });
 // Módulos padrão por perfil (espelha PHP)
 const modPadrao = <?= json_encode($modPadrao, JSON_UNESCAPED_UNICODE) ?>;
@@ -417,8 +566,11 @@ function onPerfilChange(perfil) {
     if (cardMedico) {
         cardMedico.style.display = (perfil === 'medico') ? '' : '';
     }
+    const cardAssinaturaPreferencia = document.getElementById('cardAssinaturaPreferencia');
+    if (cardAssinaturaPreferencia) cardAssinaturaPreferencia.style.display = perfil === 'medico' ? '' : 'none';
     atualizarPreferenciasMedicas();
     atualizarVisualizadoresPorPerfil();
+    atualizarEscopoEstudosPorPerfil();
 }
 
 function atualizarPreferenciasMedicas() {
@@ -474,5 +626,111 @@ function toggleTodosVisualizadores(state) {
         checkbox.checked = state;
         checkbox.closest('.modulo-item').classList.toggle('checked', state);
     });
+}
+
+function inicializarEscopoEstudos() {
+    const card = document.getElementById('cardEstudoEscopo');
+    if (!card || card.dataset.initialized === '1') return;
+    card.dataset.initialized = '1';
+
+    card.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const institution = target.closest('[data-study-scope-institution]');
+        if (target.matches('[data-study-scope-enabled]')) {
+            atualizarEscopoEstudos();
+            return;
+        }
+        if (!institution) return;
+        if (target.matches('[data-study-scope-all]')) {
+            institution.querySelectorAll('[data-study-scope-modality]').forEach((input) => { input.checked = target.checked; });
+        } else if (target.matches('[data-study-scope-modality]') && !target.checked) {
+            const all = institution.querySelector('[data-study-scope-all]');
+            if (all) all.checked = false;
+        }
+        renderizarInstituicaoEscopo(institution);
+        atualizarEscopoEstudos();
+    });
+
+    card.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-study-scope-none]');
+        if (!button) return;
+        const institution = button.closest('[data-study-scope-institution]');
+        if (!institution) return;
+        const all = institution.querySelector('[data-study-scope-all]');
+        if (all) all.checked = false;
+        institution.querySelectorAll('[data-study-scope-modality]').forEach((input) => { input.checked = false; });
+        renderizarInstituicaoEscopo(institution);
+        atualizarEscopoEstudos();
+    });
+
+    const form = document.getElementById('formUsuario');
+    form?.addEventListener('submit', (event) => {
+        const master = card.querySelector('[data-study-scope-enabled]');
+        if (!master?.checked || master.disabled) return;
+        const selectedInstitutions = Array.from(card.querySelectorAll('[data-study-scope-institution]')).filter((institution) => {
+            const selected = institution.querySelector('[data-study-scope-institution-enabled]')?.checked;
+            const all = institution.querySelector('[data-study-scope-all]')?.checked;
+            const modalities = institution.querySelectorAll('[data-study-scope-modality]:checked').length > 0;
+            return selected && (all || modalities);
+        });
+        if (selectedInstitutions.length === 0) {
+            event.preventDefault();
+            atualizarEscopoEstudos();
+        }
+    });
+
+    card.querySelectorAll('[data-study-scope-institution]').forEach(renderizarInstituicaoEscopo);
+    atualizarEscopoEstudosPorPerfil();
+}
+
+function renderizarInstituicaoEscopo(institution) {
+    const enabled = institution.querySelector('[data-study-scope-institution-enabled]')?.checked === true;
+    const all = institution.querySelector('[data-study-scope-all]');
+    const modalities = Array.from(institution.querySelectorAll('[data-study-scope-modality]'));
+    const card = document.getElementById('cardEstudoEscopo');
+    const master = card?.querySelector('[data-study-scope-enabled]');
+    const globalDisabled = master?.disabled === true || master?.checked !== true;
+    institution.classList.toggle('is-selected', enabled);
+    modalities.forEach((input) => {
+        input.disabled = !enabled || globalDisabled;
+        input.closest('.study-scope-modality')?.classList.toggle('is-disabled', input.disabled);
+    });
+    if (all) all.disabled = !enabled || globalDisabled;
+    const summary = institution.querySelector('[data-study-scope-summary]');
+    if (!summary) return;
+    if (all?.checked && enabled) {
+        summary.textContent = card?.dataset.summaryAll || '';
+    } else {
+        const count = modalities.filter((input) => input.checked).length;
+        summary.textContent = count > 0
+            ? (card?.dataset.summaryCount || '').replace(':quantidade', String(count))
+            : (card?.dataset.summaryNone || '');
+    }
+}
+
+function atualizarEscopoEstudosPorPerfil() {
+    const card = document.getElementById('cardEstudoEscopo');
+    if (!card) return;
+    card.querySelectorAll('[data-study-scope-institution]').forEach(renderizarInstituicaoEscopo);
+    atualizarEscopoEstudos();
+}
+
+function atualizarEscopoEstudos() {
+    const card = document.getElementById('cardEstudoEscopo');
+    if (!card) return;
+    const master = card.querySelector('[data-study-scope-enabled]');
+    const enabled = master?.checked === true && master?.disabled !== true;
+    card.querySelectorAll('[data-study-scope-institution]').forEach(renderizarInstituicaoEscopo);
+    const empty = card.querySelector('[data-study-scope-empty]');
+    const valid = Array.from(card.querySelectorAll('[data-study-scope-institution]')).some((institution) => {
+        const selected = institution.querySelector('[data-study-scope-institution-enabled]')?.checked;
+        const all = institution.querySelector('[data-study-scope-all]')?.checked;
+        const modalities = institution.querySelectorAll('[data-study-scope-modality]:checked').length > 0;
+        return selected && (all || modalities);
+    });
+    if (empty) empty.classList.toggle('is-visible', enabled && !valid);
+    const state = card.querySelector('[data-study-scope-state]');
+    if (state) state.textContent = enabled ? (valid ? card.dataset.summaryAll || '' : card.dataset.summaryNone || '') : '';
 }
 </script>

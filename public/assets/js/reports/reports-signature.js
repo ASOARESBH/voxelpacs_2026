@@ -37,6 +37,20 @@ window.VoxelReports.signature = (function () {
         return !!(window.VoxelReports.chat && window.VoxelReports.chat.hasPending());
     }
 
+    function aplicarPreferenciaDeModo() {
+        const modo = config?.signatureMode || 'ambos';
+        const btnSomente = document.getElementById('btn-assinar-somente');
+        const btnFechar = document.getElementById('btn-assinar-fechar');
+        const ocultar = (button, hidden) => {
+            if (!button) return;
+            button.hidden = hidden;
+            button.disabled = hidden;
+            button.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+        };
+        ocultar(btnSomente, modo === 'fechar');
+        ocultar(btnFechar, modo === 'somente');
+    }
+
     function open() {
         if (chatPendente()) {
             alert('Existe uma pendência aberta no CHAT. Conclua a conversa antes de assinar ou finalizar o laudo.');
@@ -85,8 +99,14 @@ window.VoxelReports.signature = (function () {
                     mostrarErro(data.msg || 'Não foi possível assinar o laudo.');
                     return;
                 }
+                if (data.liberacao_bloqueada) {
+                    modal.hide();
+                    alert(data.msg || 'Laudo assinado, mas a liberação foi bloqueada pelo destino de devolutiva.');
+                    window.location.reload();
+                    return;
+                }
                 modal.hide();
-                if (modo === 'fechar') {
+                if ((data.modo_efetivo || modo) === 'fechar') {
                     if (typeof window.voxelRetornarWorklist === 'function') {
                         window.voxelRetornarWorklist('/estudos');
                     } else {
@@ -106,6 +126,7 @@ window.VoxelReports.signature = (function () {
         const modalEl = document.getElementById('modalAssinatura');
         if (!modalEl) return;
         modal = new bootstrap.Modal(modalEl);
+        aplicarPreferenciaDeModo();
 
                 const btnSign = document.getElementById('btn-sign');
         if (btnSign) btnSign.addEventListener('click', open);

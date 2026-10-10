@@ -119,11 +119,14 @@ final class GrupoNotificacaoRepository
                VALUES (:tenant_id, :grupo_id, :ativo, :email, :whatsapp, :telegram, NOW())
                ON DUPLICATE KEY UPDATE ativo = VALUES(ativo), canal_email = VALUES(canal_email),
                   canal_whatsapp = VALUES(canal_whatsapp), canal_telegram = VALUES(canal_telegram), updated_at = NOW()';
-        $this->pdo->prepare($sql)->execute([
-            'tenant_id' => $tenantId, 'grupo_id' => $groupId,
-            'ativo' => !empty($config['ativo']), 'email' => !empty($config['canal_email']),
-            'whatsapp' => !empty($config['canal_whatsapp']), 'telegram' => !empty($config['canal_telegram']),
-        ]);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
+        $stmt->bindValue(':grupo_id', $groupId, PDO::PARAM_INT);
+        $stmt->bindValue(':ativo', !empty($config['ativo']), PDO::PARAM_BOOL);
+        $stmt->bindValue(':email', !empty($config['canal_email']), PDO::PARAM_BOOL);
+        $stmt->bindValue(':whatsapp', !empty($config['canal_whatsapp']), PDO::PARAM_BOOL);
+        $stmt->bindValue(':telegram', !empty($config['canal_telegram']), PDO::PARAM_BOOL);
+        $stmt->execute();
 
         $this->pdo->prepare('DELETE FROM bi_grupo_notificacao_prioridades WHERE tenant_id = :tenant_id AND grupo_id = :grupo_id')
             ->execute(['tenant_id' => $tenantId, 'grupo_id' => $groupId]);

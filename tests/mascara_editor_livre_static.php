@@ -39,9 +39,12 @@ foreach (['mEd-tecnica', 'mEd-achados', 'mEd-conclusao'] as $editorLegado) {
 exigir(strpos($form, 'conteudo_livre:') !== false && strpos($form, 'obterConteudoMascara()') !== false, 'O modal não envia conteudo_livre ao salvar.');
 
 $controller = lerArquivo($root . '/app/Controllers/TemplatesController.php');
-foreach (['<u>', '<ul>', '<ol>', '<table>', '<th>', '<td>'] as $tagPermitida) {
-    exigir(strpos($controller, $tagPermitida) !== false, 'A sanitização não permite HTML rico: ' . $tagPermitida);
+$sanitizer = lerArquivo($root . '/app/Services/ReportClinicalHtmlSanitizer.php');
+foreach (["'u' => true", "'ul' => true", "'ol' => true", "'table' => true", "'th' => true", "'td' => true"] as $tagPermitida) {
+    exigir(strpos($sanitizer, $tagPermitida) !== false, 'A allowlist central não preserva HTML rico: ' . $tagPermitida);
 }
+exigir(strpos($controller, 'return ReportClinicalHtmlSanitizer::sanitize((string) $value);') !== false,
+    'TemplatesController não delega a sanitização para o sanitizador clínico central.');
 exigir(strpos($controller, 'conteudo_livre        = :conteudo_livre') !== false, 'Atualização de Máscara não persiste conteudo_livre.');
 exigir(strpos($controller, ':conteudo_livre') !== false, 'Criação/importação de Máscara não persiste conteudo_livre.');
 

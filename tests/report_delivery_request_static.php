@@ -44,6 +44,7 @@ $activeA = DeliveryRequestIdentity::activeIdentityKey($base);
 $activeARepeat = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['request_uuid' => $uuidB]));
 $activeTenant = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['tenant_id' => 3]));
 $activeVersion = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['report_version' => 12]));
+$activeAlias = DeliveryRequestIdentity::activeIdentityKey(array_replace($base, ['task_site_id_alias' => 'SITE-A']));
 
 expect_request(strlen($requestKeyA) === 64 && strlen($activeA) === 64, 'Identity keys must be SHA-256');
 expect_request($requestKeyA === $requestKeyARepeat, 'request_key must be deterministic');
@@ -51,9 +52,19 @@ expect_request($requestKeyA !== $requestKeyB, 'request_uuid must distinguish req
 expect_request($activeA === $activeARepeat, 'active identity must ignore request_uuid');
 expect_request($activeA !== $activeTenant, 'active identity must include tenant');
 expect_request($activeA !== $activeVersion, 'active identity must include explicit report version');
+expect_request($activeA !== $activeAlias, 'active identity must include the frozen technical alias');
 
 $serviceReflection = new ReflectionClass(ReportDeliveryRequestService::class);
 $serviceWithoutConstructor = $serviceReflection->newInstanceWithoutConstructor();
+$targetMethod = $serviceReflection->getMethod('targetForDispatchMode');
+$targetMethod->setAccessible(true);
+expect_request($targetMethod->invoke($serviceWithoutConstructor, 'manual_homologation') === ['destination_id' => 6, 'environment' => 'homologacao'], 'Homologation target must remain Destination 6');
+expect_request($targetMethod->invoke($serviceWithoutConstructor, 'controlled_production') === ['destination_id' => 7, 'environment' => 'producao'], 'Controlled production target must be Destination 7');
+try {
+    $targetMethod->invoke($serviceWithoutConstructor, 'invalid_mode');
+    expect_request(false, 'Invalid dispatch mode must fail closed');
+} catch (Throwable) {
+}
 $uuidMethod = $serviceReflection->getMethod('newUuidV4');
 $uuidMethod->setAccessible(true);
 $generatedUuids = [];
@@ -109,31 +120,44 @@ $syntheticDestination = [
     'configuration_json' => '{"delivery_profile":"submission_document","configuration_secret":"opaque"}',
     'institution_names' => '',
     'issuers' => '',
+    'task_site_id_alias' => 'SITE-A',
 ];
 expect_request(
     DeliveryRequestIdentity::destinationDigest($syntheticDestination)
         === DeliveryRequestIdentity::destinationDigest($syntheticDestination),
     'Destination digest must be deterministic'
 );
+$aliasDestination = array_replace($syntheticDestination, ['task_site_id_alias' => 'SITE-B']);
+expect_request(
+    DeliveryRequestIdentity::destinationDigest($syntheticDestination)
+        !== DeliveryRequestIdentity::destinationDigest($aliasDestination),
+    'Destination digest must change when the technical alias changes'
+);
 
 $service = file_get_contents($root . '/app/Services/ReportDeliveryRequestService.php');
 $snapshotService = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $repository = file_get_contents($root . '/app/Repositories/ReportDeliveryRequestRepository.php');
 $controller = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryRequestController.php');
+$deliveryController = file_get_contents($root . '/app/Controllers/Platform/ReportDeliveryController.php');
 $worker = file_get_contents($root . '/app/Repositories/ReportDeliveryWorkerRepository.php');
+$runtimeConfig = file_get_contents($root . '/app/Config/ReportDeliveryRuntimeConfig.php');
 $migration = file_get_contents($root . '/database/migrations/2026-09-18_report_delivery_requests_postgresql.sql');
 $overrideMigration = file_get_contents($root . '/database/migrations/2026-09-19_report_delivery_request_patient_name_overrides_postgresql.sql');
+$controlledProductionMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_controlled_production_postgresql.sql');
+$requestAliasMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_task_site_alias_postgresql.sql');
+$requestAliasMysqlMigration = file_get_contents($root . '/database/migrations/2026-10-01_report_delivery_request_task_site_alias_mysql.sql');
 $overrideService = file_get_contents($root . '/app/Services/ReportDeliveryRequestPatientNameOverrideService.php');
 $routes = file_get_contents($root . '/routes/platform.php');
 $env = file_get_contents($root . '/.env.example');
 
-foreach ([$service, $snapshotService, $repository, $controller, $worker, $migration, $overrideMigration, $overrideService, $routes, $env] as $content) {
+foreach ([$service, $snapshotService, $repository, $controller, $deliveryController, $worker, $runtimeConfig, $migration, $overrideMigration, $controlledProductionMigration, $requestAliasMigration, $requestAliasMysqlMigration, $overrideService, $routes, $env] as $content) {
     expect_request(is_string($content), 'Expected Delivery Request file must be readable');
 }
 
 foreach (['prepare', 'prepareRecovery', 'approve', 'materialize', 'arm', 'cancel', 'expire', 'get'] as $method) {
     expect_request(str_contains($service, "public function {$method}"), "Service method {$method} missing");
 }
+expect_request(str_contains($service, 'findActiveForInput'), 'Service must expose read-only active Request resumption');
 foreach (['prepared', 'approved', 'materialized', 'armed', 'processing', 'delivered', 'failed', 'cancelled', 'expired'] as $state) {
     expect_request(str_contains($migration, "'{$state}'"), "State {$state} missing from migration");
 }
@@ -151,12 +175,16 @@ expect_request(str_contains($worker, 'ON dr.id = o.delivery_request_id'), 'Worke
 expect_request(str_contains($repository, '$terminalTimestamp = $status ==='), 'Terminal Request timestamp must be selected without duplicate assignments');
 expect_request(!str_contains($repository, '{$column} = NOW(), updated_at = NOW()'), 'Failed Request must not assign updated_at twice');
 expect_request(str_contains($repository, 'tableExists'), 'Optional selector tables must not be assumed present');
-expect_request(str_contains($worker, "'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED'"), 'Worker feature flag guard missing');
+expect_request(str_contains($worker, 'ReportDeliveryRuntimeConfig::requestsEnabled()'), 'Worker feature flag guard missing');
+expect_request(str_contains($runtimeConfig, 'REQUESTS_ENABLED'), 'Runtime Requests flag constant missing');
 expect_request(str_contains($service, 'findByRequestUuid') && str_contains($service, 'return $this->publicRequest($existing)'), 'Same request UUID must replay the existing request');
 expect_request(str_contains($service, "\$request['request_reason'] ?? ''") && str_contains($service, '$inputReason'), 'UUID replay must compare the normalized request reason');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::authorizedSnapshotDigest'), 'Authorized snapshot digest must use the shared canonical helper');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::authorizedSnapshotDigest'), 'Authorized digest must include request-scoped override data');
 expect_request(str_contains($service, 'DeliveryRequestIdentity::destinationDigest'), 'Destination digest must use the shared canonical helper');
+expect_request(str_contains($service, 'controlled_production') && str_contains($service, 'PRODUCTION_DESTINATION_ID'), 'Production controlled mode must be explicit and fixed to Destination 7');
+expect_request(str_contains($service, 'assertProductionPacsBinding') && str_contains($service, 'estudo_servidor_id'), 'Production Request must validate the source PACS binding');
+expect_request(str_contains($service, 'confirm_production_prepare'), 'Production prepare must require explicit confirmation');
 expect_request(str_contains($service, '$request[\'status\'] = self::STATUS_PREPARED;'), 'Prepare must return the persisted prepared state');
 expect_request(!str_contains($service, "'authorized_snapshot_digest', 'destination_config_digest'"), 'Public request must not expose full digests');
 expect_request(str_contains($snapshotService, 'hydratePayload') && str_contains($snapshotService, 'e.tenant_id = r.tenant_id'), 'Request package must hydrate only the explicit tenant-scoped snapshot');
@@ -164,12 +192,17 @@ expect_request(!str_contains($service, "'patient_name'") && !str_contains($servi
 expect_request(str_contains($controller, "_csrf_token"), 'Request endpoints must enforce CSRF');
 expect_request(str_contains($controller, "'confirm_prepare'"), 'Prepare must require explicit confirmation');
 expect_request(str_contains($controller, "HTTP_IDEMPOTENCY_KEY"), 'Prepare must read Idempotency-Key from the header');
+expect_request(str_contains($controller, 'findActiveForInput') && str_contains($controller, "'active'"), 'Active Request endpoint must be read-only and sanitized');
+expect_request(str_contains($deliveryController, 'testSmbReadOnly') && str_contains($deliveryController, 'testReadOnly'), 'Production SMB probe must use the dedicated read-only service');
+expect_request(str_contains($deliveryController, 'confirm_smb_readonly') && str_contains($deliveryController, "'smb_write' => 'NOT_EXECUTED'"), 'Production SMB probe must be explicitly confirmed and report no write');
 expect_request(str_contains($controller, 'confirm_recovery') && str_contains($controller, 'prepareRecovery'), 'Recovery endpoint must require explicit confirmation');
 expect_request(str_contains($service, 'random_bytes(16)') && str_contains($service, 'recovery_request_prepared'), 'Recovery must generate a UUID and append an audit event');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@recover'), 'Recovery route missing');
 expect_request(!str_contains($controller, 'snapshot_digest'), 'Controller must not accept full digests for arm');
 expect_request(str_contains($controller, 'Auth::isPlatformAdmin') && str_contains($controller, 'Auth::perfilAtual()'), 'Request endpoints must enforce admin authorization');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@prepare'), 'Prepare route missing');
+expect_request(str_contains($routes, 'report-delivery/requests/active') && str_contains($routes, 'ReportDeliveryRequestController@active'), 'Active Request resume route missing');
+expect_request(str_contains($routes, 'test-smb-readonly') && str_contains($routes, 'ReportDeliveryController@testSmbReadOnly'), 'Read-only SMB probe route missing');
 expect_request(str_contains($routes, 'ReportDeliveryRequestController@expire'), 'Expire route missing');
 expect_request(str_contains($env, 'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED=false'), 'Feature flag must default OFF');
 
@@ -183,6 +216,8 @@ expect_request(!str_contains($service, 'retryManualHomologationJob'), 'Recovery 
 expect_request(str_contains($repository, "j.status = 'queued'") && str_contains($repository, 'j.worker_eligible_at IS NULL'), 'Materialized cancellation must require queued and ineligible job');
 expect_request(str_contains($repository, "status IN ('prepared','approved','materialized')"), 'Expiration must allow only the approved pre-worker states');
 expect_request(!str_contains($migration, 'tenant_id = 2') && !str_contains($migration, 'report_id = 74'), 'Migration must not embed real-case identifiers');
+expect_request(str_contains($controlledProductionMigration, 'controlled_production') && str_contains($controlledProductionMigration, 'ck_report_delivery_request_target'), 'Controlled production migration must constrain mode and environment pairing');
+expect_request(!str_contains($controlledProductionMigration, 'report_id = 348') && !str_contains($controlledProductionMigration, 'JOB_ID'), 'Controlled production migration must not embed a test case');
 expect_request(str_contains($overrideMigration, 'encrypted_payload') && str_contains($overrideMigration, 'consumed_at'), 'Override migration must be encrypted and single-use');
 expect_request(str_contains($overrideMigration, 'prevent_approved_patient_name_override_mutation'), 'Override migration must enforce post-approval immutability');
 expect_request(str_contains($overrideService, 'operator_confirmed_homologation'), 'Override source must be explicit and homologation-only');
@@ -201,4 +236,9 @@ expect_request(!str_contains($auditBlock, "'family'")
     && !str_contains($auditBlock, "'middle'")
     && !str_contains($auditBlock, "'patient_name'"), 'Override audit must not log clinical components');
 
+expect_request(str_contains($service, "'task_site_id_alias' => \$taskSiteAlias"), 'Request identity and payload must freeze the technical alias');
+expect_request(str_contains($service, "'task_site_id_alias' => (string) (\$request['task_site_id_alias'] ?? '')"), 'Outbox payload must carry the frozen alias');
+expect_request(str_contains($repository, 'task_site_id_alias') && str_contains($repository, 'hasColumn'), 'Request repository must persist the alias compatibly');
+expect_request(str_contains($requestAliasMigration, 'ADD COLUMN IF NOT EXISTS task_site_id_alias') && str_contains($requestAliasMigration, 'ck_report_delivery_request_task_site_id_alias'), 'PostgreSQL Request alias migration must be additive and constrained');
+expect_request(str_contains($requestAliasMysqlMigration, 'pacs_report_delivery_requests') && str_contains($requestAliasMysqlMigration, 'task_site_id_alias'), 'MySQL Request alias migration must be present for parity');
 fwrite(STDOUT, "REPORT_DELIVERY_REQUEST_STATIC_OK\n");

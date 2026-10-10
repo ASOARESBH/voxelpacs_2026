@@ -21,6 +21,11 @@ $clinicalHtml = '<p class="ql-align-center" style="color:red" onclick="alert(1)"
     . '<p><a href="javascript:alert(3)">Link inválido</a></p>'
     . '<img src="data:image/png;base64,AAAA" onerror="alert(4)">';
 $sanitized = ReportClinicalHtmlSanitizer::sanitize($clinicalHtml);
+$normalized = ReportClinicalHtmlSanitizer::sanitizeAndNormalize(
+    '<p style="margin-bottom:28px">  <strong>Texto clínico</strong> </p>'
+    . '<p><br></p><p>&nbsp;</p><p><br></p>'
+    . '<p>Medida: <em>14 mm</em></p><p><br><br></p>'
+);
 
 $require(strpos($sanitized, '<p class="ql-align-center">Linha centralizada</p>') !== false,
     'O alinhamento centralizado do Quill deve sobreviver sem estilos ou handlers.');
@@ -35,17 +40,35 @@ $require(stripos($sanitized, 'javascript:') === false && stripos($sanitized, 'on
     'URLs executáveis e handlers não podem sobreviver ao sanitizador.');
 $require(stripos($sanitized, '<img') === false && stripos($sanitized, 'data:image') === false,
     'Imagens devem permanecer bloqueadas até existir armazenamento clínico privado.');
+$require(!preg_match('/<p><br><\/p>\s*<p><br><\/p>/i', $normalized),
+    'Parágrafos vazios consecutivos devem ser reduzidos a um único bloco.');
+$require(!str_contains($normalized, 'margin-bottom') && !str_contains($normalized, '&nbsp;'),
+    'A normalização deve remover margens coladas e nbsp sem expor estilos no PDF.');
+$require(str_contains($normalized, '<strong>Texto clínico</strong>') && str_contains($normalized, '<em>14 mm</em>'),
+    'A normalização deve preservar texto e ênfases clínicas.');
+$require(str_contains($normalized, 'Medida:'),
+    'A normalização não pode converter o documento inteiro em texto ou perder conteúdo.');
 
 $templatesController = (string) file_get_contents($root . '/app/Controllers/TemplatesController.php');
 $reportService = (string) file_get_contents($root . '/app/Services/ReportService.php');
 $factory = (string) file_get_contents($root . '/public/assets/js/shared/voxel-quill-factory.js');
+$reportEditor = (string) file_get_contents($root . '/public/assets/js/reports/reports-editor.js');
+$pdfDispatcher = (string) file_get_contents($root . '/app/Views/reports/pdf.php');
 $reportToolbar = (string) file_get_contents($root . '/app/Views/reports/partials/_editor.php');
 $maskForm = (string) file_get_contents($root . '/app/Views/medicos/form.php');
 
 $require(strpos($templatesController, 'ReportClinicalHtmlSanitizer::sanitize') !== false,
     'Máscaras devem usar o sanitizador clínico central.');
-$require(strpos($reportService, 'ReportClinicalHtmlSanitizer::sanitizeSections') !== false,
-    'Laudário deve sanitizar o conteúdo antes de persistir.');
+$require(strpos($reportService, 'ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections') !== false,
+    'Save, restore e assinatura devem aplicar a normalização clínica central.');
+$require(substr_count($reportService, 'ReportClinicalHtmlSanitizer::sanitizeAndNormalizeSections') >= 4,
+    'Save, restore, assinatura e liberação devem manter a segunda defesa de normalização.');
+$require(strpos($factory, 'normalizeClinicalHtml') !== false && strpos($factory, 'return { create, insertBasicTable, normalizeHttpsUrl, normalizeClinicalHtml }') !== false,
+    'A fábrica Quill deve expor a normalização clínica compartilhada.');
+$require(strpos($reportEditor, 'normalizeCurrentContent') !== false && strpos($reportEditor, 'normalizeClinicalHtml') !== false,
+    'O editor deve normalizar carga, colagem e extração do HTML clínico.');
+$require(strpos($pdfDispatcher, 'ReportClinicalHtmlSanitizer::sanitizeAndNormalize') !== false,
+    'O renderer legado deve normalizar o conteúdo antes do PDF.');
 $require(strpos($factory, 'normalizeHttpsUrl') !== false && strpos($factory, "url.protocol === 'https:'") !== false,
     'O editor deve aceitar apenas links HTTPS no navegador.');
 $require(substr_count($reportToolbar, 'ql-align') >= 1 && substr_count($reportToolbar, 'ql-link') >= 1,

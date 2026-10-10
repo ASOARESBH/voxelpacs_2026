@@ -86,6 +86,11 @@ $sucessoMsgs = [
     </a>
 </div>
 
+<?php
+$activeTab = 'grupos';
+require __DIR__ . '/../usuarios/_navigation.php';
+?>
+
 <!-- Alertas de erro -->
 <?php if (!empty($erros)): ?>
 <div class="pacs-alert pacs-alert-danger mb-4" id="alertErros">

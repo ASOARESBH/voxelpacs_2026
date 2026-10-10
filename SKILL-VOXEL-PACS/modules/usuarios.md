@@ -26,6 +26,28 @@ Auditorias registram IDs técnicos, tenant, motivo e hashes SHA-256 dos endereç
 
 As migrations `2026-09-22_users_email_lifecycle_postgresql.sql` e `2026-09-22_users_email_lifecycle_mysql.sql` são aditivas, não executam backfill e permanecem separadas do deploy. Aplicação exige backup lógico, preflight do schema efetivo, janela autorizada e validação pós-DDL. A consolidação de contas duplicadas existentes não faz parte desta implementação.
 
+## Preferência de finalização da assinatura
+
+Em `/usuarios/{id}/edit`, o perfil `medico` possui a preferência tenant-scoped `bi_user_report_signature_preferences.signature_mode`: `ambos` mantém os dois botões; `somente` permite apenas assinar e mantém o laudo pendente de liberação; `fechar` permite apenas Assinar e Fechar. O formulário usa opções exclusivas e o backend impõe a mesma regra, portanto ocultar o botão é apenas usabilidade, não controle de segurança.
+
+A preferência não altera conteúdo clínico, versão, PatientName, snapshot, Outbox, Job ou XML. Ela é consultada no Laudário e aplicada antes de `ReportService::assinar()`/`liberarAssinado()`. Sem a migration `2026-10-07_report_signature_preference_{postgresql,mysql}.sql`, o sistema conserva o comportamento atual (`ambos`) e informa que a configuração ainda não está ativa. A migration é separada do deploy e exige `MIGRATION_REQUIRED = YES`.
+
+As restrições opt-out de visualizadores usam `bi_user_viewers` no schema PostgreSQL `voxelpacs_mysql_source`. A leitura e gravação usam `FALSE` no PostgreSQL e `0` no MySQL para respeitar os tipos booleanos de cada dialeto. A migration aditiva `2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql` concede somente os grants de runtime necessários na tabela e na sequência; ela é separada do deploy e requer aplicação controlada.
+
+As regras de notificação por grupo usam as colunas booleanas de `bi_grupo_notificacao_config`. O `GrupoNotificacaoRepository::savePolicy()` deve bindar `ativo`, `canal_email`, `canal_whatsapp` e `canal_telegram` explicitamente com `PDO::PARAM_BOOL`; `execute()` associativo sem tipos pode converter `false` em string vazia no PostgreSQL e causar `SQLSTATE[22P02]`. Esta correção é somente de aplicação, sem migration.
+
+## Navegação administrativa
+
+As telas de `/usuarios`, grupos, notificações e regras de acesso usam o partial compartilhado `app/Views/usuarios/_navigation.php`. Ele mantém as quatro rotas visíveis para usuários autorizados, marca somente a rota atual como ativa e preserva a visibilidade limitada na lista principal quando o usuário não pode administrar o tenant. O estilo `.usuarios-tabs-bar`/`.usuarios-tab-btn` fica no CSS global `public/assets/css/pacs.css`, evitando que uma tela dependa de CSS inline de outra.
+
+## Visibilidade individual de estudos
+
+`/usuarios/create` e `/usuarios/{id}/edit` exibem o card **Visibilidade de Estudos** abaixo do vínculo com médico. A política é por usuário e pode ser configurada para qualquer perfil; ela não concede módulos, abertura de imagens, assinatura, liberação ou administração, que continuam sob RBAC e os gates próprios. Cada regra é uma combinação tenant-scoped de `InstitutionName` e modalidade; `*` significa todas as modalidades daquela instituição, inclusive as que o PACS venha a receber no futuro.
+
+`UserStudyScopeService` é a fonte única para carregar instituições/modalidades, validar novamente o tenant e persistir a configuração. A ausência das tabelas mantém o comportamento legado. Médicos já vinculados com `bi_medico_unidades` são pré-preenchidos como política ativa com `*`; médicos sem unidades legadas não recebem uma política vazia que bloquearia seu acesso. A projeção legada continua sendo atualizada quando a nova política é salva, preservando o motor de SLA durante a transição.
+
+O endpoint de médicos não aceita mais `unidades[]` como fonte de alteração. A visibilidade deve ser ajustada no cadastro do usuário vinculado. O POST de usuários exige guard administrativo, vínculo tenant-scoped e CSRF, e rejeita instituição/modalidade que não pertença ao catálogo do tenant.
+
 ## Referências
 
 - [`UsuariosController`](../../app/Controllers/UsuariosController.php)
@@ -33,3 +55,12 @@ As migrations `2026-09-22_users_email_lifecycle_postgresql.sql` e `2026-09-22_us
 - [`UserEmailChangeService`](../../app/Services/UserEmailChangeService.php)
 - [`EmailChangeController`](../../app/Controllers/Auth/EmailChangeController.php)
 - [`2026-09-22_users_email_lifecycle_postgresql.sql`](../../database/migrations/2026-09-22_users_email_lifecycle_postgresql.sql)
+- [`ReportSignaturePreferenceService`](../../app/Services/ReportSignaturePreferenceService.php)
+- [`_navigation.php`](../../app/Views/usuarios/_navigation.php)
+- [`pacs.css`](../../public/assets/css/pacs.css)
+- [`2026-10-07_report_signature_preference_postgresql.sql`](../../database/migrations/2026-10-07_report_signature_preference_postgresql.sql)
+- [`2026-10-07_report_signature_preference_mysql.sql`](../../database/migrations/2026-10-07_report_signature_preference_mysql.sql)
+- [`2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql`](../../database/migrations/2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql)
+- [`UserStudyScopeService`](../../app/Services/UserStudyScopeService.php)
+- [`2026-10-08_user_study_scope_postgresql.sql`](../../database/migrations/2026-10-08_user_study_scope_postgresql.sql)
+- [`2026-10-08_user_study_scope_mysql.sql`](../../database/migrations/2026-10-08_user_study_scope_mysql.sql)

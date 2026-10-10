@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 
 /**
@@ -25,25 +26,25 @@ final class PhilipsFolderDeliveryService
 
     public static function enabled(): bool
     {
-        return filter_var(getenv('PHILIPS_FOLDER_DELIVERY_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::folderDeliveryEnabled();
     }
 
     /** Fase 1: desligada por padrão; a autorização de teste é independente do worker geral. */
     public static function nonDicomEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_DELIVERY_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::nonDicomDeliveryEnabled();
     }
 
     /** Teste de conectividade não cria job e exige janela própria, desligada por padrão. */
     public static function testEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_SMB_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::smbTestEnabled();
     }
 
     /** Diagnóstico temporário de autenticação SMB sem operação remota de escrita. */
     public static function readOnlyTestEnabled(): bool
     {
-        return filter_var(getenv('PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        return ReportDeliveryRuntimeConfig::smbReadOnlyTestEnabled();
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $configuration @param array<string,mixed> $payload @param array<string,mixed> $artifact
@@ -60,7 +61,7 @@ final class PhilipsFolderDeliveryService
         }
 
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $pdfPath = (string) ($artifact['storage_path'] ?? '');
@@ -70,7 +71,7 @@ final class PhilipsFolderDeliveryService
         }
 
         $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, $destinationId, $fileName, $pdfPath, $timeout);
+        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, (int) ($job['tenant_id'] ?? 0), $destinationId, $fileName, $pdfPath, $timeout);
 
         return $result + ['filename' => $fileName];
     }
@@ -89,7 +90,7 @@ final class PhilipsFolderDeliveryService
             throw new PhilipsFolderDeliveryException('invalid_configuration', 'invalid_configuration');
         }
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         $pdfPath = (string) ($artifact['storage_path'] ?? '');
@@ -101,7 +102,7 @@ final class PhilipsFolderDeliveryService
         sodium_memzero($password);
         $fileName = $this->fileName($payload, $reportId, $reportVersion);
         $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, $destinationId, $fileName, $pdfPath, $timeout, $envelope);
+        $result = (new PhilipsFolderGatewayBridgeClient())->send($jobId, (int) ($job['tenant_id'] ?? 0), $destinationId, $fileName, $pdfPath, $timeout, $envelope);
         return $result + ['filename' => $fileName];
     }
 
@@ -122,7 +123,7 @@ final class PhilipsFolderDeliveryService
             throw new PhilipsFolderDeliveryException('invalid_configuration', 'invalid_configuration');
         }
         $jobId = (int) ($job['id'] ?? 0);
-        $destinationId = (int) ($job['destination_id'] ?? 0);
+        $destinationId = $this->effectiveDestinationId($job);
         $reportId = (int) ($job['report_id'] ?? 0);
         $reportVersion = (int) ($job['report_version'] ?? 0);
         if ($jobId <= 0 || $destinationId <= 0 || $reportId <= 0 || $reportVersion <= 0) {
@@ -145,31 +146,69 @@ final class PhilipsFolderDeliveryService
             $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
             $xmlFileName = $package->xmlDocument->filename;
             $timeout = max(5, min(120, (int) ($job['timeout_seconds'] ?? 30)));
-            $result = (new PhilipsFolderGatewayBridgeClient())->sendSubmissionPackage(
-                $jobId,
-                (int) ($job['tenant_id'] ?? 0),
-                $destinationId,
-                $pdfFileName,
-                (string) ($package->pdfArtifact['storage_path'] ?? ''),
-                $xmlFileName,
-                $package->xmlStoragePath,
-                $timeout,
-                $envelope,
-                $package->xmlDocument->taskFilePath,
-                $package->xmlDocument->documentTypeApplicable,
-                [
-                    'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
-                    'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
-                    'tenant_id' => (int) ($job['tenant_id'] ?? 0),
-                    'report_id' => $reportId,
-                    'report_version' => $reportVersion,
-                    'estudo_id' => (int) ($job['estudo_id'] ?? 0),
-                    'destination_id' => $destinationId,
-                    'ambiente' => (string) ($job['ambiente'] ?? ''),
-                    'delivery_profile' => (string) ($job['delivery_profile'] ?? $configuration['delivery_profile'] ?? ''),
-                    'transport' => (string) ($job['transport'] ?? ''),
-                ]
-            );
+            $bridgeClient = new PhilipsFolderGatewayBridgeClient();
+            try {
+                $result = $bridgeClient->sendSubmissionPackage(
+                    $jobId,
+                    (int) ($job['tenant_id'] ?? 0),
+                    $destinationId,
+                    $pdfFileName,
+                    (string) ($package->pdfArtifact['storage_path'] ?? ''),
+                    $xmlFileName,
+                    $package->xmlStoragePath,
+                    $timeout,
+                    $envelope,
+                    $package->xmlDocument->taskFilePath,
+                    $package->xmlDocument->documentTypeApplicable,
+                    [
+                        'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
+                        'patient_name_as_family' => $package->xmlDocument->patientNameAsFamily,
+                        'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                        'report_id' => $reportId,
+                        'report_version' => $reportVersion,
+                        'estudo_id' => (int) ($job['estudo_id'] ?? 0),
+                        'destination_id' => $destinationId,
+                        'ambiente' => (string) ($job['ambiente'] ?? ''),
+                        'delivery_profile' => (string) ($job['delivery_profile'] ?? $configuration['delivery_profile'] ?? ''),
+                        'transport' => (string) ($job['transport'] ?? ''),
+                    ]
+                );
+            } catch (PhilipsFolderDeliveryException $error) {
+                if (!in_array($error->stage, ['gateway_delivery_failed', 'gateway_invalid_response'], true)
+                    || !is_string($error->packageIdentity)
+                    || !preg_match('/\A[a-f0-9]{64}\z/i', $error->packageIdentity)) {
+                    throw $error;
+                }
+                try {
+                    $reconciled = $bridgeClient->reconcileSubmissionPackage(
+                        $jobId,
+                        (int) ($job['tenant_id'] ?? 0),
+                        $destinationId,
+                        $error->packageIdentity,
+                        $timeout
+                    );
+                    Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_HTTP_RECONCILIATION_CONFIRMED', [
+                        'job_id' => $jobId,
+                        'package_verified' => 'PASS',
+                        'confirmation_source' => 'bridge_state',
+                    ]);
+                    $result = [
+                        'reference' => $reconciled['reference'],
+                        'sha256' => $error->packageIdentity,
+                        'size' => $error->packageSize ?? 0,
+                        'package_identity' => $reconciled['package_identity'],
+                        'package_verified' => 'PASS',
+                        'confirmation_source' => 'bridge_state',
+                    ];
+                } catch (PhilipsFolderDeliveryException $reconciliationError) {
+                    Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_HTTP_RECONCILIATION_UNCONFIRMED', [
+                        'job_id' => $jobId,
+                        'stage' => $reconciliationError->stage,
+                        'reason_category' => $reconciliationError->reasonCategory,
+                    ]);
+                    throw $error;
+                }
+            }
             return $result + [
                 'xml_filename' => $xmlFileName,
                 'patient_name_components_omitted' => $package->xmlDocument->patientNameComponentsOmitted,
@@ -186,6 +225,12 @@ final class PhilipsFolderDeliveryService
         } finally {
             sodium_memzero($password);
         }
+    }
+
+    /** @param array<string,mixed> $job */
+    private function effectiveDestinationId(array $job): int
+    {
+        return (int) ($job['effective_destination_id'] ?? $job['destination_id'] ?? 0);
     }
 
     private function smbPassword(string $encryptedSecret): string

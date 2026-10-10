@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# VOXEL PACS — helper root-controlled do seletor Philips Non-DICOM B6.1.
+# Sem argumentos; não concede shell, cópia, remoção, systemd ou transporte.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly DIAGNOSTIC='/usr/local/libexec/voxelpacs/philips_nondicom_b6_selector.php'
+readonly EXPECTED_HOST='voxel-api-prod-01'
+
+fail() {
+  printf 'SELECTOR=BLOCKED\nFAILURE_CATEGORY=%s\n' "$1" >&2
+  exit 64
+}
+
+[[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+[[ "$#" -eq 0 ]] || fail 'ARGUMENTS_NOT_ALLOWED'
+[[ "$(hostname -s)" == "$EXPECTED_HOST" ]] || fail 'HOST_IDENTITY_MISMATCH'
+[[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || fail 'APP_ROOT_INVALID'
+[[ -f "$APP_ROOT/app/autoload.php" && ! -L "$APP_ROOT/app/autoload.php" ]] || fail 'APP_AUTOLOAD_NOT_FOUND'
+[[ -f "$DIAGNOSTIC" && ! -L "$DIAGNOSTIC" ]] || fail 'DIAGNOSTIC_NOT_INSTALLED'
+[[ "$(stat -c '%U:%G:%a' "$DIAGNOSTIC" 2>/dev/null)" == 'root:root:750' ]] || fail 'DIAGNOSTIC_NOT_ROOT_ONLY'
+
+exec /usr/bin/php "$DIAGNOSTIC"

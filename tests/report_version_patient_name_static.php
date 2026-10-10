@@ -37,10 +37,31 @@ expect_version_name($studyWithOriginalName['patient_name'] === $originalName, 'O
 $fromTags = $service->resolve(['tags_raw' => json_encode(['PatientName' => 'TAGS^JOAO^MIDDLE'], JSON_THROW_ON_ERROR)]);
 expect_version_name($fromTags['source'] === 'dicom_pn' && $fromTags['family'] === 'TAGS', 'tags_raw structured PN must be accepted');
 
+$fromDicomEmptyGiven = $service->resolve(['patient_name' => 'FAMILY^^MIDDLE']);
+expect_version_name(
+    $fromDicomEmptyGiven['source'] === 'dicom_pn'
+        && $fromDicomEmptyGiven['family'] === 'FAMILY'
+        && $fromDicomEmptyGiven['given'] === ''
+        && $fromDicomEmptyGiven['middle'] === 'MIDDLE',
+    'Structured DICOM PN must freeze an empty Given without shifting Middle'
+);
+
+$fromDicomEmptyGivenWithFallback = $service->resolve([
+    'patient_name_dicom' => 'FAMILY^^MIDDLE',
+    'patient_name' => 'FAMILY GIVEN MIDDLE',
+]);
+expect_version_name(
+    $fromDicomEmptyGivenWithFallback['source'] === 'patient_name_fallback'
+        && $fromDicomEmptyGivenWithFallback['family'] === 'FAMILY'
+        && $fromDicomEmptyGivenWithFallback['given'] === 'GIVEN'
+        && $fromDicomEmptyGivenWithFallback['middle'] === 'MIDDLE',
+    'Empty DICOM Given must use the flat PatientName fallback when available'
+);
+
 $fromFlat = $service->resolve(['patient_name' => 'Flat Display Name']);
 expect_version_name($fromFlat['source'] === 'patient_name_fallback', 'Flat name must use the automatic fallback source');
-expect_version_name($fromFlat['family'] === 'Flat Display Name', 'Flat name must be preserved entirely as family');
-expect_version_name($fromFlat['given'] === '' && $fromFlat['middle'] === '', 'Automatic flat-name fallback must leave given and middle empty');
+expect_version_name($fromFlat['family'] === 'Flat', 'Flat name must use its first token as family');
+expect_version_name($fromFlat['given'] === 'Display' && $fromFlat['middle'] === 'Name', 'Automatic flat-name fallback must map intermediate and last tokens');
 
 $missingPatientName = false;
 try {
@@ -65,6 +86,14 @@ try {
     $invalidSource = $e->getMessage() === 'patient_name_source_invalid';
 }
 expect_version_name($invalidSource, 'Unknown source must be rejected');
+
+$manualEmptyGiven = false;
+try {
+    $service->validateStored('FAMILY', '', 'MIDDLE', 'manual_confirmation');
+} catch (InvalidArgumentException $e) {
+    $manualEmptyGiven = $e->getMessage() === 'patient_name_given';
+}
+expect_version_name($manualEmptyGiven, 'Manual confirmation must still require Given');
 
 $repositorySource = file_get_contents($root . '/app/Repositories/ReportRepository.php');
 $migrationSource = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');

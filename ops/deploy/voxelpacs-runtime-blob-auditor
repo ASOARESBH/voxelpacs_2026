@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# VOXEL PACS — auditor root-controlled de um blob de runtime específico.
+#
+# Este helper é somente leitura. Não aceita path, source, destination, shell,
+# comando ou operação de publicação fornecida pelo caller.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly BACKUP_ROOT='/var/backups/voxelpacs/releases'
+readonly TARGET_RELATIVE_PATH='bin/philips_nondicom_production_diagnostic.php'
+readonly BACKUP_ARCHIVE='release.tar.gz'
+readonly BACKUP_MANIFEST='manifest.tsv'
+readonly BACKUP_CHECKSUM='release.sha256'
+readonly BACKUP_SOURCE_SHA='source-sha'
+readonly MECHANISM_VERSION='1'
+
+fail() {
+  printf 'AUDIT=BLOCKED\nREASON=%s\nPRODUCTION_CHANGED=NO\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' \
+    'uso: voxelpacs-runtime-blob-auditor audit --backup-sha <40-hex-sha>' >&2
+}
+
+is_sha() {
+  [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+require_root_and_caller() {
+  [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+  case "${SUDO_USER:-}" in
+    ''|manus-admin) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+}
+
+safe_regular() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]]
+}
+
+secure_backup_file() {
+  local path="$1"
+  safe_regular "$path" || return 1
+  [[ "$(stat -c '%u:%g' -- "$path" 2>/dev/null || true)" == '0:0' ]] || return 1
+  local mode
+  mode=$((8#$(stat -c '%a' -- "$path" 2>/dev/null || printf '777')))
+  (( (mode & 077) == 0 ))
+}
+
+validate_backup_files() {
+  local backup_dir="$BACKUP_ROOT/$backup_sha"
+  [[ -d "$BACKUP_ROOT" && ! -L "$BACKUP_ROOT" ]] || fail 'BACKUP_ROOT_INVALID'
+  [[ "$(stat -c '%u:%g:%a' -- "$BACKUP_ROOT" 2>/dev/null || true)" == '0:0:700' ]] || fail 'BACKUP_ROOT_SECURITY_INVALID'
+  [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail 'BACKUP_NOT_FOUND'
+  [[ "$(stat -c '%u:%g:%a' -- "$backup_dir" 2>/dev/null || true)" == '0:0:700' ]] || fail 'BACKUP_DIRECTORY_SECURITY_INVALID'
+  for file in "$BACKUP_ARCHIVE" "$BACKUP_MANIFEST" "$BACKUP_CHECKSUM" "$BACKUP_SOURCE_SHA" metadata status; do
+    secure_backup_file "$backup_dir/$file" || fail 'BACKUP_FILE_SECURITY_INVALID'
+  done
+  (cd "$backup_dir" && sha256sum -c "$BACKUP_CHECKSUM" >/dev/null 2>&1) || fail 'BACKUP_CHECKSUM_INVALID'
+  [[ "$(wc -l < "$backup_dir/$BACKUP_SOURCE_SHA")" -eq 1 ]] || fail 'BACKUP_SOURCE_SHA_FORMAT_INVALID'
+  [[ "$(head -n 1 -- "$backup_dir/$BACKUP_SOURCE_SHA")" == "$backup_sha" ]] || fail 'BACKUP_SOURCE_SHA_MISMATCH'
+  tar -tzf "$backup_dir/$BACKUP_ARCHIVE" >/dev/null 2>&1 || fail 'BACKUP_ARCHIVE_INVALID'
+}
+
+read_manifest_entry() {
+  local manifest="$BACKUP_ROOT/$backup_sha/$BACKUP_MANIFEST"
+  /usr/bin/awk -F '\t' '
+    $1 == "META" && NF == 3 { next }
+    $1 == "EXCLUDED" && NF == 3 { next }
+    $1 == "DIR" && NF == 7 && $2 != "" && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 == "-" { next }
+    $1 == "FILE" && NF == 8 && $2 != "" && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9a-f]{64}$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ { next }
+    { bad = 1 }
+    END { exit bad ? 1 : 0 }
+  ' "$manifest" || fail 'BACKUP_MANIFEST_FORMAT_INVALID'
+  local source_sha
+  source_sha="$(awk -F '\t' '$1 == "META" && $2 == "source_sha" {print $3; exit}' "$manifest")"
+  [[ "$source_sha" == "$backup_sha" ]] || fail 'BACKUP_MANIFEST_SOURCE_SHA_MISMATCH'
+  manifest_entry="$(awk -F '\t' -v target="$TARGET_RELATIVE_PATH" '$1 == "FILE" && $2 == target {print; count++} END {if (count != 1) exit 1}' "$manifest")" || fail 'BACKUP_TARGET_MANIFEST_ENTRY_INVALID'
+  IFS=$'\t' read -r manifest_kind manifest_path manifest_size manifest_hash manifest_mode manifest_uid manifest_gid manifest_mtime <<< "$manifest_entry"
+  [[ "$manifest_kind" == 'FILE' && "$manifest_path" == "$TARGET_RELATIVE_PATH" ]] || fail 'BACKUP_TARGET_MANIFEST_PATH_INVALID'
+}
+
+print_result() {
+  local provenance="$1" content_match="$2" metadata_match="$3" audit_status="$4"
+  printf 'AUDIT_MODE=READ_ONLY\nMECHANISM_VERSION=%s\nTARGET_PATH=%s\nBACKUP_SHA_PREFIX=%s…\n' "$MECHANISM_VERSION" "$TARGET_RELATIVE_PATH" "${backup_sha:0:12}"
+  printf 'BACKUP_INTEGRITY=PASS\nBACKUP_TARGET_MANIFEST=PASS\nBACKUP_TARGET_ARCHIVE=PASS\nRUNTIME_FILE=REGULAR\n'
+  printf 'RUNTIME_BACKUP_CONTENT_MATCH=%s\nRUNTIME_BACKUP_METADATA_MATCH=%s\n' "$content_match" "$metadata_match"
+  printf 'PROVENANCE=%s\nMAIN_COMPARISON=NOT_AVAILABLE\n' "$provenance"
+  printf 'RUNTIME_CHANGED=NO\nPRODUCTION_CHANGED=NO\nAUDIT=%s\n' "$audit_status"
+}
+
+audit_blob() {
+  local backup_dir="$BACKUP_ROOT/$backup_sha" archive_entries runtime_metadata manifest_metadata archive_hash
+  validate_backup_files
+  read_manifest_entry
+  archive_entries="$(tar -tzf "$backup_dir/$BACKUP_ARCHIVE" | awk -v target="$TARGET_RELATIVE_PATH" '$0 == target {count++} END {print count + 0}')"
+  [[ "$archive_entries" == '1' ]] || fail 'BACKUP_TARGET_ARCHIVE_ENTRY_INVALID'
+  archive_hash="$(tar -xOzf "$backup_dir/$BACKUP_ARCHIVE" -- "$TARGET_RELATIVE_PATH" | sha256sum | awk '{print $1}')" || fail 'BACKUP_TARGET_ARCHIVE_READ_FAILED'
+  [[ "$archive_hash" == "$manifest_hash" ]] || fail 'BACKUP_TARGET_ARCHIVE_HASH_MISMATCH'
+  safe_regular "$APP_ROOT/$TARGET_RELATIVE_PATH" || fail 'RUNTIME_TARGET_NOT_REGULAR'
+  runtime_hash="$(sha256sum -- "$APP_ROOT/$TARGET_RELATIVE_PATH" | awk '{print $1}')"
+  runtime_metadata="$(stat -c '%s:%a:%u:%g:%Y' -- "$APP_ROOT/$TARGET_RELATIVE_PATH")"
+  manifest_metadata="$manifest_size:$manifest_mode:$manifest_uid:$manifest_gid:$manifest_mtime"
+  local content_match='NO' metadata_match='NO'
+  [[ "$runtime_hash" == "$manifest_hash" ]] && content_match='YES'
+  [[ "$runtime_metadata" == "$manifest_metadata" ]] && metadata_match='YES'
+  if [[ "$content_match" == 'YES' && "$metadata_match" == 'YES' ]]; then
+    print_result 'BACKUP_MATCH' "$content_match" "$metadata_match" 'PASS'
+    return 0
+  fi
+  print_result 'UNKNOWN_RUNTIME_BLOB' "$content_match" "$metadata_match" 'BLOCKED'
+  return 65
+}
+
+require_root_and_caller
+[[ "$#" -eq 3 && "$1" == 'audit' && "$2" == '--backup-sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+backup_sha="$3"
+is_sha "$backup_sha" || fail 'BACKUP_SHA_INVALID'
+audit_blob

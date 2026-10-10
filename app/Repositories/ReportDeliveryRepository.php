@@ -17,14 +17,16 @@ use App\Helpers\DicomPersonName;
  */
 class ReportDeliveryRepository
 {
+    private ?bool $taskSiteAliasColumnAvailable = null;
+
     public function __construct(private PDO $pdo)
     {
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findActiveDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $sourceServerId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, true, $sourceServerId);
     }
 
     /**
@@ -34,9 +36,9 @@ class ReportDeliveryRepository
      *
      * @return array<int, array<string, mixed>>
      */
-    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName): array
+    public function findManualHomologationDestinations(int $tenantId, ?int $estabelecimentoId, ?string $issuerNormalized, ?string $institutionName, ?int $sourceServerId = null): array
     {
-        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false);
+        return $this->findDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, true, false, $sourceServerId);
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -46,13 +48,39 @@ class ReportDeliveryRepository
     }
 
     /** @return array<int, array<string, mixed>> */
+    public function findActiveDestinationsByTransportAndEnvironment(int $tenantId, string $transport, string $environment): array
+    {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
+        $stmt = $this->pdo->prepare(
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome,
+                    d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    {$taskSiteAliasSelect},
+                    d.configuration_json, d.configuration_secret, d.timeout_seconds,
+                    d.max_attempts, d.updated_at
+             FROM pacs_report_delivery_destinations d
+             WHERE d.tenant_id = :tenant_id
+               AND d.transport = :transport
+               AND d.ambiente = :environment
+               AND d.enabled = 1"
+        );
+        $stmt->execute([
+            ':tenant_id' => $tenantId,
+            ':transport' => $transport,
+            ':environment' => $environment,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @return array<int, array<string, mixed>> */
     private function findDestinations(
         int $tenantId,
         ?int $estabelecimentoId,
         ?string $issuerNormalized,
         ?string $institutionName,
         bool $onlyEligible,
-        bool $requireReleaseTrigger = true
+        bool $requireReleaseTrigger = true,
+        ?int $sourceServerId = null
     ): array
     {
         $issuerNormalized = trim((string) $issuerNormalized);
@@ -73,18 +101,25 @@ class ReportDeliveryRepository
         $sourceWhere = $issuerNormalized !== ''
             ? 'ds.issuer_of_patient_id_normalized = :source_value'
             : 'di.institution_name = :source_value';
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $eligibilityWhere = $onlyEligible && $requireReleaseTrigger
             ? 'AND d.enabled = 1 AND d.disparar_na_liberacao = 1'
             : ($onlyEligible ? 'AND d.enabled = 1' : '');
+        $serverRoutingWhere = $onlyEligible
+            ? ($sourceServerId === null
+                ? 'AND d.servidor_pacs_id IS NULL'
+                : 'AND d.servidor_pacs_id = :source_server_id')
+            : '';
         $secretColumn = $onlyEligible ? ', d.configuration_secret' : '';
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, d.timeout_seconds, d.max_attempts,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao, {$taskSiteAliasSelect}, d.timeout_seconds, d.max_attempts,
                     d.configuration_json{$secretColumn}
              FROM pacs_report_delivery_destinations d
              {$sourceJoin}
              WHERE d.tenant_id = :tenant_id
                AND {$sourceWhere}
                {$eligibilityWhere}
+               {$serverRoutingWhere}
                AND (d.estabelecimento_id IS NULL OR d.estabelecimento_id = :estabelecimento_id)
              ORDER BY d.id ASC"
         );
@@ -95,6 +130,9 @@ class ReportDeliveryRepository
         } else {
             $stmt->bindValue(':estabelecimento_id', $estabelecimentoId, PDO::PARAM_INT);
         }
+        if ($onlyEligible && $sourceServerId !== null) {
+            $stmt->bindValue(':source_server_id', $sourceServerId, PDO::PARAM_INT);
+        }
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -103,10 +141,12 @@ class ReportDeliveryRepository
     /** @return array<int, array<string, mixed>> */
     public function listDestinations(int $tenantId): array
     {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
         $issuersSql = SqlHelper::groupConcat('ds.issuer_of_patient_id', '||', 'ds.issuer_of_patient_id');
         $stmt = $this->pdo->prepare(
-            "SELECT d.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+                    {$taskSiteAliasSelect},
                     d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
                     d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
                     CASE WHEN COALESCE(d.configuration_secret, '') <> '' THEN 1 ELSE 0 END AS credential_configured,
@@ -128,8 +168,10 @@ class ReportDeliveryRepository
     /** @return array<string, mixed>|null */
     public function findDestination(int $destinationId, int $tenantId, bool $includeSecret = false): ?array
     {
+        $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $columns = $includeSecret ? 'd.*' :
-            'd.id, d.tenant_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+            'd.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente, d.enabled, d.disparar_na_liberacao,
+             ' . $taskSiteAliasSelect . ',
              d.configuration_json, d.timeout_seconds, d.max_attempts, d.last_test_at,
              d.last_test_status, d.last_test_message, d.created_at, d.updated_at,
              CASE WHEN COALESCE(d.configuration_secret, \'\') <> \'\' THEN 1 ELSE 0 END AS credential_configured';
@@ -153,6 +195,49 @@ class ReportDeliveryRepository
         return $row ?: null;
     }
 
+    /** @param array<string,mixed> $data */
+    private function validateDestinationPacsServer(int $tenantId, array $data): ?int
+    {
+        $rawServerId = $data['servidor_pacs_id'] ?? null;
+        if ($rawServerId === null || $rawServerId === '') {
+            $serverId = null;
+        } elseif (is_int($rawServerId) || (is_string($rawServerId) && ctype_digit($rawServerId))) {
+            $serverId = (int) $rawServerId;
+            if ($serverId <= 0) {
+                $serverId = null;
+            }
+        } else {
+            throw new DomainException('Selecione um servidor PACS autorizado para este negócio.');
+        }
+
+        $requiresBinding = (string) ($data['transport'] ?? '') === 'philips_non_dicom'
+            && (string) ($data['ambiente'] ?? '') === 'producao';
+        if ($requiresBinding && $serverId === null) {
+            throw new DomainException('Selecione um servidor PACS autorizado para destinos Philips Non-DICOM de produção.');
+        }
+        if ($serverId === null) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT s.id
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1'
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        if ($stmt->fetchColumn() === false) {
+            throw new DomainException('O servidor PACS selecionado não está autorizado para este negócio.');
+        }
+
+        return $serverId;
+    }
+
     /** @param array<string, mixed> $data */
     public function saveDestination(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
@@ -173,6 +258,12 @@ class ReportDeliveryRepository
     private function saveDestinationWithinTransaction(int $tenantId, ?int $destinationId, array $data, int $userId): int
     {
         $name = trim((string) $data['nome']);
+        $serverPacsId = $this->validateDestinationPacsServer($tenantId, $data);
+        $taskSiteAlias = $this->validatedTaskSiteAlias($data);
+        $hasTaskSiteAliasColumn = $this->hasTaskSiteAliasColumn();
+        if ($taskSiteAlias !== null && !$hasTaskSiteAliasColumn) {
+            throw new DomainException('A migration do alias técnico Philips ainda não foi aplicada.', 503);
+        }
         if ($destinationId) {
             $existing = $this->findDestination($destinationId, $tenantId, true);
             if (!$existing) {
@@ -192,6 +283,8 @@ class ReportDeliveryRepository
             $stmt = $this->pdo->prepare(
                 "UPDATE pacs_report_delivery_destinations SET
                     nome = :nome,
+                    servidor_pacs_id = :servidor_pacs_id,
+                    " . ($hasTaskSiteAliasColumn ? 'task_site_id_alias = :task_site_id_alias,' : '') . "
                     transport = :transport,
                     ambiente = :ambiente,
                     enabled = :enabled,
@@ -208,6 +301,8 @@ class ReportDeliveryRepository
             );
             $stmt->execute([
                 ':nome' => $name,
+                ':servidor_pacs_id' => $serverPacsId,
+                ...($hasTaskSiteAliasColumn ? [':task_site_id_alias' => $taskSiteAlias] : []),
                 ':transport' => $data['transport'],
                 ':ambiente' => $data['ambiente'],
                 ':enabled' => (int) $data['enabled'],
@@ -237,15 +332,17 @@ class ReportDeliveryRepository
 
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_destinations
-                (tenant_id, nome, transport, ambiente, enabled, disparar_na_liberacao,
+                (tenant_id, nome, servidor_pacs_id, " . ($hasTaskSiteAliasColumn ? 'task_site_id_alias, ' : '') . "transport, ambiente, enabled, disparar_na_liberacao,
                  configuration_json, configuration_secret, timeout_seconds, max_attempts, created_by)
              VALUES
-                (:tenant_id, :nome, :transport, :ambiente, :enabled, :disparar_na_liberacao,
+                (:tenant_id, :nome, :servidor_pacs_id, " . ($hasTaskSiteAliasColumn ? ':task_site_id_alias, ' : '') . ":transport, :ambiente, :enabled, :disparar_na_liberacao,
                  :configuration_json, :configuration_secret, :timeout_seconds, :max_attempts, :created_by)"
         );
         $stmt->execute([
             ':tenant_id' => $tenantId,
             ':nome' => $name,
+            ':servidor_pacs_id' => $serverPacsId,
+            ...($hasTaskSiteAliasColumn ? [':task_site_id_alias' => $taskSiteAlias] : []),
             ':transport' => $data['transport'],
             ':ambiente' => $data['ambiente'],
             ':enabled' => (int) $data['enabled'],
@@ -261,6 +358,45 @@ class ReportDeliveryRepository
         $this->replaceDestinationSources($savedId, $tenantId, $data);
 
         return $savedId;
+    }
+
+    private function hasTaskSiteAliasColumn(): bool
+    {
+        if ($this->taskSiteAliasColumnAvailable === null) {
+            try {
+                $this->taskSiteAliasColumnAvailable = SqlHelper::hasColumn(
+                    $this->pdo,
+                    'pacs_report_delivery_destinations',
+                    'task_site_id_alias'
+                );
+            } catch (\Throwable) {
+                $this->taskSiteAliasColumnAvailable = false;
+            }
+        }
+
+        return $this->taskSiteAliasColumnAvailable;
+    }
+
+    private function taskSiteAliasSelect(): string
+    {
+        return $this->hasTaskSiteAliasColumn()
+            ? 'd.task_site_id_alias'
+            : 'NULL AS task_site_id_alias';
+    }
+
+    /** @param array<string,mixed> $data */
+    private function validatedTaskSiteAlias(array $data): ?string
+    {
+        $raw = $data['task_site_id_alias'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') {
+            return null;
+        }
+        $alias = trim((string) $raw);
+        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) !== 1) {
+            throw new DomainException('O alias técnico Philips deve usar somente ASCII, letras, números, ponto, hífen ou sublinhado, com até 120 caracteres.');
+        }
+
+        return $alias;
     }
 
     /** @param array<string,mixed> $data */
@@ -381,16 +517,37 @@ class ReportDeliveryRepository
     {
         $stmt = $this->pdo->prepare(
             "SELECT s.id, s.nome
-               FROM bi_pacs_servidor s
+              FROM bi_pacs_servidor s
                INNER JOIN bi_negocio_servidor_pacs bsp
                        ON bsp.servidor_id = s.id
-              WHERE bsp.tenant_id = :tenant_id
+              WHERE s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
                 AND bsp.ativo = 1
               ORDER BY s.nome ASC, s.id ASC"
         );
         $stmt->execute([':tenant_id' => $tenantId]);
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @return array{id:int,nome:string}|null */
+    public function findTenantPacsServer(int $tenantId, int $serverId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1"
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
     }
 
     public function createOutboxIfAbsent(
@@ -631,11 +788,32 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare(
             "SELECT j.id, j.transport, j.status, j.attempt_count, j.next_attempt_at,
                     j.delivered_at, j.remote_reference, j.last_error, j.created_at,
-                    d.nome AS destination_name, o.report_id, o.report_version,
-                    o.estudo_id, o.event_type
+                    d.nome AS destination_name, d.ambiente AS destination_environment,
+                    d.enabled AS destination_enabled, o.report_id, o.report_version,
+                    o.estudo_id, o.event_type,
+                    e.patient_name, e.patient_name_display, e.tags_raw,
+                    COALESCE(e.accession_number, '') AS accession_number,
+                    CASE WHEN j.status IN ('failed', 'dead_letter')
+                               AND j.transport = 'philips_non_dicom'
+                               AND d.transport = 'philips_non_dicom'
+                               AND d.ambiente = 'homologacao'
+                               AND d.enabled = 1
+                               AND EXISTS (
+                                   SELECT 1
+                                     FROM pacs_report_delivery_artifacts a
+                                    WHERE a.outbox_id = j.outbox_id
+                                      AND a.tenant_id = j.tenant_id
+                                      AND a.artifact_type = 'pdf'
+                               )
+                         THEN 1 ELSE 0 END AS manual_retry_eligible
              FROM pacs_report_delivery_jobs j
-             INNER JOIN pacs_report_delivery_destinations d ON d.id = j.destination_id
-             INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id
+             INNER JOIN pacs_report_delivery_destinations d
+                     ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+             INNER JOIN pacs_report_delivery_outbox o
+                     ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+             LEFT JOIN bi_pacs_estudos e
+                    ON e.id = o.estudo_id
+                   AND e.tenant_id = j.tenant_id
              WHERE j.tenant_id = :tenant_id
              ORDER BY j.created_at DESC
              LIMIT :limit"
@@ -644,7 +822,13 @@ class ReportDeliveryRepository
         $stmt->bindValue(':limit', max(1, min(200, $limit)), PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($jobs as &$job) {
+            $job['patient_name'] = DicomPersonName::displayFromStudy($job) ?: '—';
+        }
+        unset($job);
+
+        return $jobs;
     }
 
     /**
@@ -663,6 +847,7 @@ class ReportDeliveryRepository
         $stmt = $this->pdo->prepare(
             "SELECT r.id AS report_id, r.liberado_em, r.public_token,
                     e.id AS estudo_id,
+                    e.servidor_id,
                     e.unidade_id AS estabelecimento_id,
                     COALESCE(e.institution_name, '') AS institution_name,
                     e.patient_name,
@@ -968,5 +1153,61 @@ class ReportDeliveryRepository
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Torna terminal um lease abandonado sem rearmar o Worker.
+     * Nenhum attempt novo é criado e o Job não volta à fila.
+     */
+    public function quarantineStaleProcessingJob(int $jobId, int $tenantId): bool
+    {
+        $staleThresholdSql = SqlHelper::isPostgres()
+            ? "NOW() - INTERVAL '10 minutes'"
+            : 'DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
+        $this->pdo->beginTransaction();
+        try {
+            $context = $this->pdo->prepare(
+                "SELECT outbox_id
+                   FROM pacs_report_delivery_jobs
+                  WHERE id = :id AND tenant_id = :tenant_id
+                  LIMIT 1"
+            );
+            $context->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+            $outboxId = (int) $context->fetchColumn();
+            if ($outboxId <= 0) {
+                $this->pdo->commit();
+                return false;
+            }
+
+            $stmt = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'failed',
+                     worker_eligible_at = NULL,
+                     next_attempt_at = NULL,
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     last_error = CONCAT(COALESCE(last_error, ''), ' | Lease stale colocado em quarentena administrativa'),
+                     updated_at = NOW()
+                 WHERE id = :id
+                   AND tenant_id = :tenant_id
+                   AND status = 'processing'
+                   AND locked_at IS NOT NULL
+                   AND locked_at <= {$staleThresholdSql}"
+            );
+            $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
+            if ($stmt->rowCount() !== 1) {
+                $this->pdo->commit();
+                return false;
+            }
+
+            $this->refreshOutboxStatus($outboxId, $tenantId);
+            $this->pdo->commit();
+            return true;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 }

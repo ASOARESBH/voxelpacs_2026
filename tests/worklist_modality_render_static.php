@@ -38,9 +38,13 @@ $require(
     && str_contains($header, 'rel="stylesheet" href="/assets/css/pacs.css?v='),
     'O CSS principal deve ser priorizado antes da pintura da Worklist.'
 );
+$assetVersion = null;
+if (preg_match("/ASSET_VERSION\s*=\s*'([0-9]+\\.[0-9]+\\.[0-9]+)'/", $view, $assetMatch) === 1) {
+    $assetVersion = $assetMatch[1];
+}
 $require(
-    str_contains($view, "ASSET_VERSION = '2.3.12'"),
-    'A versão de assets deve invalidar o cache do CSS corrigido.'
+    $assetVersion !== null && version_compare($assetVersion, '2.3.14', '>='),
+    'A versão semântica de assets deve invalidar o cache do CSS corrigido.'
 );
 
 if ($failures !== []) {

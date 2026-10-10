@@ -40,6 +40,9 @@ final class ReportDeliveryRequestRepository
     /** @return array<string,mixed>|null */
     public function findDestination(int $tenantId, int $destinationId, bool $forUpdate = false): ?array
     {
+        $taskSiteAliasSelect = $this->hasTaskSiteAliasColumn('pacs_report_delivery_destinations')
+            ? 'd.task_site_id_alias'
+            : 'NULL AS task_site_id_alias';
         $institutionSelect = "'' AS institution_names";
         if ($this->tableExists('pacs_report_delivery_destination_institutions')) {
             $institutionNamesSql = SqlHelper::groupConcat('di.institution_name', '||', 'di.institution_name');
@@ -54,7 +57,8 @@ final class ReportDeliveryRequestRepository
                                    FROM pacs_report_delivery_destination_issuers ds
                                   WHERE ds.destination_id = d.id AND ds.tenant_id = d.tenant_id), '') AS issuers";
         }
-        $sql = "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.nome, d.transport, d.ambiente,
+        $sql = "SELECT d.id, d.tenant_id, d.estabelecimento_id, d.servidor_pacs_id, d.nome, d.transport, d.ambiente,
+                       {$taskSiteAliasSelect},
                        d.enabled, d.disparar_na_liberacao, d.configuration_json, d.updated_at,
                        {$institutionSelect},
                        {$issuerSelect}
@@ -67,6 +71,26 @@ final class ReportDeliveryRequestRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':destination_id' => $destinationId, ':tenant_id' => $tenantId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    /** @return array{id:int,nome:string}|null */
+    public function findTenantPacsServer(int $tenantId, int $serverId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT s.id, s.nome
+               FROM bi_pacs_servidor s
+               INNER JOIN bi_negocio_servidor_pacs bsp
+                       ON bsp.servidor_id = s.id
+              WHERE s.id = :servidor_id
+                AND s.ativo = 1
+                AND bsp.tenant_id = :tenant_id
+                AND bsp.ativo = 1
+              LIMIT 1"
+        );
+        $stmt->execute([':servidor_id' => $serverId, ':tenant_id' => $tenantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
         return $row ?: null;
     }
 
@@ -90,6 +114,7 @@ final class ReportDeliveryRequestRepository
         $sql = "SELECT r.id AS report_id, r.tenant_id, r.estudo_id AS estudo_id, r.situacao,
                        r.liberado_em, r.liberado_por, r.assinado_por,
                        e.id AS estudo_id_effective, e.tenant_id AS estudo_tenant_id,
+                       e.servidor_id AS estudo_servidor_id,
                        e.unidade_id AS estabelecimento_id, e.study_instance_uid,
                        e.accession_number, e.modalities, e.patient_id, e.patient_name, e.tags_raw,
                        e.patient_birth_date, e.patient_sex, e.study_date, e.study_time,
@@ -187,19 +212,22 @@ final class ReportDeliveryRequestRepository
 
     public function insertRequest(array $request): int
     {
+        $hasTaskSiteAliasColumn = $this->hasTaskSiteAliasColumn('pacs_report_delivery_requests');
+        $taskSiteAliasColumn = $hasTaskSiteAliasColumn ? 'task_site_id_alias, ' : '';
+        $taskSiteAliasValue = $hasTaskSiteAliasColumn ? ':task_site_id_alias, ' : '';
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_requests
                 (request_uuid, request_key, active_identity_key, tenant_id, estabelecimento_id,
                  report_id, estudo_id, report_version, report_version_source_key,
                  pdf_revision_id,
-                 destination_id, transport, ambiente, delivery_profile, dispatch_mode,
+                 destination_id, {$taskSiteAliasColumn}transport, ambiente, delivery_profile, dispatch_mode,
                  snapshot_schema_version, authorized_snapshot_digest, destination_config_digest,
                  destination_config_observed_at, status, request_reason, requested_by)
              VALUES
                 (:request_uuid, :request_key, :active_identity_key, :tenant_id, :estabelecimento_id,
                  :report_id, :estudo_id, :report_version, :report_version_source_key,
                  :pdf_revision_id,
-                 :destination_id, :transport, :ambiente, :delivery_profile, :dispatch_mode,
+                 :destination_id, {$taskSiteAliasValue}:transport, :ambiente, :delivery_profile, :dispatch_mode,
                  :snapshot_schema_version, :authorized_snapshot_digest, :destination_config_digest,
                  :destination_config_observed_at, 'prepared', :request_reason, :requested_by)
              RETURNING id"
@@ -216,6 +244,7 @@ final class ReportDeliveryRequestRepository
             ':report_version_source_key' => $request['report_version_source_key'],
             ':pdf_revision_id' => $request['pdf_revision_id'] ?? null,
             ':destination_id' => $request['destination_id'],
+            ...($hasTaskSiteAliasColumn ? [':task_site_id_alias' => $request['task_site_id_alias'] ?? null] : []),
             ':transport' => $request['transport'],
             ':ambiente' => $request['ambiente'],
             ':delivery_profile' => $request['delivery_profile'],
@@ -228,6 +257,15 @@ final class ReportDeliveryRequestRepository
             ':requested_by' => $request['requested_by'],
         ]);
         return (int) $stmt->fetchColumn();
+    }
+
+    private function hasTaskSiteAliasColumn(string $table): bool
+    {
+        try {
+            return SqlHelper::hasColumn($this->pdo, $table, 'task_site_id_alias');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function transitionToApproved(int $tenantId, int $requestId, int $actorId): bool

@@ -27,6 +27,8 @@ class RelatorioExportService
     private const COR_SLA_AMARELO= 'FEF9C3';
     private const COR_SLA_VERMELHO='FEE2E2';
     private const COR_SLA_NEUTRO = 'E5E7EB';
+    private const PDF_TEMPORARY_MEMORY_LIMIT = '256M';
+    private const PDF_TEMPORARY_MEMORY_LIMIT_BYTES = 268435456;
 
     // ─────────────────────────────────────────────────────────────────────
     // PDF — HTML (view dedicada) → Dompdf, mesmo mecanismo de ReportPdfService
@@ -42,18 +44,81 @@ class RelatorioExportService
             throw new \RuntimeException('Biblioteca Dompdf indisponível no ambiente de execução.');
         }
 
-        $html = $this->renderView($viewPath, $data);
+        $previousMemoryLimit = ini_get('memory_limit');
+        $memoryLimitChanged = false;
 
-        // isPhpEnabled: só pra rodar o <script type="text/php"> do rodapé de
-        // paginação (page_text) — seguro aqui porque os templates são
-        // arquivos próprios (não HTML de terceiros) e todo dado dinâmico
-        // neles passa por htmlspecialchars(), então não há como injetar
-        // um novo bloco <script type="text/php"> via dado de estudo/paciente.
-        $dompdf = new Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true, 'isPhpEnabled' => true]);
-        $dompdf->loadHtml($html, 'UTF-8');
-        $dompdf->setPaper('A4', 'landscape');
-        $dompdf->render();
-        $dompdf->stream($filename, ['Attachment' => true]);
+        try {
+            if (self::shouldRaisePdfMemoryLimit($previousMemoryLimit)) {
+                // O aumento vale somente para esta requisição e é restaurado no finally.
+                // Não altera php.ini, pool do PHP-FPM ou a configuração permanente do host.
+                $memoryLimitChanged = true;
+                self::raisePdfMemoryLimit();
+            }
+
+            $html = $this->renderView($viewPath, $data);
+
+            // isPhpEnabled: só pra rodar o <script type="text/php"> do rodapé de
+            // paginação (page_text) — seguro aqui porque os templates são
+            // arquivos próprios (não HTML de terceiros) e todo dado dinâmico neles
+            // passa por htmlspecialchars(), então não há como injetar
+            // um novo bloco <script type="text/php"> via dado de estudo/paciente.
+            $dompdf = new Dompdf(['isRemoteEnabled' => false, 'isHtml5ParserEnabled' => true, 'isPhpEnabled' => true]);
+            $dompdf->loadHtml($html, 'UTF-8');
+            $dompdf->setPaper('A4', 'landscape');
+            $dompdf->render();
+            $dompdf->stream($filename, ['Attachment' => true]);
+        } finally {
+            // O limite antigo pode ser menor que o pico usado pelo renderer; liberar
+            // os objetos antes de restaurá-lo evita que o PHP rejeite a redução.
+            unset($dompdf, $html);
+            gc_collect_cycles();
+            if (function_exists('gc_mem_caches')) {
+                gc_mem_caches();
+            }
+            if ($memoryLimitChanged && $previousMemoryLimit !== false) {
+                @ini_set('memory_limit', (string) $previousMemoryLimit);
+            }
+        }
+    }
+
+    private static function shouldRaisePdfMemoryLimit(string|false $currentLimit): bool
+    {
+        $currentBytes = self::memoryLimitToBytes($currentLimit);
+
+        // -1/null representa memória ilimitada; nesse caso não há nada a elevar.
+        return $currentBytes !== null && $currentBytes < self::PDF_TEMPORARY_MEMORY_LIMIT_BYTES;
+    }
+
+    private static function raisePdfMemoryLimit(): void
+    {
+        if (@ini_set('memory_limit', self::PDF_TEMPORARY_MEMORY_LIMIT) === false) {
+            throw new \RuntimeException('Não foi possível elevar temporariamente o limite de memória do PDF.');
+        }
+
+        $effectiveLimit = ini_get('memory_limit');
+        $effectiveBytes = self::memoryLimitToBytes($effectiveLimit);
+        if ($effectiveLimit === false || ($effectiveBytes !== null && $effectiveBytes < self::PDF_TEMPORARY_MEMORY_LIMIT_BYTES)) {
+            throw new \RuntimeException('O ambiente recusou o limite temporário de memória do PDF.');
+        }
+    }
+
+    private static function memoryLimitToBytes(string|false $limit): ?int
+    {
+        if ($limit === false) return null;
+
+        $value = trim($limit);
+        if ($value === '' || $value === '-1') return null;
+
+        $unit = strtolower(substr($value, -1));
+        $number = (float) $value;
+        $multiplier = match ($unit) {
+            'g' => 1024 * 1024 * 1024,
+            'm' => 1024 * 1024,
+            'k' => 1024,
+            default => 1,
+        };
+
+        return (int) ($number * $multiplier);
     }
 
     private function renderView(string $viewPath, array $data): string

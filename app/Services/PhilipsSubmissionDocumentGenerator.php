@@ -23,6 +23,7 @@ final class PhilipsSubmissionDocumentGenerator
 
         $omitPatientNameComponents = PhilipsSubmissionHomologationPolicy::shouldOmitPatientNameComponents($input, $context);
         $patientNameAsFamily = ($input['patient_name_as_family'] ?? false) === true;
+        $authorHumanNameFlat = ($input['author_humanname_flat'] ?? false) === true;
         if ($patientNameAsFamily && !PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($context)) {
             throw new PhilipsXmlFieldUnresolvedException('task_patient_humanname_family');
         }
@@ -44,7 +45,9 @@ final class PhilipsSubmissionDocumentGenerator
             'task_patient_issuer' => $this->requiredText($input, 'task_patient_issuer'),
             'task_author_id' => $this->requiredText($input, 'task_author_id'),
             'task_author_humanname_family' => $this->requiredText($input, 'task_author_humanname_family'),
-            'task_author_humanname_given' => $this->requiredText($input, 'task_author_humanname_given'),
+            'task_author_humanname_given' => $authorHumanNameFlat
+                ? $this->optionalText($input, 'task_author_humanname_given')
+                : $this->requiredText($input, 'task_author_humanname_given'),
             'task_author_humanname_middle' => $this->optionalText($input, 'task_author_humanname_middle'),
             'task_modalities' => $this->normalizeModalities($input, 'task_modalities'),
         ];

@@ -1,0 +1,8 @@
+# Review-only allowlist. Do not install directly.
+# The operator must provide exactly one positive job ID after separate authorization.
+tenant_id=2
+destination_id=7
+jobs=519
+transport=philips_non_dicom
+profile=submission_document
+mode=single_test

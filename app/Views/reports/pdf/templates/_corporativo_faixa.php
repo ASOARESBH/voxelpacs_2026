@@ -50,12 +50,11 @@ $enderecoCompleto = implode(' — ', $enderecoPartes);
         .pdf-section { margin-bottom: .65rem; }
         .pdf-section-title { font-size: .85rem; font-weight: 800; color: #0f3d63; margin-bottom: .2rem; }
         .pdf-section-content { font-size: .85rem; line-height: 1.3; color: #222; text-align: justify; }
-        .pdf-section-content p { margin: 0 0 2px; }
+        /* O backend remove vazios redundantes; o layout mantém apenas respiro mínimo. */
+        .pdf-section-content p { margin: 0 0 1px; }
         .pdf-section-content p.ql-spacing-compact { margin-bottom: 0; }
-        .pdf-section-content p.ql-spacing-normal { margin-bottom: 6px; }
-        .pdf-section-content p.ql-spacing-medium { margin-bottom: 12px; }
-        .pdf-section-content p.ql-spacing-wide { margin-bottom: 20px; }
-        .pdf-section-content h1, .pdf-section-content h2, .pdf-section-content h3, .pdf-section-content h4, .pdf-section-content h5, .pdf-section-content h6 { margin: 8px 0 3px; line-height: 1.3; }
+        .pdf-section-content p.ql-spacing-normal, .pdf-section-content p.ql-spacing-medium, .pdf-section-content p.ql-spacing-wide { margin-bottom: 1px; }
+        .pdf-section-content h1, .pdf-section-content h2, .pdf-section-content h3, .pdf-section-content h4, .pdf-section-content h5, .pdf-section-content h6 { margin: 4px 0 2px; line-height: 1.25; }
         .pdf-section-content .ql-align-center { text-align: center; }
         .pdf-section-content .ql-align-right { text-align: right; }
         .pdf-section-content .ql-align-justify { text-align: justify; }

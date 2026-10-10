@@ -1,0 +1,10 @@
+# VOXEL PACS — sudoers mínimo para inspeção/reconciliação de transações.
+# Instalar somente como root após validação com visudo.
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction inspect --sha [a-f0-9]*
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile --sha [a-f0-9]*
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha [a-f0-9]*
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc
+manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction inspect --sha [a-f0-9]*
+manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile --sha [a-f0-9]*
+manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha [a-f0-9]*
+manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc

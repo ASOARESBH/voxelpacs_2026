@@ -134,17 +134,18 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-patient-line strong { font-weight: 700; }
 
         .pdf-report-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
-        .pdf-clinical-section { margin: 0 0 21px; page-break-inside: avoid; }
+        .pdf-clinical-section { margin: 0 0 8px; page-break-inside: avoid; }
         .pdf-clinical-section:last-child { margin-bottom: 0; }
-        .pdf-clinical-section-title { margin: 0 0 6px; color: #111; font-size: 12px; font-weight: 700; line-height: 1.35; text-transform: uppercase; }
+        .pdf-clinical-section-title { margin: 0 0 3px; color: #111; font-size: 12px; font-weight: 700; line-height: 1.25; text-transform: uppercase; }
         .pdf-clinical-section-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
-        .pdf-clinical-section-content p { margin: 0 0 11px; }
-        .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 18px 0 6px; font: 700 12px Arial, Helvetica, sans-serif; }
+        /* O backend remove vazios redundantes; o layout mantém apenas respiro mínimo. */
+        .pdf-clinical-section-content p { margin: 0 0 3px; }
+        .pdf-report-content h1, .pdf-report-content h2, .pdf-report-content h3, .pdf-report-content h4, .pdf-report-content h5, .pdf-report-content h6 { margin: 8px 0 3px; font: 700 12px Arial, Helvetica, sans-serif; }
         .pdf-report-content h1:first-child, .pdf-report-content h2:first-child, .pdf-report-content h3:first-child, .pdf-report-content h4:first-child, .pdf-report-content h5:first-child, .pdf-report-content h6:first-child { margin-top: 0; }
-        .pdf-report-content p { margin: 0 0 9px; }
-        .pdf-report-content ul, .pdf-report-content ol { margin: 0 0 9px 19px; padding: 0; }
-        .pdf-report-content li { margin: 0 0 3px; }
-        .pdf-report-content table { width: 100%; border-collapse: collapse; margin: .7rem 0; }
+        .pdf-report-content p { margin: 0 0 3px; }
+        .pdf-report-content ul, .pdf-report-content ol { margin: 0 0 3px 19px; padding: 0; }
+        .pdf-report-content li { margin: 0; }
+        .pdf-report-content table { width: 100%; border-collapse: collapse; margin: .3rem 0; }
         .pdf-report-content th, .pdf-report-content td { border: 1px solid #aab4c0; padding: .4rem .5rem; vertical-align: top; }
         .pdf-report-content th { font-weight: 700; background: #f0f4f8; }
         .pdf-report-content u { text-decoration: underline; }

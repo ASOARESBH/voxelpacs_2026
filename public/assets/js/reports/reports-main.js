@@ -19,6 +19,7 @@ window.VoxelReports.main = (function () {
             studyDescription: app.dataset.studyDescription || '',
             readonly: app.dataset.readonly === '1',
             status: app.dataset.status,
+            signatureMode: app.dataset.signatureMode || 'ambos',
             chatPending: app.dataset.chatPending === '1',
             csrf: app.dataset.csrf,
         };
@@ -135,6 +136,14 @@ window.VoxelReports.main = (function () {
                                 releaseError.textContent = data.msg || 'Não foi possível liberar o laudo.';
                                 releaseError.style.display = 'block';
                             }
+                            return;
+                        }
+                        if (data.liberacao_bloqueada) {
+                            btnLiberar.disabled = false;
+                            releaseConfirm.disabled = false;
+                            releaseModal.hide();
+                            alert(data.msg || 'Laudo assinado, mas a liberação foi bloqueada pelo destino de devolutiva.');
+                            window.location.reload();
                             return;
                         }
                         if (typeof window.voxelRetornarWorklist === 'function') {

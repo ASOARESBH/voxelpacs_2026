@@ -2,7 +2,7 @@
 // Materialização de runtime inerte da Fase 1 Philips Non-DICOM; não ativa SMB, bridge, XML ou automação.
 
 declare(strict_types=1);
-
+use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 use App\Repositories\ReportDeliveryWorkerRepository;
 use App\Services\ReportDeliveryArtifactService;
@@ -83,6 +83,10 @@ final class LocalDicomDeliveryWorker
 
     public function runOne(int $jobId): int
     {
+        if (ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+            fwrite(STDERR, "worker_kill_switch_enabled\n");
+            return 78;
+        }
         $this->repository->enableOneShotForJob($jobId);
         $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
         if ($job === null) {
@@ -95,6 +99,12 @@ final class LocalDicomDeliveryWorker
 
     public function run(): void
     {
+        if (ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+            Logger::warning('[ReportDeliveryWorker] Worker bloqueado pelo kill switch', [
+                'worker_kill_switch_enabled' => true,
+            ]);
+            return;
+        }
         Logger::info('[ReportDeliveryWorker] Serviço local iniciado', ['worker_id' => $this->workerId]);
         while (true) {
             try {
@@ -213,6 +223,9 @@ final class LocalDicomDeliveryWorker
                 'transport' => $transport,
                 'environment' => (string) ($job['ambiente'] ?? ''),
                 'delivery_profile' => $deliveryProfile,
+                'original_destination_id' => (int) ($job['destination_id'] ?? 0),
+                'effective_destination_id' => (int) ($job['effective_destination_id'] ?? $job['destination_id'] ?? 0),
+                'destination_resolution' => (string) ($job['destination_resolution'] ?? 'persisted_creation_time'),
                 'artifact_sha256' => $result['sha256'],
                 'artifact_size_bytes' => $result['size'],
             ];
@@ -221,6 +234,9 @@ final class LocalDicomDeliveryWorker
                 $completionMetadata['package_verified'] = (string) ($result['package_verified'] ?? 'FAIL');
                 if (array_key_exists('patient_name_components_omitted', $result)) {
                     $completionMetadata['patient_name_components_omitted'] = (bool) $result['patient_name_components_omitted'];
+                }
+                if (($result['confirmation_source'] ?? null) === 'bridge_state') {
+                    $completionMetadata['confirmation_source'] = 'bridge_state';
                 }
             }
             if (!$this->repository->completeJob($jobId, $this->workerId, $result['reference'], $completionMetadata)) {
@@ -238,15 +254,15 @@ final class LocalDicomDeliveryWorker
                 'stage' => $error->stage,
                 'reason_category' => $error->reasonCategory,
             ]);
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
                 'error_class' => get_class($error),
             ]);
-            $this->failSafely($jobId, 'unexpected_error');
+            $this->failSafely($jobId, 'unexpected_error', null, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
         }
     }
 
@@ -569,7 +585,7 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null): void
+    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0): void
     {
         if ($jobId <= 0) {
             return;
@@ -578,6 +594,11 @@ final class LocalDicomDeliveryWorker
             $metadata = ['stage' => $stage];
             if (in_array($reasonCategory, array_merge(self::CSTORE_REASON_CATEGORIES, self::PHILIPS_FOLDER_REASON_CATEGORIES), true)) {
                 $metadata['reason_category'] = $reasonCategory;
+            }
+            if ($effectiveDestinationId > 0) {
+                $metadata['original_destination_id'] = $originalDestinationId;
+                $metadata['effective_destination_id'] = $effectiveDestinationId;
+                $metadata['destination_resolution'] = 'execution_time';
             }
             $recorded = $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
             if (!$recorded) {
@@ -624,9 +645,13 @@ final class LocalDicomDeliveryWorker
         @rmdir($directory);
     }
 }
-
+$checkRequested = in_array('--check', $argv, true);
+if (!$checkRequested && ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+    fwrite(STDERR, "worker_kill_switch_enabled\n");
+    exit(78);
+}
 $worker = new LocalDicomDeliveryWorker();
-if (in_array('--check', $argv, true)) {
+if ($checkRequested) {
     exit($worker->check());
 }
 foreach ($argv as $argument) {

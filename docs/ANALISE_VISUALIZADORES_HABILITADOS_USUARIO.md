@@ -22,6 +22,8 @@ Administradores do negócio e superadmins mantêm todos os visualizadores habili
 
 No PostgreSQL, a migration cria `bi_user_viewers` no schema operacional `voxelpacs_mysql_source`. A camada `ViewerAccess` deve verificar e qualificar essa tabela explicitamente: depender de `current_schema()` ou de um `search_path` legado pode fazer a regra opt-out falhar silenciosamente, exibindo todos os visualizadores como habilitados e descartando desmarcações no salvamento.
 
+No PostgreSQL, `habilitado` é `BOOLEAN`; a leitura usa `FALSE` e a gravação usa o literal booleano do dialeto, enquanto o caminho MySQL preserva `0`. A migration aditiva `2026-10-07_visualizadores_habilitados_usuario_privileges_postgresql.sql` concede ao papel de runtime somente `USAGE` no schema, `SELECT/INSERT/UPDATE/DELETE` na tabela e `USAGE/SELECT` na sequência. Sem esses grants, a edição pode falhar com `permission denied` antes de salvar outras preferências do usuário.
+
 A disponibilidade de RadiAnt e Weasis é resolvida pela configuração existente do tenant, com o fallback legado já controlado pelo `DesktopViewerService`. A tela administrativa somente usa o estado cinza quando a indisponibilidade pode ser determinada com segurança; a abertura continua falhando fechada pela validação de configuração existente para células exclusivas.
 
 ## Segurança, auditoria e rollback

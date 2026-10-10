@@ -74,13 +74,18 @@ Router::get('/platform/negocios/{id}/report-delivery',                'Platform\
 Router::post('/platform/negocios/{id}/report-delivery/destinations',  'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}', 'Platform\ReportDeliveryController@save');
 Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}/test-smb', 'Platform\ReportDeliveryController@testSmb');
+Router::post('/platform/negocios/{id}/report-delivery/destinations/{destinationId}/test-smb-readonly', 'Platform\ReportDeliveryController@testSmbReadOnly');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry', 'Platform\ReportDeliveryController@retry');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/retry-homologation', 'Platform\ReportDeliveryController@retryManualHomologation');
 Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/recover-stale', 'Platform\ReportDeliveryController@recoverStaleProcessing');
+Router::post('/platform/negocios/{id}/report-delivery/jobs/{jobId}/quarantine-stale', 'Platform\ReportDeliveryController@quarantineStaleProcessing');
 Router::post('/platform/negocios/{id}/report-delivery/reports/enqueue', 'Platform\ReportDeliveryController@enqueueReleasedReport');
 Router::post('/platform/negocios/{id}/report-delivery/reports/{reportId}/resend', 'Platform\ReportDeliveryController@resendReleasedReport');
+// Correção visual de PDF já liberado; preserva snapshots e revisões anteriores.
+Router::post('/platform/negocios/{id}/reports/{reportId}/versions/{version}/pdf-revisions/visual-renderer-correction', 'Platform\ReportPdfRevisionController@createVisualRendererCorrection');
 
 // Delivery Request — control-plane aditivo; feature flag desligada por padrão.
+Router::get('/platform/negocios/{id}/report-delivery/requests/active', 'Platform\ReportDeliveryRequestController@active');
 Router::get('/platform/negocios/{id}/report-delivery/requests/{requestId}', 'Platform\ReportDeliveryRequestController@get');
 Router::post('/platform/negocios/{id}/report-delivery/requests/prepare', 'Platform\ReportDeliveryRequestController@prepare');
 Router::post('/platform/negocios/{id}/report-delivery/requests/recover', 'Platform\ReportDeliveryRequestController@recover');

@@ -24,12 +24,10 @@ $countIps = static function (array $user): int { return count(array_filter(preg_
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
     <div><h1 class="h3 mb-1"><?= htmlspecialchars(t('usuarios.regras_acesso.titulo')) ?></h1><p class="text-muted mb-0"><?= htmlspecialchars(t('usuarios.regras_acesso.subtitulo')) ?></p></div>
   </div>
-  <div class="usuarios-tabs-bar">
-    <a href="/usuarios" class="usuarios-tab-btn"><i class="fa fa-users"></i> <?= htmlspecialchars(t('usuarios.tabs.usuarios')) ?></a>
-    <a href="/usuarios/grupos" class="usuarios-tab-btn"><i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('usuarios.tabs.grupos')) ?></a>
-    <a href="/usuarios/notificacoes" class="usuarios-tab-btn"><i class="fa fa-bell"></i> <?= htmlspecialchars(t('usuarios.tabs.notificacoes')) ?></a>
-    <a href="/usuarios/regras-acesso" class="usuarios-tab-btn active"><i class="fa fa-shield-halved"></i> <?= htmlspecialchars(t('usuarios.tabs.regras_acesso')) ?></a>
-  </div>
+  <?php
+  $activeTab = 'regras_acesso';
+  require __DIR__ . '/_navigation.php';
+  ?>
   <?php if ($sucesso === 'salvo'): ?><div class="pacs-alert pacs-alert-success mb-3"><i class="fa fa-check-circle me-2"></i><?= htmlspecialchars(t('usuarios.regras_acesso.salvo')) ?></div><?php endif; ?>
   <?php if ($erro !== ''): ?><div class="pacs-alert pacs-alert-danger mb-3"><i class="fa fa-exclamation-triangle me-2"></i><?= htmlspecialchars(t('usuarios.regras_acesso.' . $erro)) ?></div><?php endif; ?>
   <div class="pacs-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0 regras-acesso-table"><thead><tr><th><?= htmlspecialchars(t('usuarios.regras_acesso.usuario')) ?></th><th><?= htmlspecialchars(t('usuarios.regras_acesso.perfil')) ?></th><th><?= htmlspecialchars(t('usuarios.regras_acesso.sessao')) ?></th><th><?= htmlspecialchars(t('usuarios.regras_acesso.ip')) ?></th><th><?= htmlspecialchars(t('usuarios.regras_acesso.horario')) ?></th><th class="text-end"><?= htmlspecialchars(t('usuarios.regras_acesso.acoes')) ?></th></tr></thead><tbody>

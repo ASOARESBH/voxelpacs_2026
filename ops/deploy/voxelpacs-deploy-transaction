@@ -1,0 +1,823 @@
+#!/usr/bin/env bash
+# VOXEL PACS — inspeção/reconciliação administrativa de transações de deploy.
+#
+# O modo inspect é estritamente read-only. O modo reconcile somente cria
+# evidência root-only e um marcador aprovado quando todas as pré-condições
+# explícitas e verificáveis passam. Nunca remove ou sobrescreve a transação.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly RELEASE_ROOT='/var/lib/voxelpacs/deploy/releases'
+readonly TRANSACTION_ROOT="$RELEASE_ROOT/transactions"
+readonly LOCK_PATH='/run/lock/voxelpacs-deploy-runtime.lock'
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly RECONCILIATION_DIR_NAME='reconciliation'
+readonly RECONCILIATION_MARKER_NAME='approved'
+readonly STATUS_FILE_NAME='status'
+readonly PID_FILE_NAME='pid'
+readonly ROLLBACK_PENDING_NAME='rollback.pending'
+readonly ALLOWED_STATUS_RE='^(publishing|published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|stale|rollback_pending)$'
+readonly HISTORICAL_D9_SHA='d9abd9dec1302654afa2a6f556064212d503c0bc'
+
+mode=''
+sha=''
+transaction_root=''
+transaction_dir=''
+transaction_status='UNKNOWN'
+transaction_stage='UNKNOWN'
+transaction_classification='UNKNOWN'
+transaction_exists='NO'
+transaction_target_sha='UNKNOWN'
+transaction_owner='UNKNOWN'
+transaction_created_at='UNKNOWN'
+transaction_updated_at='UNKNOWN'
+transaction_pid='NOT_FOUND'
+deploy_process_active='UNKNOWN'
+transaction_release='UNKNOWN'
+transaction_partial_publication='UNKNOWN'
+transaction_rollback_pending='UNKNOWN'
+transaction_lock='UNKNOWN'
+transaction_hostname='UNKNOWN'
+transaction_reconciliation='NO'
+transaction_reconciliation_marker_status='UNKNOWN'
+transaction_reconciliation_marker_owner_mode='UNKNOWN'
+transaction_reconciliation_classification='UNKNOWN'
+transaction_reconciliation_target_sha='UNKNOWN'
+transaction_reconciliation_runtime_changed='UNKNOWN'
+transaction_reconciliation_original_preserved='UNKNOWN'
+transaction_historical_proof='NO'
+transaction_historical_proof_reason='NOT_EVALUATED'
+transaction_proof_set_mismatches='NOT_EVALUATED'
+transaction_proof_hash_mismatches='NOT_EVALUATED'
+transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+transaction_proof_hash_mismatch_other='NOT_EVALUATED'
+historical_exception_mode='NO'
+
+fail() {
+  printf 'TRANSACTION=BLOCKED\nREASON=%s\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' \
+    'uso: voxelpacs-deploy-transaction inspect --sha <40-hex-sha>' \
+    'uso: voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>' \
+    'uso: voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc' \
+    'uso: voxelpacs-deploy-transaction reconcile-partial --sha <40-hex-sha>' >&2
+}
+
+is_sha() {
+  [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+safe_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]]
+}
+
+safe_dir() {
+  local path="$1"
+  [[ -d "$path" && ! -L "$path" ]]
+}
+
+safe_technical_value() {
+  [[ "${1:-}" =~ ^[A-Za-z0-9_.:/+-]{1,160}$ ]]
+}
+
+iso_utc_from_epoch() {
+  local epoch="$1"
+  [[ "$epoch" =~ ^[0-9]+$ ]] || { printf 'UNKNOWN'; return 0; }
+  /usr/bin/date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+metadata_value() {
+  local path="$1" key="$2" value
+  safe_file "$path" || return 1
+  value="$(/usr/bin/awk -F '=' -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; exit}' "$path")"
+  [[ -n "$value" ]] || return 1
+  safe_technical_value "$value" || return 1
+  printf '%s' "$value"
+}
+
+marker_value() {
+  local path="$1" key="$2" value
+  safe_file "$path" || return 1
+  value="$(/usr/bin/awk -F '\t' -v wanted="$key" '$1 == wanted {print $2; exit}' "$path")"
+  [[ -n "$value" ]] || return 1
+  safe_technical_value "$value" || return 1
+  printf '%s' "$value"
+}
+
+read_reconciliation_marker() {
+  local marker="$transaction_root/$RECONCILIATION_DIR_NAME/$RECONCILIATION_MARKER_NAME"
+  transaction_reconciliation='NO'
+  transaction_reconciliation_marker_status='UNKNOWN'
+  transaction_reconciliation_marker_owner_mode='UNKNOWN'
+  transaction_reconciliation_classification='UNKNOWN'
+  transaction_reconciliation_target_sha='UNKNOWN'
+  transaction_reconciliation_runtime_changed='UNKNOWN'
+  transaction_reconciliation_original_preserved='UNKNOWN'
+  if safe_file "$marker"; then
+    transaction_reconciliation='YES'
+    transaction_reconciliation_marker_status="$(marker_value "$marker" reconciliation_status || printf 'UNKNOWN')"
+    transaction_reconciliation_marker_owner_mode="$(/usr/bin/stat -c '%U:%a' "$marker" 2>/dev/null || printf 'UNKNOWN')"
+    transaction_reconciliation_classification="$(marker_value "$marker" classification || printf 'UNKNOWN')"
+    transaction_reconciliation_target_sha="$(marker_value "$marker" target_sha || printf 'UNKNOWN')"
+    transaction_reconciliation_runtime_changed="$(marker_value "$marker" runtime_changed || printf 'UNKNOWN')"
+    transaction_reconciliation_original_preserved="$(marker_value "$marker" original_preserved || printf 'UNKNOWN')"
+  fi
+}
+
+read_status() {
+  local path="$transaction_dir/$STATUS_FILE_NAME" value
+  if ! safe_file "$path"; then
+    transaction_status='UNKNOWN'
+    return 0
+  fi
+  value="$(/usr/bin/head -n 1 -- "$path")"
+  [[ "$value" =~ $ALLOWED_STATUS_RE ]] || value='UNKNOWN'
+  transaction_status="$value"
+}
+
+read_owner_and_times() {
+  local path="$transaction_dir" status_path="$transaction_dir/$STATUS_FILE_NAME"
+  transaction_owner='UNKNOWN'
+  transaction_created_at='UNKNOWN'
+  transaction_updated_at='UNKNOWN'
+  if safe_dir "$path"; then
+    transaction_owner="$(/usr/bin/stat -c '%U' -- "$path" 2>/dev/null || printf 'UNKNOWN')"
+    safe_technical_value "$transaction_owner" || transaction_owner='UNKNOWN'
+    transaction_created_at="$(iso_utc_from_epoch "$(/usr/bin/stat -c '%Y' -- "$path" 2>/dev/null || printf '')")"
+  fi
+  if safe_file "$status_path"; then
+    transaction_updated_at="$(iso_utc_from_epoch "$(/usr/bin/stat -c '%Y' -- "$status_path" 2>/dev/null || printf '')")"
+  else
+    transaction_updated_at="$transaction_created_at"
+  fi
+}
+
+read_transaction_pid() {
+  local pid_path="$transaction_dir/$PID_FILE_NAME" value proc cmdline
+  transaction_pid='NOT_FOUND'
+  if safe_file "$pid_path"; then
+    value="$(/usr/bin/head -n 1 -- "$pid_path")"
+    [[ "$value" =~ ^[0-9]+$ ]] && transaction_pid="$value"
+  fi
+  for proc in /proc/[0-9]*; do
+    [[ -r "$proc/cmdline" ]] || continue
+    cmdline="$(/usr/bin/tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    if [[ "$cmdline" == *voxelpacs-deploy-runtime* && "$cmdline" == *"$sha"* ]]; then
+      transaction_pid="${proc##*/}"
+      return 0
+    fi
+    if [[ "$cmdline" == *scripts/deploy.sh* && "$cmdline" == *"$sha"* ]]; then
+      transaction_pid="${proc##*/}"
+      return 0
+    fi
+  done
+}
+
+read_deploy_process_state() {
+  local proc cmdline found='NO'
+  deploy_process_active='NO'
+  for proc in /proc/[0-9]*; do
+    [[ -r "$proc/cmdline" ]] || continue
+    cmdline="$(/usr/bin/tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+    if [[ "$cmdline" == *voxelpacs-deploy-runtime* || "$cmdline" == *scripts/deploy.sh* ]]; then
+      found='YES'
+      if [[ "$cmdline" == *"$sha"* ]]; then
+        deploy_process_active='YES'
+        transaction_pid="${proc##*/}"
+        return 0
+      fi
+    fi
+  done
+  if [[ "$found" == 'YES' ]]; then
+    deploy_process_active='YES'
+  fi
+  return 0
+}
+
+read_lock_state() {
+  local device_hex device_dec device_major device_minor device_major_hex device_minor_hex inode
+  transaction_lock='NO'
+  if [[ ! -e "$LOCK_PATH" ]]; then
+    return 0
+  fi
+  device_hex="$(/usr/bin/stat -Lc '%D' -- "$LOCK_PATH" 2>/dev/null || true)"
+  inode="$(/usr/bin/stat -Lc '%i' -- "$LOCK_PATH" 2>/dev/null || true)"
+  if [[ -z "$device_hex" || -z "$inode" || ! -r /proc/locks ]]; then
+    transaction_lock='UNKNOWN'
+    return 0
+  fi
+  device_dec=$((16#$device_hex))
+  device_major=$(((device_dec >> 8) & 0xfff))
+  device_minor=$(((device_dec & 0xff) | ((device_dec >> 12) & 0xffffff00)))
+  device_major_hex="$(printf '%x' "$device_major")"
+  device_minor_hex="$(printf '%x' "$device_minor")"
+  if /usr/bin/awk -v want_major="$device_major_hex" -v want_minor="$device_minor_hex" -v want_inode="$inode" '
+    function normalized(value) {
+      sub(/^0+/, "", value)
+      return value == "" ? "0" : tolower(value)
+    }
+    {
+      split($6, device_parts, ":")
+      if (normalized(device_parts[1]) == normalized(want_major) &&
+          normalized(device_parts[2]) == normalized(want_minor) &&
+          device_parts[3] == want_inode) {
+        found=1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' /proc/locks; then
+    transaction_lock='YES'
+  fi
+}
+
+read_rollback_pending() {
+  if safe_file "$transaction_dir/$ROLLBACK_PENDING_NAME"; then
+    transaction_rollback_pending='YES'
+  elif [[ "$transaction_status" == 'rollback_pending' ]]; then
+    transaction_rollback_pending='YES'
+  elif [[ "$transaction_status" =~ ^(published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|stale)$ ]]; then
+    transaction_rollback_pending='NO'
+  else
+    transaction_rollback_pending='UNKNOWN'
+  fi
+}
+
+stage_matches_runtime() {
+  local stage="$transaction_dir/validated" stage_list runtime_list rel stage_hash runtime_hash mismatch='NO'
+  safe_dir "$stage" || return 2
+  stage_list="$(mktemp)"
+  runtime_list="$(mktemp)"
+  /usr/bin/find "$stage" -type f -printf '%P\n' | sort > "$stage_list"
+  /usr/bin/find "$APP_ROOT" -xdev \
+    -path "$APP_ROOT/.env" -prune -o \
+    -path "$APP_ROOT/storage" -prune -o \
+    -path "$APP_ROOT/logs" -prune -o \
+    -path "$APP_ROOT/backups" -prune -o \
+    -path "$APP_ROOT/public/uploads" -prune -o \
+    -type f -printf '%P\n' | sort > "$runtime_list"
+  if ! /usr/bin/cmp -s "$stage_list" "$runtime_list"; then
+    rm -f -- "$stage_list" "$runtime_list"
+    return 1
+  fi
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    stage_hash="$(/usr/bin/sha256sum -- "$stage/$rel" | /usr/bin/awk '{print $1}')"
+    runtime_hash="$(/usr/bin/sha256sum -- "$APP_ROOT/$rel" 2>/dev/null | /usr/bin/awk '{print $1}')"
+    if [[ -z "$runtime_hash" || "$stage_hash" != "$runtime_hash" ]]; then
+      mismatch='YES'
+      break
+    fi
+  done < "$stage_list"
+  rm -f -- "$stage_list" "$runtime_list"
+  [[ "$mismatch" == 'NO' ]]
+}
+
+stage_matches_previous() {
+  local stage="$transaction_root/validated" previous="$transaction_root/previous"
+  local stage_list previous_list rel stage_hash previous_hash result='0' mismatch_count='0'
+  transaction_proof_set_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
+  safe_dir "$stage" || return 1
+  safe_dir "$previous" || return 1
+  stage_list="$(mktemp)"
+  previous_list="$(mktemp)"
+  /usr/bin/find "$stage" -xdev -type f -printf '%P\n' | /usr/bin/sort > "$stage_list"
+  /usr/bin/find "$previous" -xdev -type f -printf '%P\n' | /usr/bin/sort > "$previous_list"
+  if ! /usr/bin/cmp -s "$stage_list" "$previous_list"; then
+    transaction_proof_set_mismatches='YES'
+    /usr/bin/rm -f -- "$stage_list" "$previous_list"
+    return 1
+  fi
+  transaction_proof_set_mismatches='NO'
+  transaction_proof_hash_mismatch_app='0'
+  transaction_proof_hash_mismatch_public='0'
+  transaction_proof_hash_mismatch_vendor_composer='0'
+  transaction_proof_hash_mismatch_vendor_other='0'
+  transaction_proof_hash_mismatch_other='0'
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    stage_hash="$(/usr/bin/sha256sum -- "$stage/$rel" | /usr/bin/awk '{print $1}')"
+    previous_hash="$(/usr/bin/sha256sum -- "$previous/$rel" | /usr/bin/awk '{print $1}')"
+    if [[ "$stage_hash" != "$previous_hash" ]]; then
+      mismatch_count=$((mismatch_count + 1))
+      result='1'
+      case "$rel" in
+        app/*) transaction_proof_hash_mismatch_app=$((transaction_proof_hash_mismatch_app + 1)) ;;
+        public/*) transaction_proof_hash_mismatch_public=$((transaction_proof_hash_mismatch_public + 1)) ;;
+        vendor/composer/*) transaction_proof_hash_mismatch_vendor_composer=$((transaction_proof_hash_mismatch_vendor_composer + 1)) ;;
+        vendor/*) transaction_proof_hash_mismatch_vendor_other=$((transaction_proof_hash_mismatch_vendor_other + 1)) ;;
+        *) transaction_proof_hash_mismatch_other=$((transaction_proof_hash_mismatch_other + 1)) ;;
+      esac
+    fi
+  done < "$stage_list"
+  transaction_proof_hash_mismatches="$mismatch_count"
+  /usr/bin/rm -f -- "$stage_list" "$previous_list"
+  return "$result"
+}
+
+historical_published_partial_proof() {
+  local stage="$transaction_root/validated" previous="$transaction_root/previous" required
+  transaction_historical_proof_reason='NOT_PROVEN'
+  transaction_proof_set_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
+  if [[ "$transaction_status" != 'published' ]]; then
+    transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+    return 1
+  fi
+  if [[ -e "$transaction_root/partial_publication" || -L "$transaction_root/partial_publication" ]]; then
+    transaction_historical_proof_reason='EXPLICIT_PARTIAL_MARKER'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$transaction_root" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='TRANSACTION_ROOT_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if ! safe_dir "$stage"; then
+    transaction_historical_proof_reason='VALIDATED_STAGE_NOT_SAFE'
+    return 1
+  fi
+  if ! safe_dir "$previous"; then
+    transaction_historical_proof_reason='PREVIOUS_STAGE_NOT_SAFE'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$stage" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='VALIDATED_STAGE_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if [[ "$(/usr/bin/stat -c '%U:%a' "$previous" 2>/dev/null || true)" != 'root:700' ]]; then
+    transaction_historical_proof_reason='PREVIOUS_STAGE_OWNER_MODE_INVALID'
+    return 1
+  fi
+  if [[ "$(/usr/bin/find "$stage" -xdev -type l | /usr/bin/wc -l)" -ne 0 ]]; then
+    transaction_historical_proof_reason='VALIDATED_CONTAINS_SYMLINK'
+    return 1
+  fi
+  if [[ "$(/usr/bin/find "$previous" -xdev -type l | /usr/bin/wc -l)" -ne 0 ]]; then
+    transaction_historical_proof_reason='PREVIOUS_CONTAINS_SYMLINK'
+    return 1
+  fi
+  for required in \
+    app/bootstrap.php \
+    app/autoload.php \
+    app/Config/ReportDeliveryRuntimeConfig.php \
+    public/index.php \
+    bin/report_delivery_worker.php \
+    composer.json \
+    composer.lock \
+    vendor/autoload.php; do
+    if [[ ! -f "$stage/$required" || -L "$stage/$required" ]]; then
+      transaction_historical_proof_reason='REQUIRED_ARTIFACT_MISSING'
+      return 1
+    fi
+  done
+  if [[ -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]]; then
+    transaction_historical_proof_reason='LEGACY_FLAT_CONFIG_PRESENT'
+    return 1
+  fi
+  if ! stage_matches_previous; then
+    transaction_historical_proof_reason='STAGE_PREVIOUS_MISMATCH'
+    return 1
+  fi
+  transaction_historical_proof_reason='PROVEN'
+  return 0
+}
+
+read_partial_publication() {
+  local partial_path="$transaction_dir/partial_publication" value
+  transaction_historical_proof='NO'
+  transaction_historical_proof_reason='NOT_EVALUATED'
+  if safe_file "$partial_path"; then
+    value="$(/usr/bin/head -n 1 -- "$partial_path")"
+    case "$value" in
+      YES|NO) transaction_partial_publication="$value" ;;
+      *) transaction_partial_publication='UNKNOWN' ;;
+    esac
+    transaction_historical_proof_reason='EXPLICIT_PARTIAL_MARKER'
+    return 0
+  fi
+  case "$transaction_status" in
+    publishing)
+      transaction_partial_publication='YES'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+      ;;
+    published)
+      if stage_matches_runtime; then
+        transaction_partial_publication='NO'
+        transaction_historical_proof_reason='NOT_REQUIRED_RUNTIME_MATCH'
+      elif historical_published_partial_proof; then
+        transaction_partial_publication='YES'
+        transaction_historical_proof='YES'
+      else
+        transaction_partial_publication='YES'
+      fi
+      ;;
+    rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check)
+      transaction_partial_publication='NO'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+      ;;
+    aborted|stale|rollback_pending|UNKNOWN)
+      transaction_partial_publication='UNKNOWN'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+      ;;
+    *)
+      transaction_partial_publication='UNKNOWN'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+      ;;
+  esac
+}
+
+read_stage_and_release() {
+  if safe_dir "$transaction_dir/validated"; then
+    transaction_stage='validated'
+    transaction_release="$sha"
+  elif [[ "$transaction_status" != 'UNKNOWN' ]]; then
+    transaction_stage="$transaction_status"
+    transaction_release='UNKNOWN'
+  else
+    transaction_stage='UNKNOWN'
+    transaction_release='UNKNOWN'
+  fi
+}
+
+select_latest_run() {
+  local latest
+  transaction_dir="$transaction_root"
+  if [[ -d "$transaction_root/runs" && ! -L "$transaction_root/runs" ]]; then
+    latest="$(/usr/bin/find "$transaction_root/runs" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2- || true)"
+    [[ -n "$latest" ]] && transaction_dir="$latest"
+  fi
+}
+
+classify_transaction() {
+  transaction_classification='UNKNOWN'
+  if [[ "$transaction_exists" != 'YES' ]]; then
+    return 0
+  fi
+  if [[ "$deploy_process_active" == 'YES' || "$transaction_lock" == 'YES' ]]; then
+    transaction_classification='ACTIVE'
+    return 0
+  fi
+  if [[ "$transaction_status" == 'publishing' ]]; then
+    transaction_classification='ACTIVE'
+    return 0
+  fi
+  if [[ "$transaction_reconciliation" == 'YES' &&
+        "$transaction_reconciliation_marker_status" == 'APPROVED' &&
+        "$transaction_reconciliation_marker_owner_mode" == 'root:600' &&
+        "$transaction_reconciliation_classification" == 'HISTORICAL_PUBLISHED_PARTIAL_OPERATOR_APPROVED' &&
+        "$transaction_reconciliation_target_sha" == "$sha" &&
+        "$transaction_reconciliation_runtime_changed" == 'NO' &&
+        "$transaction_reconciliation_original_preserved" == 'YES' &&
+        "$transaction_status" == 'published' &&
+        "$transaction_partial_publication" == 'YES' &&
+        "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_historical_proof='YES'
+    transaction_historical_proof_reason='OPERATOR_APPROVED_RECONCILIATION'
+    transaction_classification='HISTORICAL_PUBLISHED_PARTIAL_RECONCILED'
+    return 0
+  fi
+  if [[ "$transaction_status" =~ ^(rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted)$ && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_classification='ABORTED'
+    return 0
+  fi
+  if [[ "$transaction_status" == 'stale' && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_classification='STALE'
+    return 0
+  fi
+  if [[ "$transaction_status" == 'published' && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_classification='COMPLETED'
+    return 0
+  fi
+  if [[ "$transaction_status" == 'published' && "$transaction_partial_publication" == 'YES' && "$transaction_historical_proof" == 'YES' && "$transaction_rollback_pending" == 'NO' ]]; then
+    transaction_classification='HISTORICAL_PUBLISHED_PARTIAL'
+  fi
+}
+
+read_transaction() {
+  local metadata persisted_target
+  transaction_root="$TRANSACTION_ROOT/$sha"
+  transaction_dir="$transaction_root"
+  metadata="$transaction_root/metadata"
+  transaction_exists='NO'
+  transaction_status='UNKNOWN'
+  transaction_stage='UNKNOWN'
+  transaction_classification='UNKNOWN'
+  transaction_owner='UNKNOWN'
+  transaction_target_sha="$sha"
+  transaction_created_at='UNKNOWN'
+  transaction_updated_at='UNKNOWN'
+  transaction_pid='NOT_FOUND'
+  deploy_process_active='UNKNOWN'
+  transaction_release='UNKNOWN'
+  transaction_partial_publication='UNKNOWN'
+  transaction_rollback_pending='UNKNOWN'
+  transaction_lock='UNKNOWN'
+  transaction_hostname='UNKNOWN'
+  transaction_reconciliation='NO'
+  transaction_reconciliation_marker_status='UNKNOWN'
+  transaction_reconciliation_marker_owner_mode='UNKNOWN'
+  transaction_reconciliation_classification='UNKNOWN'
+  transaction_reconciliation_target_sha='UNKNOWN'
+  transaction_reconciliation_runtime_changed='UNKNOWN'
+  transaction_reconciliation_original_preserved='UNKNOWN'
+  transaction_historical_proof='NO'
+  transaction_historical_proof_reason='NOT_EVALUATED'
+  transaction_proof_set_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatches='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_app='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_public='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_composer='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_vendor_other='NOT_EVALUATED'
+  transaction_proof_hash_mismatch_other='NOT_EVALUATED'
+
+  if ! safe_dir "$transaction_dir"; then
+    read_deploy_process_state
+    read_lock_state
+    classify_transaction
+    return 0
+  fi
+  transaction_exists='YES'
+  select_latest_run
+  if safe_file "$metadata"; then
+    persisted_target="$(metadata_value "$metadata" 'target_sha' || true)"
+    if is_sha "$persisted_target"; then
+      transaction_target_sha="$persisted_target"
+    else
+      transaction_target_sha='UNKNOWN'
+    fi
+  fi
+  transaction_hostname="$(/bin/hostname -s 2>/dev/null || printf 'UNKNOWN')"
+  safe_technical_value "$transaction_hostname" || transaction_hostname='UNKNOWN'
+  read_status
+  read_owner_and_times
+  read_deploy_process_state
+  read_transaction_pid
+  read_lock_state
+  read_stage_and_release
+  read_rollback_pending
+  read_partial_publication
+  read_reconciliation_marker
+  classify_transaction
+  [[ -f "$metadata" && ! -L "$metadata" ]] || true
+}
+
+print_result() {
+  printf 'TRANSACTION_EXISTS=%s\n' "$transaction_exists"
+  printf 'TRANSACTION_ID=%s\n' "$sha"
+  printf 'TRANSACTION_TARGET_SHA=%s\n' "$transaction_target_sha"
+  printf 'TRANSACTION_STATUS=%s\n' "$transaction_status"
+  printf 'TRANSACTION_STAGE=%s\n' "$transaction_stage"
+  printf 'TRANSACTION_CREATED_AT=%s\n' "$transaction_created_at"
+  printf 'TRANSACTION_UPDATED_AT=%s\n' "$transaction_updated_at"
+  printf 'TRANSACTION_OWNER=%s\n' "$transaction_owner"
+  printf 'TRANSACTION_PID=%s\n' "$transaction_pid"
+  printf 'TRANSACTION_HOSTNAME=%s\n' "$transaction_hostname"
+  printf 'DEPLOY_PROCESS_ACTIVE=%s\n' "$deploy_process_active"
+  printf 'TRANSACTION_RELEASE=%s\n' "$transaction_release"
+  printf 'TRANSACTION_PARTIAL_PUBLICATION=%s\n' "$transaction_partial_publication"
+  printf 'TRANSACTION_ROLLBACK_PENDING=%s\n' "$transaction_rollback_pending"
+  printf 'TRANSACTION_LOCK=%s\n' "$transaction_lock"
+  printf 'TRANSACTION_RECONCILIATION=%s\n' "$transaction_reconciliation"
+  printf 'TRANSACTION_RECONCILIATION_MARKER_STATUS=%s\n' "$transaction_reconciliation_marker_status"
+  printf 'TRANSACTION_RECONCILIATION_MARKER_OWNER_MODE=%s\n' "$transaction_reconciliation_marker_owner_mode"
+  printf 'TRANSACTION_RECONCILIATION_CLASSIFICATION=%s\n' "$transaction_reconciliation_classification"
+  printf 'TRANSACTION_HISTORICAL_PROOF=%s\n' "$transaction_historical_proof"
+  printf 'TRANSACTION_HISTORICAL_PROOF_REASON=%s\n' "$transaction_historical_proof_reason"
+  printf 'TRANSACTION_PROOF_SET_MISMATCHES=%s\n' "$transaction_proof_set_mismatches"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCHES=%s\n' "$transaction_proof_hash_mismatches"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_APP=%s\n' "$transaction_proof_hash_mismatch_app"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_PUBLIC=%s\n' "$transaction_proof_hash_mismatch_public"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_COMPOSER=%s\n' "$transaction_proof_hash_mismatch_vendor_composer"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_VENDOR_OTHER=%s\n' "$transaction_proof_hash_mismatch_vendor_other"
+  printf 'TRANSACTION_PROOF_HASH_MISMATCH_OTHER=%s\n' "$transaction_proof_hash_mismatch_other"
+  printf 'CLASSIFICATION=%s\n' "$transaction_classification"
+}
+
+assert_reconcile_integrity() {
+  local mode_bits owner path
+  safe_dir "$transaction_root" || fail 'TRANSACTION_DIRECTORY_INVALID'
+  owner="$(/usr/bin/stat -c '%U' -- "$transaction_root")"
+  [[ "$owner" == 'root' ]] || fail 'TRANSACTION_OWNER_NOT_ROOT'
+  mode_bits="$(/usr/bin/stat -c '%a' -- "$transaction_root")"
+  [[ "$mode_bits" == '700' ]] || fail 'TRANSACTION_MODE_NOT_700'
+  for path in "$transaction_root/$STATUS_FILE_NAME" "$transaction_root/$PID_FILE_NAME" "$transaction_root/$ROLLBACK_PENDING_NAME" "$transaction_root/state.tsv" "$transaction_root/created-directories.tsv"; do
+    [[ ! -e "$path" && ! -L "$path" ]] || [[ -f "$path" && ! -L "$path" ]] || fail 'TRANSACTION_METADATA_INVALID'
+  done
+  [[ ! -e "$transaction_root/$RECONCILIATION_DIR_NAME/$RECONCILIATION_MARKER_NAME" ]] || fail 'TRANSACTION_ALREADY_RECONCILED'
+}
+
+write_file_manifest() {
+  local output="$1" path relative size sha256 mode owner group mtime
+  : > "$output"
+  for path in "$transaction_root/$STATUS_FILE_NAME" "$transaction_root/$PID_FILE_NAME" "$transaction_root/$ROLLBACK_PENDING_NAME" "$transaction_root/state.tsv" "$transaction_root/created-directories.tsv" "$transaction_root/metadata"; do
+    [[ -f "$path" && ! -L "$path" ]] || continue
+    relative="${path#"$transaction_root/"}"
+    size="$(/usr/bin/stat -c '%s' -- "$path")"
+    sha256="$(/usr/bin/sha256sum -- "$path" | /usr/bin/awk '{print $1}')"
+    mode="$(/usr/bin/stat -c '%a' -- "$path")"
+    owner="$(/usr/bin/stat -c '%U' -- "$path")"
+    group="$(/usr/bin/stat -c '%G' -- "$path")"
+    mtime="$(/usr/bin/stat -c '%Y' -- "$path")"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$relative" "$size" "$sha256" "$mode" "$owner" "$group" "$mtime" >> "$output"
+  done
+  /usr/bin/sort -o "$output" "$output"
+}
+
+assert_partial_reconcile_preconditions() {
+  local stage="$transaction_root/validated" previous="$transaction_root/previous" required
+  [[ "$transaction_status" == 'published' ]] || fail 'TRANSACTION_STATUS_NOT_PUBLISHED'
+  [[ "$transaction_partial_publication" == 'YES' ]] || fail 'PARTIAL_PUBLICATION_NOT_PRESENT'
+  [[ "$transaction_rollback_pending" == 'NO' ]] || fail 'ROLLBACK_PENDING'
+  [[ "$transaction_lock" == 'NO' ]] || fail 'TRANSACTION_LOCK_ACTIVE_OR_UNKNOWN'
+  [[ ! -e "$transaction_root/partial_publication" && ! -L "$transaction_root/partial_publication" ]] || fail 'EXPLICIT_PARTIAL_MARKER_NOT_ACCEPTED'
+  [[ "$(/usr/bin/stat -c '%U:%a' "$transaction_root" 2>/dev/null || true)" == 'root:700' ]] || fail 'TRANSACTION_ROOT_OWNER_MODE_INVALID'
+  safe_dir "$stage" || fail 'VALIDATED_STAGE_NOT_SAFE'
+  safe_dir "$previous" || fail 'PREVIOUS_STAGE_NOT_SAFE'
+  [[ "$(/usr/bin/stat -c '%U:%a' "$stage" 2>/dev/null || true)" == 'root:700' ]] || fail 'VALIDATED_STAGE_OWNER_MODE_INVALID'
+  [[ "$(/usr/bin/stat -c '%U:%a' "$previous" 2>/dev/null || true)" == 'root:700' ]] || fail 'PREVIOUS_STAGE_OWNER_MODE_INVALID'
+  [[ "$(/usr/bin/find "$stage" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || fail 'VALIDATED_CONTAINS_SYMLINK'
+  [[ "$(/usr/bin/find "$previous" -xdev -type l | /usr/bin/wc -l)" -eq 0 ]] || fail 'PREVIOUS_CONTAINS_SYMLINK'
+  for required in \
+    app/bootstrap.php \
+    app/autoload.php \
+    app/Config/ReportDeliveryRuntimeConfig.php \
+    public/index.php \
+    bin/report_delivery_worker.php \
+    composer.json \
+    composer.lock \
+    vendor/autoload.php; do
+    [[ -f "$stage/$required" && ! -L "$stage/$required" ]] || fail 'REQUIRED_ARTIFACT_MISSING'
+  done
+  [[ ! -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]] || fail 'LEGACY_FLAT_CONFIG_PRESENT'
+
+  stage_matches_previous || true
+  if [[ "$transaction_proof_set_mismatches" == 'NO' ]]; then
+    [[ "$transaction_proof_hash_mismatches" =~ ^[1-9][0-9]*$ ]] || fail 'PARTIAL_PROOF_MISMATCH_NOT_FOUND'
+  elif [[ "$transaction_proof_set_mismatches" != 'YES' ]]; then
+    fail 'PARTIAL_PROOF_NOT_EVALUATED'
+  fi
+}
+
+reconcile_partial_transaction() {
+  local reconciliation_root evidence_id evidence_dir metadata manifest checksum checksum_sha256 marker_tmp now owner
+  read_transaction
+  [[ "$transaction_exists" == 'YES' ]] || fail 'TRANSACTION_NOT_FOUND'
+  [[ "$transaction_target_sha" == "$sha" ]] || fail 'TRANSACTION_TARGET_SHA_MISMATCH'
+  [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
+  assert_partial_reconcile_preconditions
+  assert_reconcile_integrity
+
+  transaction_classification='HISTORICAL_PUBLISHED_PARTIAL_OPERATOR_APPROVED'
+  transaction_historical_proof='YES'
+  transaction_historical_proof_reason='OPERATOR_APPROVED_RECONCILIATION'
+  reconciliation_root="$transaction_root/$RECONCILIATION_DIR_NAME"
+  /usr/bin/install -d -o root -g root -m 0700 -- "$reconciliation_root"
+  now="$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
+  evidence_id="${now}-$$"
+  evidence_dir="$reconciliation_root/$evidence_id"
+  [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]] || fail 'RECONCILIATION_EVIDENCE_ALREADY_EXISTS'
+  /usr/bin/install -d -o root -g root -m 0700 -- "$evidence_dir"
+  metadata="$evidence_dir/metadata.tsv"
+  manifest="$evidence_dir/transaction-metadata.tsv"
+  checksum="$evidence_dir/checksum.sha256"
+  marker_tmp="$reconciliation_root/.approved.$$"
+  owner="$transaction_owner"
+  printf 'transaction_id\t%s\ntransaction_target_sha\t%s\nclassification\t%s\ncreated_at\t%s\nupdated_at\t%s\nowner\t%s\nhostname\t%s\ndeploy_process_active\t%s\npartial_publication\t%s\nrollback_pending\t%s\nlock\t%s\nreason\tversioned_partial_reconciliation_after_operator_authorization\nproof_set_mismatches\t%s\nproof_hash_mismatches\t%s\nproof_hash_mismatch_app\t%s\nproof_hash_mismatch_public\t%s\nproof_hash_mismatch_vendor_composer\t%s\nproof_hash_mismatch_vendor_other\t%s\nproof_hash_mismatch_other\t%s\nreconciled_at\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
+    "$sha" "$sha" "$transaction_classification" "$transaction_created_at" "$transaction_updated_at" "$owner" "$transaction_hostname" "$deploy_process_active" "$transaction_partial_publication" "$transaction_rollback_pending" "$transaction_lock" "$transaction_proof_set_mismatches" "$transaction_proof_hash_mismatches" "$transaction_proof_hash_mismatch_app" "$transaction_proof_hash_mismatch_public" "$transaction_proof_hash_mismatch_vendor_composer" "$transaction_proof_hash_mismatch_vendor_other" "$transaction_proof_hash_mismatch_other" "$now" > "$metadata"
+  /usr/bin/chmod 600 "$metadata"
+  write_file_manifest "$manifest"
+  /usr/bin/chmod 600 "$manifest"
+  (cd "$evidence_dir" && /usr/bin/sha256sum metadata.tsv transaction-metadata.tsv) > "$checksum"
+  /usr/bin/chmod 600 "$checksum"
+  checksum_sha256="$(/usr/bin/sha256sum -- "$checksum" | /usr/bin/awk '{print $1}')"
+  printf 'reconciliation_status\tAPPROVED\ntransaction_id\t%s\ntarget_sha\t%s\nclassification\t%s\nproof_reason\tOPERATOR_APPROVED_RECONCILIATION\nproof_set_mismatches\t%s\nproof_hash_mismatches\t%s\nevidence_id\t%s\nevidence_manifest\t%s\nevidence_checksum\t%s\nevidence_checksum_sha256\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
+    "$sha" "$sha" "$transaction_classification" "$transaction_proof_set_mismatches" "$transaction_proof_hash_mismatches" "$evidence_id" "reconciliation/$evidence_id/transaction-metadata.tsv" "reconciliation/$evidence_id/checksum.sha256" "$checksum_sha256" > "$marker_tmp"
+  /usr/bin/chmod 600 "$marker_tmp"
+  /usr/bin/mv -- "$marker_tmp" "$reconciliation_root/$RECONCILIATION_MARKER_NAME"
+  printf 'TRANSACTION_RECONCILED=YES\n'
+  printf 'RECONCILIATION_MODE=PARTIAL\n'
+  printf 'OLD_TRANSACTION_PRESERVED=YES\n'
+  printf 'RUNTIME_CHANGED=NO\n'
+  printf 'EVIDENCE_ID=%s\n' "$evidence_id"
+  printf 'RECONCILIATION_STATUS=APPROVED\n'
+  printf 'NEW_DEPLOY_ALLOWED=YES\n'
+}
+
+reconcile_transaction() {
+  local reconciliation_root evidence_id evidence_dir metadata manifest checksum checksum_sha256 marker_tmp now owner
+  read_transaction
+  if [[ "$historical_exception_mode" == 'YES' ]]; then
+    [[ "$sha" == "$HISTORICAL_D9_SHA" ]] || fail 'HISTORICAL_TARGET_NOT_ALLOWED'
+    [[ "$transaction_status" == 'published' ]] || fail 'TRANSACTION_STATUS_NOT_PUBLISHED'
+    [[ "$transaction_partial_publication" == 'YES' ]] || fail 'PARTIAL_PUBLICATION_NOT_PRESENT'
+    [[ "$transaction_proof_set_mismatches" == 'NO' ]] || fail 'HISTORICAL_SET_MISMATCH'
+    [[ "$transaction_proof_hash_mismatches" == '3' ]] || fail 'HISTORICAL_HASH_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_app" == '2' ]] || fail 'HISTORICAL_APP_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_public" == '0' ]] || fail 'HISTORICAL_PUBLIC_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_vendor_composer" == '1' ]] || fail 'HISTORICAL_VENDOR_COMPOSER_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_vendor_other" == '0' ]] || fail 'HISTORICAL_VENDOR_COUNT_MISMATCH'
+    [[ "$transaction_proof_hash_mismatch_other" == '0' ]] || fail 'HISTORICAL_OTHER_COUNT_MISMATCH'
+    transaction_historical_proof='YES'
+    transaction_classification='HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA'
+  fi
+  [[ "$transaction_exists" == 'YES' ]] || fail 'TRANSACTION_NOT_FOUND'
+  [[ "$transaction_target_sha" == "$sha" ]] || fail 'TRANSACTION_TARGET_SHA_MISMATCH'
+  [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
+  [[ "$transaction_classification" == 'ABORTED' || "$transaction_classification" == 'STALE' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA' ]] || fail 'TRANSACTION_NOT_RECONCILABLE'
+  if [[ "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL' || "$transaction_classification" == 'HISTORICAL_PUBLISHED_PARTIAL_EXPECTED_DELTA' ]]; then
+    [[ "$transaction_historical_proof" == 'YES' ]] || fail 'HISTORICAL_PROOF_MISSING'
+  else
+    [[ "$transaction_partial_publication" == 'NO' ]] || fail 'PARTIAL_PUBLICATION_NOT_RESOLVED'
+  fi
+  [[ "$transaction_rollback_pending" == 'NO' ]] || fail 'ROLLBACK_PENDING'
+  [[ "$transaction_lock" == 'NO' ]] || fail 'TRANSACTION_LOCK_ACTIVE_OR_UNKNOWN'
+  assert_reconcile_integrity
+
+  reconciliation_root="$transaction_root/$RECONCILIATION_DIR_NAME"
+  /usr/bin/install -d -o root -g root -m 0700 -- "$reconciliation_root"
+  now="$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
+  evidence_id="${now}-$$"
+  evidence_dir="$reconciliation_root/$evidence_id"
+  [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]] || fail 'RECONCILIATION_EVIDENCE_ALREADY_EXISTS'
+  /usr/bin/install -d -o root -g root -m 0700 -- "$evidence_dir"
+  metadata="$evidence_dir/metadata.tsv"
+  manifest="$evidence_dir/transaction-metadata.tsv"
+  checksum="$evidence_dir/checksum.sha256"
+  marker_tmp="$reconciliation_root/.approved.$$"
+  owner="$transaction_owner"
+  reason='administrative_reconciliation_after_formal_abort_or_stale_classification'
+  [[ "$historical_exception_mode" == 'YES' ]] && reason='historical_d9_expected_delta_app2_vendor_composer1'
+  printf 'transaction_id\t%s\ntransaction_target_sha\t%s\nclassification\t%s\ncreated_at\t%s\nupdated_at\t%s\nowner\t%s\nhostname\t%s\ndeploy_process_active\t%s\npartial_publication\t%s\nrollback_pending\t%s\nlock\t%s\nreason\t%s\nreconciled_at\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
+    "$sha" "$sha" "$transaction_classification" "$transaction_created_at" "$transaction_updated_at" "$owner" "$transaction_hostname" "$deploy_process_active" "$transaction_partial_publication" "$transaction_rollback_pending" "$transaction_lock" "$reason" "$now" > "$metadata"
+  /usr/bin/chmod 600 "$metadata"
+  write_file_manifest "$manifest"
+  /usr/bin/chmod 600 "$manifest"
+  (cd "$evidence_dir" && /usr/bin/sha256sum metadata.tsv transaction-metadata.tsv) > "$checksum"
+  /usr/bin/chmod 600 "$checksum"
+  checksum_sha256="$(/usr/bin/sha256sum -- "$checksum" | /usr/bin/awk '{print $1}')"
+  printf 'reconciliation_status\tAPPROVED\ntransaction_id\t%s\ntarget_sha\t%s\nclassification\t%s\nevidence_id\t%s\nevidence_manifest\t%s\nevidence_checksum\t%s\nevidence_checksum_sha256\t%s\nruntime_changed\tNO\noriginal_preserved\tYES\n' \
+    "$sha" "$sha" "$transaction_classification" "$evidence_id" "reconciliation/$evidence_id/transaction-metadata.tsv" "reconciliation/$evidence_id/checksum.sha256" "$checksum_sha256" > "$marker_tmp"
+  /usr/bin/chmod 600 "$marker_tmp"
+  /usr/bin/mv -- "$marker_tmp" "$reconciliation_root/$RECONCILIATION_MARKER_NAME"
+  printf 'TRANSACTION_RECONCILED=YES\n'
+  printf 'OLD_TRANSACTION_PRESERVED=YES\n'
+  printf 'RUNTIME_CHANGED=NO\n'
+  printf 'EVIDENCE_ID=%s\n' "$evidence_id"
+  printf 'RECONCILIATION_STATUS=APPROVED\n'
+  printf 'NEW_DEPLOY_ALLOWED=YES\n'
+}
+
+[[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+if [[ -n "${SUDO_USER:-}" ]]; then
+  case "$SUDO_USER" in
+    manus-admin|manus-deploy) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+fi
+
+[[ "$#" -eq 3 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+mode="$1"
+[[ "$2" == '--sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+sha="$3"
+is_sha "$sha" || fail 'SHA_INVALID'
+transaction_dir="$TRANSACTION_ROOT/$sha"
+
+case "$mode" in
+  inspect)
+    read_transaction
+    print_result
+    ;;
+  reconcile)
+    reconcile_transaction
+    ;;
+  reconcile-historical)
+    historical_exception_mode='YES'
+    reconcile_transaction
+    ;;
+  reconcile-partial)
+    reconcile_partial_transaction
+    ;;
+  *)
+    usage
+    fail 'MODE_INVALID'
+    ;;
+esac

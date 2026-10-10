@@ -16,7 +16,9 @@ final class PhilipsFolderDeliveryException extends RuntimeException
 {
     public function __construct(
         public readonly string $stage,
-        public readonly ?string $reasonCategory = null
+        public readonly ?string $reasonCategory = null,
+        public readonly ?string $packageIdentity = null,
+        public readonly ?int $packageSize = null
     ) {
         parent::__construct($stage);
     }

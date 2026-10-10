@@ -6,6 +6,8 @@
 
 ---
 
+> **Nota de auditoria — 23/09/2026:** este documento é um registro histórico da preparação do repositório em 10/07/2026. As listas de arquivos, branches, versões e verificações abaixo não constituem inventário atual. Para o estado atual, consultar a árvore do commit auditado e validar cada caminho com Git; não usar este relatório isoladamente para provar a estrutura presente, a versão em produção ou a rastreabilidade de deploy.
+
 ## 1. Resumo Executivo
 
 Este relatório documenta todas as ações realizadas para preparar o projeto VOXEL PACS para desenvolvimento profissional contínuo no GitHub. O projeto foi transformado de um ZIP de trabalho em um repositório estruturado, documentado e pronto para colaboração.

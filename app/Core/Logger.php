@@ -29,6 +29,14 @@ class Logger
         self::write('INFO', 'app', $message, $context);
     }
 
+    /**
+     * Log técnico sem contexto de requisição (IP/URI), para telemetria allowlisted.
+     */
+    public static function sanitized(string $message, array $context = []): void
+    {
+        self::writeSanitized('INFO', 'app', $message, $context);
+    }
+
     public static function warning(string $message, array $context = []): void
     {
         self::write('WARNING', 'app', $message, $context);
@@ -81,6 +89,24 @@ class Logger
         }
 
         $line = "[{$time}] [{$level}] [pid:{$pid}] [{$ip}] [{$uri}] {$message}{$ctx}" . PHP_EOL;
+
+        @file_put_contents("{$logDir}/{$channel}-{$date}.log", $line, FILE_APPEND | LOCK_EX);
+    }
+
+    private static function writeSanitized(string $level, string $channel, string $message, array $context = []): void
+    {
+        $logDir = self::$baseDir;
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
+        }
+
+        $date = date('Y-m-d');
+        $time = date('Y-m-d H:i:s');
+        $pid = getmypid();
+        $ctx = $context === []
+            ? ''
+            : ' ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $line = "[{$time}] [{$level}] [pid:{$pid}] {$message}{$ctx}" . PHP_EOL;
 
         @file_put_contents("{$logDir}/{$channel}-{$date}.log", $line, FILE_APPEND | LOCK_EX);
     }

@@ -1,0 +1,501 @@
+#!/usr/bin/env bash
+# VOXEL PACS — helper privilegiado de publicação do runtime.
+#
+# Este arquivo deve ser instalado root:root em /usr/local/sbin e chamado
+# exclusivamente pelo sudoers allowlist. Não aceita shell, caminho, arquivo,
+# comando ou serviço fornecido pelo solicitante.
+set -Eeuo pipefail
+umask 077
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly INCOMING_ROOT='/var/lib/voxelpacs/deploy/incoming'
+readonly RELEASE_ROOT='/var/lib/voxelpacs/deploy/releases'
+readonly TRANSACTION_ROOT="$RELEASE_ROOT/transactions"
+readonly LOCK_PATH='/run/lock/voxelpacs-deploy-runtime.lock'
+readonly RECONCILIATION_MARKER='reconciliation/approved'
+readonly LEGACY_FLAT_PATH="$APP_ROOT/Config/ReportDeliveryRuntimeConfig.php"
+readonly EFFECTIVE_CONFIG_REL='app/Config/ReportDeliveryRuntimeConfig.php'
+readonly REQUIRED_FILES=(
+  'app/bootstrap.php'
+  'app/autoload.php'
+  'app/Config/ReportDeliveryRuntimeConfig.php'
+  'public/index.php'
+  'bin/report_delivery_worker.php'
+  'composer.json'
+  'composer.lock'
+  'vendor/autoload.php'
+  'vendor/dompdf/dompdf/src/Dompdf.php'
+)
+readonly ALLOWED_TOP_LEVEL=(
+  '.htaccess'
+  'VERSAO.txt'
+  'app'
+  'public'
+  'bin'
+  'routes'
+  'lang'
+  'cron'
+  'config'
+  'composer.json'
+  'composer.lock'
+  'vendor'
+)
+
+mode='publish'
+sha=''
+transaction_dir=''
+transaction_run='NO'
+lock_fd=''
+prepare_error=''
+
+fail() {
+  printf 'PRIVILEGED_DEPLOY=BLOCKED\nREASON=%s\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' \
+    'uso: voxelpacs-deploy-runtime --sha <40-hex-sha>' \
+    'uso: voxelpacs-deploy-runtime --rollback --sha <40-hex-sha>' >&2
+}
+
+is_sha() {
+  [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+safe_relative_path() {
+  local path="$1"
+  [[ -n "$path" && "$path" != /* ]] || return 1
+  [[ "$path" != '.' && "$path" != *$'\n'* && "$path" != *$'\r'* && "$path" != *$'\t'* ]] || return 1
+  [[ "$path" != '../'* && "$path" != */../* && "$path" != */.. && "$path" != '..' ]] || return 1
+  case "$path" in
+    .env|.env.*|*/.env|*/.env.*|storage|storage/*|*/storage|*/storage/*|uploads|uploads/*|*/uploads|*/uploads/*|logs|logs/*|*/logs|*/logs/*|backups|backups/*|*/backups|*/backups/*|tests|tests/*|docs|docs/*|scripts|scripts/*|database|database/*|.git|.git/*|*/.git|*/.git/*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+assert_secure_input_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || fail 'INPUT_FILE_INVALID'
+  local mode_bits mode_value
+  mode_bits="$(stat -c '%a' "$path")"
+  mode_value=$((8#$mode_bits))
+  (( (mode_value & 18) == 0 )) || fail 'INPUT_FILE_WORLD_OR_GROUP_WRITABLE'
+}
+
+state_fingerprint() {
+  local env_meta storage_meta storage_link uploads_meta legacy_hash
+  env_meta="$(stat -c '%d:%i:%u:%g:%a:%s:%Y:%F' "$APP_ROOT/.env")" || return 1
+  storage_meta="$(stat -c '%d:%i:%u:%g:%a:%s:%Y:%F' "$APP_ROOT/storage")" || return 1
+  storage_link='NOT_A_SYMLINK'
+  [[ -L "$APP_ROOT/storage" ]] && storage_link="$(readlink "$APP_ROOT/storage")"
+  uploads_meta='ABSENT'
+  [[ -e "$APP_ROOT/storage/uploads" ]] && uploads_meta="$(stat -c '%d:%i:%u:%g:%a:%s:%Y:%F' "$APP_ROOT/storage/uploads")"
+  legacy_hash='ABSENT'
+  [[ -f "$LEGACY_FLAT_PATH" ]] && legacy_hash="$(sha256sum "$LEGACY_FLAT_PATH" | awk '{print $1}')"
+  printf '%s|%s|%s|%s|%s\n' "$env_meta" "$storage_meta" "$storage_link" "$uploads_meta" "$legacy_hash"
+}
+
+assert_preserved_state() {
+  local before="$1" after
+  after="$(state_fingerprint)" || fail 'PERSISTENT_STATE_UNREADABLE'
+  [[ "$before" == "$after" ]] || fail 'PERSISTENT_STATE_CHANGED'
+}
+
+assert_reconciled_transaction() {
+  local root="$1" marker evidence_manifest evidence_checksum evidence_checksum_sha256 evidence_dir actual_checksum_sha256
+  marker="$root/$RECONCILIATION_MARKER"
+  [[ -d "$root" && ! -L "$root" ]] || fail 'TRANSACTION_ROOT_INVALID'
+  [[ "$(stat -c '%U:%a' "$root")" == 'root:700' ]] || fail 'TRANSACTION_ROOT_NOT_ROOT_ONLY'
+  [[ -f "$marker" && ! -L "$marker" ]] || fail 'TRANSACTION_RECONCILIATION_MISSING'
+  [[ "$(stat -c '%U:%a' "$marker")" == 'root:600' ]] || fail 'TRANSACTION_RECONCILIATION_NOT_ROOT_ONLY'
+  grep -Fqx $'reconciliation_status\tAPPROVED' "$marker" || fail 'TRANSACTION_RECONCILIATION_NOT_APPROVED'
+  grep -Fqx "target_sha"$'\t'"$sha" "$marker" || fail 'TRANSACTION_RECONCILIATION_SHA_MISMATCH'
+  grep -Fqx $'runtime_changed\tNO' "$marker" || fail 'TRANSACTION_RECONCILIATION_RUNTIME_CHANGED'
+  grep -Fqx $'original_preserved\tYES' "$marker" || fail 'TRANSACTION_RECONCILIATION_ORIGINAL_NOT_PRESERVED'
+  evidence_manifest="$(awk -F '\t' '$1 == "evidence_manifest" {print $2; exit}' "$marker")"
+  evidence_checksum="$(awk -F '\t' '$1 == "evidence_checksum" {print $2; exit}' "$marker")"
+  evidence_checksum_sha256="$(awk -F '\t' '$1 == "evidence_checksum_sha256" {print $2; exit}' "$marker")"
+  [[ "$evidence_manifest" != /* && "$evidence_manifest" != *'..'* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  [[ "$evidence_checksum" != /* && "$evidence_checksum" != *'..'* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  [[ "$evidence_manifest" == reconciliation/* && "$evidence_checksum" == reconciliation/* ]] || fail 'TRANSACTION_EVIDENCE_PATH_INVALID'
+  evidence_dir="$root/$(dirname "$evidence_manifest")"
+  [[ -d "$root/reconciliation" && ! -L "$root/reconciliation" ]] || fail 'TRANSACTION_EVIDENCE_DIRECTORY_INVALID'
+  [[ -d "$evidence_dir" && ! -L "$evidence_dir" ]] || fail 'TRANSACTION_EVIDENCE_DIRECTORY_INVALID'
+  [[ -f "$root/$evidence_manifest" && -f "$root/$evidence_checksum" ]] || fail 'TRANSACTION_EVIDENCE_MISSING'
+  [[ "$evidence_checksum_sha256" =~ ^[0-9a-f]{64}$ ]] || fail 'TRANSACTION_EVIDENCE_CHECKSUM_FORMAT_INVALID'
+  actual_checksum_sha256="$(sha256sum -- "$root/$evidence_checksum" | awk '{print $1}')"
+  [[ "$actual_checksum_sha256" == "$evidence_checksum_sha256" ]] || fail 'TRANSACTION_EVIDENCE_CHECKSUM_MISMATCH'
+  (cd "$evidence_dir" && sha256sum -c "$(basename "$evidence_checksum")" >/dev/null) || fail 'TRANSACTION_EVIDENCE_CHECKSUM_MISMATCH'
+}
+
+prepare_transaction_dir() {
+  local transaction_root="$TRANSACTION_ROOT/$sha" run_id run_root
+  transaction_run='NO'
+  if [[ ! -e "$transaction_root" ]]; then
+    mkdir -p -- "$transaction_root"
+    chmod 700 "$transaction_root"
+    transaction_dir="$transaction_root"
+    printf 'target_sha=%s\ncreated_at=%s\n' "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$transaction_dir/metadata"
+    chmod 600 "$transaction_dir/metadata"
+    return 0
+  fi
+  assert_reconciled_transaction "$transaction_root"
+  run_id="$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+  run_root="$transaction_root/runs"
+  if [[ -L "$run_root" || ( -e "$run_root" && ! -d "$run_root" ) ]]; then
+    fail 'TRANSACTION_RUNS_ROOT_INVALID'
+  fi
+  mkdir -p -- "$run_root"
+  chmod 700 "$run_root"
+  transaction_dir="$run_root/$run_id"
+  [[ ! -e "$transaction_dir" && ! -L "$transaction_dir" ]] || fail 'TRANSACTION_RUN_ALREADY_EXISTS'
+  mkdir -- "$transaction_dir"
+  chmod 700 "$transaction_dir"
+  printf 'target_sha=%s\ncreated_at=%s\nrun_parent=%s\n' "$sha" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$transaction_root" > "$transaction_dir/metadata"
+  chmod 600 "$transaction_dir/metadata"
+  transaction_run='YES'
+}
+
+resolve_rollback_transaction() {
+  local transaction_root="$TRANSACTION_ROOT/$sha" latest
+  transaction_dir="$transaction_root"
+  if [[ -d "$transaction_root/runs" && ! -L "$transaction_root/runs" ]]; then
+    latest="$(find "$transaction_root/runs" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d ' ' -f 2- || true)"
+    [[ -n "$latest" ]] && transaction_dir="$latest"
+  fi
+}
+
+assert_allowed_archive_entries() {
+  local archive="$1" entry top allowed_top allowed
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    [[ "$entry" != */ ]] || continue
+    safe_relative_path "$entry" || fail 'ARCHIVE_PATH_NOT_ALLOWED'
+    top="${entry%%/*}"
+    [[ "$top" == "$entry" ]] || top="${entry%%/*}"
+    allowed='NO'
+    for allowed_top in "${ALLOWED_TOP_LEVEL[@]}"; do
+      [[ "$allowed_top" == "$top" ]] && allowed='YES'
+    done
+    [[ "$allowed" == 'YES' ]] || fail 'ARCHIVE_TOP_LEVEL_NOT_ALLOWED'
+  done < <(unzip -Z1 "$archive")
+}
+
+validate_manifest_shape() {
+  local manifest="$1"
+  [[ -s "$manifest" ]] || fail 'MANIFEST_MISSING'
+  awk -F '\t' 'NF != 2 || $1 == "" || $2 !~ /^[0-9a-f]{64}$/ { exit 1 }' "$manifest" || fail 'MANIFEST_FORMAT_INVALID'
+}
+
+validate_artifact() {
+  local archive="$1" manifest="$2" checksum="$3" source_sha="$4" stage="$5"
+  local expected_hash actual_hash relative expected_hash_line
+  expected_hash="$(cat "$source_sha")"
+  [[ "$expected_hash" == "$sha" ]] || fail 'SOURCE_SHA_MISMATCH'
+  [[ "$(wc -l < "$source_sha")" -eq 1 ]] || fail 'SOURCE_SHA_FORMAT_INVALID'
+  expected_hash_line="$(awk '{print $1}' "$checksum")"
+  is_sha256="${expected_hash_line,,}"
+  [[ "$is_sha256" =~ ^[0-9a-f]{64}$ ]] || fail 'ARTIFACT_CHECKSUM_FORMAT_INVALID'
+  actual_hash="$(sha256sum "$archive" | awk '{print $1}')"
+  [[ "$actual_hash" == "$expected_hash_line" ]] || fail 'ARTIFACT_CHECKSUM_MISMATCH'
+  [[ "$(wc -l < "$checksum")" -eq 1 ]] || fail 'ARTIFACT_CHECKSUM_FORMAT_INVALID'
+
+  unzip -t "$archive" >/dev/null || fail 'ARCHIVE_TEST_FAILED'
+  assert_allowed_archive_entries "$archive"
+  unzip -q -o "$archive" -d "$stage" || fail 'ARCHIVE_EXTRACT_FAILED'
+
+  validate_manifest_shape "$manifest"
+  local manifest_list="$stage/.manifest.list"
+  local actual_list="$stage/.actual.list"
+  awk -F '\t' '{print $1}' "$manifest" | sort > "$manifest_list"
+  find "$stage" -type f ! -name '.manifest.list' ! -name '.actual.list' -printf '%P\n' | sort > "$actual_list"
+  cmp -s "$manifest_list" "$actual_list" || fail 'MANIFEST_FILE_SET_MISMATCH'
+
+  while IFS=$'\t' read -r relative expected_hash; do
+    safe_relative_path "$relative" || fail 'MANIFEST_PATH_NOT_ALLOWED'
+    [[ -f "$stage/$relative" && ! -L "$stage/$relative" ]] || fail 'MANIFEST_FILE_MISSING_OR_SYMLINK'
+    actual_hash="$(sha256sum "$stage/$relative" | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || fail 'MANIFEST_HASH_MISMATCH'
+  done < "$manifest"
+
+  local required
+  for required in "${REQUIRED_FILES[@]}"; do
+    [[ -f "$stage/$required" && ! -L "$stage/$required" ]] || fail 'REQUIRED_RUNTIME_FILE_MISSING'
+  done
+  [[ ! -e "$stage/Config/ReportDeliveryRuntimeConfig.php" ]] || fail 'LEGACY_FLAT_CONFIG_IN_ARTIFACT'
+  [[ -f "$stage/vendor/dompdf/dompdf/src/Dompdf.php" ]] || fail 'DOMPDF_MISSING'
+  rm -f -- "$manifest_list" "$actual_list"
+}
+
+snapshot_current_runtime() {
+  local manifest="$1" relative target backup_dir
+  backup_dir="$transaction_dir/previous"
+  mkdir -p -- "$backup_dir"
+  : > "$transaction_dir/state.tsv"
+  while IFS=$'\t' read -r relative _; do
+    safe_relative_path "$relative" || fail 'MANIFEST_PATH_NOT_ALLOWED'
+    target="$APP_ROOT/$relative"
+    [[ ! -L "$target" ]] || fail 'EXISTING_RUNTIME_SYMLINK_NOT_ALLOWED'
+    [[ ! -e "$target" || -f "$target" ]] || fail 'EXISTING_RUNTIME_TARGET_NOT_REGULAR_FILE'
+    if [[ -f "$target" ]]; then
+      mkdir -p -- "$backup_dir/$(dirname "$relative")"
+      cp -a -- "$target" "$backup_dir/$relative"
+      printf 'PRESENT\t%s\n' "$relative" >> "$transaction_dir/state.tsv"
+    else
+      printf 'ABSENT\t%s\n' "$relative" >> "$transaction_dir/state.tsv"
+    fi
+  done < "$manifest"
+  chmod 600 "$transaction_dir/state.tsv"
+}
+
+prepare_runtime_parent_directories() {
+  local manifest="$1" relative target parent current next created_dir created_relative uid gid mode_bits i
+  local -a missing=()
+  prepare_error='RUNTIME_PARENT_DIRECTORY_PREPARATION_FAILED'
+  : > "$transaction_dir/created-directories.tsv"
+  chmod 600 "$transaction_dir/created-directories.tsv"
+
+  while IFS=$'\t' read -r relative _; do
+    target="$APP_ROOT/$relative"
+    parent="$(dirname "$target")"
+    [[ "$parent" == "$APP_ROOT" || "$parent" == "$APP_ROOT/"* ]] || {
+      prepare_error='RUNTIME_PARENT_OUTSIDE_ROOT'
+      return 1
+    }
+
+    missing=()
+    current="$parent"
+    while [[ "$current" != "$APP_ROOT" && ! -e "$current" ]]; do
+      [[ ! -L "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_SYMLINK_NOT_ALLOWED'
+        return 1
+      }
+      missing+=("$current")
+      next="$(dirname "$current")"
+      [[ "$next" != "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_OUTSIDE_ROOT'
+        return 1
+      }
+      current="$next"
+    done
+
+    if [[ "$current" != "$APP_ROOT" ]]; then
+      [[ ! -L "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_SYMLINK_NOT_ALLOWED'
+        return 1
+      }
+      [[ -d "$current" ]] || {
+        prepare_error='RUNTIME_PARENT_NOT_DIRECTORY'
+        return 1
+      }
+    fi
+
+    uid="$(stat -c '%u' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+    gid="$(stat -c '%g' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+    mode_bits="$(stat -c '%a' "$current")" || {
+      prepare_error='RUNTIME_PARENT_METADATA_UNREADABLE'
+      return 1
+    }
+
+    for ((i=${#missing[@]} - 1; i >= 0; i--)); do
+      created_dir="${missing[i]}"
+      [[ ! -e "$created_dir" && ! -L "$created_dir" ]] || {
+        prepare_error='RUNTIME_PARENT_CHANGED_CONCURRENTLY'
+        return 1
+      }
+      install -d -o "$uid" -g "$gid" -m "$mode_bits" -- "$created_dir" || {
+        prepare_error='RUNTIME_PARENT_CREATE_FAILED'
+        return 1
+      }
+      created_relative="${created_dir#"$APP_ROOT"/}"
+      printf '%s\n' "$created_relative" >> "$transaction_dir/created-directories.tsv"
+    done
+  done < "$manifest"
+}
+
+restore_created_directories() {
+  local transaction="$1" relative target i
+  local -a created=()
+  [[ -f "$transaction/created-directories.tsv" ]] || return 0
+  while IFS= read -r relative; do
+    [[ -n "$relative" ]] || continue
+    created+=("$relative")
+  done < "$transaction/created-directories.tsv"
+  for ((i=${#created[@]} - 1; i >= 0; i--)); do
+    relative="${created[i]}"
+    safe_relative_path "$relative" || return 1
+    target="$APP_ROOT/$relative"
+    [[ ! -L "$target" ]] || return 1
+    [[ -d "$target" ]] || {
+      [[ ! -e "$target" ]] || return 1
+      continue
+    }
+    rmdir -- "$target" || return 1
+  done
+}
+
+install_from_stage() {
+  local stage="$1" manifest="$2" relative target parent tmp uid gid mode_bits
+  while IFS=$'\t' read -r relative _; do
+    target="$APP_ROOT/$relative"
+    parent="$(dirname "$target")"
+    [[ -d "$parent" && ! -L "$parent" ]] || fail 'RUNTIME_PARENT_DIRECTORY_INVALID'
+    [[ ! -L "$target" ]] || fail 'RUNTIME_TARGET_SYMLINK_NOT_ALLOWED'
+    if [[ -e "$target" ]]; then
+      [[ -f "$target" ]] || fail 'RUNTIME_TARGET_NOT_REGULAR_FILE'
+      uid="$(stat -c '%u' "$target")"
+      gid="$(stat -c '%g' "$target")"
+      mode_bits="$(stat -c '%a' "$target")"
+    else
+      uid="$(stat -c '%u' "$parent")"
+      gid="$(stat -c '%g' "$parent")"
+      mode_bits='644'
+    fi
+    tmp="$(mktemp "$parent/.voxelpacs-deploy.${sha}.XXXXXX")"
+    install -o "$uid" -g "$gid" -m "$mode_bits" "$stage/$relative" "$tmp"
+    mv -f -- "$tmp" "$target"
+  done < "$manifest"
+}
+
+restore_transaction() {
+  local transaction="$1" relative state target parent tmp
+  [[ -f "$transaction/state.tsv" ]] || fail 'ROLLBACK_STATE_MISSING'
+  while IFS=$'\t' read -r state relative; do
+    safe_relative_path "$relative" || fail 'ROLLBACK_PATH_NOT_ALLOWED'
+    target="$APP_ROOT/$relative"
+    [[ ! -L "$target" ]] || fail 'ROLLBACK_TARGET_SYMLINK_NOT_ALLOWED'
+    parent="$(dirname "$target")"
+    case "$state" in
+      PRESENT)
+        [[ -f "$transaction/previous/$relative" ]] || fail 'ROLLBACK_BACKUP_FILE_MISSING'
+        tmp="$(mktemp "$parent/.voxelpacs-rollback.${sha}.XXXXXX")"
+        cp -a -- "$transaction/previous/$relative" "$tmp"
+        mv -f -- "$tmp" "$target"
+        ;;
+      ABSENT)
+        [[ ! -e "$target" ]] || rm -f -- "$target"
+        ;;
+      *) fail 'ROLLBACK_STATE_INVALID' ;;
+    esac
+  done < "$transaction/state.tsv"
+}
+
+publish() {
+  local archive="$INCOMING_ROOT/voxelpacs-runtime-${sha}.zip"
+  local manifest="$INCOMING_ROOT/voxelpacs-runtime-${sha}.manifest.tsv"
+  local checksum="$INCOMING_ROOT/voxelpacs-runtime-${sha}.sha256"
+  local source_sha="$INCOMING_ROOT/voxelpacs-runtime-${sha}.source-sha"
+  local stage before_state
+
+  assert_secure_input_file "$archive"
+  assert_secure_input_file "$manifest"
+  assert_secure_input_file "$checksum"
+  assert_secure_input_file "$source_sha"
+  [[ -r "$APP_ROOT/.env" && -e "$APP_ROOT/storage" ]] || fail 'PERSISTENT_STATE_NOT_FOUND'
+  [[ -d "$APP_ROOT" && -d "$APP_ROOT/app" ]] || fail 'RUNTIME_ROOT_NOT_FOUND'
+  [[ "$APP_ROOT" != '/var/www/voxelpacs' ]] || fail 'PARENT_ROOT_IS_NOT_RUNTIME_ROOT'
+  [[ -d "$INCOMING_ROOT" && -d "$RELEASE_ROOT" ]] || fail 'DEPLOY_ROOT_NOT_PROVISIONED'
+  mkdir -p -- "$TRANSACTION_ROOT"
+  prepare_transaction_dir
+  stage="$transaction_dir/validated"
+  mkdir -p -- "$stage"
+  chmod 700 "$stage"
+  before_state="$(state_fingerprint)" || fail 'PERSISTENT_STATE_UNREADABLE'
+  validate_artifact "$archive" "$manifest" "$checksum" "$source_sha" "$stage"
+  snapshot_current_runtime "$manifest"
+  if ! prepare_runtime_parent_directories "$manifest"; then
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
+    fail "$prepare_error"
+  fi
+
+  printf 'publishing\n' > "$transaction_dir/status"
+  chmod 600 "$transaction_dir/status"
+  if ! install_from_stage "$stage" "$manifest"; then
+    restore_transaction "$transaction_dir"
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
+    assert_preserved_state "$before_state"
+    printf 'rolled_back_after_failure\n' > "$transaction_dir/status"
+    fail 'PUBLICATION_FAILED_ROLLED_BACK'
+  fi
+  if ! assert_preserved_state "$before_state"; then
+    restore_transaction "$transaction_dir"
+    restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
+    assert_preserved_state "$before_state"
+    printf 'rolled_back_after_persistent_state_check\n' > "$transaction_dir/status"
+    fail 'PERSISTENT_STATE_CHANGED_ROLLED_BACK'
+  fi
+  test -f "$APP_ROOT/$EFFECTIVE_CONFIG_REL" || fail 'EFFECTIVE_RUNTIME_CONFIG_MISSING_AFTER_PUBLICATION'
+  printf 'published\n' > "$transaction_dir/status"
+  chmod 600 "$transaction_dir/status"
+  rm -f -- "$archive" "$manifest" "$checksum" "$source_sha"
+
+  printf 'PRIVILEGED_DEPLOY=PASS\n'
+  printf 'SOURCE_SHA_PREFIX=%s…\n' "${sha:0:12}"
+  printf 'PUBLICATION_MODE=ATOMIC_PER_FILE_WITH_TRANSACTION_ROLLBACK\n'
+  printf 'TRANSACTION_RUN=%s\n' "$transaction_run"
+  printf 'RUNTIME_ROOT=APP_ROOT\n'
+  printf 'ENV_PRESERVED=YES\nSTORAGE_PRESERVED=YES\nUPLOADS_PRESERVED=YES\nREPORT_DELIVERY_PRESERVED=YES\n'
+  printf 'LEGACY_FLAT_PRESERVED=YES\n'
+  printf 'DATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_RESTART=NO\nSMB=NO\nTRANSMISSION=NO\n'
+}
+
+rollback() {
+  resolve_rollback_transaction
+  [[ -d "$transaction_dir" ]] || fail 'ROLLBACK_TRANSACTION_NOT_FOUND'
+  [[ "$(cat "$transaction_dir/status" 2>/dev/null || true)" == 'published' ]] || fail 'ROLLBACK_TRANSACTION_NOT_PUBLISHED'
+  local before_state
+  before_state="$(state_fingerprint)" || fail 'PERSISTENT_STATE_UNREADABLE'
+  restore_transaction "$transaction_dir"
+  restore_created_directories "$transaction_dir" || fail 'CREATED_DIRECTORY_ROLLBACK_FAILED'
+  assert_preserved_state "$before_state"
+  printf 'rolled_back\n' > "$transaction_dir/status"
+  chmod 600 "$transaction_dir/status"
+  printf 'PRIVILEGED_DEPLOY=ROLLBACK_PASS\n'
+  printf 'SOURCE_SHA_PREFIX=%s…\n' "${sha:0:12}"
+  printf 'ENV_PRESERVED=YES\nSTORAGE_PRESERVED=YES\nUPLOADS_PRESERVED=YES\nREPORT_DELIVERY_PRESERVED=YES\n'
+  printf 'DATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_RESTART=NO\nSMB=NO\nTRANSMISSION=NO\n'
+}
+
+[[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+if [[ -n "${SUDO_USER:-}" ]]; then
+  case "$SUDO_USER" in
+    manus-admin|manus-deploy) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+fi
+
+  case "${1:-}" in
+  --sha)
+    [[ "$#" -eq 2 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    sha="$2"
+    is_sha "$sha" || fail 'SHA_INVALID'
+    ;;
+  --rollback)
+    [[ "$#" -eq 3 && "$2" == '--sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    mode='rollback'
+    sha="$3"
+    is_sha "$sha" || fail 'SHA_INVALID'
+    ;;
+  *)
+    usage
+    fail 'ARGUMENTS_INVALID'
+    ;;
+esac
+
+exec {lock_fd}>"$LOCK_PATH"
+flock -n "$lock_fd" || fail 'PUBLICATION_LOCK_BUSY'
+
+if [[ "$mode" == 'publish' ]]; then
+  publish
+else
+  rollback
+fi

@@ -11,11 +11,11 @@ $migration = file_get_contents($root . '/database/migrations/2026-08-14_report_d
 
 $rules = [
     'outbox resolve InstitutionName canônico do tenant' => str_contains($outbox, 'InstitutionResolverService::canonicalForTenant'),
-    'outbox filtra destinos pelo InstitutionName do estudo' => str_contains($outbox, 'findActiveDestinations($tenantId, $estabelecimentoId, $institutionName)'),
+    'outbox filtra destinos pela origem e servidor PACS do estudo' => str_contains($outbox, 'findActiveDestinations($tenantId, $estabelecimentoId, $issuerNormalized, $institutionName, $sourceServerId)'),
     'consulta une tabela de vínculo de destino e InstitutionName' => str_contains($repository, 'pacs_report_delivery_destination_institutions'),
-    'destino exige ao menos uma origem' => str_contains($repository, 'Selecione ao menos um InstitutionName de origem'),
+    'destino exige ao menos uma origem' => str_contains($controller, 'Selecione ao menos um Issuer ou InstitutionName de fallback'),
     'controller valida InstitutionName ativo do tenant' => str_contains($controller, 'Selecione apenas InstitutionNames ativos deste negócio.'),
-    'formulário apresenta seleção de PACS de origem' => str_contains($view, 'PACS de origem dos estudos') && str_contains($view, 'institution_names[]'),
+    'formulário apresenta seleção de PACS e origens' => str_contains($view, 'destination-server-pacs') && str_contains($view, 'institution_names[]'),
     'migration cria unicidade destino e InstitutionName' => str_contains($migration, 'uq_delivery_destination_institution'),
 ];
 

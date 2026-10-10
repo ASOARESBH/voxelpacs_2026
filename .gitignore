@@ -13,28 +13,49 @@
 # Configurações Locais e Ambiente
 # ------------------------------------------------------------------------------
 .env
-.env.local
-.env.testing
-.env.*.local
+.env.*
+!.env.example
 phpunit.xml
 phpunit.result.cache
 
 # ------------------------------------------------------------------------------
+# Segredos, dumps e artefatos de infraestrutura
+# ------------------------------------------------------------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.dump
+/backups/
+/backup/
+/bck_git_v1/
+/database/backups/
+/database/dumps/
+
+# ------------------------------------------------------------------------------
 # Armazenamento e Logs
 # ------------------------------------------------------------------------------
-/storage/logs/*
-/storage/uploads/*
-/storage/sessions/*
-/storage/cache/*
-/storage/tmp/*
+/storage/*
+/uploads/
+/logs/
 /tmp/*
 /cache/*
+/public/uploads/
 
 # Manter a estrutura de diretórios vazios
+!/storage/logs/
+/storage/logs/*
 !/storage/logs/.gitkeep
+!/storage/uploads/
+/storage/uploads/*
 !/storage/uploads/.gitkeep
 !/storage/uploads/.htaccess
+!/storage/sessions/
+/storage/sessions/*
 !/storage/sessions/.gitkeep
+!/storage/cache/
+/storage/cache/*
 !/storage/cache/.gitkeep
 
 # ------------------------------------------------------------------------------
@@ -109,4 +130,5 @@ $RECYCLE.BIN/
 *.zip
 *.tar.gz
 /voxelpacs_deploy_*.zip
-*.md
+Claude outputs/PROMPT_MANUS_FASE1_AUDITORIA_PHILIPS_PDF_XML.md
+Claude outputs/PROMPT_MANUS_FASE1R_RETOMADA_HOSTKEY.md

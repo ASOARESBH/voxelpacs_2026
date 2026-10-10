@@ -13,7 +13,9 @@
 namespace App\Repositories;
 
 use PDO;
+use App\Core\Auth;
 use App\Helpers\DicomPersonName;
+use App\Services\UserStudyScopeService;
 
 class RelatorioEstudosRepository
 {
@@ -29,16 +31,26 @@ class RelatorioEstudosRepository
     /** Modalidades reais distintas, escopadas por tenant e (opcionalmente) por unidades já filtradas. */
     public function getModalidadesDisponiveis(int $tenantId, array $institutionNames = []): array
     {
-        $where  = ['tenant_id = :tenant_id', "modalities IS NOT NULL", "modalities != ''"];
+        $where  = ['e.tenant_id = :tenant_id', "e.modalities IS NOT NULL", "e.modalities != ''"];
         $params = [':tenant_id' => $tenantId];
 
         if (!empty($institutionNames)) {
             [$inSql, $inParams] = $this->buildInClause('inst', $institutionNames);
-            $where[] = "institution_name IN ({$inSql})";
+            $where[] = "e.institution_name IN ({$inSql})";
             $params  = array_merge($params, $inParams);
         }
 
-        $sql  = "SELECT DISTINCT modalities FROM bi_pacs_estudos WHERE " . implode(' AND ', $where);
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'report_options_scope'
+        );
+
+        $sql  = "SELECT DISTINCT e.modalities FROM bi_pacs_estudos e WHERE " . implode(' AND ', $where);
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
@@ -57,10 +69,30 @@ class RelatorioEstudosRepository
     /** Médicos ativos do tenant (cadastro oficial bi_medicos — mesma fonte que a worklist usa hoje). */
     public function getMedicosAtivos(int $tenantId): array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT id, nome, usuario_id FROM bi_medicos WHERE tenant_id = :tenant_id AND ativo = 1 ORDER BY nome"
+        $where = [];
+        $params = [':tenant_id' => $tenantId];
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'report_doctors'
         );
-        $stmt->execute([':tenant_id' => $tenantId]);
+        $scopeSql = $where ? ' AND ' . implode(' AND ', $where) : '';
+        $stmt = $this->pdo->prepare(
+            "SELECT DISTINCT m.id, m.nome, m.usuario_id
+               FROM bi_medicos m
+               INNER JOIN bi_pacs_estudos e
+                       ON e.tenant_id = m.tenant_id
+                      AND e.usuario_responsavel_id = m.usuario_id
+              WHERE m.tenant_id = :tenant_id
+                AND m.ativo = 1
+                " . $scopeSql . "
+              ORDER BY m.nome"
+        );
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -72,12 +104,27 @@ class RelatorioEstudosRepository
      */
     public function getSolicitantesDistintos(int $tenantId): array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT DISTINCT especialidade FROM bi_pacs_estudos
-             WHERE tenant_id = :tenant_id AND especialidade IS NOT NULL AND especialidade != ''
-             ORDER BY especialidade"
+        $where = [
+            'e.tenant_id = :tenant_id',
+            'e.especialidade IS NOT NULL',
+            "e.especialidade != ''",
+        ];
+        $params = [':tenant_id' => $tenantId];
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) Auth::userId(),
+            $tenantId,
+            'e.modalities',
+            'e.institution_name',
+            'report_requesters'
         );
-        $stmt->execute([':tenant_id' => $tenantId]);
+        $stmt = $this->pdo->prepare(
+            "SELECT DISTINCT e.especialidade FROM bi_pacs_estudos e
+             WHERE " . implode(' AND ', $where) . "
+             ORDER BY e.especialidade"
+        );
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
@@ -181,6 +228,16 @@ class RelatorioEstudosRepository
             $where[] = "e.institution_name IN ({$inSql})";
             $params  = array_merge($params, $inParams);
         }
+
+        (new UserStudyScopeService($this->pdo))->appendStudyScopeNamed(
+            $where,
+            $params,
+            (int) ($filtros['usuario_id'] ?? 0),
+            (int) $filtros['tenant_id'],
+            'e.modalities',
+            'e.institution_name',
+            'report_scope'
+        );
 
         if (!empty($filtros['unidade'])) {
             $where[] = 'e.institution_name = :unidade';

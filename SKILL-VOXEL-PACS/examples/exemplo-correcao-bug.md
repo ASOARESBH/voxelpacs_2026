@@ -26,4 +26,4 @@ Filtro de instituição passa a vir de `usuarioAutenticado.institutionId`, ignor
 
 ## Documentação atualizada
 - `memory/regras-de-negocio.md` — adicionada regra: "listagem de estudos sempre filtra por instituição do usuário autenticado, nunca por parâmetro de request".
-- `modules/worklist.md` — nota sobre o bug e a correção.
+- `modules/worklist-estudos.md` — nota sobre o bug e a correção.

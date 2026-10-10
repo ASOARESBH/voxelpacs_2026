@@ -5,11 +5,6 @@ $error   = $error   ?? '';
 ?>
 
 <style>
-.usuarios-tabs-bar { display:flex; gap:.25rem; border-bottom:1px solid var(--pacs-border); margin-bottom:1.25rem; }
-.usuarios-tab-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.65rem 1rem; font-size:.85rem; font-weight:600; color:var(--pacs-text-muted); text-decoration:none; border-bottom:2px solid transparent; }
-.usuarios-tab-btn:hover { color:var(--pacs-text); }
-.usuarios-tab-btn.active { color:var(--pacs-primary); border-bottom-color:var(--pacs-primary); }
-
 .grupo-status-badge { display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.03em; }
 .grupo-status-ativo   { background:rgba(52,211,153,.15); color:#34d399; }
 .grupo-status-inativo { background:rgba(100,116,139,.15); color:#94a3b8; }
@@ -33,14 +28,10 @@ $error   = $error   ?? '';
 </div>
 
 <!-- Navegação Usuários / Grupos -->
-<div class="usuarios-tabs-bar">
-    <a href="/usuarios" class="usuarios-tab-btn">
-        <i class="fa fa-users"></i> <?= htmlspecialchars(t('usuarios.tabs.usuarios')) ?>
-    </a>
-    <a href="/usuarios/grupos" class="usuarios-tab-btn active">
-        <i class="fa fa-layer-group"></i> <?= htmlspecialchars(t('usuarios.tabs.grupos')) ?>
-    </a>
-</div>
+<?php
+$activeTab = 'grupos';
+require __DIR__ . '/../usuarios/_navigation.php';
+?>
 
 <!-- Alertas -->
 <?php

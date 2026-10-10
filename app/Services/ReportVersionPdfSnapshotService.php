@@ -78,17 +78,29 @@ final class ReportVersionPdfSnapshotService
             return null;
         }
 
-        $hasSnapshotMetadata = trim((string) ($row['pdf_snapshot_path'] ?? '')) !== ''
-            || trim((string) ($row['pdf_snapshot_sha256'] ?? '')) !== ''
-            || (int) ($row['pdf_snapshot_size_bytes'] ?? 0) > 0
-            || trim((string) ($row['pdf_snapshot_renderer'] ?? '')) !== ''
-            || (int) ($row['pdf_snapshot_schema_version'] ?? 0) > 0;
+        $hasSnapshotMetadata = self::hasSnapshotMetadata($row);
         if (!$hasSnapshotMetadata) {
             return null;
         }
 
         $version = (int) ($row['versao'] ?? 0);
         return $version > 0 ? $this->readRow($tenantId, $reportId, $version) : null;
+    }
+
+    /**
+     * A migration histórica preencheu schema_version=1 nas linhas existentes.
+     * Esse valor isolado não prova que um snapshot foi persistido; os demais
+     * campos continuam sendo evidência de metadado parcial e devem falhar
+     * fechado quando o arquivo canônico não puder ser validado.
+     *
+     * @param array<string,mixed> $row
+     */
+    private static function hasSnapshotMetadata(array $row): bool
+    {
+        return trim((string) ($row['pdf_snapshot_path'] ?? '')) !== ''
+            || trim((string) ($row['pdf_snapshot_sha256'] ?? '')) !== ''
+            || (int) ($row['pdf_snapshot_size_bytes'] ?? 0) > 0
+            || trim((string) ($row['pdf_snapshot_renderer'] ?? '')) !== '';
     }
 
     /**
