@@ -75,6 +75,10 @@ Quando o runtime contém divergências históricas não classificadas, não remo
 
 O baseline deve ser preparado em branch dedicada, sem importar `.env`, credenciais, chaves, certificados, tokens, logs, uploads, PDFs, XMLs, DICOM ou vendor indiscriminadamente. Hashes não legíveis permanecem como lacuna explícita; `--require-complete` é obrigatório para declarar captura integral. O provisionamento não publica código da aplicação, não altera a release ativa e não inicia serviços.
 
+### Validação versionada do drift
+
+Depois de construir o artefato detached e antes de qualquer publicação, executar `scripts/validate-runtime-drift.sh` com o manifesto do artefato e o manifesto root-controlled do baseline. O comparador é read-only e permanece fail-closed para arquivo esperado ausente, path/hash inválido, arquivo ilegível, mismatch de código/dependência, extra ausente do baseline ou extra com hash divergente. A única exceção de conteúdo é `vendor/composer/installed.php` quando o arquivo é regular, legível, classificado como `COMPOSER_DEPENDENCY` no baseline e seu hash corresponde exatamente ao baseline. A pasta `vendor/` nunca é aceita genericamente.
+
 ## 5. Artefato e promoção
 
 O artefato deve ser gerado exclusivamente do checkout detached do SHA confirmado. Deve excluir `.env`, storage, uploads, logs, backups e dados clínicos, salvo quando o plano de backup protegido determinar o contrário.

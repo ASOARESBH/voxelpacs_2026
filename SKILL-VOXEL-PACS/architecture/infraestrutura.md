@@ -53,3 +53,5 @@
 - O baseline é uma evidência inicial, não uma autorização de deploy. Após sua aprovação, o GitHub/main volta a ser a fonte oficial das alterações futuras.
 
 O provisionamento root-controlled da captura usa `scripts/provision-production-baseline-capture.sh`, instala o wrapper fixo e o capturador em `/usr/local/sbin` e uma regra sudoers limitada à operação `capture`. O caller não fornece origem, destino, shell ou comando; o helper não acessa banco, serviços, Worker, Bridge ou SMB.
+
+O gate de comparação usa `scripts/validate-runtime-drift.sh` em modo somente leitura. Ele confronta o manifesto do artefato com o runtime e aceita extras apenas quando o path e o SHA-256 coincidem com o baseline root-controlled aprovado. `vendor/composer/installed.php` possui uma exceção explícita, condicionada à classificação `COMPOSER_DEPENDENCY` e ao hash do baseline; não existe exceção genérica para `vendor/`.
