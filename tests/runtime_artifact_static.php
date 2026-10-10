@@ -52,6 +52,7 @@ foreach ([
     'PRODUCTION_CHANGED=NO',
     'normalize_composer_root_reference()',
     "COMPOSER_ROOT_REFERENCE_SHAPE_INVALID",
+    "COMPOSER_ROOT_REFERENCE_MISMATCH",
     'python3 - "$installed" "$current_sha"',
 ] as $marker) {
     expect_runtime_artifact(str_contains($builder, $marker), "Builder sem proteção: {$marker}");

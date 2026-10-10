@@ -161,6 +161,7 @@ normalize_composer_root_reference() {
   command -v python3 >/dev/null 2>&1 || fail 'composer_reference_normalizer_unavailable'
   python3 - "$installed" "$current_sha" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
@@ -171,10 +172,16 @@ versions_start = text.find("    'versions' => array(", root_start)
 if root_start < 0 or versions_start < 0 or versions_start <= root_start:
     raise SystemExit('COMPOSER_ROOT_SECTION_INVALID')
 root = text[root_start:versions_start]
-needle = "'reference' => null,"
-if root.count(needle) != 1:
+matches = list(re.finditer(r"'reference'\s*=>\s*(null|'[0-9a-f]{40}'),", root))
+if len(matches) != 1:
     raise SystemExit('COMPOSER_ROOT_REFERENCE_SHAPE_INVALID')
-root = root.replace(needle, f"'reference' => '{sha}',", 1)
+current = matches[0].group(1)
+if current == f"'{sha}'":
+    raise SystemExit(0)
+if current != 'null':
+    raise SystemExit('COMPOSER_ROOT_REFERENCE_MISMATCH')
+start, end = matches[0].span(1)
+root = root[:start] + f"'{sha}'" + root[end:]
 staged = path.with_name(path.name + '.normalized')
 staged.write_text(text[:root_start] + root + text[versions_start:])
 staged.chmod(path.stat().st_mode & 0o777)
