@@ -19,6 +19,8 @@ O gate retorna `DRIFT_GATE=PASS` somente quando:
 - todo extra fora do artefato está no baseline e possui exatamente o mesmo hash;
 - não há extra sem baseline, hash divergente, arquivo esperado ausente ou arquivo ilegível.
 
+O comparador aceita também o manifesto root-controlled legado de oito colunas produzido antes da coluna explícita `READABLE`. Essa compatibilidade só é válida quando a linha tem exatamente oito colunas, o digest SHA-256 completo é válido e a classificação permanece permitida; o gate reporta `BASELINE_FORMAT=LEGACY_8_COLUMN`. Linhas com digest ausente, colunas extras, path inválido ou classificação desconhecida continuam bloqueadas.
+
 ## Exceção explícita
 
 A única exceção de conteúdo prevista nesta versão é:

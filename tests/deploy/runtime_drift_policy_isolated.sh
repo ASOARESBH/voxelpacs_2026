@@ -37,6 +37,15 @@ grep -Fxq 'COMPOSER_METADATA_EXCEPTION=1' "$positive" || fail 'composer_exceptio
 grep -Fxq 'EXTRAS_IN_BASELINE=1' "$positive" || fail 'baseline_extra_not_counted'
 grep -Fxq 'EXTRAS_NOT_IN_BASELINE=0' "$positive" || fail 'unknown_extra_count'
 
+# Baseline capturado antes da coluna READABLE: o hash SHA-256 completo prova
+# que o arquivo era legível; somente essa forma legada exata é aceita.
+legacy_baseline="$tmp/baseline-legacy.tsv"
+awk -F '\t' 'BEGIN {OFS="\t"} {print $1,$2,$3,$4,$5,$6,$7,$8}' "$baseline" > "$legacy_baseline"
+if ! "$script" --runtime-root "$runtime" --artifact-manifest "$artifact" --baseline-manifest "$legacy_baseline" > "$tmp/legacy.out"; then fail 'legacy_baseline_rejected'; fi
+grep -Fxq 'DRIFT_GATE=PASS' "$tmp/legacy.out" || fail 'legacy_gate'
+grep -Fxq 'BASELINE_FORMAT=LEGACY_8_COLUMN' "$tmp/legacy.out" || fail 'legacy_format_not_reported'
+grep -Fxq 'BASELINE_LEGACY_ENTRIES=3' "$tmp/legacy.out" || fail 'legacy_count_not_reported'
+
 # Extra não presente no baseline: deve bloquear.
 printf '%s\n' 'unknown' > "$runtime/unknown.txt"
 if "$script" --runtime-root "$runtime" --artifact-manifest "$artifact" --baseline-manifest "$baseline" > "$tmp/unknown.out" 2>&1; then fail 'unknown_extra_accepted'; fi
