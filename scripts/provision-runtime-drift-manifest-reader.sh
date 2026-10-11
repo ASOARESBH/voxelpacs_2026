@@ -87,7 +87,7 @@ validate_reader_contract() {
 validate_gate_contract() {
   grep -Fqx "readonly RUNTIME_ROOT='/var/www/voxelpacs/app'" "$GATE_SOURCE" || fail 'GATE_RUNTIME_ROOT_INVALID'
   grep -Fqx "readonly READER='/usr/local/sbin/voxelpacs-runtime-drift-manifest-reader'" "$GATE_SOURCE" || fail 'GATE_READER_PATH_INVALID'
-  grep -Fqx "readonly COMPARATOR='/usr/local/libexec/voxelpacs-validate-runtime-drift'" "$GATE_SOURCE" || fail 'GATE_COMPARATOR_PATH_INVALID'
+  grep -Fqx "readonly COMPARATOR='/usr/local/sbin/voxelpacs-validate-runtime-drift'" "$GATE_SOURCE" || fail 'GATE_COMPARATOR_PATH_INVALID'
   ! grep -Eq -- '--source|--destination|--command|eval|rm -rf|smbclient|systemctl|composer|curl[[:space:]]|mysql|psql' "$GATE_SOURCE" || fail 'GATE_GENERIC_OPERATION_PRESENT'
   bash -n "$GATE_SOURCE"
   bash -n "$COMPARATOR_SOURCE"
