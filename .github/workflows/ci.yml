@@ -204,6 +204,37 @@ jobs:
       - name: Run isolated policy tests
         run: sudo -n env -u SUDO_USER bash tests/philips_folder_policy_applier.sh
 
+  philips-nondicom-smb-readonly-flag:
+    name: Philips Non-DICOM SMB read-only flag helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-philips-nondicom-smb-readonly-flag
+          bash -n scripts/provision-philips-nondicom-smb-readonly-flag.sh
+          bash -n tests/deploy/philips_nondicom_smb_readonly_flag_static.sh
+          bash -n tests/deploy/philips_nondicom_smb_readonly_flag_isolated.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x \
+              ops/deploy/voxelpacs-philips-nondicom-smb-readonly-flag \
+              scripts/provision-philips-nondicom-smb-readonly-flag.sh \
+              tests/deploy/philips_nondicom_smb_readonly_flag_static.sh \
+              tests/deploy/philips_nondicom_smb_readonly_flag_isolated.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Validate sudoers syntax and fixed scope
+        run: bash tests/deploy/philips_nondicom_smb_readonly_flag_static.sh
+
+      - name: Run isolated flag helper tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/philips_nondicom_smb_readonly_flag_isolated.sh
+
   philips-job-522-readonly-audit:
     name: Philips Job 522 read-only audit
     runs-on: ubuntu-latest
