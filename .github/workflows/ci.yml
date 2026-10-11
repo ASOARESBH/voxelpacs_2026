@@ -180,6 +180,49 @@ jobs:
       - name: Run isolated transaction tests
         run: sudo -n env -u SUDO_USER bash tests/deploy_transaction_inspection_reconciliation.sh
 
+  runtime-drift-manifest-reader:
+    name: Root-controlled runtime drift manifest reader
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bash syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-runtime-drift-manifest-reader
+          bash -n ops/deploy/voxelpacs-runtime-drift-gate
+          bash -n scripts/validate-runtime-drift.sh
+          bash -n scripts/provision-runtime-drift-manifest-reader.sh
+          bash -n tests/deploy/runtime_drift_manifest_reader_static.sh
+          bash -n tests/deploy/runtime_drift_manifest_reader_isolated.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x \
+              ops/deploy/voxelpacs-runtime-drift-manifest-reader \
+              ops/deploy/voxelpacs-runtime-drift-gate \
+              scripts/validate-runtime-drift.sh \
+              scripts/provision-runtime-drift-manifest-reader.sh \
+              tests/deploy/runtime_drift_manifest_reader_static.sh \
+              tests/deploy/runtime_drift_manifest_reader_isolated.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Validate sudoers and static safety contract
+        run: bash tests/deploy/runtime_drift_manifest_reader_static.sh
+
+      - name: Run isolated reader and gate tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/runtime_drift_manifest_reader_isolated.sh
+
+      - name: Run provisioner dry-run
+        run: |
+          expected_sha="$(git rev-parse HEAD)"
+          sudo -n env -u SUDO_USER bash scripts/provision-runtime-drift-manifest-reader.sh \
+            --expected-sha "$expected_sha" --dry-run
+
   philips-folder-policy-applier:
     name: Philips Folder policy applier
     runs-on: ubuntu-latest

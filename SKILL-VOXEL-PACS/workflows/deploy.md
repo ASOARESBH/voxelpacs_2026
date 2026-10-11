@@ -79,6 +79,20 @@ O baseline deve ser preparado em branch dedicada, sem importar `.env`, credencia
 
 Depois de construir o artefato detached e antes de qualquer publicação, executar `scripts/validate-runtime-drift.sh` com o manifesto do artefato e o manifesto root-controlled do baseline. O comparador é read-only e permanece fail-closed para arquivo esperado ausente, path/hash inválido, arquivo ilegível, mismatch de código/dependência, extra ausente do baseline ou extra com hash divergente. A única exceção de conteúdo é `vendor/composer/installed.php` quando o arquivo é regular, legível, classificado como `COMPOSER_DEPENDENCY` no baseline e seu hash corresponde exatamente ao baseline. A pasta `vendor/` nunca é aceita genericamente.
 
+Quando o manifesto do baseline estiver protegido como `root:root` e indisponível ao caller SSH, o fluxo oficial deve usar o leitor/gate root-controlled da PR #111, provisionado pela SHA aprovada:
+
+```bash
+sudo bash scripts/provision-runtime-drift-manifest-reader.sh \
+  --expected-sha <SHA_DA_MAIN> --dry-run
+sudo bash scripts/provision-runtime-drift-manifest-reader.sh \
+  --expected-sha <SHA_DA_MAIN> --install
+cat artifact.manifest.tsv \
+  | sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate \
+      --baseline-id <baseline-id>
+```
+
+O leitor valida o baseline integral sem copiar seu conteúdo para um caminho arbitrário; o gate mantém runtime, comparator e temporários em caminhos fixos. `DRIFT_GATE=PASS` continua sendo apenas o resultado da comparação técnica e não autoriza deploy por si só.
+
 ## 5. Artefato e promoção
 
 O artefato deve ser gerado exclusivamente do checkout detached do SHA confirmado. Deve excluir `.env`, storage, uploads, logs, backups e dados clínicos, salvo quando o plano de backup protegido determinar o contrário.

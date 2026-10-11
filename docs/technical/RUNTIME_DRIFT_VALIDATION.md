@@ -46,6 +46,8 @@ Um extra ausente do baseline ou com hash divergente mantém o gate bloqueado. O 
 
 ## Uso
 
+No checkout local, o comparador continua disponível para testes com manifestos já acessíveis:
+
 ```bash
 bash scripts/validate-runtime-drift.sh \
   --runtime-root /var/www/voxelpacs/app \
@@ -53,7 +55,15 @@ bash scripts/validate-runtime-drift.sh \
   --baseline-manifest /var/lib/voxelpacs/baselines/<baseline-id>/manifest.tsv
 ```
 
-Os caminhos devem ser fornecidos pelo workflow root-controlled de predeploy. O script não aceita opções de cópia, publicação, exclusão ou execução de serviço.
+No Host 1, quando o baseline é root-owned, o fluxo oficial usa o gate root-controlled da PR #111 e fornece somente o manifesto do artefato por `stdin`:
+
+```bash
+cat artifact.manifest.tsv \
+  | sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate \
+      --baseline-id <baseline-id>
+```
+
+O gate chama o leitor fixo, valida checksum/ownership/formato e entrega a saída ao comparador instalado em caminho fixo. O caller não fornece path de runtime, baseline, comando ou destino. Nenhum dos modos aceita opções de cópia, publicação, exclusão ou execução de serviço.
 
 ## Saída sanitizada
 
