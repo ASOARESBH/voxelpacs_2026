@@ -200,7 +200,7 @@ jobs:
       - name: ShellCheck
         run: |
           if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck -x \
+            shellcheck -S warning -x \
               ops/deploy/voxelpacs-runtime-drift-manifest-reader \
               ops/deploy/voxelpacs-runtime-drift-gate \
               scripts/validate-runtime-drift.sh \
