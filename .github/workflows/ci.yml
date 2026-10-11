@@ -223,6 +223,45 @@ jobs:
           sudo -n env -u SUDO_USER bash scripts/provision-runtime-drift-manifest-reader.sh \
             --expected-sha "$expected_sha" --dry-run
 
+  composer-drift-auditor:
+    name: Root-controlled Composer drift auditor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bash syntax
+        run: |
+          bash -n ops/deploy/voxelpacs-composer-drift-auditor
+          bash -n scripts/provision-composer-drift-auditor.sh
+          bash -n tests/deploy/composer_drift_auditor_static.sh
+          bash -n tests/deploy/composer_drift_auditor_isolated.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning -x \
+              ops/deploy/voxelpacs-composer-drift-auditor \
+              scripts/provision-composer-drift-auditor.sh \
+              tests/deploy/composer_drift_auditor_static.sh \
+              tests/deploy/composer_drift_auditor_isolated.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Validate sudoers and static safety contract
+        run: bash tests/deploy/composer_drift_auditor_static.sh
+
+      - name: Run isolated three-way audit tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/composer_drift_auditor_isolated.sh
+
+      - name: Run provisioner dry-run
+        run: |
+          expected_sha="$(git rev-parse HEAD)"
+          sudo -n env -u SUDO_USER bash scripts/provision-composer-drift-auditor.sh \
+            --expected-sha "$expected_sha" --dry-run
+
   philips-folder-policy-applier:
     name: Philips Folder policy applier
     runs-on: ubuntu-latest

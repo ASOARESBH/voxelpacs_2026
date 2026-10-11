@@ -93,6 +93,8 @@ cat artifact.manifest.tsv \
 
 O leitor valida o baseline integral sem copiar seu conteúdo para um caminho arbitrário; o gate mantém runtime, comparator e temporários em caminhos fixos. `DRIFT_GATE=PASS` continua sendo apenas o resultado da comparação técnica e não autoriza deploy por si só.
 
+Para investigar exclusivamente uma divergência de `vendor/composer/installed.php`, pode-se provisionar separadamente o auditor root-controlled de três vias (`scripts/provision-composer-drift-auditor.sh`). Ele compara o target fixo no manifesto do artefato, runtime e baseline, sem expor hashes ou conteúdo e sem aceitar paths arbitrários. A saída é diagnóstica; `READY_FOR_DEPLOY=NO` permanece obrigatório e nenhuma divergência é aceita automaticamente.
+
 ## 5. Artefato e promoção
 
 O artefato deve ser gerado exclusivamente do checkout detached do SHA confirmado. Deve excluir `.env`, storage, uploads, logs, backups e dados clínicos, salvo quando o plano de backup protegido determinar o contrário.
