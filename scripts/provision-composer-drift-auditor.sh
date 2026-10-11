@@ -66,7 +66,7 @@ validate_helper_contract() {
   grep -Fqx "readonly APP_ROOT='/var/www/voxelpacs/app'" "$HELPER_SOURCE" || fail 'APP_ROOT_CONTRACT_INVALID'
   grep -Fqx "readonly BASELINE_ROOT='/var/lib/voxelpacs/baselines'" "$HELPER_SOURCE" || fail 'BASELINE_ROOT_CONTRACT_INVALID'
   grep -Fqx "readonly TARGET_RELATIVE_PATH='vendor/composer/installed.php'" "$HELPER_SOURCE" || fail 'TARGET_PATH_CONTRACT_INVALID'
-  ! grep -Eq -- '--path|--source|--destination|--command|eval|NOPASSWD:[[:space:]]+ALL|rm -rf|smbclient|systemctl|composer|php ' "$HELPER_SOURCE" || fail 'HELPER_GENERIC_OPERATION_PRESENT'
+  ! grep -Eq -- '--path|--source|--destination|--command|eval|NOPASSWD:[[:space:]]+ALL|rm -rf|smbclient|systemctl|composer[[:space:]]|php ' "$HELPER_SOURCE" || fail 'HELPER_GENERIC_OPERATION_PRESENT'
   bash -n "$HELPER_SOURCE"
 }
 
