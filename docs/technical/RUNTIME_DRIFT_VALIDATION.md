@@ -19,6 +19,8 @@ O gate retorna `DRIFT_GATE=PASS` somente quando:
 - todo extra fora do artefato está no baseline e possui exatamente o mesmo hash;
 - não há extra sem baseline, hash divergente, arquivo esperado ausente ou arquivo ilegível.
 
+O comparador aceita também o manifesto root-controlled legado de oito colunas produzido antes da coluna explícita `READABLE`. Essa compatibilidade só é válida quando a linha tem exatamente oito colunas, o digest SHA-256 completo é válido e a classificação permanece permitida; o gate reporta `BASELINE_FORMAT=LEGACY_8_COLUMN`. Linhas com digest ausente, colunas extras, path inválido ou classificação desconhecida continuam bloqueadas.
+
 ## Exceção explícita
 
 A única exceção de conteúdo prevista nesta versão é:
@@ -44,6 +46,8 @@ Um extra ausente do baseline ou com hash divergente mantém o gate bloqueado. O 
 
 ## Uso
 
+No checkout local, o comparador continua disponível para testes com manifestos já acessíveis:
+
 ```bash
 bash scripts/validate-runtime-drift.sh \
   --runtime-root /var/www/voxelpacs/app \
@@ -51,7 +55,15 @@ bash scripts/validate-runtime-drift.sh \
   --baseline-manifest /var/lib/voxelpacs/baselines/<baseline-id>/manifest.tsv
 ```
 
-Os caminhos devem ser fornecidos pelo workflow root-controlled de predeploy. O script não aceita opções de cópia, publicação, exclusão ou execução de serviço.
+No Host 1, quando o baseline é root-owned, o fluxo oficial usa o gate root-controlled da PR #111 e fornece somente o manifesto do artefato por `stdin`:
+
+```bash
+cat artifact.manifest.tsv \
+  | sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate \
+      --baseline-id <baseline-id>
+```
+
+O gate chama o leitor fixo, valida checksum/ownership/formato e entrega a saída ao comparador instalado em caminho fixo. O caller não fornece path de runtime, baseline, comando ou destino. Nenhum dos modos aceita opções de cópia, publicação, exclusão ou execução de serviço.
 
 ## Saída sanitizada
 

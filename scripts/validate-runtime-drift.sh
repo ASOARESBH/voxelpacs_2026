@@ -27,6 +27,7 @@ safe_relative_path() {
   [[ -n "$rel" && "$rel" != /* && "$rel" != '.' ]] || return 1
   [[ "$rel" != *$'\n'* && "$rel" != *$'\r'* && "$rel" != *$'\t'* ]] || return 1
   [[ "$rel" != '../'* && "$rel" != */../* && "$rel" != */.. && "$rel" != '..' ]] || return 1
+  # shellcheck disable=SC2221,SC2222
   case "$rel" in
     .env|.env.*|*/.env|*/.env.*|storage|storage/*|*/storage|*/storage/*|uploads|uploads/*|*/uploads|*/uploads/*|public/uploads|public/uploads/*|*/public/uploads|*/public/uploads/*|logs|logs/*|*/logs|*/logs/*|backups|backups/*|*/backups|*/backups/*|runtime|runtime/*|*/runtime|*/runtime/*|cache|cache/*|*/cache|*/cache/*|sessions|sessions/*|*/sessions|*/sessions/*|tmp|tmp/*|*/tmp|*/tmp/*)
       return 1
@@ -57,6 +58,8 @@ declare -A baseline_classification=()
 
 artifact_entries=0
 baseline_entries=0
+baseline_legacy_entries=0
+baseline_current_entries=0
 invalid_artifact_entries=0
 invalid_baseline_entries=0
 
@@ -74,9 +77,18 @@ load_artifact_manifest() {
 }
 
 load_baseline_manifest() {
-  local rel size hash owner group mode mtime classification read_status extra
+  local rel size hash owner group mode mtime classification read_status extra format
+  # shellcheck disable=SC2034
   while IFS=$'\t' read -r rel size hash owner group mode mtime classification read_status extra; do
-    [[ -z "$rel" && -z "${size:-}" && -z "${hash:-}" && -z "${extra:-}" ]] && continue
+    [[ -z "$rel" && -z "${hash:-}" && -z "${extra:-}" ]] && continue
+    format='CURRENT_9_COLUMN'
+    if [[ -z "${read_status:-}" && -z "${extra:-}" ]]; then
+      # Baselines captured before the READABLE column was introduced have
+      # already proved readability by carrying a full SHA-256 digest. Accept
+      # exactly that legacy shape; malformed/unhashed rows still block.
+      read_status='READABLE'
+      format='LEGACY_8_COLUMN'
+    fi
     if [[ -n "${extra:-}" ]] || ! safe_relative_path "$rel" || ! [[ "$size" =~ ^[0-9]+$ ]] || ! [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || ! [[ "$mode" =~ ^[0-9]+$ ]] || [[ "$read_status" != 'READABLE' ]] || [[ -n "${baseline_hash[$rel]+present}" ]]; then
       invalid_baseline_entries=$((invalid_baseline_entries + 1))
       continue
@@ -88,6 +100,11 @@ load_baseline_manifest() {
     baseline_hash["$rel"]="$hash"
     baseline_classification["$rel"]="$classification"
     baseline_entries=$((baseline_entries + 1))
+    if [[ "$format" == 'LEGACY_8_COLUMN' ]]; then
+      baseline_legacy_entries=$((baseline_legacy_entries + 1))
+    else
+      baseline_current_entries=$((baseline_current_entries + 1))
+    fi
   done < "$baseline_manifest"
 }
 
@@ -169,8 +186,15 @@ done < <(find -P "$runtime_root" -xdev \
   \( -path "$runtime_root/.env" -o -path "$runtime_root/.env.*" -o -path "$runtime_root/storage" -o -path "$runtime_root/storage/*" -o -path "$runtime_root/uploads" -o -path "$runtime_root/uploads/*" -o -path "$runtime_root/public/uploads" -o -path "$runtime_root/public/uploads/*" -o -path "$runtime_root/logs" -o -path "$runtime_root/logs/*" -o -path "$runtime_root/backups" -o -path "$runtime_root/backups/*" -o -path "$runtime_root/runtime" -o -path "$runtime_root/runtime/*" -o -path "$runtime_root/cache" -o -path "$runtime_root/cache/*" -o -path "$runtime_root/sessions" -o -path "$runtime_root/sessions/*" -o -path "$runtime_root/tmp" -o -path "$runtime_root/tmp/*" \) -prune -o \
   \( -type f -o -type l \) -print0)
 
-printf 'MECHANISM_VERSION=%s\nCOMPOSER_METADATA_PATH=%s\nARTIFACT_MANIFEST_ENTRIES=%s\nBASELINE_MANIFEST_ENTRIES=%s\nEXPECTED_FILES=%s\nCONTENT_MATCH=%s\nCONTENT_MISMATCH=%s\nCOMPOSER_METADATA_EXCEPTION=%s\nMISMATCH_UNCOVERED=%s\nMISSING=%s\nUNREADABLE=%s\nINVALID_ARTIFACT_ENTRIES=%s\nINVALID_BASELINE_ENTRIES=%s\nEXTRA_FILES=%s\nEXTRAS_IN_BASELINE=%s\nEXTRAS_NOT_IN_BASELINE=%s\nEXTRA_HASH_MISMATCH=%s\nEXTRA_UNREADABLE=%s\nMISMATCH_PATHS=%s\n' \
-  "$MECHANISM_VERSION" "$COMPOSER_METADATA_PATH" "$artifact_entries" "$baseline_entries" "$expected_files" "$content_match" "$content_mismatch" "$composer_exception" "$mismatch_uncovered" "$missing" "$unreadable" "$invalid_artifact_entries" "$invalid_baseline_entries" "$extra_files" "$extras_in_baseline" "$extras_not_in_baseline" "$extra_hash_mismatch" "$extra_unreadable" "${mismatch_paths% }"
+baseline_format='CURRENT_9_COLUMN'
+if [[ "$baseline_legacy_entries" -gt 0 && "$baseline_current_entries" -gt 0 ]]; then
+  baseline_format='MIXED_8_AND_9_COLUMN'
+elif [[ "$baseline_legacy_entries" -gt 0 ]]; then
+  baseline_format='LEGACY_8_COLUMN'
+fi
+
+printf 'MECHANISM_VERSION=%s\nCOMPOSER_METADATA_PATH=%s\nARTIFACT_MANIFEST_ENTRIES=%s\nBASELINE_MANIFEST_ENTRIES=%s\nBASELINE_FORMAT=%s\nBASELINE_LEGACY_ENTRIES=%s\nBASELINE_CURRENT_ENTRIES=%s\nEXPECTED_FILES=%s\nCONTENT_MATCH=%s\nCONTENT_MISMATCH=%s\nCOMPOSER_METADATA_EXCEPTION=%s\nMISMATCH_UNCOVERED=%s\nMISSING=%s\nUNREADABLE=%s\nINVALID_ARTIFACT_ENTRIES=%s\nINVALID_BASELINE_ENTRIES=%s\nEXTRA_FILES=%s\nEXTRAS_IN_BASELINE=%s\nEXTRAS_NOT_IN_BASELINE=%s\nEXTRA_HASH_MISMATCH=%s\nEXTRA_UNREADABLE=%s\nMISMATCH_PATHS=%s\n' \
+  "$MECHANISM_VERSION" "$COMPOSER_METADATA_PATH" "$artifact_entries" "$baseline_entries" "$baseline_format" "$baseline_legacy_entries" "$baseline_current_entries" "$expected_files" "$content_match" "$content_mismatch" "$composer_exception" "$mismatch_uncovered" "$missing" "$unreadable" "$invalid_artifact_entries" "$invalid_baseline_entries" "$extra_files" "$extras_in_baseline" "$extras_not_in_baseline" "$extra_hash_mismatch" "$extra_unreadable" "${mismatch_paths% }"
 
 if [[ "$artifact_entries" -eq 0 || "$baseline_entries" -eq 0 || "$invalid_artifact_entries" -ne 0 || "$invalid_baseline_entries" -ne 0 || "$missing" -ne 0 || "$unreadable" -ne 0 || "$mismatch_uncovered" -ne 0 || "$extras_not_in_baseline" -ne 0 || "$extra_hash_mismatch" -ne 0 || "$extra_unreadable" -ne 0 ]]; then
   printf 'DRIFT_GATE=FAIL\nREASON=UNCLASSIFIED_OR_UNPROVEN_DRIFT\n'
