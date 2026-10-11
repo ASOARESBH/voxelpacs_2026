@@ -8,6 +8,7 @@ use App\Core\Logger;
 use App\Services\DeliveryRequestIdentity;
 use App\Services\ActiveDestinationResolutionException;
 use App\Services\ActiveDestinationResolver;
+use App\Services\PhilipsFolderDeliveryService;
 use PDO;
 use Throwable;
 
@@ -420,12 +421,21 @@ class ReportDeliveryWorkerRepository
             }
             return $job;
         }
-        $environment = $this->executionEnvironment();
-        $destination = $this->activeDestinationResolver->resolveActiveDestination(
-            (int) ($job['tenant_id'] ?? 0),
-            (string) ($job['transport'] ?? ''),
-            $environment
-        );
+        $transport = (string) ($job['transport'] ?? '');
+        $environment = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            ? 'producao'
+            : $this->executionEnvironment();
+        $destination = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+            ? $this->activeDestinationResolver->resolveAutomaticProductionDestination(
+                (int) ($job['tenant_id'] ?? 0),
+                (int) ($job['destination_id'] ?? 0),
+                $transport
+            )
+            : $this->activeDestinationResolver->resolveActiveDestination(
+                (int) ($job['tenant_id'] ?? 0),
+                $transport,
+                $environment
+            );
         $resolvedProfile = $this->reportDeliveryRepository->deliveryProfileForDestination($destination);
         $jobProfile = trim((string) ($job['delivery_profile'] ?? ''));
         if ($jobProfile !== '' && $jobProfile !== $resolvedProfile) {
@@ -489,7 +499,10 @@ class ReportDeliveryWorkerRepository
             ActiveDestinationResolver::MULTIPLE_ACTIVE_DESTINATIONS,
             ActiveDestinationResolver::INVALID_DESTINATION_SCOPE,
             'INCOMPATIBLE_DELIVERY_PROFILE',
-            'PERSISTED_DESTINATION_DISABLED',
+            ActiveDestinationResolver::PERSISTED_DESTINATION_NOT_FOUND,
+            ActiveDestinationResolver::PERSISTED_DESTINATION_DISABLED,
+            ActiveDestinationResolver::DESTINATION_SCOPE_MISMATCH,
+            ActiveDestinationResolver::AUTOMATIC_TRIGGER_DISABLED,
         ];
         if (!in_array($failureCode, $allowed, true)) {
             $failureCode = ActiveDestinationResolver::INVALID_DESTINATION_SCOPE;
