@@ -30,6 +30,8 @@ O kill switch é fail-closed: valor inválido também impede o processamento. O 
 
 `scripts/configure-report-delivery-runtime.sh` é o mecanismo versionado e allowlisted para alterar apenas as chaves acima em uma fonte de ambiente autorizada.
 
+Para desligar exclusivamente o teste SMB read-only em uma janela operacional, o mecanismo dedicado é `ops/deploy/voxelpacs-philips-nondicom-smb-readonly-flag`, provisionado por `scripts/provision-philips-nondicom-smb-readonly-flag.sh`. Ele não recebe chave, valor ou caminho do operador, cria backup root-only antes do `--apply`, verifica a integridade do restante do `.env` e oferece rollback por `backup-id` hexadecimal. O provisionamento e a aplicação não reiniciam serviços.
+
 ```text
 --dry-run KEY=VALUE [...]
 --apply KEY=VALUE [...]
@@ -43,7 +45,7 @@ O kill switch é fail-closed: valor inválido também impede o processamento. O 
 - Nenhuma opção executa reload/restart, acessa banco, Bridge, SMB, Windows ou Philips.
 - O mecanismo não imprime valores de secrets e não aceita chaves fora da allowlist.
 
-Para retirar o teste SMB em produção, a aplicação futura deve ser feita pelo workflow oficial, com a mudança explícita:
+Para retirar o teste SMB em produção, a aplicação deve ser feita pelo workflow oficial e pelo helper específico, com a mudança explícita:
 
 ```text
 PHILIPS_NON_DICOM_SMB_TEST_ENABLED=false

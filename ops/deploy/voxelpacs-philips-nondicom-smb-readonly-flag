@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# VOXEL PACS — helper root-controlled da flag SMB read-only Non-DICOM.
+# Escopo fixo: somente PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly ENV_FILE='/var/www/voxelpacs/app/.env'
+readonly BACKUP_ROOT='/var/backups/voxelpacs/config'
+readonly TARGET_KEY='PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED'
+readonly LOCK_PATH='/run/lock/voxelpacs-philips-nondicom-smb-readonly-flag.lock'
+readonly MECHANISM_VERSION='1'
+
+mode=''
+backup_id=''
+lock_fd=''
+target_count=0
+target_state=''
+non_target_sha=''
+temp_env=''
+
+fail() {
+  printf 'FLAG_HELPER=BLOCKED\nREASON=%s\nPRODUCTION_CHANGED=NO\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' \
+    'uso: voxelpacs-philips-nondicom-smb-readonly-flag --status' \
+    'uso: voxelpacs-philips-nondicom-smb-readonly-flag --dry-run' \
+    'uso: voxelpacs-philips-nondicom-smb-readonly-flag --apply' \
+    'uso: voxelpacs-philips-nondicom-smb-readonly-flag --rollback --backup-id <64-hex>' >&2
+}
+
+require_root_and_caller() {
+  [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+  case "${SUDO_USER:-}" in
+    ''|manus-admin) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+}
+
+validate_environment_file() {
+  [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || fail 'ENVIRONMENT_FILE_INVALID'
+  [[ -d "$(dirname -- "$ENV_FILE")" && ! -L "$(dirname -- "$ENV_FILE")" ]] || fail 'ENVIRONMENT_PARENT_INVALID'
+  local mode_oct
+  mode_oct="$(stat -c '%a' -- "$ENV_FILE" 2>/dev/null || true)"
+  [[ "$mode_oct" =~ ^[0-7]{3,4}$ ]] || fail 'ENVIRONMENT_MODE_INVALID'
+  (( (8#$mode_oct & 7) == 0 )) || fail 'ENVIRONMENT_WORLD_ACCESSIBLE'
+}
+
+read_target_state() {
+  local record raw_value
+  record="$(awk -F= -v key="$TARGET_KEY" '
+    $1 !~ /^[[:space:]]*#/ {
+      candidate = $1
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
+      if (candidate == key) {
+        count++
+        value = $2
+        gsub(/[[:space:]]+/, "", value)
+      }
+    }
+    END { print (count + 0) "\t" value }
+  ' "$ENV_FILE")"
+  IFS=$'\t' read -r target_count raw_value <<<"$record"
+  [[ "$target_count" =~ ^[0-9]+$ ]] || fail 'TARGET_SCAN_INVALID'
+  if (( target_count > 1 )); then
+    fail 'TARGET_DUPLICATE'
+  fi
+  if (( target_count == 0 )); then
+    target_state='ABSENT'
+    return 0
+  fi
+  case "${raw_value,,}" in
+    1|true|yes|on) target_state='ON' ;;
+    0|false|no|off) target_state='OFF' ;;
+    *) fail 'TARGET_VALUE_INVALID' ;;
+  esac
+}
+
+non_target_checksum() {
+  local source="$1"
+  awk -F= -v key="$TARGET_KEY" '
+    $1 !~ /^[[:space:]]*#/ {
+      candidate = $1
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", candidate)
+      if (candidate == key) next
+    }
+    { print }
+  ' "$source" | sha256sum | awk '{print $1}'
+}
+
+capture_environment_metadata() {
+  env_uid="$(stat -c '%u' -- "$ENV_FILE")"
+  env_gid="$(stat -c '%g' -- "$ENV_FILE")"
+  env_mode="$(stat -c '%a' -- "$ENV_FILE")"
+  [[ "$env_uid" =~ ^[0-9]+$ && "$env_gid" =~ ^[0-9]+$ && "$env_mode" =~ ^[0-7]{3,4}$ ]] || fail 'ENVIRONMENT_METADATA_INVALID'
+  non_target_sha="$(non_target_checksum "$ENV_FILE")"
+  [[ "$non_target_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'NON_TARGET_CHECKSUM_INVALID'
+}
+
+validate_backup_root() {
+  [[ -d "$(dirname -- "$BACKUP_ROOT")" && ! -L "$(dirname -- "$BACKUP_ROOT")" ]] || fail 'BACKUP_PARENT_INVALID'
+  install -d -o root -g root -m 0700 -- "$BACKUP_ROOT"
+  [[ "$(stat -c '%u:%g:%a' -- "$BACKUP_ROOT")" == '0:0:700' ]] || fail 'BACKUP_ROOT_SECURITY_INVALID'
+}
+
+new_backup_id() {
+  local seed
+  seed="$(date -u +%Y%m%dT%H%M%SZ):$$:$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')"
+  backup_id="$(printf '%s' "$seed" | sha256sum | awk '{print $1}')"
+  [[ "$backup_id" =~ ^[0-9a-f]{64}$ ]] || fail 'BACKUP_ID_GENERATION_FAILED'
+}
+
+validate_backup_id() {
+  [[ "${1:-}" =~ ^[0-9a-f]{64}$ ]] || fail 'BACKUP_ID_INVALID'
+}
+
+create_backup() {
+  local backup_dir
+  validate_backup_root
+  new_backup_id
+  backup_dir="$BACKUP_ROOT/$backup_id"
+  mkdir -m 0700 -- "$backup_dir"
+  chown root:root -- "$backup_dir"
+  cp -p -- "$ENV_FILE" "$backup_dir/.env.before"
+  chown root:root -- "$backup_dir/.env.before"
+  chmod 0600 -- "$backup_dir/.env.before"
+  sha256sum -- "$backup_dir/.env.before" > "$backup_dir/.env.before.sha256"
+  chown root:root -- "$backup_dir/.env.before.sha256"
+  chmod 0600 -- "$backup_dir/.env.before.sha256"
+  {
+    printf 'MECHANISM_VERSION=%s\n' "$MECHANISM_VERSION"
+    printf 'TARGET_KEY=%s\n' "$TARGET_KEY"
+    printf 'TARGET_STATE=%s\n' "$target_state"
+    printf 'ENV_UID=%s\nENV_GID=%s\nENV_MODE=%s\n' "$env_uid" "$env_gid" "$env_mode"
+    printf 'NON_TARGET_SHA=%s\n' "$non_target_sha"
+  } > "$backup_dir/metadata"
+  chown root:root -- "$backup_dir/metadata"
+  chmod 0600 -- "$backup_dir/metadata"
+  printf '%s\n' "$backup_id" > "$backup_dir/backup-id"
+  chown root:root -- "$backup_dir/backup-id"
+  chmod 0600 -- "$backup_dir/backup-id"
+  validate_backup_directory "$backup_id"
+}
+
+validate_backup_directory() {
+  local id="$1" backup_dir metadata_lines
+  validate_backup_id "$id"
+  backup_dir="$BACKUP_ROOT/$id"
+  [[ -d "$BACKUP_ROOT" && ! -L "$BACKUP_ROOT" ]] || fail 'BACKUP_ROOT_INVALID'
+  [[ "$(stat -c '%u:%g:%a' -- "$BACKUP_ROOT" 2>/dev/null || true)" == '0:0:700' ]] || fail 'BACKUP_ROOT_SECURITY_INVALID'
+  [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail 'BACKUP_NOT_FOUND'
+  [[ "$(stat -c '%u:%g:%a' -- "$backup_dir" 2>/dev/null || true)" == '0:0:700' ]] || fail 'BACKUP_DIRECTORY_SECURITY_INVALID'
+  for file in .env.before .env.before.sha256 metadata backup-id; do
+    [[ -f "$backup_dir/$file" && ! -L "$backup_dir/$file" ]] || fail 'BACKUP_FILE_MISSING'
+    [[ "$(stat -c '%u:%g:%a' -- "$backup_dir/$file")" == '0:0:600' ]] || fail 'BACKUP_FILE_SECURITY_INVALID'
+  done
+  (cd "$backup_dir" && sha256sum -c .env.before.sha256 >/dev/null 2>&1) || fail 'BACKUP_CHECKSUM_INVALID'
+  [[ "$(cat -- "$backup_dir/backup-id")" == "$id" ]] || fail 'BACKUP_ID_CONTENT_INVALID'
+  metadata_lines="$(wc -l < "$backup_dir/metadata")"
+  [[ "$metadata_lines" -eq 7 ]] || fail 'BACKUP_METADATA_FORMAT_INVALID'
+  awk -F= -v key="$TARGET_KEY" '
+    $1 == "MECHANISM_VERSION" && $2 == "1" {v++}
+    $1 == "TARGET_KEY" && $2 == key {k++}
+    $1 == "TARGET_STATE" && $2 ~ /^(ON|OFF|ABSENT)$/ {s++}
+    $1 == "ENV_UID" && $2 ~ /^[0-9]+$/ {u++}
+    $1 == "ENV_GID" && $2 ~ /^[0-9]+$/ {g++}
+    $1 == "ENV_MODE" && $2 ~ /^[0-7]{3,4}$/ {m++}
+    $1 == "NON_TARGET_SHA" && $2 ~ /^[0-9a-f]{64}$/ {h++}
+    END {exit (v == 1 && k == 1 && s == 1 && u == 1 && g == 1 && m == 1 && h == 1) ? 0 : 1}
+  ' "$backup_dir/metadata" || fail 'BACKUP_METADATA_INVALID'
+}
+
+write_target_off() {
+  local before_sha="$1"
+  temp_env="$(mktemp "${ENV_FILE}.smb-readonly.XXXXXX")"
+  awk -F= -v key="$TARGET_KEY" '
+    {
+      candidate = $1
+      trimmed = candidate
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", trimmed)
+      if (trimmed == key) {
+        print key "=false"
+        seen++
+        next
+      }
+      print
+    }
+    END {
+      if (seen > 1) exit 1
+      if (seen == 0) print key "=false"
+    }
+  ' "$ENV_FILE" > "$temp_env" || fail 'ENVIRONMENT_REWRITE_FAILED'
+  [[ "$(non_target_checksum "$temp_env")" == "$before_sha" ]] || fail 'OTHER_CONFIGURATION_CHANGED'
+  chown "$env_uid:$env_gid" -- "$temp_env"
+  chmod "$env_mode" -- "$temp_env"
+  mv -f -- "$temp_env" "$ENV_FILE"
+  temp_env=''
+}
+
+restore_backup() {
+  local id="$1" backup_dir source expected_uid expected_gid expected_mode expected_hash
+  validate_environment_file
+  validate_backup_directory "$id"
+  backup_dir="$BACKUP_ROOT/$id"
+  source="$backup_dir/.env.before"
+  expected_uid="$(awk -F= '$1 == "ENV_UID" {print $2; exit}' "$backup_dir/metadata")"
+  expected_gid="$(awk -F= '$1 == "ENV_GID" {print $2; exit}' "$backup_dir/metadata")"
+  expected_mode="$(awk -F= '$1 == "ENV_MODE" {print $2; exit}' "$backup_dir/metadata")"
+  expected_hash="$(awk -F= '$1 == "NON_TARGET_SHA" {print $2; exit}' "$backup_dir/metadata")"
+  temp_env="$(mktemp "${ENV_FILE}.smb-readonly-rollback.XXXXXX")"
+  cp -- "$source" "$temp_env"
+  [[ "$(sha256sum "$temp_env" | awk '{print $1}')" == "$(sha256sum "$source" | awk '{print $1}')" ]] || fail 'ROLLBACK_COPY_CHECKSUM_INVALID'
+  chown "$expected_uid:$expected_gid" -- "$temp_env"
+  chmod "$expected_mode" -- "$temp_env"
+  mv -f -- "$temp_env" "$ENV_FILE"
+  temp_env=''
+  validate_environment_file
+  read_target_state
+  [[ "$(non_target_checksum "$ENV_FILE")" == "$expected_hash" ]] || fail 'ROLLBACK_OTHER_CONFIGURATION_CHANGED'
+}
+
+print_common() {
+  printf 'FLAG_HELPER=PASS\nMECHANISM_VERSION=%s\nTARGET_KEY=%s\nENVIRONMENT_FILE=CANONICAL\n' "$MECHANISM_VERSION" "$TARGET_KEY"
+  printf 'TARGET_STATE=%s\nTARGET_KEY_OCCURRENCES=%s\nOTHER_FLAGS_PRESERVED=YES\n' "$target_state" "$target_count"
+}
+
+cleanup() {
+  [[ -z "$temp_env" ]] || rm -f -- "$temp_env"
+}
+trap cleanup EXIT
+
+require_root_and_caller
+case "${1:-}" in
+  --status)
+    [[ "$#" -eq 1 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    mode='status'
+    ;;
+  --dry-run)
+    [[ "$#" -eq 1 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    mode='dry-run'
+    ;;
+  --apply)
+    [[ "$#" -eq 1 ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    mode='apply'
+    ;;
+  --rollback)
+    [[ "$#" -eq 3 && "$2" == '--backup-id' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+    mode='rollback'
+    backup_id="$3"
+    validate_backup_id "$backup_id"
+    ;;
+  *)
+    usage
+    fail 'ARGUMENTS_INVALID'
+    ;;
+esac
+
+validate_environment_file
+read_target_state
+capture_environment_metadata
+
+exec {lock_fd}>"$LOCK_PATH"
+flock -n "$lock_fd" || fail 'LOCK_BUSY'
+
+case "$mode" in
+  status)
+    print_common
+    printf 'STATUS=PASS\nAPPLY=NOT_EXECUTED\nBACKUP=NOT_CREATED\nRELOAD=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
+    ;;
+  dry-run)
+    print_common
+    printf 'DRY_RUN=PASS\nAPPLY=NOT_EXECUTED\nBACKUP=NOT_CREATED\nRELOAD=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
+    ;;
+  apply)
+    if [[ "$target_state" == 'OFF' || "$target_state" == 'ABSENT' ]]; then
+      print_common
+      printf 'APPLY=NOOP\nBACKUP=NOT_CREATED\nTARGET_ALREADY_OFF=YES\nRELOAD=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
+      exit 0
+    fi
+    create_backup
+    write_target_off "$non_target_sha"
+    validate_environment_file
+    read_target_state
+    [[ "$target_state" == 'OFF' && "$target_count" -eq 1 ]] || fail 'POST_APPLY_TARGET_INVALID'
+    [[ "$(non_target_checksum "$ENV_FILE")" == "$non_target_sha" ]] || fail 'POST_APPLY_OTHER_CONFIGURATION_CHANGED'
+    print_common
+    printf 'APPLY=PASS\nBACKUP=CREATED\nBACKUP_ID=%s\nRELOAD=NOT_EXECUTED\nPRODUCTION_CHANGED=YES\n' "$backup_id"
+    ;;
+  rollback)
+    restore_backup "$backup_id"
+    print_common
+    printf 'ROLLBACK=PASS\nBACKUP_ID=%s\nRELOAD=NOT_EXECUTED\nPRODUCTION_CHANGED=YES\n' "$backup_id"
+    ;;
+esac

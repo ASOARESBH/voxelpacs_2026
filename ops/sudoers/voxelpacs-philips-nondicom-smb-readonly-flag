@@ -1,0 +1,6 @@
+# VOXEL PACS — allowlist da flag SMB read-only Non-DICOM
+# Validar com: visudo -cf /etc/sudoers.d/voxelpacs-philips-nondicom-smb-readonly-flag
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-nondicom-smb-readonly-flag --status
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-nondicom-smb-readonly-flag --dry-run
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-nondicom-smb-readonly-flag --apply
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-philips-nondicom-smb-readonly-flag --rollback --backup-id ????????????????????????????????????????????????????????????????
