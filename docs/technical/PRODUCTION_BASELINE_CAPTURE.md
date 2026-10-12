@@ -53,10 +53,11 @@ O arquivo contém exatamente uma SHA de `main` aprovada por linha. O provisioner
 
 No modo `--upgrade`, o provisioner cria backups temporários `root-only`, faz o staging no mesmo filesystem de cada destino e substitui os três componentes com movimentos atômicos. Se qualquer substituição posterior falhar, restaura os componentes já substituídos a partir dos backups e informa `ROLLBACK=PASS`; uma proveniência histórica não comprovada, symlink, owner/mode inesperado ou conjunto parcial de destinos bloqueia antes da escrita. O `--dry-run` nunca cria backup nem modifica destinos.
 
-A allowlist concede somente:
+A allowlist concede somente as duas operações fixas:
 
 ```bash
 sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture capture
+sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile
 ```
 
 Não há shell, path, source, destination, comando, SQL, systemd, Bridge, SMB, Worker ou operação clínica variável pelo caller.
@@ -69,9 +70,22 @@ Se o `installed.php` não existir, não for regular, não puder ser lido ou tive
 
 O identificador do baseline é uma hash técnica do manifesto, não é SHA de commit. O backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
 
+### Refresh de baseline legada sem sidecar
+
+Quando uma baseline existente é íntegra, mas foi criada antes do sidecar Composer e a captura integral retorna `BASELINE_ID_ALREADY_EXISTS`, não se copia o perfil manualmente e não se sobrescreve o manifesto. A operação fixa `refresh-profile`:
+
+1. exige exatamente uma baseline candidata sem `composer-profile.tsv`;
+2. valida diretório, arquivos obrigatórios, checksum do manifesto, derivação do ID e metadata de completude;
+3. executa o mesmo capturador oficial somente para obter o perfil sanitizado em área temporária;
+4. grava backup root-only de `metadata.txt` no path fixo `/var/lib/voxelpacs/admin-backups/composer-profile-refresh`;
+5. adiciona atomicamente apenas `composer-profile.tsv` e os dois marcadores de perfil em `metadata.txt`;
+6. remove temporários conhecidos e preserva o backup, sem alterar o manifesto ou qualquer arquivo de aplicação.
+
+Se ocorrer falha depois do primeiro movimento, o wrapper remove o sidecar novo e restaura `metadata.txt` a partir do backup. Uma baseline já contendo o sidecar, múltiplas candidatas ou qualquer insegurança estrutural bloqueia.
+
 ## Rollback
 
-O modo inicial não substitui destinos existentes; se uma instalação falhar depois de iniciar, os arquivos novos são removidos pelo cleanup fail-closed. O modo `--upgrade` só substitui destinos regulares, históricos e com permissões aprovadas; em falha parcial restaura os blobs anteriores e preserva seus modos. Nenhum modo altera release da aplicação, `.env`, storage, banco ou serviço. Após uma atualização bem-sucedida, qualquer reversão posterior deve ser feita por procedimento administrativo aprovado, preservando evidência e validando novamente `visudo`.
+O modo inicial não substitui destinos existentes; se uma instalação falhar depois de iniciar, os arquivos novos são removidos pelo cleanup fail-closed. O modo `--upgrade` só substitui destinos regulares, históricos e com permissões aprovadas; em falha parcial restaura os blobs anteriores e preserva seus modos. O modo `refresh-profile` não substitui o manifesto nem o sidecar existente; preserva backup root-only e restaura `metadata.txt` em falha parcial. Nenhum modo altera release da aplicação, `.env`, storage, banco ou serviço. Após uma atualização bem-sucedida, qualquer reversão posterior deve ser feita por procedimento administrativo aprovado, preservando evidência e validando novamente `visudo`.
 
 ## Validação
 
@@ -81,6 +95,7 @@ bash -n scripts/provision-production-baseline-capture.sh
 bash -n ops/deploy/voxelpacs-production-baseline-capture
 visudo -cf ops/sudoers/voxelpacs-production-baseline-capture
 bash tests/deploy/production_baseline_provisioner_static.sh
+bash tests/deploy/production_baseline_profile_refresh_isolated.sh
 bash tests/deploy/production_baseline_provisioner_upgrade_isolated.sh
 ```
 
