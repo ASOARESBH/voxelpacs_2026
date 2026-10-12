@@ -277,6 +277,7 @@ jobs:
           bash -n scripts/provision-composer-metadata-profile-auditor.sh
           bash -n tests/deploy/composer_metadata_profile_auditor_static.sh
           bash -n tests/deploy/composer_metadata_profile_auditor_isolated.sh
+          bash -n tests/deploy/composer_metadata_profile_provisioner_isolated.sh
 
       - name: ShellCheck
         run: |
@@ -286,7 +287,8 @@ jobs:
               scripts/build-composer-metadata-profile.sh \
               scripts/provision-composer-metadata-profile-auditor.sh \
               tests/deploy/composer_metadata_profile_auditor_static.sh \
-              tests/deploy/composer_metadata_profile_auditor_isolated.sh
+              tests/deploy/composer_metadata_profile_auditor_isolated.sh \
+              tests/deploy/composer_metadata_profile_provisioner_isolated.sh
           else
             echo "SHELLCHECK=NOT_AVAILABLE"
           fi
@@ -297,11 +299,8 @@ jobs:
       - name: Run isolated profile tests
         run: sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_auditor_isolated.sh
 
-      - name: Run provisioner dry-run
-        run: |
-          expected_sha="$(git rev-parse HEAD)"
-          sudo -n env -u SUDO_USER bash scripts/provision-composer-metadata-profile-auditor.sh \
-            --expected-sha "$expected_sha" --dry-run
+      - name: Run isolated provisioner install tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_provisioner_isolated.sh
 
   philips-folder-policy-applier:
     name: Philips Folder policy applier
