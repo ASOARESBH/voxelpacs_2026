@@ -15,6 +15,7 @@ readonly APPROVAL_PARENT_PARENT='/etc'
 readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'
 readonly MAIN_REF='refs/heads/main'
 readonly LOCK_PATH='/run/lock/voxelpacs-composer-profile-approval.lock'
+readonly BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-approval'
 readonly SOURCE_PATH='scripts/provision-composer-profile-approval.sh'
 
 mode=''
@@ -29,6 +30,9 @@ old_parent_gid=''
 old_parent_mode=''
 lock_fd=''
 temporary_anchor=''
+reconcile_backup_dir=''
+reconcile_backup_file=''
+reconcile_backup_created='NO'
 
 fail() {
   printf 'APPROVAL=BLOCKED\nREASON=%s\nCONFIG_CHANGED=NO\n' "$1" >&2
@@ -39,7 +43,8 @@ usage() {
   printf '%s\n' \
     'uso: provision-composer-profile-approval.sh --expected-sha <40-hex-sha> --inspect' \
     'uso: provision-composer-profile-approval.sh --expected-sha <40-hex-sha> --dry-run' \
-    'uso: provision-composer-profile-approval.sh --expected-sha <40-hex-sha> --apply' >&2
+    'uso: provision-composer-profile-approval.sh --expected-sha <40-hex-sha> --apply' \
+    'uso: provision-composer-profile-approval.sh --expected-sha <40-hex-sha> --reconcile' >&2
 }
 
 parse_args() {
@@ -48,7 +53,7 @@ parse_args() {
   shift 2
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --inspect|--dry-run|--apply)
+      --inspect|--dry-run|--apply|--reconcile)
         [[ -z "$mode" ]] || fail 'ARGUMENTS_INVALID'
         mode="${1#--}"
         ;;
@@ -114,7 +119,7 @@ validate_parent() {
   done < <(find -P "$APPROVAL_PARENT" -mindepth 1 -maxdepth 1 -printf '%f\n')
 }
 
-validate_anchor() {
+validate_anchor_shape() {
   local metadata value line_count
   if [[ ! -e "$APPROVAL_FILE" ]]; then
     return 0
@@ -126,14 +131,20 @@ validate_anchor() {
   [[ "$line_count" -eq 1 ]] || fail 'APPROVAL_ANCHOR_FORMAT_INVALID'
   value="$(cat -- "$APPROVAL_FILE")"
   [[ "$value" =~ ^[0-9a-f]{40}$ ]] || fail 'APPROVAL_ANCHOR_FORMAT_INVALID'
-  [[ "$value" == "$expected_sha" ]] || fail 'APPROVAL_ANCHOR_DIVERGENT'
+}
+
+validate_anchor() {
+  validate_anchor_shape
+  [[ ! -e "$APPROVAL_FILE" || "$(cat -- "$APPROVAL_FILE")" == "$expected_sha" ]] || fail 'APPROVAL_ANCHOR_DIVERGENT'
 }
 
 anchor_state() {
   if [[ ! -e "$APPROVAL_FILE" ]]; then
     printf 'ABSENT'
-  else
+  elif [[ "$(cat -- "$APPROVAL_FILE")" == "$expected_sha" ]]; then
     printf 'CORRESPONDING'
+  else
+    printf 'DIVERGENT'
   fi
 }
 
@@ -151,7 +162,16 @@ rollback_on_error() {
   local status="$?" restore_status=0
   trap - EXIT
   if [[ "$status" -ne 0 && "$write_started" == 'YES' ]]; then
-    if [[ "$anchor_created" == 'YES' && -e "$APPROVAL_FILE" && ! -L "$APPROVAL_FILE" ]]; then
+    if [[ "$mode" == 'reconcile' && "$reconcile_backup_created" == 'YES' && -f "$reconcile_backup_file" && ! -L "$reconcile_backup_file" ]]; then
+      temporary_anchor="$(mktemp "$APPROVAL_PARENT/.voxelpacs-composer-profile-restore.XXXXXX")" || restore_status=1
+      if [[ "$restore_status" -eq 0 ]]; then
+        chmod 0600 -- "$temporary_anchor" || restore_status=1
+        chown root:root -- "$temporary_anchor" || restore_status=1
+        install -m 0600 -- "$reconcile_backup_file" "$temporary_anchor" || restore_status=1
+        mv -T -- "$temporary_anchor" "$APPROVAL_FILE" || restore_status=1
+        temporary_anchor=''
+      fi
+    elif [[ "$anchor_created" == 'YES' && -e "$APPROVAL_FILE" && ! -L "$APPROVAL_FILE" ]]; then
       rm -f -- "$APPROVAL_FILE" || restore_status=1
     fi
     if [[ "$parent_created" == 'YES' && -d "$APPROVAL_PARENT" && ! -L "$APPROVAL_PARENT" ]]; then
@@ -174,6 +194,45 @@ acquire_lock() {
   [[ -d "$(dirname -- "$LOCK_PATH")" && ! -L "$(dirname -- "$LOCK_PATH")" ]] || fail 'LOCK_DIRECTORY_INVALID'
   exec {lock_fd}>"$LOCK_PATH"
   flock -n "$lock_fd" || fail 'APPROVAL_LOCK_BUSY'
+}
+
+validate_backup_parent() {
+  local metadata mode_bits
+  if [[ ! -e "$BACKUP_PARENT" ]]; then
+    return 0
+  fi
+  [[ -d "$BACKUP_PARENT" && ! -L "$BACKUP_PARENT" ]] || fail 'BACKUP_PARENT_TYPE_INVALID'
+  metadata="$(stat -c '%u:%g:%a' -- "$BACKUP_PARENT")"
+  [[ "${metadata%%:*}" == '0' && "${metadata#*:}" == 0:* ]] || fail 'BACKUP_PARENT_OWNER_INVALID'
+  mode_bits="${metadata##*:}"
+  (( (8#$mode_bits & 18) == 0 )) || fail 'BACKUP_PARENT_MODE_WRITEABLE'
+}
+
+reconcile_changes() {
+  local backup_metadata
+  [[ "$(anchor_state)" == 'DIVERGENT' ]] || fail 'RECONCILE_ANCHOR_NOT_DIVERGENT'
+  validate_backup_parent
+  if [[ ! -e "$BACKUP_PARENT" ]]; then
+    install -d -o root -g root -m 0700 -- "$BACKUP_PARENT"
+  fi
+  backup_metadata="$(stat -c '%u:%g:%a' -- "$BACKUP_PARENT")"
+  [[ "$backup_metadata" == '0:0:700' ]] || fail 'BACKUP_PARENT_SECURITY_INVALID'
+  reconcile_backup_dir="$(mktemp -d "$BACKUP_PARENT/reconcile.XXXXXX")" || fail 'BACKUP_DIRECTORY_CREATE_FAILED'
+  chown root:root -- "$reconcile_backup_dir"
+  chmod 0700 -- "$reconcile_backup_dir"
+  reconcile_backup_file="$reconcile_backup_dir/voxelpacs-composer-profile-approved-main-sha"
+  install -o root -g root -m 0600 -- "$APPROVAL_FILE" "$reconcile_backup_file" || fail 'BACKUP_ANCHOR_COPY_FAILED'
+  [[ "$(stat -c '%u:%g:%a' -- "$reconcile_backup_file")" == '0:0:600' ]] || fail 'BACKUP_ANCHOR_SECURITY_INVALID'
+  reconcile_backup_created='YES'
+  write_started='YES'
+  temporary_anchor="$(mktemp "$APPROVAL_PARENT/.voxelpacs-composer-profile-new.XXXXXX")" || fail 'RECONCILE_STAGE_CREATE_FAILED'
+  chmod 0600 -- "$temporary_anchor"
+  chown root:root -- "$temporary_anchor"
+  printf '%s\n' "$expected_sha" > "$temporary_anchor"
+  mv -T -- "$temporary_anchor" "$APPROVAL_FILE" || fail 'RECONCILE_ANCHOR_REPLACE_FAILED'
+  temporary_anchor=''
+  validate_anchor
+  printf 'RECONCILE=PASS\nBACKUP=PASS\nBACKUP_PATH=%s\nANCHOR_MATCH=YES\nROLLBACK=NOT_NEEDED\nCONFIG_CHANGED=YES\nAPPLICATION_CHANGED=NO\nDATABASE_CHANGED=NO\n' "$reconcile_backup_dir"
 }
 
 report_state() {
@@ -218,7 +277,7 @@ require_root_and_caller
 validate_repo
 validate_fixed_parent_parent
 validate_parent
-validate_anchor
+validate_anchor_shape
 
 if [[ "$mode" == 'inspect' ]]; then
   report_state
@@ -235,15 +294,24 @@ if [[ "$mode" == 'dry-run' ]]; then
   else
     printf 'DIRECTORY_ACTION=UNCHANGED\n'
   fi
-  if [[ ! -e "$APPROVAL_FILE" ]]; then
-    printf 'ANCHOR_ACTION=CREATE\n'
-  else
-    printf 'ANCHOR_ACTION=UNCHANGED\n'
-  fi
-  printf 'DRY_RUN=PASS\nAPPLY=NOT_EXECUTED\nCONFIG_CHANGED=NO\n'
+  case "$(anchor_state)" in
+    ABSENT) printf 'ANCHOR_ACTION=CREATE\n' ;;
+    CORRESPONDING) printf 'ANCHOR_ACTION=UNCHANGED\n' ;;
+    DIVERGENT) printf 'ANCHOR_ACTION=RECONCILE\n' ;;
+  esac
+  printf 'DRY_RUN=PASS\nAPPLY=NOT_EXECUTED\nRECONCILE=NOT_EXECUTED\nCONFIG_CHANGED=NO\n'
   exit 0
 fi
 
+if [[ "$mode" == 'reconcile' ]]; then
+  acquire_lock
+  trap rollback_on_error EXIT
+  reconcile_changes
+  trap - EXIT
+  exit 0
+fi
+
+validate_anchor
 acquire_lock
 trap rollback_on_error EXIT
 apply_changes

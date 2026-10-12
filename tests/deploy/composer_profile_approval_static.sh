@@ -13,6 +13,7 @@ for required in \
   "readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" \
   "readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'" \
   "readonly MAIN_REF='refs/heads/main'" \
+  "readonly BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-approval'" \
   "validate_fixed_parent_parent" \
   "validate_parent" \
   "validate_anchor" \
@@ -38,10 +39,12 @@ for forbidden in \
 done
 
 grep -Fq "[[ \"\$#\" -ge 3 && \"\$1\" == '--expected-sha' ]]" "$helper" || fail fixed_expected_sha_contract
-grep -Fq -- "--inspect|--dry-run|--apply" "$helper" || fail fixed_modes
+grep -Fq -- "--inspect|--dry-run|--apply|--reconcile" "$helper" || fail fixed_modes
 ! grep -Eq '^[[:space:]]*(mkdir|install|ln|mv|cp|rm|chmod|chown)[[:space:]].*\$[0-9]' "$helper" || fail caller_path_in_command
 
 grep -Fq "APPROVAL_ANCHOR_DIVERGENT" "$helper" || fail divergent_anchor_guard
+grep -Fq "RECONCILE_ANCHOR_NOT_DIVERGENT" "$helper" || fail reconcile_state_guard
+grep -Fq "BACKUP_ANCHOR_COPY_FAILED" "$helper" || fail backup_guard
 grep -Fq "APPROVAL_ANCHOR_CREATE_RACE" "$helper" || fail create_race_guard
 grep -Fq "FINAL_PARENT_VALIDATION_FAILED" "$helper" || fail final_validation_guard
 grep -Fq "ROLLBACK=PASS" "$helper" || fail rollback_guard

@@ -21,6 +21,7 @@ bare_repo="$fixture_root/remote.git"
 config_parent="$fixture_root/config"
 approval_parent="$config_parent/voxelpacs-composer-profile"
 approval_file="$approval_parent/voxelpacs-composer-profile-approved-main-sha"
+backup_parent="$fixture_root/backups/composer-profile-approval"
 shared_parent="$config_parent/voxelpacs"
 shared_file="$shared_parent/existing-admin-config"
 lock_parent="$fixture_root/lock"
@@ -29,7 +30,7 @@ helper="$fixture_repo/scripts/provision-composer-profile-approval.sh"
 mkdir -p "$fixture_repo/scripts" "$config_parent" "$shared_parent" "$lock_parent"
 printf 'preexisting-admin-config\n' > "$shared_file"
 cp -- "$source_helper" "$helper"
-python3 - "$helper" "$config_parent" "$approval_parent" "$approval_file" "$lock_path" "$bare_repo" <<'PY'
+python3 - "$helper" "$config_parent" "$approval_parent" "$approval_file" "$lock_path" "$bare_repo" "$backup_parent" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -39,6 +40,7 @@ replacements = {
     "readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'": f"readonly APPROVAL_FILE={sys.argv[4]!r}",
     "readonly APPROVAL_PARENT_PARENT='/etc'": f"readonly APPROVAL_PARENT_PARENT={sys.argv[2]!r}",
     "readonly LOCK_PATH='/run/lock/voxelpacs-composer-profile-approval.lock'": f"readonly LOCK_PATH={sys.argv[5]!r}",
+    "readonly BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-approval'": f"readonly BACKUP_PARENT={sys.argv[7]!r}",
     "readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'": f"readonly CANONICAL_REMOTE={'file://' + sys.argv[6]!r}",
 }
 for old, new in replacements.items():
@@ -135,9 +137,23 @@ run_as_root unlink "$approval_file"
 printf '%s\n' '0000000000000000000000000000000000000000' | run_as_root tee "$approval_file" >/dev/null
 run_as_root chown root:root "$approval_file"
 run_as_root chmod 0600 "$approval_file"
-before_divergent="$(run_as_root sha256sum "$approval_file")"
-assert_blocked APPROVAL_ANCHOR_DIVERGENT --inspect
-[[ "$(run_as_root sha256sum "$approval_file")" == "$before_divergent" ]] || fail divergent_anchor_overwritten
+before_divergent="$(run_as_root sha256sum "$approval_file" | awk '{print $1}')"
+divergent_inspect_output="$(run_helper --inspect)"
+grep -Fxq 'ANCHOR_STATE=DIVERGENT' <<<"$divergent_inspect_output" || fail divergent_inspect_state
+[[ "$(run_as_root sha256sum "$approval_file" | awk '{print $1}')" == "$before_divergent" ]] || fail divergent_anchor_overwritten
+assert_blocked APPROVAL_ANCHOR_DIVERGENT --apply
+reconcile_dry_output="$(run_helper --dry-run)"
+grep -Fxq 'ANCHOR_ACTION=RECONCILE' <<<"$reconcile_dry_output" || fail reconcile_dry_action
+reconcile_output="$(run_helper --reconcile)"
+grep -Fxq 'RECONCILE=PASS' <<<"$reconcile_output" || fail reconcile_result
+grep -Fxq 'BACKUP=PASS' <<<"$reconcile_output" || fail reconcile_backup_result
+backup_dir="$(sed -n 's/^BACKUP_PATH=//p' <<<"$reconcile_output")"
+[[ -n "$backup_dir" && -d "$backup_dir" ]] || fail reconcile_backup_path
+backup_file="$backup_dir/voxelpacs-composer-profile-approved-main-sha"
+[[ "$(run_as_root stat -c '%u:%g:%a' "$backup_file")" == '0:0:600' ]] || fail reconcile_backup_mode
+[[ "$(run_as_root sha256sum "$backup_file" | awk '{print $1}')" == "$before_divergent" ]] || fail reconcile_backup_contents
+run_as_root grep -Fxq "$fixture_sha" "$approval_file" || fail reconcile_anchor_value
+[[ "$(run_as_root sha256sum "$approval_file" | awk '{print $1}')" != "$before_divergent" ]] || fail reconcile_anchor_changed
 run_as_root unlink "$approval_file"
 run_helper --apply >/dev/null
 
@@ -175,4 +191,4 @@ assert_blocked ARGUMENTS_INVALID --dry-run /tmp
 [[ "$(run_as_root stat -c '%u:%g:%a' "$approval_file")" == '0:0:600' ]] || fail final_anchor_state
 run_as_root grep -Fxq "$fixture_sha" "$approval_file" || fail final_anchor_value
 [[ "$(run_as_root sha256sum "$shared_file")" == "$shared_before" ]] || fail shared_parent_touched
-printf 'TEST=PASS\nCOMPOSER_PROFILE_APPROVAL_ISOLATED=PASS\nDRY_RUN=PASS\nAPPLY=PASS\nIDEMPOTENT_NO_REPLACE=PASS\nGROUP_RECONCILIATION=PASS\nOWNER_REJECTION=PASS\nMODE_REJECTION=PASS\nSYMLINK_REJECTION=PASS\nDIVERGENT_ANCHOR_REJECTION=PASS\nORIGIN_REJECTION=PASS\nDIRTY_CHECKOUT_REJECTION=PASS\nARGUMENT_REJECTION=PASS\nSHARED_PARENT_PRESERVED=PASS\nFINAL_VALIDATION=PASS\nHOST1_CHANGED=NO\n'
+printf 'TEST=PASS\nCOMPOSER_PROFILE_APPROVAL_ISOLATED=PASS\nDRY_RUN=PASS\nAPPLY=PASS\nIDEMPOTENT_NO_REPLACE=PASS\nGROUP_RECONCILIATION=PASS\nOWNER_REJECTION=PASS\nMODE_REJECTION=PASS\nSYMLINK_REJECTION=PASS\nDIVERGENT_ANCHOR_REJECTION=PASS\nRECONCILE_BACKUP=PASS\nRECONCILE_ATOMIC=PASS\nORIGIN_REJECTION=PASS\nDIRTY_CHECKOUT_REJECTION=PASS\nARGUMENT_REJECTION=PASS\nSHARED_PARENT_PRESERVED=PASS\nFINAL_VALIDATION=PASS\nHOST1_CHANGED=NO\n'
