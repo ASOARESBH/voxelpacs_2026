@@ -57,7 +57,7 @@ A allowlist concede somente as duas operações fixas:
 
 ```bash
 sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture capture
-sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile
+sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile <baseline-id-40hex>
 ```
 
 Não há shell, path, source, destination, comando, SQL, systemd, Bridge, SMB, Worker ou operação clínica variável pelo caller.
@@ -74,14 +74,14 @@ O identificador do baseline é uma hash técnica do manifesto, não é SHA de co
 
 Quando uma baseline existente é íntegra, mas foi criada antes do sidecar Composer e a captura integral retorna `BASELINE_ID_ALREADY_EXISTS`, não se copia o perfil manualmente e não se sobrescreve o manifesto. A operação fixa `refresh-profile`:
 
-1. exige exatamente uma baseline candidata sem `composer-profile.tsv`;
+1. exige um `baseline-id` explícito de 40 hexadecimais e não enumera nem escolhe candidatas;
 2. valida diretório, arquivos obrigatórios, checksum do manifesto, derivação do ID e metadata de completude;
 3. executa o mesmo capturador oficial somente para obter o perfil sanitizado em área temporária;
 4. grava backup root-only de `metadata.txt` no path fixo `/var/lib/voxelpacs/admin-backups/composer-profile-refresh`;
 5. adiciona atomicamente apenas `composer-profile.tsv` e os dois marcadores de perfil em `metadata.txt`;
 6. remove temporários conhecidos e preserva o backup, sem alterar o manifesto ou qualquer arquivo de aplicação.
 
-Se ocorrer falha depois do primeiro movimento, o wrapper remove o sidecar novo e restaura `metadata.txt` a partir do backup. Uma baseline já contendo o sidecar, múltiplas candidatas ou qualquer insegurança estrutural bloqueia.
+Se ocorrer falha depois do primeiro movimento, o wrapper remove o sidecar novo e restaura `metadata.txt` a partir do backup. Uma baseline já contendo o sidecar, um ID inexistente ou qualquer insegurança estrutural bloqueia; outras baselines presentes não influenciam a escolha.
 
 ## Rollback
 

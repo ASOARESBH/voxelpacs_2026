@@ -1,4 +1,5 @@
 # VOXEL PACS — allowlist da captura/refresh root-controlled do baseline
 # Validar com: visudo -cf /etc/sudoers.d/voxelpacs-production-baseline-capture
+# Cada ? representa uma posição do baseline-id técnico; o helper valida hexadecimal.
 manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-production-baseline-capture capture
-manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile ????????????????????????????????????????

@@ -131,7 +131,7 @@ validate_wrapper_contract() {
   grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_PATH_INVALID'
   grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_PATH_INVALID'
   grep -Fq '1:capture)' "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_ARGUMENT_CONTRACT_INVALID'
-  grep -Fq '1:refresh-profile)' "$WRAPPER_SOURCE" || fail 'WRAPPER_REFRESH_ARGUMENT_CONTRACT_INVALID'
+  grep -Fq '2:refresh-profile)' "$WRAPPER_SOURCE" || fail 'WRAPPER_REFRESH_ARGUMENT_CONTRACT_INVALID'
   grep -Fq -- '--composer-profile-sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_ARGUMENT_INVALID'
   grep -Fq 'read_approved_composer_profile_sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_INVALID'
   grep -Fq 'COMPOSER_PROFILE=PASS' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_RESULT_INVALID'
@@ -142,7 +142,7 @@ validate_wrapper_contract() {
 validate_sudoers() {
   [[ "$(grep -Ec '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$SUDOERS_SOURCE")" -eq 2 ]] || fail 'SUDOERS_RULE_COUNT_INVALID'
   grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$SUDOERS_SOURCE" || fail 'SUDOERS_CAPTURE_COMMAND_MISSING'
-  grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile' "$SUDOERS_SOURCE" || fail 'SUDOERS_REFRESH_COMMAND_MISSING'
+  grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile ????????????????????????????????????????' "$SUDOERS_SOURCE" || fail 'SUDOERS_REFRESH_COMMAND_MISSING'
   ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$SUDOERS_SOURCE" || fail 'GENERIC_SUDO_RULE_PRESENT'
   ! grep -Eq '/bin/(ba|d)?sh|/usr/(bin|sbin)/(cp|mv|rm|rsync|install|python|php|composer|systemctl)' "$SUDOERS_SOURCE" || fail 'GENERIC_COMMAND_PRESENT'
   visudo -cf "$SUDOERS_SOURCE" >/dev/null || fail 'SUDOERS_SYNTAX_INVALID'

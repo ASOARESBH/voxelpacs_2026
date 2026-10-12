@@ -144,22 +144,15 @@ rollback_refresh() {
 }
 
 refresh_profile() {
-  local composer_profile_sha="$1" baseline_id='' baseline_dir='' manifest_sha='' candidate_count=0 candidate
-  local operation_dir='' capture_out='' capture_error='' generated_dir='' generated_profile=''
+  local baseline_id="$1" composer_profile_sha="$2" baseline_dir='' manifest_sha=''
+  local operation_dir='' capture_out='' capture_error='' generated_dir='' generated_profile='' validation=''
   local profile_stage='' metadata_stage='' backup_parent='' backup_dir='' backup_metadata=''
   local root_state package_state metadata_original='' write_started='NO' sidecar_written='NO' metadata_replaced='NO'
-  local -a candidate_ids=()
+  [[ "$baseline_id" =~ ^[0-9a-f]{40}$ ]] || fail 'BASELINE_ID_INVALID'
   [[ -x "$CAPTURE_SCRIPT" && ! -L "$CAPTURE_SCRIPT" ]] || fail 'CAPTURE_SCRIPT_UNAVAILABLE'
   [[ -d "$OUTPUT_ROOT" && ! -L "$OUTPUT_ROOT" ]] || fail 'OUTPUT_PARENT_INVALID'
-  while IFS= read -r candidate; do
-    [[ "$candidate" =~ ^[0-9a-f]{40}$ ]] || continue
-    [[ -d "$OUTPUT_ROOT/$candidate" && ! -e "$OUTPUT_ROOT/$candidate/composer-profile.tsv" ]] || continue
-    candidate_ids+=("$candidate")
-  done < <(find -P "$OUTPUT_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
-  candidate_count="${#candidate_ids[@]}"
-  [[ "$candidate_count" -eq 1 ]] || fail 'BASELINE_PROFILE_REFRESH_CANDIDATE_AMBIGUOUS'
-  baseline_id="${candidate_ids[0]}"
-  IFS=$'\t' read -r baseline_dir manifest_sha < <(validate_existing_baseline "$baseline_id")
+  validation="$(validate_existing_baseline "$baseline_id")"
+  IFS=$'\t' read -r baseline_dir manifest_sha <<<"$validation"
   operation_dir="$(mktemp -d /var/tmp/voxelpacs-baseline-profile-refresh.XXXXXX)"
   chmod 0700 "$operation_dir"
   capture_out="$operation_dir/capture.out"
@@ -233,9 +226,9 @@ case "$#:$1" in
     acquire_lock
     run_capture
     ;;
-  1:refresh-profile)
+  2:refresh-profile)
     acquire_lock
-    refresh_profile "$(read_approved_composer_profile_sha)"
+    refresh_profile "$2" "$(read_approved_composer_profile_sha)"
     ;;
   *)
     fail 'ARGUMENTS_INVALID'
