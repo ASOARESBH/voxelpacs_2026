@@ -54,8 +54,8 @@ EOF
 printf '%s\n' 'baseline-manifest-fixture' > "$baseline_root/$baseline_sha/manifest.tsv"
 manifest_sha="$(sha256sum "$baseline_root/$baseline_sha/manifest.tsv" | awk '{print $1}')"
 printf '%s\n' "$manifest_sha" > "$baseline_root/$baseline_sha/manifest.sha256"
-printf 'profile_manifest_sha256\t%s\nprofile_artifact_sha\t%s\nroot_reference_state\tSOURCE_SHA\npackage_reference_state\tSOURCE_SHA\n' \
-  "$manifest_sha" "$artifact_sha" > "$baseline_root/$baseline_sha/composer-profile.tsv"
+printf 'profile_source\tofficial_root_controlled_baseline_profile_v1\nprofile_baseline_id\t%s\nprofile_manifest_sha256\t%s\nprofile_artifact_sha\t%s\nroot_reference_state\tSOURCE_SHA\npackage_reference_state\tSOURCE_SHA\n' \
+  "$baseline_sha" "$manifest_sha" "$artifact_sha" > "$baseline_root/$baseline_sha/composer-profile.tsv"
 chmod 0700 "$baseline_root" "$baseline_root/$baseline_sha"
 chmod 0600 "$baseline_root/$baseline_sha/baseline-id" "$baseline_root/$baseline_sha/manifest.tsv" "$baseline_root/$baseline_sha/manifest.sha256" "$baseline_root/$baseline_sha/composer-profile.tsv"
 run_as_root chown -R root:root "$baseline_root"
@@ -116,6 +116,52 @@ cat > "$app/vendor/composer/installed.php" <<EOF
 return array(
     'root' => array(
         'reference' => '$artifact_sha',
+    ),
+    'versions' => array(
+        'voxel/bi' => array(
+            'reference' => '$artifact_sha',
+            'reference' => '$other_sha',
+        ),
+    ),
+);
+EOF
+set +e
+duplicate_reference="$(run_helper 2>&1)"
+duplicate_reference_rc=$?
+set -e
+[[ "$duplicate_reference_rc" -eq 65 ]] || fail duplicate_reference_exit_code
+grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$duplicate_reference" || fail duplicate_reference_state
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$duplicate_reference" || fail duplicate_reference_audit_status
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$artifact_sha',
+    ),
+    'versions' => array(
+        'voxel/bi' => array(
+            'reference' => '$artifact_sha',
+        ),
+        'voxel/bi' => array(
+            'reference' => '$other_sha',
+        ),
+    ),
+);
+EOF
+set +e
+duplicate_package="$(run_helper 2>&1)"
+duplicate_package_rc=$?
+set -e
+[[ "$duplicate_package_rc" -eq 65 ]] || fail duplicate_package_exit_code
+grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$duplicate_package" || fail duplicate_package_state
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$duplicate_package" || fail duplicate_package_audit_status
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$artifact_sha',
 EOF
 set +e
 unclosed_root="$(run_helper 2>&1)"
@@ -160,10 +206,15 @@ return array(
     ),
 );
 EOF
-mismatch="$(run_helper)"
+set +e
+mismatch="$(run_helper 2>&1)"
+mismatch_rc=$?
+set -e
+[[ "$mismatch_rc" -eq 66 ]] || fail mismatch_exit_code
 grep -Fxq 'PROFILE_COMPARISON=COMPLETE' <<<"$mismatch" || fail mismatch_complete
 grep -Fxq 'PROFILE_DIAGNOSIS=PROFILE_STATES_DIFFER' <<<"$mismatch" || fail mismatch_diagnosis
 grep -Fxq 'ARTIFACT_RUNTIME_ROOT_COMPARISON=DIFFER' <<<"$mismatch" || fail mismatch_root
+grep -Fxq 'AUDIT=FAIL' <<<"$mismatch" || fail mismatch_audit_status
 ! grep -Fq "$other_sha" <<<"$mismatch" || fail runtime_sha_exposed
 
 cat > "$app/vendor/composer/installed.php" <<EOF
@@ -208,7 +259,7 @@ unavailable="$(run_helper 2>&1)"
 unavailable_rc=$?
 set -e
 [[ "$unavailable_rc" -eq 65 ]] || fail baseline_unavailable_exit_code
-grep -Fxq 'BASELINE_PROFILE=NO' <<<"$unavailable" || fail baseline_unavailable
+grep -Fxq 'BASELINE_PROFILE=UNVERIFIED' <<<"$unavailable" || fail baseline_unavailable
 grep -Fxq 'PROFILE_COMPARISON=INCOMPLETE' <<<"$unavailable" || fail incomplete_comparison
 grep -Fxq 'PROFILE_DIAGNOSIS=BASELINE_PROFILE_UNAVAILABLE' <<<"$unavailable" || fail unavailable_diagnosis
 grep -Fxq 'AUDIT=INCOMPLETE' <<<"$unavailable" || fail unavailable_audit_status
@@ -251,6 +302,29 @@ cat > "$app/vendor/composer/installed.php" <<EOF
 return array(
     'root' => array(
         'reference' => '$expected_head',
+    ),
+    'versions' => array(
+        'voxel/bi' => array(
+            'reference' => '$expected_head',
+        ),
+        'voxel/bi' => array(
+            'reference' => '$other_sha',
+        ),
+    ),
+);
+EOF
+duplicate_profile="$fixture_root/duplicate-profile.tsv"
+bash "$profile_repo/scripts/build-composer-metadata-profile.sh" \
+  --input "$app/vendor/composer/installed.php" \
+  --expected-sha "$expected_head" \
+  --output "$duplicate_profile" > "$fixture_root/duplicate-profile-builder.out"
+grep -Fqx $'package_reference_state\tUNRESOLVED' "$duplicate_profile" || fail profile_builder_duplicate_package
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$expected_head',
 EOF
 unclosed_profile="$fixture_root/unclosed-profile.tsv"
 bash "$profile_repo/scripts/build-composer-metadata-profile.sh" \
@@ -259,4 +333,4 @@ bash "$profile_repo/scripts/build-composer-metadata-profile.sh" \
   --output "$unclosed_profile" > "$fixture_root/unclosed-profile-builder.out"
 grep -Fqx $'root_reference_state\tUNRESOLVED' "$unclosed_profile" || fail profile_builder_unclosed_root
 
-printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nUNCLOSED_STRUCTURES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'
+printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nDUPLICATE_REFERENCES=PASS\nDUPLICATE_PACKAGE=PASS\nUNCLOSED_STRUCTURES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nFAIL_STATUS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'

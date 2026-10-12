@@ -20,6 +20,7 @@ readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-composer-metadata-profile-a
 readonly LOCK_PATH='/run/lock/voxelpacs-composer-metadata-profile-auditor-provision.lock'
 readonly HELPER_PARENT='/usr/local/sbin'
 readonly SUDOERS_PARENT='/etc/sudoers.d'
+readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-metadata-profile-approved-main-shas'
 
 mode=''
 expected_sha=''
@@ -64,6 +65,22 @@ validate_repo() {
   [[ "$main_sha" == "$expected_sha" ]] || fail 'EXPECTED_SHA_NOT_ORIGIN_MAIN'
   [[ "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" == "$expected_sha" ]] || fail 'GIT_SHA_MISMATCH'
   [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || fail 'WORKTREE_NOT_CLEAN'
+}
+
+validate_approval() {
+  local approval_parent approval_metadata approval_file_metadata approval_mode
+  approval_parent="$(dirname -- "$APPROVAL_FILE")"
+  [[ -d "$approval_parent" && ! -L "$approval_parent" ]] || fail 'APPROVAL_DIRECTORY_INVALID'
+  approval_metadata="$(stat -c '%u:%g:%a' -- "$approval_parent" 2>/dev/null || true)"
+  [[ "$approval_metadata" == 0:0:* ]] || fail 'APPROVAL_DIRECTORY_OWNERSHIP_INVALID'
+  approval_mode="${approval_metadata##*:}"
+  [[ "$approval_mode" =~ ^[0-7]{3,4}$ ]] || fail 'APPROVAL_DIRECTORY_MODE_INVALID'
+  (( (8#$approval_mode & 18) == 0 )) || fail 'APPROVAL_DIRECTORY_GROUP_OTHER_WRITE'
+  [[ -f "$APPROVAL_FILE" && ! -L "$APPROVAL_FILE" ]] || fail 'APPROVAL_FILE_UNAVAILABLE'
+  approval_file_metadata="$(stat -c '%u:%g:%a' -- "$APPROVAL_FILE" 2>/dev/null || true)"
+  [[ "$approval_file_metadata" == '0:0:600' ]] || fail 'APPROVAL_FILE_SECURITY_INVALID'
+  awk 'NF != 1 || $1 !~ /^[0-9a-f]{40}$/ { bad=1 } END { exit bad ? 1 : 0 }' "$APPROVAL_FILE" || fail 'APPROVAL_FILE_FORMAT_INVALID'
+  [[ "$(grep -Fxc -- "$expected_sha" "$APPROVAL_FILE")" -eq 1 ]] || fail 'EXPECTED_SHA_NOT_APPROVED'
 }
 
 validate_sources() {
@@ -179,11 +196,12 @@ link_no_replace() {
 parse_args "$@"
 require_root
 validate_repo
+validate_approval
 validate_sources
 validate_helper_contract
 validate_sudoers
 validate_install_scope
-printf 'SOURCE_SHA=%s\nCANONICAL_REMOTE=PASS\nORIGIN_MAIN_MATCH=PASS\nTARGET_PATH=vendor/composer/installed.php\nPROFILE=STATE_ONLY_V1\n' "$expected_sha"
+printf 'SOURCE_SHA=%s\nCANONICAL_REMOTE=PASS\nORIGIN_MAIN_MATCH=PASS\nADMIN_APPROVAL=PASS\nTARGET_PATH=vendor/composer/installed.php\nPROFILE=STATE_ONLY_V1\n' "$expected_sha"
 if [[ "$mode" == 'dry-run' ]]; then
   printf 'SOURCE_SHA_CHECK=PASS\nHELPER_CHECK=PASS\nSUDOERS_SYNTAX=PASS\nADMIN_DIRECTORIES=PASS\nTARGETS_ABSENT=PASS\nDRY_RUN=PASS\nINSTALL=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
   exit 0

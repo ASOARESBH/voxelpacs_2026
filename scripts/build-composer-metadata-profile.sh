@@ -134,6 +134,7 @@ def package_reference_state() -> str:
     versions_depth = 0
     package_depth = 0
     package_found = False
+    package_entries = 0
     direct = []
     any_references = 0
     closed = False
@@ -142,11 +143,14 @@ def package_reference_state() -> str:
             if VERSIONS_START.search(line):
                 versions_depth = 1
             continue
+        if versions_depth == 1 and PACKAGE_START.search(line):
+            package_entries += 1
+            if package_entries > 1:
+                return 'UNRESOLVED'
+            package_found = True
+            package_depth = 1
+            continue
         if not package_found:
-            if versions_depth == 1 and PACKAGE_START.search(line):
-                package_found = True
-                package_depth = 1
-                continue
             versions_depth += delta(line)
             if versions_depth <= 0:
                 break
@@ -159,8 +163,8 @@ def package_reference_state() -> str:
             package_depth += delta(line)
             if package_depth <= 0:
                 closed = True
-                break
-    if package_found and closed and len(direct) == 1 and any_references == 1:
+                package_depth = 0
+    if package_entries == 1 and package_found and closed and len(direct) == 1 and any_references == 1:
         return direct[0]
     return 'UNRESOLVED'
 
