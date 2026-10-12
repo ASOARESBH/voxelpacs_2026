@@ -38,7 +38,7 @@ create_fixture_repo() {
     -e "s|readonly INSTALLED_HELPER='/usr/local/sbin/voxelpacs-composer-metadata-profile-auditor'|readonly INSTALLED_HELPER='$helper_parent/voxelpacs-composer-metadata-profile-auditor'|" \
     -e "s|readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-composer-metadata-profile-auditor'|readonly INSTALLED_SUDOERS='$sudoers_parent/voxelpacs-composer-metadata-profile-auditor'|" \
     -e "s|readonly LOCK_PATH='/run/lock/voxelpacs-composer-metadata-profile-auditor-provision.lock'|readonly LOCK_PATH='$lock_root/provision.lock'|" \
-    -e "s|readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas'|readonly APPROVAL_FILE='$approval_parent/approved-main-shas'|" \
+    -e "s|readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'|readonly APPROVAL_FILE='$approval_parent/approved-main-sha'|" \
     "$root/scripts/provision-composer-metadata-profile-auditor.sh"
   chmod 0755 "$root/scripts/provision-composer-metadata-profile-auditor.sh" "$root/ops/deploy/voxelpacs-composer-metadata-profile-auditor"
   chmod 0644 "$root/ops/sudoers/voxelpacs-composer-metadata-profile-auditor"
@@ -51,9 +51,9 @@ create_fixture_repo() {
   git -C "$root" commit -q -m 'test: isolated composer provisioner'
   git -C "$root" branch -M main
   git -C "$root" update-ref refs/remotes/origin/main HEAD
-  printf '%s\n' "$(git -C "$root" rev-parse HEAD)" > "$approval_parent/approved-main-shas"
-  chown root:root "$approval_parent/approved-main-shas"
-  chmod 0600 "$approval_parent/approved-main-shas"
+  printf '%s\n' "$(git -C "$root" rev-parse HEAD)" > "$approval_parent/approved-main-sha"
+  chown root:root "$approval_parent/approved-main-sha"
+  chmod 0600 "$approval_parent/approved-main-sha"
   chown root:root "$approval_parent"
   chmod 0700 "$approval_parent"
   printf '%s\n' "$root"
@@ -160,9 +160,9 @@ git -C "$failure" add scripts/provision-composer-metadata-profile-auditor.sh
 git -C "$failure" commit -q -m 'test: inject second install failure'
 git -C "$failure" update-ref refs/remotes/origin/main HEAD
 failure_sha="$(git -C "$failure" rev-parse HEAD)"
-printf '%s\n' "$failure_sha" > "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
-chown root:root "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
-chmod 0600 "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
+printf '%s\n' "$failure_sha" > "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-sha"
+chown root:root "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-sha"
+chmod 0600 "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-sha"
 set +e
 failure_output="$(run_as_root env -u SUDO_USER bash "$failure_provisioner" --expected-sha "$failure_sha" --install 2>&1)"
 failure_rc=$?
