@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VOXEL PACS — provisionamento root-controlled da captura de baseline.
-# Exige checkout limpo e SHA exata; --dry-run não grava destinos.
+# Exige checkout limpo e SHA exata; --dry-run não altera destinos.
 set -Eeuo pipefail
 umask 077
 export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
@@ -12,19 +12,29 @@ readonly ROOT
 readonly CAPTURE_SOURCE="$ROOT/scripts/capture-production-baseline.sh"
 readonly WRAPPER_SOURCE="$ROOT/ops/deploy/voxelpacs-production-baseline-capture"
 readonly SUDOERS_SOURCE="$ROOT/ops/sudoers/voxelpacs-production-baseline-capture"
-readonly INSTALLED_CAPTURE='/usr/local/sbin/voxelpacs-capture-production-baseline'
-readonly INSTALLED_WRAPPER='/usr/local/sbin/voxelpacs-production-baseline-capture'
-readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-production-baseline-capture'
+readonly CAPTURE_PARENT='/usr/local/sbin'
+readonly SUDOERS_PARENT='/etc/sudoers.d'
+readonly INSTALLED_CAPTURE="$CAPTURE_PARENT/voxelpacs-capture-production-baseline"
+readonly INSTALLED_WRAPPER="$CAPTURE_PARENT/voxelpacs-production-baseline-capture"
+readonly INSTALLED_SUDOERS="$SUDOERS_PARENT/voxelpacs-production-baseline-capture"
 readonly LOCK_PATH='/run/lock/voxelpacs-production-baseline-capture-provision.lock'
-readonly STAGE_BASE='/var/tmp'
+readonly OPERATION_PARENT='/var/tmp'
 
 mode=''
 expected_sha=''
-stage_dir=''
+upgrade='NO'
+operation_dir=''
+stage_capture_dir=''
+stage_sudoers_dir=''
+stage_capture=''
+stage_wrapper=''
+stage_sudoers=''
+backup_dir=''
 lock_fd=''
-installed_capture=0
-installed_wrapper=0
-installed_sudoers=0
+write_started='NO'
+replaced_capture='NO'
+replaced_wrapper='NO'
+replaced_sudoers='NO'
 
 fail() {
   printf 'PROVISION=BLOCKED\nREASON=%s\n' "$1" >&2
@@ -34,17 +44,37 @@ fail() {
 usage() {
   printf '%s\n' \
     'uso: provision-production-baseline-capture.sh --expected-sha <40-hex-sha> --dry-run' \
-    'uso: provision-production-baseline-capture.sh --expected-sha <40-hex-sha> --install' >&2
+    'uso: provision-production-baseline-capture.sh --expected-sha <40-hex-sha> --install' \
+    'uso: provision-production-baseline-capture.sh --expected-sha <40-hex-sha> --upgrade --dry-run' \
+    'uso: provision-production-baseline-capture.sh --expected-sha <40-hex-sha> --upgrade --install' >&2
 }
 
 parse_args() {
-  [[ "$#" -eq 3 && "$1" == '--expected-sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+  [[ "$#" -ge 3 && "$1" == '--expected-sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
   expected_sha="$2"
-  case "$3" in
-    --dry-run) mode='dry-run' ;;
-    --install) mode='install' ;;
-    *) usage; fail 'ARGUMENTS_INVALID' ;;
-  esac
+  shift 2
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        [[ -z "$mode" ]] || fail 'ARGUMENTS_INVALID'
+        mode='dry-run'
+        ;;
+      --install)
+        [[ -z "$mode" ]] || fail 'ARGUMENTS_INVALID'
+        mode='install'
+        ;;
+      --upgrade)
+        [[ "$upgrade" == 'NO' ]] || fail 'ARGUMENTS_INVALID'
+        upgrade='YES'
+        ;;
+      *)
+        usage
+        fail 'ARGUMENTS_INVALID'
+        ;;
+    esac
+    shift
+  done
+  [[ -n "$mode" ]] || { usage; fail 'ARGUMENTS_INVALID'; }
   [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'SHA_INVALID'
 }
 
@@ -53,13 +83,20 @@ require_root() {
 }
 
 validate_repo() {
+  local remote shallow
   [[ -n "$ROOT" && ( -d "$ROOT/.git" || -f "$ROOT/.git" ) ]] || fail 'GIT_ROOT_NOT_FOUND'
   [[ "$SCRIPT_DIR" == "$ROOT/scripts" ]] || fail 'SCRIPT_LOCATION_INVALID'
   [[ "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" == "$expected_sha" ]] || fail 'GIT_SHA_MISMATCH'
   [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || fail 'WORKTREE_NOT_CLEAN'
+  remote="$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)"
+  [[ "$remote" == 'https://github.com/ASOARESBH/voxelpacs_2026.git' ]] || fail 'CANONICAL_REMOTE_MISMATCH'
+  [[ "$(git -C "$ROOT" rev-parse refs/remotes/origin/main 2>/dev/null || true)" == "$expected_sha" ]] || fail 'EXPECTED_SHA_NOT_ORIGIN_MAIN'
+  shallow="$(git -C "$ROOT" rev-parse --is-shallow-repository 2>/dev/null || true)"
+  [[ "$shallow" == 'false' ]] || fail 'GIT_HISTORY_INCOMPLETE'
 }
 
 validate_sources() {
+  local source path
   for source in "$CAPTURE_SOURCE" "$WRAPPER_SOURCE" "$SUDOERS_SOURCE"; do
     [[ -f "$source" && ! -L "$source" ]] || fail 'SOURCE_FILE_INVALID'
   done
@@ -109,12 +146,52 @@ validate_sudoers() {
   visudo -cf "$SUDOERS_SOURCE" >/dev/null || fail 'SUDOERS_SYNTAX_INVALID'
 }
 
+validate_admin_directory() {
+  local directory metadata mode_bits
+  directory="$1"
+  [[ -d "$directory" && ! -L "$directory" ]] || fail 'ADMIN_DIRECTORY_INVALID'
+  metadata="$(stat -c '%u:%g:%a' -- "$directory" 2>/dev/null || true)"
+  [[ "$metadata" =~ ^0:0:[0-7]{3,4}$ ]] || fail 'ADMIN_DIRECTORY_OWNERSHIP_INVALID'
+  mode_bits="${metadata##*:}"
+  (( (8#$mode_bits & 18) == 0 )) || fail 'ADMIN_DIRECTORY_GROUP_OTHER_WRITE'
+}
+
 validate_install_scope() {
-  [[ -d /usr/local/sbin && ! -L /usr/local/sbin ]] || fail 'SUDO_BIN_DIRECTORY_INVALID'
-  [[ -d /etc/sudoers.d && ! -L /etc/sudoers.d ]] || fail 'SUDOERS_DIRECTORY_INVALID'
-  [[ ! -e "$INSTALLED_CAPTURE" && ! -L "$INSTALLED_CAPTURE" ]] || fail 'CAPTURE_ALREADY_INSTALLED'
-  [[ ! -e "$INSTALLED_WRAPPER" && ! -L "$INSTALLED_WRAPPER" ]] || fail 'WRAPPER_ALREADY_INSTALLED'
-  [[ ! -e "$INSTALLED_SUDOERS" && ! -L "$INSTALLED_SUDOERS" ]] || fail 'SUDOERS_ALREADY_INSTALLED'
+  validate_admin_directory "$CAPTURE_PARENT"
+  validate_admin_directory "$SUDOERS_PARENT"
+  if [[ "$upgrade" == 'YES' ]]; then
+    [[ -f "$INSTALLED_CAPTURE" && ! -L "$INSTALLED_CAPTURE" ]] || fail 'CAPTURE_MISSING_FOR_UPGRADE'
+    [[ -f "$INSTALLED_WRAPPER" && ! -L "$INSTALLED_WRAPPER" ]] || fail 'WRAPPER_MISSING_FOR_UPGRADE'
+    [[ -f "$INSTALLED_SUDOERS" && ! -L "$INSTALLED_SUDOERS" ]] || fail 'SUDOERS_MISSING_FOR_UPGRADE'
+    [[ "$(stat -c '%u:%g:%a' -- "$INSTALLED_CAPTURE")" == '0:0:555' ]] || fail 'CAPTURE_PERMISSIONS_INVALID_FOR_UPGRADE'
+    [[ "$(stat -c '%u:%g:%a' -- "$INSTALLED_WRAPPER")" == '0:0:555' ]] || fail 'WRAPPER_PERMISSIONS_INVALID_FOR_UPGRADE'
+    [[ "$(stat -c '%u:%g:%a' -- "$INSTALLED_SUDOERS")" == '0:0:440' ]] || fail 'SUDOERS_PERMISSIONS_INVALID_FOR_UPGRADE'
+  else
+    [[ ! -e "$INSTALLED_CAPTURE" && ! -L "$INSTALLED_CAPTURE" ]] || fail 'CAPTURE_ALREADY_INSTALLED'
+    [[ ! -e "$INSTALLED_WRAPPER" && ! -L "$INSTALLED_WRAPPER" ]] || fail 'WRAPPER_ALREADY_INSTALLED'
+    [[ ! -e "$INSTALLED_SUDOERS" && ! -L "$INSTALLED_SUDOERS" ]] || fail 'SUDOERS_ALREADY_INSTALLED'
+  fi
+}
+
+source_history_contains_blob() {
+  local installed_path="$1" source_path="$2" installed_sha commit candidate
+  installed_sha="$(sha256sum -- "$installed_path" | awk '{print $1}')"
+  while IFS= read -r commit; do
+    [[ -n "$commit" ]] || continue
+    git -C "$ROOT" cat-file -e "$commit:$source_path" 2>/dev/null || continue
+    candidate="$(git -C "$ROOT" show "$commit:$source_path" 2>/dev/null | sha256sum | awk '{print $1}')"
+    if [[ "$candidate" == "$installed_sha" ]]; then
+      return 0
+    fi
+  done < <(git -C "$ROOT" log refs/remotes/origin/main --format='%H' -- "$source_path")
+  return 1
+}
+
+validate_existing_provenance() {
+  [[ "$upgrade" == 'YES' ]] || return 0
+  source_history_contains_blob "$INSTALLED_CAPTURE" scripts/capture-production-baseline.sh || fail 'CAPTURE_PROVENANCE_UNPROVEN'
+  source_history_contains_blob "$INSTALLED_WRAPPER" ops/deploy/voxelpacs-production-baseline-capture || fail 'WRAPPER_PROVENANCE_UNPROVEN'
+  source_history_contains_blob "$INSTALLED_SUDOERS" ops/sudoers/voxelpacs-production-baseline-capture || fail 'SUDOERS_PROVENANCE_UNPROVEN'
 }
 
 acquire_lock() {
@@ -123,31 +200,87 @@ acquire_lock() {
   flock -n "$lock_fd" || fail 'PROVISION_LOCK_BUSY'
 }
 
-cleanup_stage() {
-  if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then
-    rm -f -- "$stage_dir/capture" "$stage_dir/wrapper" "$stage_dir/sudoers"
-    rmdir -- "$stage_dir" 2>/dev/null || true
+cleanup_known_files() {
+  if [[ -n "$stage_capture" ]]; then rm -f -- "$stage_capture"; fi
+  if [[ -n "$stage_wrapper" ]]; then rm -f -- "$stage_wrapper"; fi
+  if [[ -n "$stage_sudoers" ]]; then rm -f -- "$stage_sudoers"; fi
+  if [[ -n "$stage_capture_dir" && -d "$stage_capture_dir" ]]; then
+    rmdir -- "$stage_capture_dir" 2>/dev/null || true
+  fi
+  if [[ -n "$stage_sudoers_dir" && -d "$stage_sudoers_dir" ]]; then
+    rmdir -- "$stage_sudoers_dir" 2>/dev/null || true
+  fi
+  if [[ -n "$backup_dir" && -d "$backup_dir" ]]; then
+    rm -f -- "$backup_dir/capture" "$backup_dir/wrapper" "$backup_dir/sudoers"
+    rmdir -- "$backup_dir" 2>/dev/null || true
+  fi
+  if [[ -n "$operation_dir" && -d "$operation_dir" ]]; then
+    rmdir -- "$operation_dir" 2>/dev/null || true
   fi
 }
 
-cleanup() {
-  if (( installed_sudoers )); then rm -f -- "$INSTALLED_SUDOERS"; fi
-  if (( installed_wrapper )); then rm -f -- "$INSTALLED_WRAPPER"; fi
-  if (( installed_capture )); then rm -f -- "$INSTALLED_CAPTURE"; fi
-  cleanup_stage
+restore_target() {
+  local backup="$1" target="$2" name restore_tmp
+  name="$(basename -- "$target")"
+  restore_tmp="$(dirname -- "$target")/.voxelpacs-restore.$$.${name}"
+  rm -f -- "$restore_tmp"
+  cp -a -- "$backup" "$restore_tmp"
+  mv -f -- "$restore_tmp" "$target"
 }
-trap cleanup EXIT
+
+rollback_on_error() {
+  local status="$?" restore_status=0
+  trap - EXIT
+  if [[ "$status" -ne 0 && "$write_started" == 'YES' && "$upgrade" == 'YES' ]]; then
+    if [[ "$replaced_capture" == 'YES' ]]; then restore_target "$backup_dir/capture" "$INSTALLED_CAPTURE" || restore_status=1; fi
+    if [[ "$replaced_wrapper" == 'YES' ]]; then restore_target "$backup_dir/wrapper" "$INSTALLED_WRAPPER" || restore_status=1; fi
+    if [[ "$replaced_sudoers" == 'YES' ]]; then restore_target "$backup_dir/sudoers" "$INSTALLED_SUDOERS" || restore_status=1; fi
+    if [[ "$restore_status" -eq 0 ]]; then
+      printf 'ROLLBACK=PASS\nORIGINAL_PRESERVED=YES\n' >&2
+    else
+      printf 'ROLLBACK=FAIL\nORIGINAL_PRESERVED=UNKNOWN\n' >&2
+    fi
+  elif [[ "$status" -ne 0 && "$write_started" == 'YES' && "$upgrade" == 'NO' ]]; then
+    if [[ "$replaced_sudoers" == 'YES' ]]; then rm -f -- "$INSTALLED_SUDOERS" || restore_status=1; fi
+    if [[ "$replaced_wrapper" == 'YES' ]]; then rm -f -- "$INSTALLED_WRAPPER" || restore_status=1; fi
+    if [[ "$replaced_capture" == 'YES' ]]; then rm -f -- "$INSTALLED_CAPTURE" || restore_status=1; fi
+    if [[ "$restore_status" -eq 0 ]]; then
+      printf 'ROLLBACK=PASS\nPARTIAL_INSTALL_CLEANED=YES\n' >&2
+    else
+      printf 'ROLLBACK=FAIL\nPARTIAL_INSTALL_CLEANED=UNKNOWN\n' >&2
+    fi
+  fi
+  cleanup_known_files
+  exit "$status"
+}
 
 stage_files() {
-  stage_dir="$(mktemp -d "$STAGE_BASE/voxelpacs-production-baseline-capture.XXXXXX")"
-  chmod 0700 "$stage_dir"
-  install -o root -g root -m 0555 -- "$CAPTURE_SOURCE" "$stage_dir/capture"
-  install -o root -g root -m 0555 -- "$WRAPPER_SOURCE" "$stage_dir/wrapper"
-  install -o root -g root -m 0440 -- "$SUDOERS_SOURCE" "$stage_dir/sudoers"
-  visudo -cf "$stage_dir/sudoers" >/dev/null || fail 'STAGED_SUDOERS_SYNTAX_INVALID'
-  [[ "$(sha256sum "$stage_dir/capture" | awk '{print $1}')" == "$(sha256sum "$CAPTURE_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_CAPTURE_HASH_MISMATCH'
-  [[ "$(sha256sum "$stage_dir/wrapper" | awk '{print $1}')" == "$(sha256sum "$WRAPPER_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_WRAPPER_HASH_MISMATCH'
-  [[ "$(sha256sum "$stage_dir/sudoers" | awk '{print $1}')" == "$(sha256sum "$SUDOERS_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_SUDOERS_HASH_MISMATCH'
+  backup_dir="$operation_dir/backup"
+  mkdir -- "$backup_dir"
+  chmod 0700 "$backup_dir"
+  stage_capture_dir="$(mktemp -d "$CAPTURE_PARENT/.voxelpacs-production-baseline-capture.XXXXXX")"
+  stage_sudoers_dir="$(mktemp -d "$SUDOERS_PARENT/.voxelpacs-production-baseline-capture.XXXXXX")"
+  chmod 0700 "$stage_capture_dir" "$stage_sudoers_dir"
+  stage_capture="$stage_capture_dir/capture"
+  stage_wrapper="$stage_capture_dir/wrapper"
+  stage_sudoers="$stage_sudoers_dir/sudoers"
+  install -o root -g root -m 0555 -- "$CAPTURE_SOURCE" "$stage_capture"
+  install -o root -g root -m 0555 -- "$WRAPPER_SOURCE" "$stage_wrapper"
+  install -o root -g root -m 0440 -- "$SUDOERS_SOURCE" "$stage_sudoers"
+  visudo -cf "$stage_sudoers" >/dev/null || fail 'STAGED_SUDOERS_SYNTAX_INVALID'
+  [[ "$(sha256sum "$stage_capture" | awk '{print $1}')" == "$(sha256sum "$CAPTURE_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_CAPTURE_HASH_MISMATCH'
+  [[ "$(sha256sum "$stage_wrapper" | awk '{print $1}')" == "$(sha256sum "$WRAPPER_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_WRAPPER_HASH_MISMATCH'
+  [[ "$(sha256sum "$stage_sudoers" | awk '{print $1}')" == "$(sha256sum "$SUDOERS_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_SUDOERS_HASH_MISMATCH'
+}
+
+backup_existing() {
+  [[ "$upgrade" == 'YES' ]] || return 0
+  cp -a -- "$INSTALLED_CAPTURE" "$backup_dir/capture"
+  cp -a -- "$INSTALLED_WRAPPER" "$backup_dir/wrapper"
+  cp -a -- "$INSTALLED_SUDOERS" "$backup_dir/sudoers"
+  [[ "$(sha256sum "$backup_dir/capture" | awk '{print $1}')" == "$(sha256sum "$INSTALLED_CAPTURE" | awk '{print $1}')" ]] || fail 'CAPTURE_BACKUP_VERIFY_FAILED'
+  [[ "$(sha256sum "$backup_dir/wrapper" | awk '{print $1}')" == "$(sha256sum "$INSTALLED_WRAPPER" | awk '{print $1}')" ]] || fail 'WRAPPER_BACKUP_VERIFY_FAILED'
+  [[ "$(sha256sum "$backup_dir/sudoers" | awk '{print $1}')" == "$(sha256sum "$INSTALLED_SUDOERS" | awk '{print $1}')" ]] || fail 'SUDOERS_BACKUP_VERIFY_FAILED'
 }
 
 parse_args "$@"
@@ -158,19 +291,56 @@ validate_capture_contract
 validate_wrapper_contract
 validate_sudoers
 validate_install_scope
-acquire_lock
-printf 'SOURCE_SHA=%s\nCAPTURE_SOURCE=scripts/capture-production-baseline.sh\nWRAPPER_SOURCE=ops/deploy/voxelpacs-production-baseline-capture\n' "$expected_sha"
+validate_existing_provenance
+
+printf 'SOURCE_SHA=%s\nUPGRADE=%s\nCAPTURE_SOURCE=scripts/capture-production-baseline.sh\nWRAPPER_SOURCE=ops/deploy/voxelpacs-production-baseline-capture\n' "$expected_sha" "$upgrade"
 if [[ "$mode" == 'dry-run' ]]; then
-  printf 'SOURCE_SHA_CHECK=PASS\nCAPTURE_CHECK=PASS\nWRAPPER_CHECK=PASS\nSUDOERS_SYNTAX=PASS\nTARGETS_ABSENT=PASS\nDRY_RUN=PASS\nINSTALL=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
+  printf 'SOURCE_SHA_CHECK=PASS\nCAPTURE_CHECK=PASS\nWRAPPER_CHECK=PASS\nSUDOERS_SYNTAX=PASS\n'
+  if [[ "$upgrade" == 'YES' ]]; then
+    printf 'EXISTING_PROVENANCE=PASS\nTARGETS_EXIST=PASS\n'
+  else
+    printf 'TARGETS_ABSENT=PASS\n'
+  fi
+  printf 'DRY_RUN=PASS\nINSTALL=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
   exit 0
 fi
+
+acquire_lock
+operation_dir="$(mktemp -d "$OPERATION_PARENT/voxelpacs-production-baseline-capture-upgrade.XXXXXX")"
+chmod 0700 "$operation_dir"
+trap rollback_on_error EXIT
 stage_files
-mv -- "$stage_dir/capture" "$INSTALLED_CAPTURE"
-installed_capture=1
-mv -- "$stage_dir/wrapper" "$INSTALLED_WRAPPER"
-installed_wrapper=1
-mv -- "$stage_dir/sudoers" "$INSTALLED_SUDOERS"
-installed_sudoers=1
-cleanup_stage
+backup_existing
+if [[ "$upgrade" == 'YES' ]]; then
+  write_started='YES'
+  mv -f -- "$stage_capture" "$INSTALLED_CAPTURE"
+  stage_capture=''
+  replaced_capture='YES'
+  mv -f -- "$stage_wrapper" "$INSTALLED_WRAPPER"
+  stage_wrapper=''
+  replaced_wrapper='YES'
+  mv -f -- "$stage_sudoers" "$INSTALLED_SUDOERS"
+  stage_sudoers=''
+  replaced_sudoers='YES'
+else
+  write_started='YES'
+  ln -- "$stage_capture" "$INSTALLED_CAPTURE" || fail 'CAPTURE_INSTALL_LINK_FAILED'
+  replaced_capture='YES'
+  rm -f -- "$stage_capture"
+  stage_capture=''
+  ln -- "$stage_wrapper" "$INSTALLED_WRAPPER" || fail 'WRAPPER_INSTALL_LINK_FAILED'
+  replaced_wrapper='YES'
+  rm -f -- "$stage_wrapper"
+  stage_wrapper=''
+  ln -- "$stage_sudoers" "$INSTALLED_SUDOERS" || fail 'SUDOERS_INSTALL_LINK_FAILED'
+  replaced_sudoers='YES'
+  rm -f -- "$stage_sudoers"
+  stage_sudoers=''
+fi
+cleanup_known_files
 trap - EXIT
-printf 'SOURCE_SHA_CHECK=PASS\nCAPTURE_INSTALLED=YES\nWRAPPER_INSTALLED=YES\nSUDOERS_INSTALLED=YES\nCAPTURE_OWNER_MODE=root:root:0555\nWRAPPER_OWNER_MODE=root:root:0555\nSUDOERS_OWNER_MODE=root:root:0440\nSUDOERS_SYNTAX=PASS\nINSTALL=PASS\nPRODUCTION_CHANGED=YES\n'
+if [[ "$upgrade" == 'YES' ]]; then
+  printf 'SOURCE_SHA_CHECK=PASS\nEXISTING_PROVENANCE=PASS\nCAPTURE_INSTALLED=YES\nWRAPPER_INSTALLED=YES\nSUDOERS_INSTALLED=YES\nCAPTURE_OWNER_MODE=root:root:0555\nWRAPPER_OWNER_MODE=root:root:0555\nSUDOERS_OWNER_MODE=root:root:0440\nSUDOERS_SYNTAX=PASS\nUPGRADE_APPLIED=YES\nROLLBACK=NOT_NEEDED\nINSTALL=PASS\nPRODUCTION_CHANGED=YES\n'
+else
+  printf 'SOURCE_SHA_CHECK=PASS\nCAPTURE_INSTALLED=YES\nWRAPPER_INSTALLED=YES\nSUDOERS_INSTALLED=YES\nCAPTURE_OWNER_MODE=root:root:0555\nWRAPPER_OWNER_MODE=root:root:0555\nSUDOERS_OWNER_MODE=root:root:0440\nSUDOERS_SYNTAX=PASS\nUPGRADE_APPLIED=NO\nINSTALL=PASS\nPRODUCTION_CHANGED=YES\n'
+fi

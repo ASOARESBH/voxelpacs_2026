@@ -15,13 +15,24 @@ A captura registra somente metadados, hashes, symlinks, classificações e o per
 
 ## Provisionamento versionado
 
-O provisionador exige checkout limpo, SHA exata da `main`, validação de `bash -n`, `visudo` e ausência dos destinos antes da instalação:
+O provisionador exige checkout limpo, SHA exata da `main`, remoto canônico, `origin/main` na mesma SHA, histórico Git completo, validação de `bash -n`, `visudo` e diretórios administrativos seguros.
+
+Para uma instalação inicial, os destinos devem estar ausentes:
 
 ```bash
 sudo bash scripts/provision-production-baseline-capture.sh \
   --expected-sha <SHA_DA_MAIN> --dry-run
 sudo bash scripts/provision-production-baseline-capture.sh \
   --expected-sha <SHA_DA_MAIN> --install
+```
+
+Quando os destinos já existem, a instalação inicial permanece bloqueada por `no-replace`. A atualização controlada usa a mesma fonte versionada e exige que cada blob existente seja comprovadamente encontrado no histórico da `origin/main`, além de preservar `root:root` e os modos esperados:
+
+```bash
+sudo bash scripts/provision-production-baseline-capture.sh \
+  --expected-sha <SHA_DA_MAIN> --upgrade --dry-run
+sudo bash scripts/provision-production-baseline-capture.sh \
+  --expected-sha <SHA_DA_MAIN> --upgrade --install
 ```
 
 Ele instala atomicamente, como `root:root`:
@@ -39,6 +50,8 @@ Antes da captura, a aprovação administrativa independente da SHA usada no perf
 ```
 
 O arquivo contém exatamente uma SHA de `main` aprovada por linha. O provisioner apenas valida essa âncora; não a cria, altera ou infere do checkout.
+
+No modo `--upgrade`, o provisioner cria backups temporários `root-only`, faz o staging no mesmo filesystem de cada destino e substitui os três componentes com movimentos atômicos. Se qualquer substituição posterior falhar, restaura os componentes já substituídos a partir dos backups e informa `ROLLBACK=PASS`; uma proveniência histórica não comprovada, symlink, owner/mode inesperado ou conjunto parcial de destinos bloqueia antes da escrita. O `--dry-run` nunca cria backup nem modifica destinos.
 
 A allowlist concede somente:
 
@@ -58,7 +71,7 @@ O identificador do baseline é uma hash técnica do manifesto, não é SHA de co
 
 ## Rollback
 
-O provisionamento não substitui destinos existentes. Se uma instalação falhar, os arquivos novos são removidos pelo cleanup fail-closed; nenhuma release da aplicação, `.env`, storage, banco ou serviço é tocada. Após a instalação, a reversão deve ser feita por procedimento administrativo aprovado, preservando a evidência e validando novamente `visudo`.
+O modo inicial não substitui destinos existentes; se uma instalação falhar depois de iniciar, os arquivos novos são removidos pelo cleanup fail-closed. O modo `--upgrade` só substitui destinos regulares, históricos e com permissões aprovadas; em falha parcial restaura os blobs anteriores e preserva seus modos. Nenhum modo altera release da aplicação, `.env`, storage, banco ou serviço. Após uma atualização bem-sucedida, qualquer reversão posterior deve ser feita por procedimento administrativo aprovado, preservando evidência e validando novamente `visudo`.
 
 ## Validação
 
@@ -68,6 +81,7 @@ bash -n scripts/provision-production-baseline-capture.sh
 bash -n ops/deploy/voxelpacs-production-baseline-capture
 visudo -cf ops/sudoers/voxelpacs-production-baseline-capture
 bash tests/deploy/production_baseline_provisioner_static.sh
+bash tests/deploy/production_baseline_provisioner_upgrade_isolated.sh
 ```
 
 Estado funcional de produção só pode ser declarado após provisionamento, backup, captura integral e validação read-only do manifesto. O helper não inicia Worker, não chama Bridge, não acessa SMB e não transmite.

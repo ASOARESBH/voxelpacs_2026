@@ -194,11 +194,20 @@ jobs:
           php -l tests/deploy/production_baseline_capture_static.php
           bash -n tests/deploy/production_baseline_provisioner_static.sh
           bash -n tests/deploy/production_baseline_capture_isolated.sh
+          bash -n tests/deploy/production_baseline_provisioner_upgrade_isolated.sh
+
+      - name: ShellCheck provisioner and upgrade regression
+        run: |
+          shellcheck -S warning -x \
+            scripts/provision-production-baseline-capture.sh \
+            tests/deploy/production_baseline_provisioner_static.sh \
+            tests/deploy/production_baseline_provisioner_upgrade_isolated.sh
 
       - name: Validate static safety contracts
         run: |
           php tests/deploy/production_baseline_capture_static.php
           bash tests/deploy/production_baseline_provisioner_static.sh
+          bash tests/deploy/production_baseline_provisioner_upgrade_isolated.sh
 
       - name: Run isolated capture and sidecar tests
         run: bash tests/deploy/production_baseline_capture_isolated.sh

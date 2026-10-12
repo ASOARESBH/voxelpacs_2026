@@ -40,7 +40,7 @@ O script versionado é `scripts/capture-production-baseline.sh`. Ele:
 
 Para uma captura integral do Host 1, o script deve ser executado por um mecanismo root-controlled previamente aprovado. Não se deve ampliar `sudoers` de forma genérica nem copiar a chave privada do administrador.
 
-O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; na captura, o wrapper exige a âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`, e o caller pode executar apenas `capture`, sem fornecer path, comando, shell, destino ou SHA.
+O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; na captura, o wrapper exige a âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`, e o caller pode executar apenas `capture`, sem fornecer path, comando, shell, destino ou SHA. Se os destinos já existirem, o modo normal continua no-replace; o modo `--upgrade` só é aceito quando os três blobs existentes forem comprovados no histórico da `origin/main`, com owner/mode regulares, staging no mesmo filesystem e rollback fail-closed em falha parcial.
 
 ## Backup protegido
 
