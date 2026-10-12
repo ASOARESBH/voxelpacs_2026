@@ -19,12 +19,15 @@ trap cleanup EXIT
 fixture_repo="$fixture_root/repo"
 bare_repo="$fixture_root/remote.git"
 config_parent="$fixture_root/config"
-approval_parent="$config_parent/voxelpacs"
+approval_parent="$config_parent/voxelpacs-composer-profile"
 approval_file="$approval_parent/voxelpacs-composer-profile-approved-main-sha"
+shared_parent="$config_parent/voxelpacs"
+shared_file="$shared_parent/existing-admin-config"
 lock_parent="$fixture_root/lock"
 lock_path="$lock_parent/approval.lock"
 helper="$fixture_repo/scripts/provision-composer-profile-approval.sh"
-mkdir -p "$fixture_repo/scripts" "$config_parent" "$lock_parent"
+mkdir -p "$fixture_repo/scripts" "$config_parent" "$shared_parent" "$lock_parent"
+printf 'preexisting-admin-config\n' > "$shared_file"
 cp -- "$source_helper" "$helper"
 python3 - "$helper" "$config_parent" "$approval_parent" "$approval_file" "$lock_path" "$bare_repo" <<'PY'
 from pathlib import Path
@@ -32,8 +35,8 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text()
 replacements = {
-    "readonly APPROVAL_PARENT='/etc/voxelpacs'": f"readonly APPROVAL_PARENT={sys.argv[3]!r}",
-    "readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'": f"readonly APPROVAL_FILE={sys.argv[4]!r}",
+    "readonly APPROVAL_PARENT='/etc/voxelpacs-composer-profile'": f"readonly APPROVAL_PARENT={sys.argv[3]!r}",
+    "readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'": f"readonly APPROVAL_FILE={sys.argv[4]!r}",
     "readonly APPROVAL_PARENT_PARENT='/etc'": f"readonly APPROVAL_PARENT_PARENT={sys.argv[2]!r}",
     "readonly LOCK_PATH='/run/lock/voxelpacs-composer-profile-approval.lock'": f"readonly LOCK_PATH={sys.argv[5]!r}",
     "readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'": f"readonly CANONICAL_REMOTE={'file://' + sys.argv[6]!r}",
@@ -71,6 +74,9 @@ assert_blocked() {
 
 run_as_root chown root:root "$config_parent" "$lock_parent"
 run_as_root chmod 0755 "$config_parent" "$lock_parent"
+run_as_root chown root:root "$shared_parent" "$shared_file"
+run_as_root chmod 0700 "$shared_parent"
+shared_before="$(run_as_root sha256sum "$shared_file")"
 
 inspect_output="$(run_helper --inspect)"
 grep -Fxq 'DIRECTORY_STATE=ABSENT' <<<"$inspect_output" || fail inspect_absent_directory
@@ -85,8 +91,8 @@ grep -Fxq 'ANCHOR_ACTION=CREATE' <<<"$dry_output" || fail dry_anchor_action
 apply_output="$(run_helper --apply)"
 grep -Fxq 'APPLY=PASS' <<<"$apply_output" || fail apply_result
 grep -Fxq 'CONFIG_CHANGED=YES' <<<"$apply_output" || fail apply_changed
-[[ "$(stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail apply_parent_mode
-[[ "$(stat -c '%u:%g:%a' "$approval_file")" == '0:0:600' ]] || fail apply_anchor_mode
+[[ "$(run_as_root stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail apply_parent_mode
+[[ "$(run_as_root stat -c '%u:%g:%a' "$approval_file")" == '0:0:600' ]] || fail apply_anchor_mode
 run_as_root grep -Fxq "$fixture_sha" "$approval_file" || fail apply_anchor_value
 
 before_anchor="$(run_as_root sha256sum "$approval_file")"
@@ -99,7 +105,7 @@ run_as_root chown root:1 "$approval_parent"
 group_output="$(run_helper --dry-run)"
 grep -Fxq 'DIRECTORY_ACTION=RECONCILE' <<<"$group_output" || fail group_reconcile_not_reported
 run_helper --apply >/dev/null
-[[ "$(stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail group_reconcile_not_applied
+[[ "$(run_as_root stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail group_reconcile_not_applied
 
 run_as_root chown 1:0 "$approval_parent"
 assert_blocked APPROVAL_PARENT_OWNER_INVALID --inspect
@@ -165,7 +171,8 @@ assert_blocked WORKTREE_NOT_CLEAN --inspect
 unlink "$fixture_repo/dirty"
 assert_blocked ARGUMENTS_INVALID --dry-run /tmp
 
-[[ "$(stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail final_parent_state
-[[ "$(stat -c '%u:%g:%a' "$approval_file")" == '0:0:600' ]] || fail final_anchor_state
+[[ "$(run_as_root stat -c '%u:%g:%a' "$approval_parent")" == '0:0:700' ]] || fail final_parent_state
+[[ "$(run_as_root stat -c '%u:%g:%a' "$approval_file")" == '0:0:600' ]] || fail final_anchor_state
 run_as_root grep -Fxq "$fixture_sha" "$approval_file" || fail final_anchor_value
-printf 'TEST=PASS\nCOMPOSER_PROFILE_APPROVAL_ISOLATED=PASS\nDRY_RUN=PASS\nAPPLY=PASS\nIDEMPOTENT_NO_REPLACE=PASS\nGROUP_RECONCILIATION=PASS\nOWNER_REJECTION=PASS\nMODE_REJECTION=PASS\nSYMLINK_REJECTION=PASS\nDIVERGENT_ANCHOR_REJECTION=PASS\nORIGIN_REJECTION=PASS\nDIRTY_CHECKOUT_REJECTION=PASS\nARGUMENT_REJECTION=PASS\nFINAL_VALIDATION=PASS\nHOST1_CHANGED=NO\n'
+[[ "$(run_as_root sha256sum "$shared_file")" == "$shared_before" ]] || fail shared_parent_touched
+printf 'TEST=PASS\nCOMPOSER_PROFILE_APPROVAL_ISOLATED=PASS\nDRY_RUN=PASS\nAPPLY=PASS\nIDEMPOTENT_NO_REPLACE=PASS\nGROUP_RECONCILIATION=PASS\nOWNER_REJECTION=PASS\nMODE_REJECTION=PASS\nSYMLINK_REJECTION=PASS\nDIVERGENT_ANCHOR_REJECTION=PASS\nORIGIN_REJECTION=PASS\nDIRTY_CHECKOUT_REJECTION=PASS\nARGUMENT_REJECTION=PASS\nSHARED_PARENT_PRESERVED=PASS\nFINAL_VALIDATION=PASS\nHOST1_CHANGED=NO\n'

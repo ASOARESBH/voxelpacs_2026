@@ -20,7 +20,7 @@ visudo -cf "$sudoers" >/dev/null || fail sudoers_syntax
 grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$wrapper" || fail fixed_source_root
 grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$wrapper" || fail fixed_output_root
 grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$wrapper" || fail fixed_capture_path
-grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'" "$wrapper" || fail fixed_profile_approval_path
+grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" "$wrapper" || fail fixed_profile_approval_path
 grep -Fq "[[ \"\$#\" -eq 1 && \"\$1\" == 'capture' ]]" "$wrapper" || fail fixed_arguments
 grep -Fq -- '--composer-profile-sha' "$wrapper" || fail fixed_profile_argument
 grep -Fq 'read_approved_composer_profile_sha' "$wrapper" || fail fixed_profile_approval_reader
