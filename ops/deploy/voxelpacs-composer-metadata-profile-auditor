@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# VOXEL PACS — auditor root-controlled do perfil técnico Composer.
+#
+# Somente leitura. Compara estados sanitizados de root.reference e
+# versions['voxel/bi'].reference entre perfil do artefato, runtime e um
+# sidecar root-only opcional da baseline. Nunca expõe valores ou hashes.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly BASELINE_ROOT='/var/lib/voxelpacs/baselines'
+readonly TARGET_RELATIVE_PATH='vendor/composer/installed.php'
+readonly BASELINE_PROFILE_NAME='composer-profile.tsv'
+readonly MECHANISM_VERSION='1'
+
+fail() {
+  printf 'COMPOSER_PROFILE_AUDIT=BLOCKED\nREASON=%s\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' 'uso: voxelpacs-composer-metadata-profile-auditor --baseline-id <40-hex-sha> --artifact-sha <40-hex-sha>' >&2
+}
+
+is_sha() {
+  [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+is_profile_state() {
+  case "${1:-}" in
+    SOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_root_and_caller() {
+  [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
+  case "${SUDO_USER:-}" in
+    ''|manus-admin) ;;
+    *) fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+}
+
+secure_regular_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%u:%g:%a' -- "$path" 2>/dev/null || true)" == '0:0:600' ]]
+}
+
+secure_directory() {
+  local path="$1"
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%u:%g:%a' -- "$path" 2>/dev/null || true)" == '0:0:700' ]]
+}
+
+read_artifact_profile() {
+  local key state extra rows=0
+  artifact_profile_basis=''
+  artifact_root_state=''
+  artifact_package_state=''
+  while IFS=$'\t' read -r key state extra; do
+    [[ -z "${key:-}" && -z "${state:-}" && -z "${extra:-}" ]] && continue
+    [[ -z "${extra:-}" && -n "${key:-}" && -n "${state:-}" ]] || fail 'ARTIFACT_PROFILE_ROW_INVALID'
+    case "$key" in
+      profile_artifact_sha)
+        [[ -z "$artifact_profile_basis" && "$state" == "$artifact_sha" ]] || fail 'ARTIFACT_PROFILE_BASIS_INVALID'
+        artifact_profile_basis="$state"
+        ;;
+      root_reference_state)
+        [[ -z "$artifact_root_state" ]] || fail 'ARTIFACT_PROFILE_DUPLICATE'
+        is_profile_state "$state" || fail 'ARTIFACT_PROFILE_STATE_INVALID'
+        artifact_root_state="$state"
+        ;;
+      package_reference_state)
+        [[ -z "$artifact_package_state" ]] || fail 'ARTIFACT_PROFILE_DUPLICATE'
+        is_profile_state "$state" || fail 'ARTIFACT_PROFILE_STATE_INVALID'
+        artifact_package_state="$state"
+        ;;
+      *) fail 'ARTIFACT_PROFILE_KEY_INVALID' ;;
+    esac
+    rows=$((rows + 1))
+  done
+  [[ "$rows" -eq 3 && "$artifact_profile_basis" == "$artifact_sha" && -n "$artifact_root_state" && -n "$artifact_package_state" ]] || fail 'ARTIFACT_PROFILE_INCOMPLETE'
+}
+
+extract_reference_state() {
+  local file="$1" scope="$2"
+  case "$scope" in
+    root)
+      awk -v expected="$artifact_sha" '
+        function emit(value) {
+          gsub(/[[:space:]]/, "", value)
+          if (value == "null") { print "NULL" }
+          else if (value ~ /^\x27[0-9a-f]{40}\x27$/) {
+            gsub(/\x27/, "", value)
+            if (value == expected) print "SOURCE_SHA"; else print "OTHER_SHA"
+          } else { print "UNRESOLVED" }
+          found++
+        }
+        /\x27root\x27[[:space:]]*=>[[:space:]]*array[[:space:]]*\(/ { in_root=1; next }
+        in_root && /\x27versions\x27[[:space:]]*=>[[:space:]]*array[[:space:]]*\(/ { in_root=0; next }
+        in_root && /\x27reference\x27[[:space:]]*=>/ {
+          line=$0
+          sub(/^.*\x27reference\x27[[:space:]]*=>[[:space:]]*/, "", line)
+          sub(/,.*/, "", line)
+          emit(line)
+          exit
+        }
+        END { if (found != 1) print "UNRESOLVED" }
+      ' "$file"
+      ;;
+    package)
+      awk -v expected="$artifact_sha" '
+        function emit(value) {
+          gsub(/[[:space:]]/, "", value)
+          if (value == "null") { print "NULL" }
+          else if (value ~ /^\x27[0-9a-f]{40}\x27$/) {
+            gsub(/\x27/, "", value)
+            if (value == expected) print "SOURCE_SHA"; else print "OTHER_SHA"
+          } else { print "UNRESOLVED" }
+          found++
+        }
+        /\x27versions\x27[[:space:]]*=>[[:space:]]*array[[:space:]]*\(/ { in_versions=1; next }
+        in_versions && /\x27voxel\/bi\x27[[:space:]]*=>[[:space:]]*array[[:space:]]*\(/ { in_package=1; next }
+        in_package && /\x27reference\x27[[:space:]]*=>/ {
+          line=$0
+          sub(/^.*\x27reference\x27[[:space:]]*=>[[:space:]]*/, "", line)
+          sub(/,.*/, "", line)
+          emit(line)
+          exit
+        }
+        END { if (found != 1) print "UNRESOLVED" }
+      ' "$file"
+      ;;
+    *) fail 'PROFILE_SCOPE_INVALID' ;;
+  esac
+}
+
+collect_runtime_profile() {
+  local runtime_file="$APP_ROOT/$TARGET_RELATIVE_PATH"
+  [[ -f "$runtime_file" && ! -L "$runtime_file" ]] || fail 'RUNTIME_TARGET_NOT_REGULAR'
+  runtime_root_state="$(extract_reference_state "$runtime_file" root)"
+  runtime_package_state="$(extract_reference_state "$runtime_file" package)"
+  [[ "$runtime_root_state" != *$'\n'* && "$runtime_package_state" != *$'\n'* ]] || fail 'RUNTIME_PROFILE_AMBIGUOUS'
+  is_profile_state "$runtime_root_state" || fail 'RUNTIME_ROOT_PROFILE_INVALID'
+  is_profile_state "$runtime_package_state" || fail 'RUNTIME_PACKAGE_PROFILE_INVALID'
+}
+
+read_baseline_profile() {
+  local baseline_dir="$BASELINE_ROOT/$baseline_id"
+  local profile="$baseline_dir/$BASELINE_PROFILE_NAME"
+  local key value extra rows=0
+  baseline_profile_available='NO'
+  baseline_root_state='NOT_AVAILABLE'
+  baseline_package_state='NOT_AVAILABLE'
+
+  secure_directory "$BASELINE_ROOT" || fail 'BASELINE_ROOT_SECURITY_INVALID'
+  secure_directory "$baseline_dir" || fail 'BASELINE_DIRECTORY_SECURITY_INVALID'
+  secure_regular_file "$baseline_dir/baseline-id" || fail 'BASELINE_ID_FILE_SECURITY_INVALID'
+  [[ "$(tr -d '\r\n' < "$baseline_dir/baseline-id")" == "$baseline_id" ]] || fail 'BASELINE_ID_FILE_MISMATCH'
+  if [[ ! -e "$profile" ]]; then
+    return 0
+  fi
+  secure_regular_file "$profile" || fail 'BASELINE_PROFILE_SECURITY_INVALID'
+
+  baseline_profile_basis=''
+  while IFS=$'\t' read -r key value extra; do
+    [[ -z "${key:-}" && -z "${value:-}" && -z "${extra:-}" ]] && continue
+    [[ -z "${extra:-}" && -n "${key:-}" && -n "${value:-}" ]] || fail 'BASELINE_PROFILE_ROW_INVALID'
+    case "$key" in
+      profile_artifact_sha)
+        [[ -z "$baseline_profile_basis" && "$value" =~ ^[0-9a-f]{40}$ ]] || fail 'BASELINE_PROFILE_BASIS_INVALID'
+        baseline_profile_basis="$value"
+        ;;
+      root_reference_state)
+        [[ "$baseline_root_state" == 'NOT_AVAILABLE' ]] || fail 'BASELINE_PROFILE_DUPLICATE'
+        is_profile_state "$value" || fail 'BASELINE_PROFILE_STATE_INVALID'
+        baseline_root_state="$value"
+        ;;
+      package_reference_state)
+        [[ "$baseline_package_state" == 'NOT_AVAILABLE' ]] || fail 'BASELINE_PROFILE_DUPLICATE'
+        is_profile_state "$value" || fail 'BASELINE_PROFILE_STATE_INVALID'
+        baseline_package_state="$value"
+        ;;
+      *) fail 'BASELINE_PROFILE_KEY_INVALID' ;;
+    esac
+    rows=$((rows + 1))
+  done < "$profile"
+  [[ "$rows" -eq 3 && "$baseline_profile_basis" == "$artifact_sha" && "$baseline_root_state" != 'NOT_AVAILABLE' && "$baseline_package_state" != 'NOT_AVAILABLE' ]] || fail 'BASELINE_PROFILE_INCOMPLETE'
+  baseline_profile_available='YES'
+}
+
+compare_state() {
+  local left="$1" right="$2"
+  if [[ "$left" == 'UNRESOLVED' || "$right" == 'UNRESOLVED' || ( "$left" == 'OTHER_SHA' && "$right" == 'OTHER_SHA' ) ]]; then
+    printf 'INDETERMINATE'
+  elif [[ "$left" == "$right" ]]; then
+    printf 'MATCH'
+  else
+    printf 'DIFFER'
+  fi
+}
+
+print_result() {
+  local artifact_runtime_root artifact_runtime_package
+  local baseline_runtime_root baseline_runtime_package
+  artifact_runtime_root="$(compare_state "$artifact_root_state" "$runtime_root_state")"
+  artifact_runtime_package="$(compare_state "$artifact_package_state" "$runtime_package_state")"
+  if [[ "$baseline_profile_available" == 'YES' ]]; then
+    baseline_runtime_root="$(compare_state "$baseline_root_state" "$runtime_root_state")"
+    baseline_runtime_package="$(compare_state "$baseline_package_state" "$runtime_package_state")"
+    artifact_baseline_root="$(compare_state "$artifact_root_state" "$baseline_root_state")"
+    artifact_baseline_package="$(compare_state "$artifact_package_state" "$baseline_package_state")"
+  else
+    baseline_runtime_root='NOT_PROVABLE'
+    baseline_runtime_package='NOT_PROVABLE'
+    artifact_baseline_root='NOT_PROVABLE'
+    artifact_baseline_package='NOT_PROVABLE'
+  fi
+
+  profile_comparison='INCOMPLETE'
+  profile_diagnosis='BASELINE_PROFILE_UNAVAILABLE'
+  if [[ "$baseline_profile_available" == 'YES' ]]; then
+    profile_comparison='COMPLETE'
+    if [[ "$artifact_runtime_root" == 'INDETERMINATE' || "$artifact_runtime_package" == 'INDETERMINATE' || "$baseline_runtime_root" == 'INDETERMINATE' || "$baseline_runtime_package" == 'INDETERMINATE' ]]; then
+      profile_diagnosis='PROFILE_FIELDS_INDETERMINATE'
+    elif [[ "$artifact_runtime_root" == 'MATCH' && "$artifact_runtime_package" == 'MATCH' && "$baseline_runtime_root" == 'MATCH' && "$baseline_runtime_package" == 'MATCH' ]]; then
+      profile_diagnosis='ALL_THREE_PROFILE_STATES_MATCH'
+    else
+      profile_diagnosis='PROFILE_STATES_DIFFER'
+    fi
+  fi
+
+  printf 'AUDIT_MODE=READ_ONLY\nMECHANISM_VERSION=%s\nPROFILE_FORMAT=STATE_ONLY_V1\nTARGET_PATH=%s\n' "$MECHANISM_VERSION" "$TARGET_RELATIVE_PATH"
+  printf 'ARTIFACT_SOURCE_SHA=%s\nARTIFACT_ROOT_REFERENCE_STATE=%s\nARTIFACT_PACKAGE_REFERENCE_STATE=%s\n' "$artifact_sha" "$artifact_root_state" "$artifact_package_state"
+  printf 'RUNTIME_ROOT_REFERENCE_STATE=%s\nRUNTIME_PACKAGE_REFERENCE_STATE=%s\n' "$runtime_root_state" "$runtime_package_state"
+  printf 'BASELINE_PROFILE=%s\nBASELINE_ROOT_REFERENCE_STATE=%s\nBASELINE_PACKAGE_REFERENCE_STATE=%s\n' "$baseline_profile_available" "$baseline_root_state" "$baseline_package_state"
+  printf 'ARTIFACT_RUNTIME_ROOT_COMPARISON=%s\nARTIFACT_RUNTIME_PACKAGE_COMPARISON=%s\n' "$artifact_runtime_root" "$artifact_runtime_package"
+  printf 'ARTIFACT_BASELINE_ROOT_COMPARISON=%s\nARTIFACT_BASELINE_PACKAGE_COMPARISON=%s\n' "$artifact_baseline_root" "$artifact_baseline_package"
+  printf 'RUNTIME_BASELINE_ROOT_COMPARISON=%s\nRUNTIME_BASELINE_PACKAGE_COMPARISON=%s\n' "$baseline_runtime_root" "$baseline_runtime_package"
+  printf 'PROFILE_COMPARISON=%s\nPROFILE_DIAGNOSIS=%s\nRAW_VALUES_EXPOSED=NO\nHASHES_EXPOSED=NO\nREADY_FOR_DEPLOY=NO\n' "$profile_comparison" "$profile_diagnosis"
+  printf 'AUDIT=PASS\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_CALLED=NO\nSMB_CALLED=NO\nTRANSMISSION=NO\n'
+}
+
+require_root_and_caller
+[[ "$#" -eq 4 && "$1" == '--baseline-id' && "$3" == '--artifact-sha' ]] || { usage; fail 'ARGUMENTS_INVALID'; }
+baseline_id="$2"
+artifact_sha="$4"
+is_sha "$baseline_id" || fail 'BASELINE_ID_INVALID'
+is_sha "$artifact_sha" || fail 'ARTIFACT_SHA_INVALID'
+
+read_artifact_profile
+read_baseline_profile
+collect_runtime_profile
+print_result
