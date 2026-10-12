@@ -6,7 +6,6 @@ source_provisioner="$repo/scripts/provision-production-baseline-capture.sh"
 source_capture="$repo/scripts/capture-production-baseline.sh"
 source_wrapper="$repo/ops/deploy/voxelpacs-production-baseline-capture"
 source_sudoers="$repo/ops/sudoers/voxelpacs-production-baseline-capture"
-old_commit="$(git -C "$repo" rev-parse origin/main^)"
 fail() { printf 'TEST=FAIL\nREASON=%s\n' "$1" >&2; exit 1; }
 run_as_root() {
   if [[ "$EUID" -eq 0 ]]; then "$@"; else sudo -n "$@"; fi
@@ -125,8 +124,10 @@ create_historical_fixture() {
   git -C "$root" remote add origin 'https://github.com/ASOARESBH/voxelpacs_2026.git'
   for path in scripts/capture-production-baseline.sh scripts/provision-production-baseline-capture.sh ops/deploy/voxelpacs-production-baseline-capture ops/sudoers/voxelpacs-production-baseline-capture; do
     mkdir -p "$root/$(dirname "$path")"
-    git -C "$repo" show "$old_commit:$path" > "$root/$path"
+    cp -- "$repo/$path" "$root/$path"
   done
+  printf '# historical synthetic capture revision\n' >> "$root/scripts/capture-production-baseline.sh"
+  printf '# historical synthetic wrapper revision\n' >> "$root/ops/deploy/voxelpacs-production-baseline-capture"
   chmod 0755 "$root/scripts/provision-production-baseline-capture.sh" "$root/scripts/capture-production-baseline.sh" "$root/ops/deploy/voxelpacs-production-baseline-capture"
   chmod 0644 "$root/ops/sudoers/voxelpacs-production-baseline-capture"
   chmod 0755 "$capture_parent" "$sudoers_parent" "$operation_parent" "$(dirname "$lock_path")"
@@ -159,6 +160,9 @@ PY
   chown -R root:root "$root"
   git -C "$root" add scripts ops
   git -C "$root" commit -q -m 'test: baseline provisioner updated sources'
+  printf 'fixture-history-marker\n' > "$root/fixture-history-marker"
+  git -C "$root" add fixture-history-marker
+  git -C "$root" commit -q -m 'test: create synthetic approved current revision'
   git -C "$root" branch -M main
   git -C "$root" update-ref refs/remotes/origin/main HEAD
   printf '%s\n' "$root"
@@ -177,7 +181,7 @@ for path in scripts/capture-production-baseline.sh ops/deploy/voxelpacs-producti
     ops/sudoers/*) target="$upgrade_sudoers" ;;
   esac
   mkdir -p "$(dirname "$target")"
-  git -C "$upgrade_root" show "$upgrade_sha^:$path" > "$target"
+  git -C "$upgrade_root" show "$upgrade_sha^^:$path" > "$target"
   chown root:root "$target"
   case "$target" in
     "$upgrade_sudoers") chmod 0440 "$target" ;;
@@ -229,9 +233,9 @@ auth_provisioner="$auth_root/scripts/provision-production-baseline-capture.sh"
 auth_capture="$fixture_root/targets/bad-mode/usr/local/sbin/voxelpacs-capture-production-baseline"
 auth_wrapper="$fixture_root/targets/bad-mode/usr/local/sbin/voxelpacs-production-baseline-capture"
 auth_sudoers="$fixture_root/targets/bad-mode/etc/sudoers.d/voxelpacs-production-baseline-capture"
-git -C "$auth_root" show "$auth_sha^:scripts/capture-production-baseline.sh" > "$auth_capture"
-git -C "$auth_root" show "$auth_sha^:ops/deploy/voxelpacs-production-baseline-capture" > "$auth_wrapper"
-git -C "$auth_root" show "$auth_sha^:ops/sudoers/voxelpacs-production-baseline-capture" > "$auth_sudoers"
+git -C "$auth_root" show "$auth_sha^^:scripts/capture-production-baseline.sh" > "$auth_capture"
+git -C "$auth_root" show "$auth_sha^^:ops/deploy/voxelpacs-production-baseline-capture" > "$auth_wrapper"
+git -C "$auth_root" show "$auth_sha^^:ops/sudoers/voxelpacs-production-baseline-capture" > "$auth_sudoers"
 chown root:root "$auth_capture" "$auth_wrapper" "$auth_sudoers"
 chmod 0755 "$auth_capture" "$auth_wrapper"
 chmod 0440 "$auth_sudoers"
@@ -283,7 +287,7 @@ for path in scripts/capture-production-baseline.sh ops/deploy/voxelpacs-producti
     ops/deploy/*) target="$rollback_wrapper" ;;
     ops/sudoers/*) target="$rollback_sudoers" ;;
   esac
-  git -C "$rollback_root" show "$rollback_sha^:$path" > "$target"
+  git -C "$rollback_root" show "$rollback_sha^^:$path" > "$target"
   chown root:root "$target"
   case "$target" in
     "$rollback_sudoers") chmod 0440 "$target" ;;
