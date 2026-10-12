@@ -19,19 +19,22 @@ trap cleanup EXIT
 source="$test_root/source"
 output="$test_root/baselines"
 backup="$test_root/backups"
+rebind_backup="$test_root/rebind-backups"
 config="$test_root/etc/voxelpacs-composer-profile"
 profile_file="$config/voxelpacs-composer-profile-approved-main-sha"
 lock_parent="$test_root/run/lock"
 wrapper="$test_root/wrapper.sh"
 profile_sha='0123456789abcdef0123456789abcdef01234567'
 
-mkdir -p "$source/vendor/composer" "$output" "$backup" "$config" "$lock_parent"
+mkdir -p "$source/vendor/composer" "$output" "$backup" "$rebind_backup" "$config" "$lock_parent"
 printf '%s\n' "$profile_sha" > "$profile_file"
 sudo -n chown root:root "$config" "$profile_file"
 sudo -n chmod 0700 "$config"
 sudo -n chmod 0600 "$profile_file"
 sudo -n chown root:root "$backup" "$lock_parent"
 sudo -n chmod 0700 "$backup"
+sudo -n chown root:root "$rebind_backup"
+sudo -n chmod 0700 "$rebind_backup"
 sudo -n chmod 0755 "$lock_parent"
 cat > "$source/vendor/composer/installed.php" <<EOF
 <?php
@@ -61,11 +64,11 @@ sudo -n chmod 0700 "$output" "$legacy_dir"
 sudo -n find -P "$legacy_dir" -maxdepth 1 -type f -exec chmod 0600 {} +
 
 cp -- "$root/ops/deploy/voxelpacs-production-baseline-capture" "$wrapper"
-python3 - "$wrapper" "$source" "$output" "$root/scripts/capture-production-baseline.sh" "$profile_file" "$backup" "$lock_parent" <<'PY'
+python3 - "$wrapper" "$source" "$output" "$root/scripts/capture-production-baseline.sh" "$profile_file" "$backup" "$rebind_backup" "$lock_parent" <<'PY'
 from pathlib import Path
 import sys
 
-path, source, output, capture, profile, backup, lock_parent = sys.argv[1:]
+path, source, output, capture, profile, backup, rebind_backup, lock_parent = sys.argv[1:]
 text = Path(path).read_text()
 replacements = {
     "readonly SOURCE_ROOT='/var/www/voxelpacs/app'": f"readonly SOURCE_ROOT={source!r}",
@@ -73,6 +76,7 @@ replacements = {
     "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'": f"readonly CAPTURE_SCRIPT={capture!r}",
     "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'": f"readonly COMPOSER_PROFILE_SHA_FILE={profile!r}",
     "readonly REFRESH_BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-refresh'": f"readonly REFRESH_BACKUP_PARENT={backup!r}",
+    "readonly REBIND_BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-rebind'": f"readonly REBIND_BACKUP_PARENT={rebind_backup!r}",
     "readonly LOCK_PATH='/run/lock/voxelpacs-production-baseline-capture-provision.lock'": f"readonly LOCK_PATH={lock_parent!r}/capture.lock",
 }
 for old, new in replacements.items():
@@ -112,6 +116,23 @@ backup_metadata="$backup_dir/metadata.txt"
 ! sudo -n grep -Fq 'composer_profile=' "$backup_metadata"
 ! sudo -n grep -Fq 'composer_profile_source=' "$backup_metadata"
 
+manifest_before="$(sudo -n sha256sum "$legacy_dir/manifest.tsv" | awk '{print $1}')"
+rebind_result="$(sudo -n env -u SUDO_USER bash "$wrapper" rebind-profile "$baseline_id")"
+grep -Fxq 'PROFILE_REBIND=PASS' <<<"$rebind_result"
+grep -Fxq 'BASELINE_PROFILE=UPDATED' <<<"$rebind_result"
+grep -Fxq 'BACKUP=PASS' <<<"$rebind_result"
+grep -Fxq 'BASELINE_MANIFEST_CHANGED=NO' <<<"$rebind_result"
+grep -Fxq 'RAW_VALUES_EXPOSED=NO' <<<"$rebind_result"
+grep -Fxq 'HASHES_EXPOSED=NO' <<<"$rebind_result"
+grep -Fxq 'APPLICATION_CHANGED=NO' <<<"$rebind_result"
+[[ "$(sudo -n sha256sum "$legacy_dir/manifest.tsv" | awk '{print $1}')" == "$manifest_before" ]]
+rebind_dir="$(sudo -n find -P "$rebind_backup" -mindepth 1 -maxdepth 1 -type d -name 'rebind.*' -print)"
+[[ -n "$rebind_dir" && "$(printf '%s\n' "$rebind_dir" | wc -l)" -eq 1 ]]
+[[ "$(sudo -n stat -c '%u:%g:%a:%F' "$rebind_dir/metadata.txt")" == '0:0:600:regular file' ]]
+[[ "$(sudo -n stat -c '%u:%g:%a:%F' "$rebind_dir/composer-profile.tsv")" == '0:0:600:regular file' ]]
+[[ "$(sudo -n grep -Fc 'composer_profile=' "$legacy_dir/metadata.txt")" -eq 1 ]]
+[[ "$(sudo -n grep -Fc 'composer_profile_source=' "$legacy_dir/metadata.txt")" -eq 1 ]]
+
 set +e
 second="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile "$baseline_id" 2>&1)"
 second_rc=$?
@@ -127,3 +148,4 @@ set -e
 grep -Fxq 'REASON=ARGUMENTS_INVALID' <<<"$missing_id"
 
 printf 'production_baseline_profile_refresh_isolated: PASS\nBACKUP=PASS\nATOMIC_PROFILE=PASS\nNO_REPLACE=PASS\nLEGACY_PARENT_PRESERVED=PASS\nSANITIZED_OUTPUT=PASS\nAPPLICATION_CHANGED=NO\n'
+printf 'PROFILE_REBIND=PASS\nREBIND_BACKUP=PASS\nMANIFEST_PRESERVED=PASS\n'

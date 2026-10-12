@@ -53,11 +53,12 @@ O arquivo contém exatamente uma SHA de `main` aprovada por linha. O provisioner
 
 No modo `--upgrade`, o provisioner cria backups temporários `root-only`, faz o staging no mesmo filesystem de cada destino e substitui os três componentes com movimentos atômicos. Se qualquer substituição posterior falhar, restaura os componentes já substituídos a partir dos backups e informa `ROLLBACK=PASS`; uma proveniência histórica não comprovada, symlink, owner/mode inesperado ou conjunto parcial de destinos bloqueia antes da escrita. O `--dry-run` nunca cria backup nem modifica destinos.
 
-A allowlist concede somente as duas operações fixas:
+A allowlist concede somente as três operações fixas:
 
 ```bash
 sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture capture
 sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile <baseline-id-40hex>
+sudo -n /usr/local/sbin/voxelpacs-production-baseline-capture rebind-profile <baseline-id-40hex>
 ```
 
 Não há shell, path, source, destination, comando, SQL, systemd, Bridge, SMB, Worker ou operação clínica variável pelo caller.
@@ -83,9 +84,23 @@ Quando uma baseline existente é íntegra, mas foi criada antes do sidecar Compo
 
 Se ocorrer falha depois do primeiro movimento, o wrapper remove o sidecar novo e restaura `metadata.txt` a partir do backup. Uma baseline já contendo o sidecar, um ID inexistente ou qualquer insegurança estrutural bloqueia; outras baselines presentes não influenciam a escolha.
 
+### Rebind de baseline existente com sidecar
+
+Quando a baseline é íntegra e já contém um sidecar Composer, mas esse sidecar foi produzido para uma SHA aprovada anterior, `refresh-profile` permanece bloqueado por `BASELINE_PROFILE_ALREADY_EXISTS`. A operação fixa `rebind-profile`:
+
+1. exige um `baseline-id` explícito de 40 hexadecimais;
+2. lê a SHA aprovada somente da âncora root-only e não aceita SHA do caller;
+3. valida manifesto, checksum, metadata e sidecar existentes;
+4. executa o capturador oficial somente para produzir o novo perfil sanitizado em área temporária;
+5. preserva `manifest.tsv`, `manifest.sha256`, `baseline-id`, symlinks, exclusions e a origem da aplicação;
+6. grava backup root-only de `metadata.txt` e `composer-profile.tsv` em `/var/lib/voxelpacs/admin-backups/composer-profile-rebind`;
+7. substitui atomicamente apenas o sidecar e os dois marcadores de perfil em `metadata.txt`.
+
+Se ocorrer falha depois do primeiro movimento, o wrapper restaura os dois arquivos originais a partir do backup e informa `ROLLBACK=PASS`; o manifesto nunca é substituído. Uma baseline sem sidecar, um ID inexistente, sidecar ambíguo ou qualquer insegurança estrutural bloqueia.
+
 ## Rollback
 
-O modo inicial não substitui destinos existentes; se uma instalação falhar depois de iniciar, os arquivos novos são removidos pelo cleanup fail-closed. O modo `--upgrade` só substitui destinos regulares, históricos e com permissões aprovadas; em falha parcial restaura os blobs anteriores e preserva seus modos. O modo `refresh-profile` não substitui o manifesto nem o sidecar existente; preserva backup root-only e restaura `metadata.txt` em falha parcial. Nenhum modo altera release da aplicação, `.env`, storage, banco ou serviço. Após uma atualização bem-sucedida, qualquer reversão posterior deve ser feita por procedimento administrativo aprovado, preservando evidência e validando novamente `visudo`.
+O modo inicial não substitui destinos existentes; se uma instalação falhar depois de iniciar, os arquivos novos são removidos pelo cleanup fail-closed. O modo `--upgrade` só substitui destinos regulares, históricos e com permissões aprovadas; em falha parcial restaura os blobs anteriores e preserva seus modos. O modo `refresh-profile` não substitui o manifesto nem o sidecar existente; preserva backup root-only e restaura `metadata.txt` em falha parcial. O modo `rebind-profile` substitui somente o sidecar e os marcadores de metadata, preserva o manifesto, mantém backup root-only e restaura ambos os arquivos originais em falha parcial. Nenhum modo altera release da aplicação, `.env`, storage, banco ou serviço. Após uma atualização bem-sucedida, qualquer reversão posterior deve ser feita por procedimento administrativo aprovado, preservando evidência e validando novamente `visudo`.
 
 ## Validação
 
