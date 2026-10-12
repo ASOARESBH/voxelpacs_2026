@@ -22,11 +22,11 @@ grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$wrapper" || fa
 grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$wrapper" || fail fixed_capture_path
 grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" "$wrapper" || fail fixed_profile_approval_path
 grep -Fq '1:capture)' "$wrapper" || fail fixed_capture_arguments
-grep -Fq '1:refresh-profile)' "$wrapper" || fail fixed_refresh_arguments
+grep -Fq '2:refresh-profile)' "$wrapper" || fail fixed_refresh_arguments
 grep -Fq -- '--composer-profile-sha' "$wrapper" || fail fixed_profile_argument
 grep -Fq 'read_approved_composer_profile_sha' "$wrapper" || fail fixed_profile_approval_reader
 grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$sudoers" || fail sudoers_capture_command
-grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile' "$sudoers" || fail sudoers_refresh_command
+grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile ????????????????????????????????????????' "$sudoers" || fail sudoers_refresh_command
 grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$sudoers" || fail sudoers_caller
 
 for file in "$wrapper" "$sudoers"; do

@@ -83,7 +83,8 @@ Path(path).write_text(text)
 PY
 chmod 0755 "$wrapper"
 
-result="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile)"
+baseline_id="$(basename "$legacy_dir")"
+result="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile "$baseline_id")"
 grep -Fxq 'PROFILE_REFRESH=PASS' <<<"$result"
 grep -Fxq 'BASELINE_PROFILE=CREATED' <<<"$result"
 grep -Fxq 'BACKUP=PASS' <<<"$result"
@@ -112,10 +113,17 @@ backup_metadata="$backup_dir/metadata.txt"
 ! sudo -n grep -Fq 'composer_profile_source=' "$backup_metadata"
 
 set +e
-second="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile 2>&1)"
+second="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile "$baseline_id" 2>&1)"
 second_rc=$?
 set -e
 [[ "$second_rc" -eq 64 ]]
-grep -Fxq 'REASON=BASELINE_PROFILE_REFRESH_CANDIDATE_AMBIGUOUS' <<<"$second"
+grep -Fxq 'REASON=BASELINE_PROFILE_ALREADY_EXISTS' <<<"$second"
+
+set +e
+missing_id="$(sudo -n env -u SUDO_USER bash "$wrapper" refresh-profile 2>&1)"
+missing_id_rc=$?
+set -e
+[[ "$missing_id_rc" -eq 64 ]]
+grep -Fxq 'REASON=ARGUMENTS_INVALID' <<<"$missing_id"
 
 printf 'production_baseline_profile_refresh_isolated: PASS\nBACKUP=PASS\nATOMIC_PROFILE=PASS\nNO_REPLACE=PASS\nLEGACY_PARENT_PRESERVED=PASS\nSANITIZED_OUTPUT=PASS\nAPPLICATION_CHANGED=NO\n'
