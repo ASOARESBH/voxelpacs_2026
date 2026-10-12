@@ -51,10 +51,13 @@ chmod 0644 "$app/vendor/composer/installed.php"
 cat > "$baseline_root/$baseline_sha/baseline-id" <<EOF
 $baseline_sha
 EOF
-printf 'profile_artifact_sha\t%s\nroot_reference_state\tSOURCE_SHA\npackage_reference_state\tSOURCE_SHA\n' \
-  "$artifact_sha" > "$baseline_root/$baseline_sha/composer-profile.tsv"
+printf '%s\n' 'baseline-manifest-fixture' > "$baseline_root/$baseline_sha/manifest.tsv"
+manifest_sha="$(sha256sum "$baseline_root/$baseline_sha/manifest.tsv" | awk '{print $1}')"
+printf '%s\n' "$manifest_sha" > "$baseline_root/$baseline_sha/manifest.sha256"
+printf 'profile_manifest_sha256\t%s\nprofile_artifact_sha\t%s\nroot_reference_state\tSOURCE_SHA\npackage_reference_state\tSOURCE_SHA\n' \
+  "$manifest_sha" "$artifact_sha" > "$baseline_root/$baseline_sha/composer-profile.tsv"
 chmod 0700 "$baseline_root" "$baseline_root/$baseline_sha"
-chmod 0600 "$baseline_root/$baseline_sha/baseline-id" "$baseline_root/$baseline_sha/composer-profile.tsv"
+chmod 0600 "$baseline_root/$baseline_sha/baseline-id" "$baseline_root/$baseline_sha/manifest.tsv" "$baseline_root/$baseline_sha/manifest.sha256" "$baseline_root/$baseline_sha/composer-profile.tsv"
 run_as_root chown -R root:root "$baseline_root"
 
 artifact_profile="$fixture_root/artifact-profile.tsv"
@@ -73,6 +76,61 @@ grep -Fxq 'ARTIFACT_RUNTIME_ROOT_COMPARISON=MATCH' <<<"$output" || fail root_equ
 grep -Fxq 'ARTIFACT_RUNTIME_PACKAGE_COMPARISON=MATCH' <<<"$output" || fail package_equality
 grep -Fxq 'READY_FOR_DEPLOY=NO' <<<"$output" || fail deploy_guard
 ! grep -Fq "'reference'" <<<"$output" || fail raw_key_content_exposed
+
+run_as_root sh -c "printf '%s\\n' tampered > '$baseline_root/$baseline_sha/manifest.tsv'"
+set +e
+tampered_manifest="$(run_helper 2>&1)"
+tampered_manifest_rc=$?
+set -e
+[[ "$tampered_manifest_rc" -eq 64 ]] || fail tampered_manifest_exit_code
+grep -Fq 'REASON=BASELINE_MANIFEST_CHECKSUM_MISMATCH' <<<"$tampered_manifest" || fail tampered_manifest_rejected
+run_as_root sh -c "printf '%s\\n' baseline-manifest-fixture > '$baseline_root/$baseline_sha/manifest.tsv'"
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$artifact_sha',
+    ),
+    'versions' => array(
+        'voxel/bi' => array(
+            'reference' => '$artifact_sha',
+            'dist' => array(
+                'reference' => '$other_sha',
+            ),
+        ),
+    ),
+);
+EOF
+set +e
+ambiguous="$(run_helper 2>&1)"
+ambiguous_rc=$?
+set -e
+[[ "$ambiguous_rc" -eq 65 ]] || fail ambiguous_exit_code
+grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$ambiguous" || fail ambiguous_package_state
+grep -Fxq 'PROFILE_DIAGNOSIS=PROFILE_FIELDS_INDETERMINATE' <<<"$ambiguous" || fail ambiguous_diagnosis
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$ambiguous" || fail ambiguous_audit_status
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$artifact_sha',
+    ),
+    'versions' => array(
+        'other/package' => array(
+            'reference' => '$other_sha',
+        ),
+    ),
+);
+EOF
+set +e
+absent_package="$(run_helper 2>&1)"
+absent_package_rc=$?
+set -e
+[[ "$absent_package_rc" -eq 65 ]] || fail absent_package_exit_code
+grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$absent_package" || fail absent_package_state
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$absent_package" || fail absent_package_audit_status
 
 cat > "$app/vendor/composer/installed.php" <<EOF
 <?php
@@ -108,9 +166,14 @@ return array(
     ),
 );
 EOF
-missing="$(run_helper)"
+set +e
+missing="$(run_helper 2>&1)"
+missing_rc=$?
+set -e
+[[ "$missing_rc" -eq 65 ]] || fail missing_exit_code
 grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$missing" || fail missing_package_state
 grep -Fxq 'PROFILE_DIAGNOSIS=PROFILE_FIELDS_INDETERMINATE' <<<"$missing" || fail missing_diagnosis
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$missing" || fail missing_audit_status
 
 rm -f -- "$baseline_root/$baseline_sha/composer-profile.tsv"
 cat > "$app/vendor/composer/installed.php" <<EOF
@@ -126,10 +189,15 @@ return array(
     ),
 );
 EOF
-unavailable="$(run_helper)"
+set +e
+unavailable="$(run_helper 2>&1)"
+unavailable_rc=$?
+set -e
+[[ "$unavailable_rc" -eq 65 ]] || fail baseline_unavailable_exit_code
 grep -Fxq 'BASELINE_PROFILE=NO' <<<"$unavailable" || fail baseline_unavailable
- grep -Fxq 'PROFILE_COMPARISON=INCOMPLETE' <<<"$unavailable" || fail incomplete_comparison
- grep -Fxq 'PROFILE_DIAGNOSIS=BASELINE_PROFILE_UNAVAILABLE' <<<"$unavailable" || fail unavailable_diagnosis
+grep -Fxq 'PROFILE_COMPARISON=INCOMPLETE' <<<"$unavailable" || fail incomplete_comparison
+grep -Fxq 'PROFILE_DIAGNOSIS=BASELINE_PROFILE_UNAVAILABLE' <<<"$unavailable" || fail unavailable_diagnosis
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$unavailable" || fail unavailable_audit_status
 
 profile_output="$fixture_root/generated-profile.tsv"
 profile_repo="$fixture_root/profile-repo"
@@ -164,4 +232,4 @@ grep -Fqx $'package_reference_state\tSOURCE_SHA' "$profile_output" || fail profi
 ! grep -Fq "$other_sha" "$profile_output" || fail profile_builder_raw_value
 ! grep -Fq "'reference'" "$profile_output" || fail profile_builder_raw_key
 
-printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nMISSING_FIELDS=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'
+printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'

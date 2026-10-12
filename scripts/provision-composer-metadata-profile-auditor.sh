@@ -8,16 +8,23 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly SCRIPT_DIR
 ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null || true)"
 readonly ROOT
-readonly HELPER_SOURCE="$ROOT/ops/deploy/voxelpacs-composer-metadata-profile-auditor"
-readonly SUDOERS_SOURCE="$ROOT/ops/sudoers/voxelpacs-composer-metadata-profile-auditor"
+readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'
+readonly CANONICAL_MAIN_REF='refs/remotes/origin/main'
+readonly HELPER_PATH='ops/deploy/voxelpacs-composer-metadata-profile-auditor'
+readonly SUDOERS_PATH='ops/sudoers/voxelpacs-composer-metadata-profile-auditor'
+readonly PROVISIONER_PATH='scripts/provision-composer-metadata-profile-auditor.sh'
+readonly HELPER_SOURCE="$ROOT/$HELPER_PATH"
+readonly SUDOERS_SOURCE="$ROOT/$SUDOERS_PATH"
 readonly INSTALLED_HELPER='/usr/local/sbin/voxelpacs-composer-metadata-profile-auditor'
 readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-composer-metadata-profile-auditor'
 readonly LOCK_PATH='/run/lock/voxelpacs-composer-metadata-profile-auditor-provision.lock'
-readonly STAGE_BASE='/var/tmp'
+readonly HELPER_PARENT='/usr/local/sbin'
+readonly SUDOERS_PARENT='/etc/sudoers.d'
 
 mode=''
 expected_sha=''
-stage_dir=''
+helper_stage_dir=''
+sudoers_stage_dir=''
 lock_fd=''
 installed_helper=0
 installed_sudoers=0
@@ -47,8 +54,14 @@ parse_args() {
 require_root() { [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'; }
 
 validate_repo() {
+  local remote_url main_sha
   [[ -n "$ROOT" && ( -d "$ROOT/.git" || -f "$ROOT/.git" ) ]] || fail 'GIT_ROOT_NOT_FOUND'
   [[ "$SCRIPT_DIR" == "$ROOT/scripts" ]] || fail 'SCRIPT_LOCATION_INVALID'
+  remote_url="$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)"
+  [[ "$remote_url" == "$CANONICAL_REMOTE" ]] || fail 'CANONICAL_REMOTE_MISMATCH'
+  git -C "$ROOT" show-ref --verify --quiet "$CANONICAL_MAIN_REF" || fail 'ORIGIN_MAIN_REF_MISSING'
+  main_sha="$(git -C "$ROOT" rev-parse "$CANONICAL_MAIN_REF" 2>/dev/null || true)"
+  [[ "$main_sha" == "$expected_sha" ]] || fail 'EXPECTED_SHA_NOT_ORIGIN_MAIN'
   [[ "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" == "$expected_sha" ]] || fail 'GIT_SHA_MISMATCH'
   [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]] || fail 'WORKTREE_NOT_CLEAN'
 }
@@ -56,24 +69,26 @@ validate_repo() {
 validate_sources() {
   [[ -f "$HELPER_SOURCE" && ! -L "$HELPER_SOURCE" ]] || fail 'HELPER_SOURCE_INVALID'
   [[ -f "$SUDOERS_SOURCE" && ! -L "$SUDOERS_SOURCE" ]] || fail 'SUDOERS_SOURCE_INVALID'
-  git -C "$ROOT" ls-files --error-unmatch -- \
-    ops/deploy/voxelpacs-composer-metadata-profile-auditor \
-    scripts/provision-composer-metadata-profile-auditor.sh \
-    ops/sudoers/voxelpacs-composer-metadata-profile-auditor >/dev/null 2>&1 || fail 'SOURCE_NOT_TRACKED'
-  git -C "$ROOT" cat-file -e "$expected_sha:ops/deploy/voxelpacs-composer-metadata-profile-auditor" >/dev/null 2>&1 || fail 'HELPER_NOT_IN_SHA'
-  git -C "$ROOT" cat-file -e "$expected_sha:scripts/provision-composer-metadata-profile-auditor.sh" >/dev/null 2>&1 || fail 'PROVISIONER_NOT_IN_SHA'
-  git -C "$ROOT" cat-file -e "$expected_sha:ops/sudoers/voxelpacs-composer-metadata-profile-auditor" >/dev/null 2>&1 || fail 'SUDOERS_NOT_IN_SHA'
+  git -C "$ROOT" ls-files --error-unmatch -- "$HELPER_PATH" "$PROVISIONER_PATH" "$SUDOERS_PATH" >/dev/null 2>&1 || fail 'SOURCE_NOT_TRACKED'
+  git -C "$ROOT" cat-file -e "$expected_sha:$HELPER_PATH" >/dev/null 2>&1 || fail 'HELPER_NOT_IN_SHA'
+  git -C "$ROOT" cat-file -e "$expected_sha:$PROVISIONER_PATH" >/dev/null 2>&1 || fail 'PROVISIONER_NOT_IN_SHA'
+  git -C "$ROOT" cat-file -e "$expected_sha:$SUDOERS_PATH" >/dev/null 2>&1 || fail 'SUDOERS_NOT_IN_SHA'
+  git -C "$ROOT" diff --quiet "$expected_sha" -- "$HELPER_PATH" "$PROVISIONER_PATH" "$SUDOERS_PATH" || fail 'SOURCE_DIFFERS_FROM_SHA'
+  git -C "$ROOT" diff --cached --quiet "$expected_sha" -- "$HELPER_PATH" "$PROVISIONER_PATH" "$SUDOERS_PATH" || fail 'INDEX_DIFFERS_FROM_SHA'
 }
 
 validate_helper_contract() {
-  grep -Fqx "readonly APP_ROOT='/var/www/voxelpacs/app'" "$HELPER_SOURCE" || fail 'APP_ROOT_CONTRACT_INVALID'
-  grep -Fqx "readonly BASELINE_ROOT='/var/lib/voxelpacs/baselines'" "$HELPER_SOURCE" || fail 'BASELINE_ROOT_CONTRACT_INVALID'
-  grep -Fqx "readonly TARGET_RELATIVE_PATH='vendor/composer/installed.php'" "$HELPER_SOURCE" || fail 'TARGET_PATH_CONTRACT_INVALID'
-  grep -Fqx "readonly BASELINE_PROFILE_NAME='composer-profile.tsv'" "$HELPER_SOURCE" || fail 'BASELINE_PROFILE_CONTRACT_INVALID'
-  ! grep -Eq -- '--path|--source|--destination|--command|eval|NOPASSWD:[[:space:]]+ALL|rm -rf|smbclient|systemctl|composer[[:space:]]|php ' "$HELPER_SOURCE" || fail 'HELPER_GENERIC_OPERATION_PRESENT'
-  grep -Fq 'RAW_VALUES_EXPOSED=NO' "$HELPER_SOURCE" || fail 'RAW_VALUE_CONTRACT_MISSING'
-  grep -Fq 'READY_FOR_DEPLOY=NO' "$HELPER_SOURCE" || fail 'DEPLOY_GUARD_MISSING'
-  bash -n "$HELPER_SOURCE"
+  local helper_contract
+  helper_contract="$(git -C "$ROOT" show "$expected_sha:$HELPER_PATH" 2>/dev/null)" || fail 'HELPER_BLOB_READ_FAILED'
+  grep -Fqx "readonly APP_ROOT='/var/www/voxelpacs/app'" <<<"$helper_contract" || fail 'APP_ROOT_CONTRACT_INVALID'
+  grep -Fqx "readonly BASELINE_ROOT='/var/lib/voxelpacs/baselines'" <<<"$helper_contract" || fail 'BASELINE_ROOT_CONTRACT_INVALID'
+  grep -Fqx "readonly TARGET_RELATIVE_PATH='vendor/composer/installed.php'" <<<"$helper_contract" || fail 'TARGET_PATH_CONTRACT_INVALID'
+  grep -Fqx "readonly BASELINE_PROFILE_NAME='composer-profile.tsv'" <<<"$helper_contract" || fail 'BASELINE_PROFILE_CONTRACT_INVALID'
+  ! grep -Eq -- '--path|--source|--destination|--command|eval|NOPASSWD:[[:space:]]+ALL|rm -rf|smbclient|systemctl|composer[[:space:]]|php ' <<<"$helper_contract" || fail 'HELPER_GENERIC_OPERATION_PRESENT'
+  grep -Fq 'RAW_VALUES_EXPOSED=NO' <<<"$helper_contract" || fail 'RAW_VALUE_CONTRACT_MISSING'
+  grep -Fq 'READY_FOR_DEPLOY=NO' <<<"$helper_contract" || fail 'DEPLOY_GUARD_MISSING'
+  grep -Fq "audit_status='INCOMPLETE'" <<<"$helper_contract" || fail 'INCOMPLETE_AUDIT_CONTRACT_MISSING'
+  bash -n <(printf '%s\n' "$helper_contract")
 }
 
 validate_sudoers() {
@@ -84,23 +99,46 @@ validate_sudoers() {
   visudo -cf "$SUDOERS_SOURCE" >/dev/null || fail 'SUDOERS_SYNTAX_INVALID'
 }
 
+validate_admin_directory() {
+  local path="$1" metadata mode_bits
+  [[ -d "$path" && ! -L "$path" ]] || fail 'ADMIN_DIRECTORY_INVALID'
+  metadata="$(stat -c '%u:%g:%a' -- "$path" 2>/dev/null || true)"
+  [[ "$metadata" == 0:0:* ]] || fail 'ADMIN_DIRECTORY_OWNERSHIP_INVALID'
+  mode_bits="${metadata##*:}"
+  [[ "$mode_bits" =~ ^[0-7]{3,4}$ ]] || fail 'ADMIN_DIRECTORY_MODE_INVALID'
+  (( (8#$mode_bits & 18) == 0 )) || fail 'ADMIN_DIRECTORY_GROUP_OTHER_WRITE'
+}
+
 validate_install_scope() {
-  [[ -d /usr/local/sbin && ! -L /usr/local/sbin ]] || fail 'SUDO_BIN_DIRECTORY_INVALID'
-  [[ -d /etc/sudoers.d && ! -L /etc/sudoers.d ]] || fail 'SUDOERS_DIRECTORY_INVALID'
+  validate_admin_directory "$HELPER_PARENT"
+  validate_admin_directory "$SUDOERS_PARENT"
   [[ ! -e "$INSTALLED_HELPER" && ! -L "$INSTALLED_HELPER" ]] || fail 'HELPER_ALREADY_INSTALLED'
   [[ ! -e "$INSTALLED_SUDOERS" && ! -L "$INSTALLED_SUDOERS" ]] || fail 'SUDOERS_ALREADY_INSTALLED'
 }
 
 acquire_lock() {
   [[ -d "$(dirname "$LOCK_PATH")" && ! -L "$(dirname "$LOCK_PATH")" ]] || fail 'LOCK_DIRECTORY_INVALID'
-  exec {lock_fd}>"$LOCK_PATH"
+  [[ ! -L "$LOCK_PATH" ]] || fail 'LOCK_PATH_SYMLINK'
+  if [[ -e "$LOCK_PATH" ]]; then
+    local lock_mode
+    [[ -f "$LOCK_PATH" ]] || fail 'LOCK_PATH_NOT_REGULAR'
+    [[ "$(stat -c '%u:%g:%a' -- "$LOCK_PATH" 2>/dev/null || true)" == 0:0:* ]] || fail 'LOCK_PATH_OWNERSHIP_INVALID'
+    lock_mode="$(stat -c '%a' -- "$LOCK_PATH" 2>/dev/null || true)"
+    [[ "$lock_mode" =~ ^[0-7]{3,4}$ ]] || fail 'LOCK_PATH_MODE_INVALID'
+    (( (8#$lock_mode & 18) == 0 )) || fail 'LOCK_PATH_GROUP_OTHER_WRITE'
+  fi
+  exec {lock_fd}<>"$LOCK_PATH"
   flock -n "$lock_fd" || fail 'PROVISION_LOCK_BUSY'
 }
 
 cleanup_stage() {
-  if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then
-    rm -f -- "$stage_dir/helper" "$stage_dir/sudoers"
-    rmdir -- "$stage_dir" 2>/dev/null || true
+  if [[ -n "$helper_stage_dir" && -d "$helper_stage_dir" ]]; then
+    rm -f -- "$helper_stage_dir/helper"
+    rmdir -- "$helper_stage_dir" 2>/dev/null || true
+  fi
+  if [[ -n "$sudoers_stage_dir" && -d "$sudoers_stage_dir" ]]; then
+    rm -f -- "$sudoers_stage_dir/sudoers"
+    rmdir -- "$sudoers_stage_dir" 2>/dev/null || true
   fi
 }
 
@@ -111,14 +149,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-stage_files() {
-  stage_dir="$(mktemp -d "$STAGE_BASE/voxelpacs-composer-metadata-profile-auditor.XXXXXX")"
-  chmod 0700 "$stage_dir"
-  install -o root -g root -m 0555 -- "$HELPER_SOURCE" "$stage_dir/helper"
-  install -o root -g root -m 0440 -- "$SUDOERS_SOURCE" "$stage_dir/sudoers"
-  visudo -cf "$stage_dir/sudoers" >/dev/null || fail 'STAGED_SUDOERS_SYNTAX_INVALID'
-  [[ "$(sha256sum "$stage_dir/helper" | awk '{print $1}')" == "$(sha256sum "$HELPER_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_HELPER_HASH_MISMATCH'
-  [[ "$(sha256sum "$stage_dir/sudoers" | awk '{print $1}')" == "$(sha256sum "$SUDOERS_SOURCE" | awk '{print $1}')" ]] || fail 'STAGED_SUDOERS_HASH_MISMATCH'
+stage_files_from_git() {
+  local helper_blob sudoers_blob
+  validate_admin_directory "$HELPER_PARENT"
+  validate_admin_directory "$SUDOERS_PARENT"
+  helper_stage_dir="$(mktemp -d "$HELPER_PARENT/.voxelpacs-composer-metadata-profile-auditor.XXXXXX")"
+  sudoers_stage_dir="$(mktemp -d "$SUDOERS_PARENT/.voxelpacs-composer-metadata-profile-auditor.XXXXXX")"
+  chmod 0700 "$helper_stage_dir" "$sudoers_stage_dir"
+
+  git -C "$ROOT" show "$expected_sha:$HELPER_PATH" > "$helper_stage_dir/helper" || fail 'HELPER_BLOB_READ_FAILED'
+  git -C "$ROOT" show "$expected_sha:$SUDOERS_PATH" > "$sudoers_stage_dir/sudoers" || fail 'SUDOERS_BLOB_READ_FAILED'
+  chown root:root "$helper_stage_dir/helper" "$sudoers_stage_dir/sudoers"
+  chmod 0555 "$helper_stage_dir/helper"
+  chmod 0440 "$sudoers_stage_dir/sudoers"
+  visudo -cf "$sudoers_stage_dir/sudoers" >/dev/null || fail 'STAGED_SUDOERS_SYNTAX_INVALID'
+
+  helper_blob="$(git -C "$ROOT" rev-parse "$expected_sha:$HELPER_PATH")"
+  sudoers_blob="$(git -C "$ROOT" rev-parse "$expected_sha:$SUDOERS_PATH")"
+  [[ "$(git -C "$ROOT" hash-object -- "$helper_stage_dir/helper")" == "$helper_blob" ]] || fail 'STAGED_HELPER_BLOB_MISMATCH'
+  [[ "$(git -C "$ROOT" hash-object -- "$sudoers_stage_dir/sudoers")" == "$sudoers_blob" ]] || fail 'STAGED_SUDOERS_BLOB_MISMATCH'
+}
+
+link_no_replace() {
+  local source="$1" target="$2"
+  [[ ! -e "$target" && ! -L "$target" ]] || fail 'INSTALL_TARGET_APPEARED'
+  ln -- "$source" "$target" || fail 'INSTALL_LINK_FAILED'
 }
 
 parse_args "$@"
@@ -128,17 +183,25 @@ validate_sources
 validate_helper_contract
 validate_sudoers
 validate_install_scope
-acquire_lock
-printf 'SOURCE_SHA=%s\nTARGET_PATH=vendor/composer/installed.php\nPROFILE=STATE_ONLY_V1\n' "$expected_sha"
+printf 'SOURCE_SHA=%s\nCANONICAL_REMOTE=PASS\nORIGIN_MAIN_MATCH=PASS\nTARGET_PATH=vendor/composer/installed.php\nPROFILE=STATE_ONLY_V1\n' "$expected_sha"
 if [[ "$mode" == 'dry-run' ]]; then
-  printf 'SOURCE_SHA_CHECK=PASS\nHELPER_CHECK=PASS\nSUDOERS_SYNTAX=PASS\nTARGETS_ABSENT=PASS\nDRY_RUN=PASS\nINSTALL=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
+  printf 'SOURCE_SHA_CHECK=PASS\nHELPER_CHECK=PASS\nSUDOERS_SYNTAX=PASS\nADMIN_DIRECTORIES=PASS\nTARGETS_ABSENT=PASS\nDRY_RUN=PASS\nINSTALL=NOT_EXECUTED\nPRODUCTION_CHANGED=NO\n'
   exit 0
 fi
-stage_files
-mv -- "$stage_dir/helper" "$INSTALLED_HELPER"
+
+acquire_lock
+validate_install_scope
+stage_files_from_git
+validate_admin_directory "$HELPER_PARENT"
+validate_admin_directory "$SUDOERS_PARENT"
+validate_install_scope
+link_no_replace "$helper_stage_dir/helper" "$INSTALLED_HELPER"
 installed_helper=1
-mv -- "$stage_dir/sudoers" "$INSTALLED_SUDOERS"
+link_no_replace "$sudoers_stage_dir/sudoers" "$INSTALLED_SUDOERS"
 installed_sudoers=1
+[[ "$(stat -c '%u:%g:%a' -- "$INSTALLED_HELPER")" == '0:0:555' ]] || fail 'HELPER_FINAL_OWNERSHIP_MODE_INVALID'
+[[ "$(stat -c '%u:%g:%a' -- "$INSTALLED_SUDOERS")" == '0:0:440' ]] || fail 'SUDOERS_FINAL_OWNERSHIP_MODE_INVALID'
+visudo -cf "$INSTALLED_SUDOERS" >/dev/null || fail 'FINAL_SUDOERS_SYNTAX_INVALID'
 cleanup_stage
 trap - EXIT
 printf 'SOURCE_SHA_CHECK=PASS\nHELPER_INSTALLED=YES\nSUDOERS_INSTALLED=YES\nHELPER_OWNER_MODE=root:root:0555\nSUDOERS_OWNER_MODE=root:root:0440\nSUDOERS_SYNTAX=PASS\nINSTALL=PASS\nPRODUCTION_CHANGED=YES\n'

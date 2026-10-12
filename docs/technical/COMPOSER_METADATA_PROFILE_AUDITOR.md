@@ -59,14 +59,26 @@ root_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
 package_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
 ```
 
-Sem esse sidecar, o resultado é:
+O sidecar só é aceito quando também contém o checksum SHA-256 do `manifest.tsv` oficial da mesma baseline:
+
+```text
+profile_manifest_sha256\t<sha-256-do-manifest.tsv>
+profile_artifact_sha\t<sha-da-main>
+root_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
+package_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
+```
+
+O helper valida `manifest.tsv`, `manifest.sha256`, o `baseline-id`, ownership/modos root-only e a igualdade do checksum declarado no sidecar com o checksum do manifesto. Sem o manifesto íntegro, o resultado é `BLOCKED`; sem o sidecar vinculado, o resultado é:
 
 ```text
 BASELINE_PROFILE=NO
 PROFILE_COMPARISON=INCOMPLETE
 PROFILE_DIAGNOSIS=BASELINE_PROFILE_UNAVAILABLE
+AUDIT=INCOMPLETE
 READY_FOR_DEPLOY=NO
 ```
+
+Comparação incompleta retorna código de saída não-zero (`65`). Nunca deve ser interpretada como auditoria concluída.
 
 O helper não cria, atualiza, captura ou altera a baseline.
 
@@ -92,6 +104,11 @@ A capacidade é diagnóstica. Ela nunca modifica a política do drift gate, nunc
 - não expõe conteúdo, valores de referência ou hashes individuais;
 - o sudoers permite somente os dois identificadores hexadecimais fixos;
 - a origem do perfil é validada pela SHA exata do artefato informado.
+- referências duplicadas, nested ou fora do bloco estrutural exato resultam em `UNRESOLVED` e comparação incompleta;
+- o provisioner exige o remoto canônico, `origin/main` apontando para a SHA exata e worktree limpo;
+- os diretórios administrativos precisam ser root-owned e não graváveis por grupo/outros;
+- o staging é criado no filesystem de cada destino e a instalação usa link sem sobrescrita;
+- falha parcial remove os arquivos recém-instalados, sem substituir destinos existentes.
 
 ## Provisionamento
 
@@ -119,9 +136,10 @@ bash -n scripts/build-composer-metadata-profile.sh
 visudo -cf ops/sudoers/voxelpacs-composer-metadata-profile-auditor
 bash tests/deploy/composer_metadata_profile_auditor_static.sh
 sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_auditor_isolated.sh
+sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_provisioner_isolated.sh
 ```
 
-Os testes cobrem igualdade, divergência, campos ausentes, baseline indisponível, escopo do sudoers e não exposição de valores.
+Os testes cobrem igualdade, divergência, referências ambíguas, pacote ausente, campos ausentes, vínculo de baseline, baseline indisponível, escopo do sudoers, origem Git, diretórios inseguros, instalação real isolada, no-replace, limpeza de falha parcial e não exposição de valores.
 
 ## Estado operacional
 

@@ -77,7 +77,14 @@ import sys
 source = Path(sys.argv[1])
 expected = sys.argv[2]
 out = Path(sys.argv[3])
-text = source.read_text(encoding='utf-8')
+lines = source.read_text(encoding='utf-8').splitlines()
+
+ARRAY_OPEN = re.compile(r"\barray\s*\(")
+ARRAY_CLOSE = re.compile(r"\),")
+ROOT_START = re.compile(r"^\s*'root'\s*=>\s*array\s*\(")
+VERSIONS_START = re.compile(r"^\s*'versions'\s*=>\s*array\s*\(")
+PACKAGE_START = re.compile(r"^\s*'voxel/bi'\s*=>\s*array\s*\(")
+REFERENCE = re.compile(r"'reference'\s*=>\s*(null|'[0-9a-f]{40}'),")
 
 def state(value: str) -> str:
     value = value.strip()
@@ -87,31 +94,74 @@ def state(value: str) -> str:
         return 'SOURCE_SHA' if value[1:-1] == expected else 'OTHER_SHA'
     return 'UNRESOLVED'
 
-def reference_in_block(block: str) -> str:
-    matches = re.findall(r"'reference'\s*=>\s*(null|'[0-9a-f]{40}'),", block)
+def line_reference_state(line: str) -> str:
+    matches = REFERENCE.findall(line)
     if len(matches) != 1:
         return 'UNRESOLVED'
     return state(matches[0])
 
-root_start = text.find("    'root' => array(")
-versions_start = text.find("    'versions' => array(", root_start)
-if root_start < 0 or versions_start <= root_start:
-    root_state = 'UNRESOLVED'
-else:
-    root_state = reference_in_block(text[root_start:versions_start])
+def delta(line: str) -> int:
+    return len(ARRAY_OPEN.findall(line)) - len(ARRAY_CLOSE.findall(line))
 
-package_start = text.find("        'voxel/bi' => array(", versions_start)
-if package_start < 0:
-    package_state = 'UNRESOLVED'
-else:
-    package_end = text.find("\n        ),", package_start)
-    package_block = text[package_start:] if package_end < 0 else text[package_start:package_end]
-    package_state = reference_in_block(package_block)
+def root_reference_state() -> str:
+    depth = 0
+    direct = []
+    nested = 0
+    for line in lines:
+        if depth == 0:
+            if ROOT_START.search(line):
+                depth = 1
+            continue
+        if depth == 1 and VERSIONS_START.search(line):
+            break
+        if "'reference'" in line:
+            if depth == 1:
+                direct.append(line_reference_state(line))
+            else:
+                nested += 1
+        depth += delta(line)
+        if depth <= 0:
+            break
+    if len(direct) == 1 and nested == 0:
+        return direct[0]
+    return 'UNRESOLVED'
+
+def package_reference_state() -> str:
+    versions_depth = 0
+    package_depth = 0
+    package_found = False
+    direct = []
+    any_references = 0
+    for line in lines:
+        if versions_depth == 0:
+            if VERSIONS_START.search(line):
+                versions_depth = 1
+            continue
+        if not package_found:
+            if versions_depth == 1 and PACKAGE_START.search(line):
+                package_found = True
+                package_depth = 1
+                continue
+            versions_depth += delta(line)
+            if versions_depth <= 0:
+                break
+            continue
+        if package_depth > 0:
+            if "'reference'" in line:
+                any_references += 1
+                if package_depth == 1:
+                    direct.append(line_reference_state(line))
+            package_depth += delta(line)
+            if package_depth <= 0:
+                break
+    if package_found and len(direct) == 1 and any_references == 1:
+        return direct[0]
+    return 'UNRESOLVED'
 
 out.write_text(
     f'profile_artifact_sha\t{expected}\n'
-    f'root_reference_state\t{root_state}\n'
-    f'package_reference_state\t{package_state}\n',
+    f'root_reference_state\t{root_reference_state()}\n'
+    f'package_reference_state\t{package_reference_state()}\n',
     encoding='utf-8',
 )
 out.chmod(0o600)
