@@ -34,9 +34,15 @@ A operação usa `SELECT ... FOR UPDATE` e uma atualização condicional de esta
 
 O método existente `retryJob()` permanece reservado ao retry condicionado ao fluxo automático e continua exigindo `disparar_na_liberacao = 1`. Não usar a operação por relatório para esse caso, pois ela pode reativar múltiplos jobs terminais.
 
+## Reenvio automático de produção por Job
+
+A aba de Jobs técnicos também pode exibir `Reenviar estudo` para um único Job automático Non-DICOM de produção quando todos os gates forem comprovados: `queued` ou `failed`; transporte `philips_non_dicom`; perfil `submission_document`; evento `report.released`; Outbox sem Delivery Request; destino do mesmo tenant em `producao`, habilitado e com `disparar_na_liberacao = 1`; ausência de lock e de `remote_reference`. Jobs `dead_letter`, `processing`, `delivered`, controlados e DICOM permanecem fora da ação. A rota `POST /platform/negocios/{tenantId}/report-delivery/jobs/{jobId}/resend-automatic` exige administrador de plataforma, CSRF e confirmação explícita.
+
+A operação é transacional e usa `SELECT ... FOR UPDATE`. Ela não cria Outbox, Job, attempt, PDF ou XML; não altera `reports`, `report_versions`, payload, PatientName, autoria ou qualquer data clínica. Apenas rearma os campos operacionais do Job (`status = queued`, `worker_eligible_at = NOW()`, `next_attempt_at = NOW()`, `automatic_dispatch_date = CURRENT_DATE`, desbloqueio e limpeza de erro transitório). A tela não chama Worker, Bridge, SMB ou Philips; a transmissão continua sendo responsabilidade exclusiva do Worker autorizado.
+
 ## Jobs técnicos no control-plane
 
-A aba de Jobs técnicos exibe, em escopo do tenant, o nome de paciente formatado pela mesma regra DICOM da camada de apresentação e o `accession_number` do estudo vinculado ao Outbox. A identificação é somente visual e não altera snapshots, payloads ou dados clínicos. O botão contextual de reenvio reutiliza exclusivamente a rota `retry-homologation` já existente e só aparece quando a projeção confirma falha terminal, transporte `philips_non_dicom`, destino habilitado em `homologacao` e presença nominal do artifact PDF; o Repository repete a validação física, hash e lock transacional no POST. Jobs de produção, jobs ativos e jobs sem artifact continuam sem botão de reenvio.
+A aba de Jobs técnicos exibe, em escopo do tenant, o nome de paciente formatado pela mesma regra DICOM da camada de apresentação e o `accession_number` do estudo vinculado ao Outbox. A identificação é somente visual e não altera snapshots, payloads ou dados clínicos. O botão `Reenviar teste` usa exclusivamente a rota `retry-homologation` e só aparece para a trilha de homologação com falha terminal e artifact PDF. O botão `Reenviar estudo` usa exclusivamente a rota `resend-automatic` e só aparece para a trilha automática de produção quando o payload confirma `dispatch_mode=automatic_production`, sem alias ou Delivery Request. Jobs de produção controlada, jobs ativos, `dead_letter` e jobs sem os gates necessários continuam sem botão de reenvio.
 
 ## Profile `submission_document`
 
