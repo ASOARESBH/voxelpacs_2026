@@ -47,8 +47,10 @@ require_root_and_caller
 composer_profile_sha="$(read_approved_composer_profile_sha)"
 
 result_file="$(mktemp /var/tmp/voxelpacs-production-baseline.XXXXXX)"
+error_file="$(mktemp /var/tmp/voxelpacs-production-baseline-error.XXXXXX)"
 cleanup() {
   /usr/bin/rm -f -- "$result_file"
+  /usr/bin/rm -f -- "$error_file"
 }
 trap cleanup EXIT
 
@@ -56,10 +58,17 @@ if ! "$CAPTURE_SCRIPT" \
   --source-root "$SOURCE_ROOT" \
   --output-dir "$OUTPUT_ROOT" \
   --composer-profile-sha "$composer_profile_sha" \
-  --require-complete >"$result_file" 2>/dev/null; then
-  hash_unavailable="$(/usr/bin/awk -F= '$1 == "HASH_UNAVAILABLE" {print $2; exit}' "$result_file")"
+  --require-complete >"$result_file" 2>"$error_file"; then
+  failure_reason="$(/usr/bin/awk -F= '$1 == "REASON" {print $2; exit}' "$error_file")"
+  hash_unavailable="$(/usr/bin/awk -F= '$1 == "HASH_UNAVAILABLE" {print $2; exit}' "$error_file")"
+  if [[ -z "$failure_reason" && "$hash_unavailable" =~ ^[0-9]+$ ]]; then
+    failure_reason='HASH_UNAVAILABLE'
+  fi
+  if [[ ! "$failure_reason" =~ ^[A-Z0-9_]+$ ]]; then
+    failure_reason='CAPTURE_FAILED_SANITIZED'
+  fi
   [[ "$hash_unavailable" =~ ^[0-9]+$ ]] || hash_unavailable='UNKNOWN'
-  printf 'BASELINE_CAPTURE=INCOMPLETE\nHASH_UNAVAILABLE=%s\nOUTPUT_PUBLISHED=NO\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' "$hash_unavailable"
+  printf 'BASELINE_CAPTURE=INCOMPLETE\nREASON=%s\nHASH_UNAVAILABLE=%s\nOUTPUT_PUBLISHED=NO\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' "$failure_reason" "$hash_unavailable"
   exit 65
 fi
 

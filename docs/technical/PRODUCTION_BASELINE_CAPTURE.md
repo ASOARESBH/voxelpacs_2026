@@ -65,7 +65,7 @@ Não há shell, path, source, destination, comando, SQL, systemd, Bridge, SMB, W
 
 O wrapper lê a SHA aprovada da âncora root-only e chama o script versionado com `--composer-profile-sha <SHA>` e `--require-complete`. O capturador lê somente o caminho fixo `vendor/composer/installed.php` e publica, junto do baseline, `composer-profile.tsv` com o contrato `official_root_controlled_baseline_profile_v1`. O sidecar contém `SOURCE_SHA`, `NULL`, `OTHER_SHA` ou `UNRESOLVED`, nunca o valor de referência nem o conteúdo do arquivo.
 
-Se o `installed.php` não existir, não for regular, não puder ser lido ou tiver estrutura ambígua, retorna `BASELINE_CAPTURE=INCOMPLETE` e não publica o diretório da captura. Em sucesso, o wrapper retorna somente o identificador técnico do baseline, contagens, o estado `COMPOSER_PROFILE=PASS` e categorias de segurança.
+Se o `installed.php` não existir, não for regular, não puder ser lido ou tiver estrutura ambígua, retorna `BASELINE_CAPTURE=INCOMPLETE` e não publica o diretório da captura. O wrapper preserva somente a categoria técnica sanitizada em `REASON`, a contagem `HASH_UNAVAILABLE` (ou `UNKNOWN`) e `OUTPUT_PUBLISHED=NO`; não repassa stderr bruto, conteúdo, valores de referência ou hashes. Em sucesso, retorna somente o identificador técnico do baseline, contagens, o estado `COMPOSER_PROFILE=PASS` e categorias de segurança.
 
 O identificador do baseline é uma hash técnica do manifesto, não é SHA de commit. O backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
 

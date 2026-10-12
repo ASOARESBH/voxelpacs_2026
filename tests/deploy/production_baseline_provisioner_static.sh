@@ -34,6 +34,10 @@ for file in "$wrapper" "$sudoers"; do
 done
 
 grep -Fq 'COMPOSER_PROFILE=PASS' "$wrapper" || fail profile_result_contract
+grep -Fq 'error_file=' "$wrapper" || fail failure_error_capture_missing
+grep -Fq 'REASON=' "$wrapper" || fail failure_reason_contract_missing
+grep -Fq 'CAPTURE_FAILED_SANITIZED' "$wrapper" || fail failure_reason_sanitization_missing
+grep -Fq 'HASH_UNAVAILABLE=' "$wrapper" || fail hash_unavailable_contract_missing
 
 ! grep -Eq '^[[:space:]]*eval([[:space:]]|$)' "$provisioner" || fail executable_eval
 ! grep -Eq '^[[:space:]]*(systemctl|smbclient|curl|mysql|psql|composer|git[[:space:]]+(push|checkout))([[:space:]]|$)' "$provisioner" || fail executable_generic_operation
