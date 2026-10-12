@@ -44,16 +44,16 @@ A origem não é serializada no XML; o diagnóstico apenas verifica a pré-condi
 | `bin/philips_job_522_readonly_audit.php` | Diagnóstico PHP fixo e sanitizado |
 | `ops/deploy/voxelpacs-philips-job-522-readonly-audit` | Executor root-only sem argumentos |
 | `ops/sudoers/voxelpacs-philips-job-522-readonly-audit` | Allowlist mínima exclusivamente para `manus-admin` |
-| `scripts/provision-philips-job-522-readonly-audit.sh` | Provisionamento atômico após merge, com SHA e worktree limpos |
+| `scripts/provision-philips-job-522-readonly-audit.sh` | Provisionamento atômico após commit na `main`, com SHA e worktree limpos |
 | `tests/philips_job_522_readonly_audit_static.php` | Contratos de segurança e escopo |
 
 ## Provisionamento futuro
 
-O provisionamento é uma fase operacional separada e requer autorização administrativa própria no Host 1. Deve ser executado somente a partir de um checkout limpo da `main` mergeada:
+O provisionamento é uma fase operacional separada e requer autorização administrativa própria no Host 1. Deve ser executado somente a partir de um checkout limpo da `main` com o commit aprovado:
 
 ```text
 sudo bash scripts/provision-philips-job-522-readonly-audit.sh \
-  --expected-sha <SHA-MERGEADA>
+  --expected-sha <SHA-DA-MAIN>
 ```
 
 O provisionador valida SHA, árvore Git limpa, sintaxe PHP/Bash, regras sudoers e `visudo` antes de instalar. Ele não executa o diagnóstico durante a instalação.

@@ -13,6 +13,6 @@ Assim que um padrão real for confirmado no código (via `patterns/`), extraia u
 - `repository.template` — esqueleto de Repository seguindo `patterns/padrao-repository.md`
 - `migration.template` — esqueleto de migration seguindo `patterns/padrao-sql.md`
 - `componente.template` — esqueleto de componente de frontend seguindo `patterns/padrao-componentes.md`
-- `pull-request.template` — mesmo conteúdo de `prompts/criar-pr.md`, para acesso direto
+- `pull-request.template` — **descontinuado**: o projeto não usa Pull Request; alterações vão por commit direto na `main` (ver `prompts/criar-commit.md`)
 
 > Nenhum template de código foi criado ainda porque isso depende de uma primeira análise real do repositório (para extrair a sintaxe exata da linguagem/framework usados). Ver `CLAUDE.md` — este é um dos primeiros itens a resolver na primeira sessão real de trabalho no projeto.

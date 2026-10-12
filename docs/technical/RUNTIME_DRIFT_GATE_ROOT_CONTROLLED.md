@@ -18,7 +18,7 @@ O leitor é responsável somente por validar e expor o manifesto técnico permit
 
 ## Pré-condições
 
-- PR mergeada na `main` e SHA completa confirmada;
+- alteração commitada diretamente na `main`, enviada ao remoto e SHA completa confirmada;
 - checkout local limpo e artefato construído da própria SHA;
 - backup root-only e baseline integral já capturados;
 - `baseline-id` confirmado por evidência administrativa;

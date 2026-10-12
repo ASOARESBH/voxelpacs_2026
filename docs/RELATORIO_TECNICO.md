@@ -261,18 +261,18 @@ Existem 3 logos em `public/assets/img/`:
 ## 7. Fluxo de Desenvolvimento Recomendado
 
 ```
-1. git checkout development
-2. git pull origin development
-3. git checkout -b feat/nome-da-funcionalidade
-4. [desenvolver e testar localmente]
-5. git add -A
-6. git commit -m "feat: descrição da funcionalidade"
-7. git push origin feat/nome-da-funcionalidade
-8. Abrir Pull Request: feat/... → development
-9. Code review e aprovação
-10. Merge em development
-11. Quando estável: Pull Request development → main
-12. Tag de versão: git tag v1.x.x
+1. git checkout main
+2. git pull --ff-only origin main
+3. [desenvolver e testar localmente]
+4. git add <arquivos alterados>
+5. git commit -m "feat: descrição da funcionalidade"   (commit direto na main)
+6. git push origin main
+7. Pedir autorização explícita para o deploy
+8. Backup e verificação de drift
+9. Deploy controlado
+10. Tag de versão (opcional): git tag v1.x.x
+
+Não há branch de feature, Pull Request nem merge.
 ```
 
 ---

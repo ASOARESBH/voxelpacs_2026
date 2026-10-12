@@ -16,8 +16,8 @@ Antes de tocar em qualquer arquivo, comando, banco ou configuração, nessa orde
    - Onde vive algo (tela, controller, service, model, API, migration, tabela) → `indexes/`
    - O que já se sabe sobre o módulo (evita reanálise) → `modules/<modulo>.md`
    - Padrão de código esperado (Controller, Service, SQL, JS, CSS, rota, segurança) → `patterns/padrao-*.md`
-   - Passo a passo do tipo de trabalho (feature, hotfix, deploy, review, refactor) → `workflows/`
-   - Roteiro pronto para a tarefa (bugfix, criar API, criar migration, PR...) → `prompts/`
+   - Passo a passo do tipo de trabalho (feature, hotfix, refactor, homologação) → `workflows/`
+   - Roteiro pronto para a tarefa (bugfix, criar API, criar migration, commit...) → `prompts/`
    - Regra de negócio ou convenção permanente → `memory/`
    - Arquitetura geral de uma camada (frontend, backend, banco, DICOM, integrações) → `architecture/`
 4. Busca dirigida sempre vence exploração: `grep` pelo nome da rota/tabela/componente > listar diretório > abrir arquivo inteiro. Nunca releia um arquivo já lido nesta mesma tarefa.

@@ -2,7 +2,7 @@
 
 | Pasta | Responde à pergunta | Quando consultar |
 |---|---|---|
-| `prompts/` | "Qual o roteiro para este tipo de tarefa?" | No início de qualquer tarefa recorrente (bugfix, feature, migration, PR...) |
+| `prompts/` | "Qual o roteiro para este tipo de tarefa?" | No início de qualquer tarefa recorrente (bugfix, feature, migration, commit...) |
 | `docs/` | "Como esta skill funciona e se mantém?" | Ao configurar, revisar ou explicar a skill a alguém |
 | `memory/` | "Quais são as convenções e regras permanentes do projeto?" | Antes de qualquer alteração, como pano de fundo |
 | `architecture/` | "Como o sistema se encaixa, camada por camada?" | Ao entender um fluxo novo ou avaliar impacto |

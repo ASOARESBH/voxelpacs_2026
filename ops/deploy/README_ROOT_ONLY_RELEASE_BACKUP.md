@@ -90,7 +90,7 @@ O resultado operacional desta etapa é `PRODUCTION_DEPLOYED=NO`.
 
 ## Integração com deploy
 
-Esta PR não altera `scripts/deploy.sh`, o helper de publicação existente, banco, migration, Worker, Bridge, SMB, Report Delivery ou transmissão. Após merge e nova confirmação da `main`, a N2.2 deverá executar separadamente:
+Esta PR não altera `scripts/deploy.sh`, o helper de publicação existente, banco, migration, Worker, Bridge, SMB, Report Delivery ou transmissão. Após o commit na `main` e nova confirmação da SHA, a N2.2 deverá executar separadamente:
 
 ```text
 sudo -n /usr/local/sbin/voxelpacs-release-backup create --sha <SHA>

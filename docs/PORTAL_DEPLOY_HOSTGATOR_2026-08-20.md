@@ -52,7 +52,7 @@ A configuração detalhada do subdomínio já está documentada em [`configurar_
 
 ## 4. Preparação do release no repositório
 
-A publicação deve partir da `main` atualizada, resultante do merge da `development`. O agente deve preservar `.env`, uploads, logs, sessões e qualquer configuração exclusiva de produção. A estratégia preferida é publicar o release completo do código versionado, em vez de selecionar arquivos manualmente.
+A publicação deve partir da `main` atualizada, onde as alterações são commitadas diretamente. O agente deve preservar `.env`, uploads, logs, sessões e qualquer configuração exclusiva de produção. A estratégia preferida é publicar o release completo do código versionado, em vez de selecionar arquivos manualmente.
 
 Se a política de hospedagem exigir publicação incremental por FTP/SFTP ou File Manager, aplique pelo menos todos os arquivos abaixo. Eles formam o conjunto mínimo para o Portal, compartilhamento e exibição pública do PDF.
 

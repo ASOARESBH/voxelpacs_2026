@@ -4,16 +4,21 @@ Obrigado por contribuir com o VOXEL PACS! Este guia descreve como colaborar com 
 
 ## Fluxo de Trabalho
 
-1. **Crie uma branch** a partir de `development`:
+O VOXEL PACS não usa branches de feature, Pull Request nem merge. Toda alteração vai por **commit direto na `main`**, seguido de deploy controlado:
+
+```
+testes → commit direto na main → push → autorização explícita → backup/drift → deploy controlado
+```
+
+1. **Atualize a `main` local** com a árvore de trabalho limpa:
    ```bash
-   git checkout development
-   git pull origin development
-   git checkout -b feat/nome-da-funcionalidade
+   git checkout main
+   git pull --ff-only origin main
    ```
 
-2. **Faça suas alterações** seguindo as convenções do projeto.
+2. **Faça suas alterações** seguindo as convenções do projeto e **teste localmente**.
 
-3. **Commit** seguindo o padrão Conventional Commits:
+3. **Commit direto na `main`** seguindo o padrão Conventional Commits:
    ```
    feat: adiciona módulo de agendamentos
    fix: corrige erro no login com tenant inativo
@@ -21,21 +26,23 @@ Obrigado por contribuir com o VOXEL PACS! Este guia descreve como colaborar com 
    refactor: extrai lógica de KPI para service dedicado
    ```
 
-4. **Abra um Pull Request** para a branch `development`.
+4. **Envie para o remoto** com `git push origin main`. Nunca use force push nem reescreva o histórico da `main`.
+
+5. **Deploy controlado**: só depois de autorização explícita, backup e verificação de drift.
 
 ## Convenções de Código
 
 - **PHP:** PSR-4 para autoload, PSR-12 para estilo de código
 - **Banco:** Migrations idempotentes, charset `utf8/utf8_unicode_ci`
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org/)
-- **Branches:** `feat/`, `fix/`, `docs/`, `refactor/`, `chore/`
+- **Branch:** somente `main` (commit direto, sem PR/merge)
 
 ## Regras Importantes
 
 - Nunca commite o arquivo `.env`
 - Nunca altere regras de negócio sem aprovação
 - Nunca altere o schema do banco sem migration idempotente
-- Sempre teste localmente antes de abrir PR
+- Sempre teste localmente antes de commitar na `main`
 
 ## Dúvidas
 

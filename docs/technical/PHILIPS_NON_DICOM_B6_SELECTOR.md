@@ -74,7 +74,7 @@ READY_FOR_SINGLE_RUN=YES
 
 ## Instalação root-controlled
 
-Após merge na `main`, usar checkout limpo da SHA mergeada e provisionar como root pelo procedimento aprovado:
+Após o commit direto na `main` e o push, usar checkout limpo dessa SHA e provisionar como root pelo procedimento aprovado:
 
 ```bash
 sudo -n bash scripts/provision-philips-nondicom-b6-selector.sh \

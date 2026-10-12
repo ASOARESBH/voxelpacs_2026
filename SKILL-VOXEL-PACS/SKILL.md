@@ -79,7 +79,7 @@ Para perguntas puramente informativas ("onde fica X", "como funciona Y"), respon
 | Ver o que já se sabe sobre um módulo específico (para não reanalisar) | `modules/<nome-do-modulo>.md` |
 | Um prompt pronto para uma tarefa recorrente (analisar módulo, criar API, corrigir bug, criar migration, etc.) | `prompts/` |
 | O padrão de código esperado (Controller, Service, Repository, SQL, JS, CSS, Componente, Rota, Segurança) | `patterns/` |
-| O passo a passo de um tipo de trabalho (feature nova, hotfix, refactor, deploy, merge, code review) | `workflows/` |
+| O passo a passo de um tipo de trabalho (feature nova, correção de bug, hotfix, refactor, homologação) | `workflows/` |
 | Um boilerplate para começar um arquivo novo já no padrão certo | `templates/` |
 | Um checklist automático de qualidade (código morto, duplicação, arquivo grande, query lenta, dependência circular, segurança) | `diagnostics/` |
 | Um exemplo real de execução completa de uma tarefa (para calibrar formato/profundidade) | `examples/` |

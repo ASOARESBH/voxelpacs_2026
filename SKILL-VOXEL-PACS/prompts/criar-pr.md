@@ -1,25 +1,9 @@
-# Prompt interno — Criar Pull Request
+# Prompt interno — Pull Request (descontinuado)
 
-## Template de descrição
+O VOXEL PACS **não usa Pull Request nem merge**. Toda alteração vai por commit direto na `main`, seguido de deploy controlado:
 
 ```
-## Objetivo
-[por que essa mudança existe]
-
-## O que mudou
-[lista objetiva de arquivos/áreas afetadas]
-
-## Impacto
-[quem consome o que foi alterado — ver architecture/dependencias.md]
-
-## Riscos e rollback
-[o que pode dar errado e como reverter]
-
-## Como testar
-[passos concretos, incluindo diagnostics/ relevantes rodados]
-
-## Documentação atualizada
-[modules/, indexes/, architecture/ tocados nesta mudança, se algum]
+testes → commit direto na main → push → autorização explícita → backup/drift → deploy controlado
 ```
 
-Ver `workflows/merge-e-code-review.md` para o checklist de revisão que acompanha o PR.
+Use `prompts/criar-commit.md`. As informações que antes iam na descrição do PR (objetivo, impacto, riscos e rollback, como testar, documentação atualizada) devem constar no corpo do commit quando a mudança não for trivial.

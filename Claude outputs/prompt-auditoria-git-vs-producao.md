@@ -268,6 +268,6 @@ Compare o início de cada processo com a data do último movimento do HEAD (2.1)
 **3.5 Resposta direta à pergunta do André:**
 "Algum outro agente alterou o servidor/repositório e não commitou tudo?" — responda **SIM / NÃO / INCONCLUSIVO**, com as 3 evidências mais fortes. Liste também os commits recentes do autor `choppon24h-png` que **ainda não estão** em produção (2.3) e os que estão.
 
-**3.6 Recomendação (não executar):** o menor conjunto de passos para tornar Git e produção idênticos — por exemplo "commitar/absorver o arquivo X em branch dedicada", "fazer merge de `phase74-…` em `main` depois de validar", "aplicar migration Y", "reiniciar worker Z" — sempre pelo fluxo **Git primeiro → deploy pelo processo existente**, nunca editando arquivos direto no servidor.
+**3.6 Recomendação (não executar):** o menor conjunto de passos para tornar Git e produção idênticos — por exemplo "commitar/absorver o arquivo X direto na `main`", "fazer merge de `phase74-…` em `main` depois de validar", "aplicar migration Y", "reiniciar worker Z" — sempre pelo fluxo **Git primeiro → deploy pelo processo existente**, nunca editando arquivos direto no servidor.
 
 Ao final, confirme explicitamente: "Nenhum arquivo, serviço ou banco foi alterado durante esta auditoria" (e liste o único write permitido: pasta `/tmp/voxel-audit-*` e, se ocorreu, o `git fetch`).

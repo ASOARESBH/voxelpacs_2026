@@ -102,5 +102,5 @@ autorização explícita.
 ## Teste e rollback
 
 A mudança é somente de código/documentação, sem migration. O rollback é a
-reversão do commit/PR antes de qualquer deploy; nenhuma tabela ou configuração
+reversão do commit (`git revert`) antes de qualquer deploy; nenhuma tabela ou configuração
 operacional é alterada por este diagnóstico.
