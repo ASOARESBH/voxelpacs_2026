@@ -12,6 +12,7 @@ Ele não captura baseline, não compara drift, não publica código e não acess
 Diretório: /etc/voxelpacs-composer-profile
 Âncora:    /etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha
 Lock:      /run/lock/voxelpacs-composer-profile-approval.lock
+Backup:    /var/lib/voxelpacs/admin-backups/composer-profile-approval/<operação>/voxelpacs-composer-profile-approved-main-sha
 ```
 
 O diretório deve terminar em `root:root` com modo `0700`. A âncora deve ser arquivo regular `root:root` com modo `0600`, contendo exatamente uma SHA de 40 caracteres hexadecimais.
@@ -45,6 +46,9 @@ sudo bash scripts/provision-composer-profile-approval.sh \
 
 sudo bash scripts/provision-composer-profile-approval.sh \
   --expected-sha <40-hex-sha> --apply
+
+sudo bash scripts/provision-composer-profile-approval.sh \
+  --expected-sha <40-hex-sha> --reconcile
 ```
 
 Os modos são exclusivos. Não há argumentos de path, arquivo, grupo, owner, comando, shell ou destino.
@@ -70,6 +74,19 @@ Executa apenas a transição administrativa prevista:
 
 Uma âncora existente e correspondente é preservada. A operação é idempotente e não retorna `CONFIG_CHANGED=YES` quando não há mudança.
 
+### `--reconcile`
+
+Modo administrativo separado para uma âncora existente, estruturalmente válida, mas divergente da SHA canônica atual. O modo `--apply` continua bloqueando essa situação.
+
+1. exige parent e âncora existentes, regulares, `root:root` e com os modos seguros;
+2. cria um diretório de backup root-only sob o caminho fixo de backup, sem aceitar uma operação já existente;
+3. preserva a âncora divergente em arquivo regular `0600` antes de qualquer substituição;
+4. grava a nova SHA em arquivo temporário `0600` no mesmo parent e faz a troca atômica;
+5. valida a nova âncora e informa somente o caminho administrativo do backup;
+6. restaura a âncora anterior se uma falha ocorrer após o backup e antes da validação final.
+
+O backup não é removido automaticamente e a reconciliação não altera o parent compartilhado `/etc/voxelpacs`. O modo não deve ser usado para contornar a revisão da SHA ou para aceitar conteúdo não aprovado.
+
 ## Estados de falha
 
 O helper bloqueia, entre outros, em:
@@ -82,13 +99,15 @@ O helper bloqueia, entre outros, em:
 - parent `/etc` inseguro;
 - `/etc/voxelpacs-composer-profile` symlink, owner inesperado, modo gravável ou com entradas inesperadas;
 - âncora existente divergente, symlink, tipo ou modo inválido;
+- reconciliação sem âncora divergente ou com parent de backup inseguro;
+- falha de criação/cópia do backup ou da troca atômica;
 - corrida de criação;
 - falha de validação final;
 - lock ocupado.
 
 ## Rollback
 
-A criação inicial não sobrescreve âncoras. Em falha posterior à criação de um diretório/âncora novos, o helper tenta remover somente os objetos que ele próprio criou. Em reconciliação de diretório preexistente, guarda owner/group/mode anteriores e tenta restaurá-los se a validação final falhar.
+A criação inicial não sobrescreve âncoras. Em falha posterior à criação de um diretório/âncora novos, o helper tenta remover somente os objetos que ele próprio criou. A reconciliação preserva o conteúdo divergente em backup root-only e restaura a cópia anterior por troca atômica se a validação final falhar.
 
 `ROLLBACK=FAIL` ou `ORIGINAL_PRESERVED=UNKNOWN` bloqueia qualquer nova tentativa até reconciliação administrativa separada.
 
@@ -96,6 +115,7 @@ A criação inicial não sobrescreve âncoras. Em falha posterior à criação d
 
 - Não altera a aplicação, `.env`, banco, migrations ou baseline.
 - Não cria ou atualiza o `composer-profile.tsv`.
+- Não reconcilia uma âncora ausente ou estruturalmente insegura.
 - Não aceita exceção para `vendor/composer/installed.php`.
 - Não executa o capturador nem o drift gate.
 - Não inicia serviços ou processos clínicos.
@@ -116,5 +136,6 @@ O CI e os testes isolados cobrem:
 - rollback lógico sem substituir configuração existente;
 - preservação de uma configuração preexistente no parent compartilhado `/etc/voxelpacs`;
 - não alteração no modo dry-run.
+- reconciliação de âncora divergente, backup no-replace e preservação após falha.
 
 A implementação desta PR não provisiona nem altera o Host1.
