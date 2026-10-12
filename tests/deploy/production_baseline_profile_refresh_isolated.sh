@@ -104,9 +104,9 @@ grep -Fxq $'package_reference_state\tSOURCE_SHA' <(sudo -n cat "$profile")
 grep -Fxq 'composer_profile=STATE_ONLY_V1' <(sudo -n cat "$legacy_dir/metadata.txt")
 grep -Fxq 'composer_profile_source=official_root_controlled_baseline_profile_v1' <(sudo -n cat "$legacy_dir/metadata.txt")
 
-backup_dirs=("$backup"/refresh.*)
-[[ "${#backup_dirs[@]}" -eq 1 && -d "${backup_dirs[0]}" ]]
-backup_metadata="${backup_dirs[0]}/metadata.txt"
+backup_dir="$(sudo -n find -P "$backup" -mindepth 1 -maxdepth 1 -type d -name 'refresh.*' -print)"
+[[ -n "$backup_dir" && "$(printf '%s\n' "$backup_dir" | wc -l)" -eq 1 ]]
+backup_metadata="$backup_dir/metadata.txt"
 [[ "$(sudo -n stat -c '%u:%g:%a:%F' "$backup_metadata")" == '0:0:600:regular file' ]]
 ! sudo -n grep -Fq 'composer_profile=' "$backup_metadata"
 ! sudo -n grep -Fq 'composer_profile_source=' "$backup_metadata"
