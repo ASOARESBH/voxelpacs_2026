@@ -32,6 +32,9 @@ jobs:
       - name: Verify Composer tree after install
         run: bash scripts/verify-composer-tree.sh
 
+      - name: Verify runtime artifact Composer reference normalization
+        run: bash tests/runtime_artifact_composer_reference_isolated.sh
+
       - name: PHP Lint (syntax check)
         run: find app/ public/ routes/ config/ tests/ -name "*.php" -print0 | xargs -0 -n1 php -l
 

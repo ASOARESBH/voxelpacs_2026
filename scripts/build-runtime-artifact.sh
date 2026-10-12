@@ -151,7 +151,7 @@ if ! command -v composer >/dev/null 2>&1; then
   fail 'composer_not_found'
 fi
 if [[ "$skip_composer_install" -eq 0 ]]; then
-  bash "$ROOT/scripts/verify-composer-tree.sh" --allow-missing-vendor
+  (cd -- "$ROOT" && bash "$ROOT/scripts/verify-composer-tree.sh" --allow-missing-vendor)
   composer -d "$ROOT" install --no-dev --prefer-dist --no-progress --no-interaction
 fi
 
@@ -178,8 +178,6 @@ if len(matches) != 1:
 current = matches[0].group(1)
 if current == f"'{sha}'":
     raise SystemExit(0)
-if current != 'null':
-    raise SystemExit('COMPOSER_ROOT_REFERENCE_MISMATCH')
 start, end = matches[0].span(1)
 root = root[:start] + f"'{sha}'" + root[end:]
 staged = path.with_name(path.name + '.normalized')
@@ -190,7 +188,7 @@ PY
 }
 
 normalize_composer_root_reference
-bash "$ROOT/scripts/verify-composer-tree.sh"
+(cd -- "$ROOT" && bash "$ROOT/scripts/verify-composer-tree.sh")
 
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/voxelpacs-runtime-stage.XXXXXX")"
 tmp_zip="$(mktemp "${TMPDIR:-/tmp}/voxelpacs-runtime-artifact.XXXXXX.zip")"
