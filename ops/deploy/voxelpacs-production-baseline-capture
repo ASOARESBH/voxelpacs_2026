@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VOXEL PACS — captura root-controlled e refresh fail-closed do baseline produtivo.
-# O caller só pode solicitar as operações fixas capture ou refresh-profile.
+# O caller só pode solicitar as operações fixas capture, refresh-profile ou rebind-profile.
 set -Eeuo pipefail
 umask 077
 export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
@@ -10,6 +10,7 @@ readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'
 readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'
 readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'
 readonly REFRESH_BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-refresh'
+readonly REBIND_BACKUP_PARENT='/var/lib/voxelpacs/admin-backups/composer-profile-rebind'
 readonly LOCK_PATH='/run/lock/voxelpacs-production-baseline-capture-provision.lock'
 readonly MECHANISM_VERSION='1'
 
@@ -96,8 +97,48 @@ secure_dir() {
   [[ "$(stat -c '%u:%g:%a' -- "$path")" == '0:0:700' ]] || fail 'BASELINE_DIRECTORY_SECURITY_INVALID'
 }
 
+validate_existing_profile() {
+  local profile="$1" baseline_id="$2" manifest_sha="$3" key value extra rows=0
+  local source='' profile_id='' profile_manifest='' profile_artifact='' root_state='' package_state=''
+  while IFS=$'\t' read -r key value extra; do
+    [[ -z "${key:-}" && -z "${value:-}" && -z "${extra:-}" ]] && continue
+    [[ -n "${key:-}" && -n "${value:-}" && -z "${extra:-}" ]] || fail 'BASELINE_PROFILE_ROW_INVALID'
+    case "$key" in
+      profile_source)
+        [[ -z "$source" && "$value" == 'official_root_controlled_baseline_profile_v1' ]] || fail 'BASELINE_PROFILE_SOURCE_INVALID'
+        source="$value"
+        ;;
+      profile_baseline_id)
+        [[ -z "$profile_id" && "$value" == "$baseline_id" ]] || fail 'BASELINE_PROFILE_ID_INVALID'
+        profile_id="$value"
+        ;;
+      profile_manifest_sha256)
+        [[ -z "$profile_manifest" && "$value" == "$manifest_sha" ]] || fail 'BASELINE_PROFILE_MANIFEST_INVALID'
+        profile_manifest="$value"
+        ;;
+      profile_artifact_sha)
+        [[ -z "$profile_artifact" && "$value" =~ ^[0-9a-f]{40}$ ]] || fail 'BASELINE_PROFILE_ARTIFACT_INVALID'
+        profile_artifact="$value"
+        ;;
+      root_reference_state)
+        [[ -z "$root_state" && "$value" =~ ^(SOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED)$ ]] || fail 'BASELINE_PROFILE_ROOT_STATE_INVALID'
+        root_state="$value"
+        ;;
+      package_reference_state)
+        [[ -z "$package_state" && "$value" =~ ^(SOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED)$ ]] || fail 'BASELINE_PROFILE_PACKAGE_STATE_INVALID'
+        package_state="$value"
+        ;;
+      *)
+        fail 'BASELINE_PROFILE_KEY_INVALID'
+        ;;
+    esac
+    rows=$((rows + 1))
+  done < "$profile"
+  [[ "$rows" -eq 6 && -n "$source" && -n "$profile_id" && -n "$profile_manifest" && -n "$profile_artifact" && -n "$root_state" && -n "$package_state" ]] || fail 'BASELINE_PROFILE_INCOMPLETE'
+}
+
 validate_existing_baseline() {
-  local baseline_id="$1" dir manifest_sha stored_sha stored_id metadata
+  local baseline_id="$1" allow_profile="${2:-NO}" dir manifest_sha stored_sha stored_id metadata
   dir="$OUTPUT_ROOT/$baseline_id"
   secure_dir "$OUTPUT_ROOT"
   secure_dir "$dir"
@@ -117,7 +158,15 @@ validate_existing_baseline() {
   grep -Fqx 'secrets_content=NOT_CAPTURED' <<<"$metadata" || fail 'BASELINE_METADATA_SECRETS_INVALID'
   grep -Fqx 'persistent_content=NOT_CAPTURED' <<<"$metadata" || fail 'BASELINE_METADATA_PERSISTENT_INVALID'
   grep -Fqx 'clinical_content=NOT_CAPTURED' <<<"$metadata" || fail 'BASELINE_METADATA_CLINICAL_INVALID'
-  [[ ! -e "$dir/composer-profile.tsv" && ! -L "$dir/composer-profile.tsv" ]] || fail 'BASELINE_PROFILE_ALREADY_EXISTS'
+  if [[ "$allow_profile" == 'YES' ]]; then
+    [[ -e "$dir/composer-profile.tsv" || -L "$dir/composer-profile.tsv" ]] || fail 'BASELINE_PROFILE_REQUIRED_FOR_REBIND'
+    secure_file "$dir/composer-profile.tsv"
+    grep -Fqx 'composer_profile=STATE_ONLY_V1' <<<"$metadata" || fail 'BASELINE_METADATA_PROFILE_INVALID'
+    grep -Fqx 'composer_profile_source=official_root_controlled_baseline_profile_v1' <<<"$metadata" || fail 'BASELINE_METADATA_PROFILE_SOURCE_INVALID'
+    validate_existing_profile "$dir/composer-profile.tsv" "$baseline_id" "$manifest_sha"
+  else
+    [[ ! -e "$dir/composer-profile.tsv" && ! -L "$dir/composer-profile.tsv" ]] || fail 'BASELINE_PROFILE_ALREADY_EXISTS'
+  fi
   printf '%s\t%s\n' "$dir" "$manifest_sha"
 }
 
@@ -151,7 +200,7 @@ refresh_profile() {
   [[ "$baseline_id" =~ ^[0-9a-f]{40}$ ]] || fail 'BASELINE_ID_INVALID'
   [[ -x "$CAPTURE_SCRIPT" && ! -L "$CAPTURE_SCRIPT" ]] || fail 'CAPTURE_SCRIPT_UNAVAILABLE'
   [[ -d "$OUTPUT_ROOT" && ! -L "$OUTPUT_ROOT" ]] || fail 'OUTPUT_PARENT_INVALID'
-  validation="$(validate_existing_baseline "$baseline_id")"
+  validation="$(validate_existing_baseline "$baseline_id" 'NO')"
   IFS=$'\t' read -r baseline_dir manifest_sha <<<"$validation"
   operation_dir="$(mktemp -d /var/tmp/voxelpacs-baseline-profile-refresh.XXXXXX)"
   chmod 0700 "$operation_dir"
@@ -220,6 +269,112 @@ refresh_profile() {
   printf 'PROFILE_REFRESH=PASS\nBASELINE_PROFILE=CREATED\nBACKUP=PASS\nBACKUP_PATH_REDACTED=YES\nPROFILE_FORMAT=STATE_ONLY_V1\nRAW_VALUES_EXPOSED=NO\nHASHES_EXPOSED=NO\nBASELINE_CHANGED=YES\nAPPLICATION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n'
 }
 
+rollback_rebind() {
+  local status=$? restore_status=0 restore_tmp
+  trap - EXIT
+  if [[ "$status" -ne 0 && "$write_started" == 'YES' ]]; then
+    if [[ "$sidecar_written" == 'YES' ]]; then
+      restore_tmp="$(mktemp "$baseline_dir/.composer-profile.restore.XXXXXX")"
+      install -o root -g root -m 0600 -- "$backup_profile" "$restore_tmp"
+      mv -T -- "$restore_tmp" "$profile_target" || restore_status=1
+    fi
+    if [[ "$metadata_replaced" == 'YES' ]]; then
+      restore_tmp="$(mktemp "$baseline_dir/.metadata.restore.XXXXXX")"
+      install -o root -g root -m 0600 -- "$backup_metadata" "$restore_tmp"
+      mv -T -- "$restore_tmp" "$metadata_original" || restore_status=1
+    fi
+    if [[ "$restore_status" -eq 0 ]]; then
+      printf 'ROLLBACK=PASS\nORIGINAL_PRESERVED=YES\n' >&2
+    else
+      printf 'ROLLBACK=FAIL\nORIGINAL_PRESERVED=UNKNOWN\n' >&2
+    fi
+  fi
+  rm -f -- "$profile_install" "$metadata_install" "$operation_dir/capture.out" "$operation_dir/capture.err" "$profile_stage" "$metadata_stage"
+  for generated_file in manifest.tsv symlinks.tsv exclusions.tsv metadata.txt composer-profile.tsv manifest.sha256 baseline-id; do
+    rm -f -- "$generated_dir/$generated_file"
+  done
+  rmdir -- "$generated_dir" "$operation_dir/generated" "$operation_dir" 2>/dev/null || true
+  exit "$status"
+}
+
+rebind_profile() {
+  local baseline_id="$1" composer_profile_sha="$2" baseline_dir='' manifest_sha=''
+  local operation_dir='' capture_out='' capture_error='' generated_dir='' generated_profile=''
+  local profile_stage='' metadata_stage='' backup_parent='' backup_dir='' backup_metadata='' backup_profile=''
+  local root_state package_state metadata_original='' profile_target='' profile_install='' metadata_install=''
+  local validation='' write_started='NO' sidecar_written='NO' metadata_replaced='NO'
+  [[ "$baseline_id" =~ ^[0-9a-f]{40}$ ]] || fail 'BASELINE_ID_INVALID'
+  [[ -x "$CAPTURE_SCRIPT" && ! -L "$CAPTURE_SCRIPT" ]] || fail 'CAPTURE_SCRIPT_UNAVAILABLE'
+  [[ -d "$OUTPUT_ROOT" && ! -L "$OUTPUT_ROOT" ]] || fail 'OUTPUT_PARENT_INVALID'
+  validation="$(validate_existing_baseline "$baseline_id" 'YES')"
+  IFS=$'\t' read -r baseline_dir manifest_sha <<<"$validation"
+  operation_dir="$(mktemp -d /var/tmp/voxelpacs-baseline-profile-rebind.XXXXXX)"
+  chmod 0700 "$operation_dir"
+  capture_out="$operation_dir/capture.out"
+  capture_error="$operation_dir/capture.err"
+  if ! "$CAPTURE_SCRIPT" --source-root "$SOURCE_ROOT" --output-dir "$operation_dir/generated" --composer-profile-sha "$composer_profile_sha" --require-complete >"$capture_out" 2>"$capture_error"; then
+    rm -f -- "$capture_out" "$capture_error"
+    rmdir -- "$operation_dir" 2>/dev/null || true
+    fail 'PROFILE_REBIND_CAPTURE_FAILED'
+  fi
+  generated_dir="$(awk -F= '$1 == "OUTPUT_DIR" {print $2; exit}' "$capture_out")"
+  [[ "$generated_dir" == "$operation_dir/generated/"* && -d "$generated_dir" ]] || fail 'PROFILE_REBIND_OUTPUT_INVALID'
+  generated_profile="$generated_dir/composer-profile.tsv"
+  secure_file "$generated_profile"
+  root_state="$(awk -F '\t' '$1 == "root_reference_state" {print $2; count++} END {if (count != 1) exit 1}' "$generated_profile")" || fail 'PROFILE_REBIND_ROOT_STATE_INVALID'
+  package_state="$(awk -F '\t' '$1 == "package_reference_state" {print $2; count++} END {if (count != 1) exit 1}' "$generated_profile")" || fail 'PROFILE_REBIND_PACKAGE_STATE_INVALID'
+  [[ "$root_state" =~ ^(SOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED)$ && "$package_state" =~ ^(SOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED)$ ]] || fail 'PROFILE_REBIND_STATE_INVALID'
+  grep -Fqx $'profile_source\tofficial_root_controlled_baseline_profile_v1' "$generated_profile" || fail 'PROFILE_REBIND_SOURCE_INVALID'
+  grep -Fqx $'profile_artifact_sha\t'"$composer_profile_sha" "$generated_profile" || fail 'PROFILE_REBIND_ARTIFACT_SHA_INVALID'
+  profile_stage="$operation_dir/composer-profile.tsv"
+  {
+    printf 'profile_source\tofficial_root_controlled_baseline_profile_v1\n'
+    printf 'profile_baseline_id\t%s\n' "$baseline_id"
+    printf 'profile_manifest_sha256\t%s\n' "$manifest_sha"
+    printf 'profile_artifact_sha\t%s\n' "$composer_profile_sha"
+    printf 'root_reference_state\t%s\n' "$root_state"
+    printf 'package_reference_state\t%s\n' "$package_state"
+  } > "$profile_stage"
+  chmod 0600 "$profile_stage"
+  metadata_original="$baseline_dir/metadata.txt"
+  metadata_stage="$operation_dir/metadata.txt"
+  [[ "$(grep -Fc 'composer_profile=' "$metadata_original")" -le 1 && "$(grep -Fc 'composer_profile_source=' "$metadata_original")" -le 1 ]] || fail 'BASELINE_METADATA_PROFILE_AMBIGUOUS'
+  grep -v -E '^(composer_profile|composer_profile_source)=' "$metadata_original" > "$metadata_stage"
+  printf 'composer_profile=STATE_ONLY_V1\ncomposer_profile_source=official_root_controlled_baseline_profile_v1\n' >> "$metadata_stage"
+  chmod 0600 "$metadata_stage"
+  backup_parent="$REBIND_BACKUP_PARENT"
+  if [[ ! -e "$backup_parent" ]]; then
+    install -d -o root -g root -m 0700 -- "$backup_parent"
+  fi
+  [[ "$(stat -c '%u:%g:%a' "$backup_parent")" == '0:0:700' ]] || fail 'PROFILE_REBIND_BACKUP_PARENT_INVALID'
+  backup_dir="$(mktemp -d "$backup_parent/rebind.XXXXXX")"
+  chmod 0700 "$backup_dir"
+  backup_metadata="$backup_dir/metadata.txt"
+  backup_profile="$backup_dir/composer-profile.tsv"
+  install -o root -g root -m 0600 -- "$metadata_original" "$backup_metadata"
+  install -o root -g root -m 0600 -- "$baseline_dir/composer-profile.tsv" "$backup_profile"
+  [[ "$(stat -c '%u:%g:%a' "$backup_metadata")" == '0:0:600' && "$(stat -c '%u:%g:%a' "$backup_profile")" == '0:0:600' ]] || fail 'PROFILE_REBIND_BACKUP_INVALID'
+  profile_target="$baseline_dir/composer-profile.tsv"
+  profile_install="$(mktemp "$baseline_dir/.composer-profile.tsv.XXXXXX")"
+  metadata_install="$(mktemp "$baseline_dir/.metadata.txt.XXXXXX")"
+  chmod 0600 "$profile_install" "$metadata_install"
+  install -o root -g root -m 0600 -- "$profile_stage" "$profile_install"
+  install -o root -g root -m 0600 -- "$metadata_stage" "$metadata_install"
+  write_started='YES'
+  trap rollback_rebind EXIT
+  mv -T -- "$profile_install" "$profile_target"
+  sidecar_written='YES'
+  mv -T -- "$metadata_install" "$metadata_original"
+  metadata_replaced='YES'
+  trap - EXIT
+  rm -f -- "$capture_out" "$capture_error" "$profile_stage" "$metadata_stage"
+  for generated_file in manifest.tsv symlinks.tsv exclusions.tsv metadata.txt composer-profile.tsv manifest.sha256 baseline-id; do
+    rm -f -- "$generated_dir/$generated_file"
+  done
+  rmdir -- "$generated_dir" "$operation_dir/generated" "$operation_dir" 2>/dev/null || true
+  printf 'PROFILE_REBIND=PASS\nBASELINE_PROFILE=UPDATED\nBACKUP=PASS\nBACKUP_PATH_REDACTED=YES\nPROFILE_FORMAT=STATE_ONLY_V1\nRAW_VALUES_EXPOSED=NO\nHASHES_EXPOSED=NO\nBASELINE_MANIFEST_CHANGED=NO\nBASELINE_PROFILE_CHANGED=YES\nAPPLICATION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n'
+}
+
 require_root_and_caller
 case "$#:$1" in
   1:capture)
@@ -229,6 +384,10 @@ case "$#:$1" in
   2:refresh-profile)
     acquire_lock
     refresh_profile "$2" "$(read_approved_composer_profile_sha)"
+    ;;
+  2:rebind-profile)
+    acquire_lock
+    rebind_profile "$2" "$(read_approved_composer_profile_sha)"
     ;;
   *)
     fail 'ARGUMENTS_INVALID'
