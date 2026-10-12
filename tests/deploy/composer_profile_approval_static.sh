@@ -9,8 +9,8 @@ fail() { printf 'TEST=FAIL\nREASON=%s\n' "$1" >&2; exit 1; }
 bash -n "$helper" || fail helper_syntax
 
 for required in \
-  "readonly APPROVAL_PARENT='/etc/voxelpacs'" \
-  "readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'" \
+  "readonly APPROVAL_PARENT='/etc/voxelpacs-composer-profile'" \
+  "readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" \
   "readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'" \
   "readonly MAIN_REF='refs/heads/main'" \
   "validate_fixed_parent_parent" \

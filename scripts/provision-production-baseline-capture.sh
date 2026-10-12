@@ -129,7 +129,7 @@ validate_wrapper_contract() {
   grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$WRAPPER_SOURCE" || fail 'WRAPPER_SOURCE_ROOT_INVALID'
   grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$WRAPPER_SOURCE" || fail 'WRAPPER_OUTPUT_ROOT_INVALID'
   grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_PATH_INVALID'
-  grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'" "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_PATH_INVALID'
+  grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_PATH_INVALID'
   grep -Fq '[[ "$#" -eq 1 && "$1" == '\''capture'\'' ]]' "$WRAPPER_SOURCE" || fail 'WRAPPER_ARGUMENT_CONTRACT_INVALID'
   grep -Fq -- '--composer-profile-sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_ARGUMENT_INVALID'
   grep -Fq 'read_approved_composer_profile_sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_INVALID'

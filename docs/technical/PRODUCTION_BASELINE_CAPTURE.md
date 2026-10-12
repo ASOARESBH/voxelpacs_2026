@@ -46,7 +46,7 @@ Ele instala atomicamente, como `root:root`:
 Antes da captura, a aprovação administrativa independente da SHA usada no perfil Composer deve existir em:
 
 ```text
-/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha  root:root 0600
+/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha  root:root 0600
 ```
 
 O arquivo contém exatamente uma SHA de `main` aprovada por linha. O provisioner apenas valida essa âncora; não a cria, altera ou infere do checkout.

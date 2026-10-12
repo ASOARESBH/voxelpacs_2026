@@ -9,16 +9,16 @@ Ele não captura baseline, não compara drift, não publica código e não acess
 ## Caminhos fixos
 
 ```text
-Diretório: /etc/voxelpacs
-Âncora:    /etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha
+Diretório: /etc/voxelpacs-composer-profile
+Âncora:    /etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha
 Lock:      /run/lock/voxelpacs-composer-profile-approval.lock
 ```
 
 O diretório deve terminar em `root:root` com modo `0700`. A âncora deve ser arquivo regular `root:root` com modo `0600`, contendo exatamente uma SHA de 40 caracteres hexadecimais.
 
-O diretório pode estar ausente na configuração inicial. Quando existe, somente a âncora com o nome fixo é aceita; entradas adicionais, symlinks, tipos inesperados, owner diferente de UID 0 ou bits de escrita para grupo/outros bloqueiam.
+O parent dedicado pode estar ausente na configuração inicial. Quando existe, somente a âncora com o nome fixo é aceita; entradas adicionais, symlinks, tipos inesperados, owner diferente de UID 0 ou bits de escrita para grupo/outros bloqueiam. O parent compartilhado `/etc/voxelpacs`, usado por outras configurações administrativas, não é lido, alterado ou reconciliado por este mecanismo.
 
-O contrato rejeita o estado histórico com GID não-root por padrão operacional fail-closed. O modo `--dry-run` classifica esse estado como `DIRECTORY_ACTION=RECONCILE`; não altera o grupo.
+O contrato exige `root:root:0700` no parent dedicado e rejeita GID não-root por padrão operacional fail-closed. O modo `--dry-run` classifica uma instalação ausente como `DIRECTORY_ACTION=CREATE`; não altera o parent compartilhado nem qualquer configuração existente.
 
 ## Origem aprovada
 
@@ -80,7 +80,7 @@ O helper bloqueia, entre outros, em:
 - histórico raso;
 - falha na consulta do remoto canônico;
 - parent `/etc` inseguro;
-- `/etc/voxelpacs` symlink, owner inesperado, modo gravável ou com entradas inesperadas;
+- `/etc/voxelpacs-composer-profile` symlink, owner inesperado, modo gravável ou com entradas inesperadas;
 - âncora existente divergente, symlink, tipo ou modo inválido;
 - corrida de criação;
 - falha de validação final;
@@ -114,6 +114,7 @@ O CI e os testes isolados cobrem:
 - argumentos e caminhos não permitidos;
 - corrida de criação e validação final;
 - rollback lógico sem substituir configuração existente;
+- preservação de uma configuração preexistente no parent compartilhado `/etc/voxelpacs`;
 - não alteração no modo dry-run.
 
 A implementação desta PR não provisiona nem altera o Host1.

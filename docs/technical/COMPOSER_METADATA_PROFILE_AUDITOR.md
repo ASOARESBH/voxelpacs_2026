@@ -78,7 +78,7 @@ O helper não cria, atualiza, captura ou altera a baseline.
 
 ### Proveniência da captura
 
-O mecanismo oficial `scripts/capture-production-baseline.sh`, chamado pelo wrapper root-controlled `ops/deploy/voxelpacs-production-baseline-capture`, produz `manifest.tsv`, `manifest.sha256`, `baseline-id`, symlinks, exclusões, metadados sanitizados e o `composer-profile.tsv` com o contrato acima. A SHA usada no perfil vem exclusivamente da âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`; ela não é inferida do runtime nem fornecida pelo caller.
+O mecanismo oficial `scripts/capture-production-baseline.sh`, chamado pelo wrapper root-controlled `ops/deploy/voxelpacs-production-baseline-capture`, produz `manifest.tsv`, `manifest.sha256`, `baseline-id`, symlinks, exclusões, metadados sanitizados e o `composer-profile.tsv` com o contrato acima. A SHA usada no perfil vem exclusivamente da âncora root-only `/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha`; ela não é inferida do runtime nem fornecida pelo caller.
 
 Se a captura anterior não possuir esse sidecar, o resultado obrigatório continua sendo `BASELINE_PROFILE=UNVERIFIED`, `AUDIT=INCOMPLETE` e código `65`. Não é permitido criar ou copiar o sidecar manualmente para fazer o diagnóstico passar.
 

@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly SCRIPT_DIR
 ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null || true)"
 readonly ROOT
-readonly APPROVAL_PARENT='/etc/voxelpacs'
-readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'
+readonly APPROVAL_PARENT='/etc/voxelpacs-composer-profile'
+readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'
 readonly APPROVAL_PARENT_PARENT='/etc'
 readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026.git'
 readonly MAIN_REF='refs/heads/main'
