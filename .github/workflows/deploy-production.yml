@@ -1,0 +1,194 @@
+name: Production CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: ${{ vars.VOXELPACS_DEPLOY_HOST }}
+  DEPLOY_USER: ${{ vars.VOXELPACS_DEPLOY_USER }}
+  BASELINE_ID: ${{ vars.VOXELPACS_BASELINE_ID }}
+  HEALTH_URL: ${{ vars.VOXELPACS_HEALTH_URL }}
+
+jobs:
+  deploy-production:
+    name: Build, drift gate and deploy production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://server.voxelpacs.com.br/
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout exact main SHA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, pdo_pgsql, gd, zip, mbstring, xml, opcache
+          coverage: none
+
+      - name: Validate deployment inputs
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          [[ "$DEPLOY_HOST" == 'server.voxelpacs.com.br' ]]
+          [[ "$DEPLOY_USER" == 'manus-admin' || "$DEPLOY_USER" == 'manus-deploy' ]]
+          [[ "$HEALTH_URL" == 'https://server.voxelpacs.com.br/health' ]]
+          [[ "$BASELINE_ID" =~ ^[0-9a-f]{40}$ ]]
+          printf 'SOURCE_SHA=%s\n' "$EXPECTED_SHA"
+          printf 'DEPLOY_TARGET=HOST1\n'
+          printf 'MIGRATION_REQUIRED=NO_PENDING_AUTOMATIC_MIGRATION\n'
+
+      - name: Validate Composer metadata
+        run: |
+          set -Eeuo pipefail
+          composer validate --strict
+          bash scripts/verify-composer-tree.sh --allow-missing-vendor
+          composer install --no-dev --prefer-dist --no-progress --no-interaction
+          bash scripts/verify-composer-tree.sh
+
+      - name: Detect migrations and block automatic execution
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -Eeuo pipefail
+          previous="$BEFORE_SHA"
+          if [[ ! "$previous" =~ ^[0-9a-f]{40}$ ]] || [[ "$previous" =~ ^0+$ ]]; then
+            previous="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          [[ "$previous" =~ ^[0-9a-f]{40}$ ]]
+          if git diff --name-only "$previous" "$GITHUB_SHA" | grep -E '^database/migrations/' >/dev/null; then
+            printf 'MIGRATION_REQUIRED=YES\nDEPLOY=BLOCKED\n' >&2
+            exit 78
+          fi
+          printf 'MIGRATION_REQUIRED=NO\n'
+
+      - name: PHP lint and targeted safety contracts
+        run: |
+          set -Eeuo pipefail
+          find app/ public/ routes/ config/ tests/ -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/philips_nondicom_production_diagnostic_static.php
+          php tests/report_delivery_automatic_payload_static.php
+          php tests/philips_submission_diagnostic_mode_static.php
+          bash tests/deploy/philips_nondicom_production_diagnostic_provisioner_static.sh
+          bash tests/deploy/philips_nondicom_production_diagnostic_provisioner_isolated.sh
+          git diff --check
+
+      - name: Build exact runtime artifact
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/voxelpacs-artifact"
+          bash scripts/build-runtime-artifact.sh \
+            --output "$RUNNER_TEMP/voxelpacs-artifact/runtime.zip" \
+            --manifest "$RUNNER_TEMP/voxelpacs-artifact/runtime.manifest.tsv" \
+            --checksum "$RUNNER_TEMP/voxelpacs-artifact/runtime.sha256" \
+            --expected-sha "$EXPECTED_SHA"
+          sha256sum -c "$RUNNER_TEMP/voxelpacs-artifact/runtime.sha256"
+
+      - name: Prepare strict SSH identity
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VOXELPACS_DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VOXELPACS_DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/voxelpacs_deploy_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/voxelpacs_deploy_ed25519" "$HOME/.ssh/known_hosts"
+          printf 'SSH_HOST_KEY_POLICY=STRICT\nSSH_PRIVATE_KEY_LOGGED=NO\n'
+
+      - name: Verify remote administrative interfaces
+        shell: bash
+        env:
+          DEPLOY_IDENTITY_FILE: ${{ runner.temp }}/unused
+        run: |
+          set -Eeuo pipefail
+          ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -i "$HOME/.ssh/voxelpacs_deploy_ed25519")
+          ssh "${ssh_opts[@]}" "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE_PREFLIGHT'
+          set -Eeuo pipefail
+          test -x /usr/local/sbin/voxelpacs-deploy-runtime
+          test -x /usr/local/sbin/voxelpacs-release-backup
+          test -x /usr/local/sbin/voxelpacs-runtime-drift-gate
+          test -x /usr/local/sbin/voxelpacs-runtime-drift-manifest-reader
+          test -d /var/www/voxelpacs/app
+          test -e /var/www/voxelpacs/app/.env
+          test -e /var/www/voxelpacs/app/storage
+          printf 'REMOTE_HELPERS=PASS\nPERSISTENT_ROOTS=PASS\n'
+          REMOTE_PREFLIGHT
+
+      - name: Execute root-controlled drift gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -i "$HOME/.ssh/voxelpacs_deploy_ed25519")
+          cat "$RUNNER_TEMP/voxelpacs-artifact/runtime.manifest.tsv" | \
+            ssh "${ssh_opts[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+              sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate --baseline-id "$BASELINE_ID"
+
+      - name: Create, validate and restore-test release backup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -i "$HOME/.ssh/voxelpacs_deploy_ed25519")
+          ssh "${ssh_opts[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            sudo -n /usr/local/sbin/voxelpacs-release-backup create --sha "$GITHUB_SHA"
+          ssh "${ssh_opts[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            sudo -n /usr/local/sbin/voxelpacs-release-backup validate --sha "$GITHUB_SHA"
+          ssh "${ssh_opts[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            sudo -n /usr/local/sbin/voxelpacs-release-backup restore-test --sha "$GITHUB_SHA"
+
+      - name: Deploy through the versioned publisher
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.VOXELPACS_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.VOXELPACS_DEPLOY_USER }}
+          DEPLOY_HEALTH_URL: ${{ vars.VOXELPACS_HEALTH_URL }}
+          DEPLOY_EXPECTED_SHA: ${{ github.sha }}
+          DEPLOY_BACKUP_VERIFIED: YES
+          DEPLOY_DRIFT_VERIFIED: YES
+          DEPLOY_AUTHORIZED: YES
+          DEPLOY_IDENTITY_FILE: ${{ runner.temp }}/voxelpacs_deploy_ed25519
+        run: |
+          set -Eeuo pipefail
+          cp "$HOME/.ssh/voxelpacs_deploy_ed25519" "$RUNNER_TEMP/voxelpacs_deploy_ed25519"
+          chmod 0600 "$RUNNER_TEMP/voxelpacs_deploy_ed25519"
+          bash scripts/deploy.sh
+
+      - name: Publish sanitized deployment summary
+        if: always()
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          {
+            printf 'DEPLOYED_MAIN_SHA=%s\n' "$SOURCE_SHA"
+            printf 'MIGRATIONS_EXECUTED=NO\n'
+            printf 'WORKER_STARTED=NO\n'
+            printf 'BRIDGE_RESTART=NO\n'
+            printf 'SMB=NO\n'
+            printf 'TRANSMISSION=NO\n'
+          } >> "$GITHUB_STEP_SUMMARY"
