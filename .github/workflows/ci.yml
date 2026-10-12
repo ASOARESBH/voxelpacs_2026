@@ -236,8 +236,11 @@ jobs:
           bash -n ops/deploy/voxelpacs-runtime-drift-gate
           bash -n scripts/validate-runtime-drift.sh
           bash -n scripts/provision-runtime-drift-manifest-reader.sh
+          bash -n scripts/upgrade-runtime-drift-manifest-reader.sh
           bash -n tests/deploy/runtime_drift_manifest_reader_static.sh
           bash -n tests/deploy/runtime_drift_manifest_reader_isolated.sh
+          bash -n tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh
+          bash -n tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh
 
       - name: ShellCheck
         run: |
@@ -247,8 +250,11 @@ jobs:
               ops/deploy/voxelpacs-runtime-drift-gate \
               scripts/validate-runtime-drift.sh \
               scripts/provision-runtime-drift-manifest-reader.sh \
+              scripts/upgrade-runtime-drift-manifest-reader.sh \
               tests/deploy/runtime_drift_manifest_reader_static.sh \
-              tests/deploy/runtime_drift_manifest_reader_isolated.sh
+              tests/deploy/runtime_drift_manifest_reader_isolated.sh \
+              tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh \
+              tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh
           else
             echo "SHELLCHECK=NOT_AVAILABLE"
           fi
@@ -258,6 +264,12 @@ jobs:
 
       - name: Run isolated reader and gate tests
         run: sudo -n env -u SUDO_USER bash tests/deploy/runtime_drift_manifest_reader_isolated.sh
+
+      - name: Validate upgrade helper contract
+        run: bash tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh
+
+      - name: Run isolated upgrade helper tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh
 
       - name: Run provisioner dry-run
         run: |

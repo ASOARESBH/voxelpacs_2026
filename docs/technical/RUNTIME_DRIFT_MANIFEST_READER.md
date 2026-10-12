@@ -64,6 +64,21 @@ Instala atomicamente:
 
 A allowlist concede somente a leitura por `baseline-id` e o gate com `baseline-id`. Não concede shell, `cat` root genérico, acesso a path arbitrário, cópia ou operação de publicação.
 
+## Upgrade de destinos já instalados
+
+O instalador original falha fechado quando os quatro destinos já existem. Para atualizar uma versão instalada sem sobrescrita manual, existe o helper versionado separado:
+
+```bash
+sudo bash scripts/upgrade-runtime-drift-manifest-reader.sh \
+  --expected-sha <SHA_DA_MAIN> --dry-run
+sudo bash scripts/upgrade-runtime-drift-manifest-reader.sh \
+  --expected-sha <SHA_DA_MAIN> --upgrade
+```
+
+O `--upgrade` exige os quatro destinos existentes como arquivos regulares `root:root` com modos `0555/0555/0555/0440`, valida a SHA exata do checkout, valida o comparador e o sudoers, cria backup root-only em raiz fixa, instala os quatro arquivos por staging e `mv` atômico individual e restaura o backup automaticamente se uma etapa posterior falhar. O backup não é removido automaticamente. O `--dry-run` não cria lock, backup ou staging.
+
+Esse helper não aceita paths, comandos, shell, `systemctl`, cópia arbitrária ou alteração da aplicação. Ele não altera banco, baseline, Worker, Bridge, SMB ou transmissão.
+
 ## Rollback
 
 O provisionamento não substitui destinos existentes. Em caso de falha, o cleanup remove somente os destinos recém-instalados. A reversão operacional deve remover os quatro destinos pelo procedimento administrativo aprovado, preservando evidência e sem tocar o runtime da aplicação.
