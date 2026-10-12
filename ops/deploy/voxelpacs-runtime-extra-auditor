@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+# VOXEL PACS — auditor root-controlled sanitizado dos extras do runtime.
+# Somente leitura da aplicação e da baseline; não publica, remove ou altera arquivos auditados.
+set -Eeuo pipefail
+umask 077
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly APP_ROOT='/var/www/voxelpacs/app'
+readonly BASELINE_ROOT='/var/lib/voxelpacs/baselines'
+readonly MECHANISM_VERSION='1'
+readonly MAX_ARTIFACT_MANIFEST_BYTES=52428800
+readonly MAX_ARTIFACT_MANIFEST_ROWS=100000
+
+artifact_sha=''
+baseline_id=''
+artifact_input=''
+
+declare -A artifact_hash=()
+declare -A baseline_hash=()
+declare -A baseline_size=()
+declare -A baseline_owner=()
+declare -A baseline_group=()
+declare -A baseline_mode=()
+declare -A baseline_mtime=()
+declare -A baseline_classification=()
+declare -A known_dirs=()
+
+audit_fail() {
+  printf 'EXTRA_AUDIT=BLOCKED\nREASON=%s\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' "$1" >&2
+  exit 64
+}
+
+usage() {
+  printf '%s\n' 'uso: voxelpacs-runtime-extra-auditor audit --baseline-id <40-hex-sha> --artifact-sha <40-hex-sha>' >&2
+}
+
+is_sha() {
+  [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+safe_relative_path() {
+  local rel="$1"
+  [[ -n "$rel" && "$rel" != /* && "$rel" != '.' ]] || return 1
+  [[ "$rel" != *$'\n'* && "$rel" != *$'\r'* && "$rel" != *$'\t'* ]] || return 1
+  [[ "$rel" != '../'* && "$rel" != */../* && "$rel" != */.. && "$rel" != '..' ]] || return 1
+  # shellcheck disable=SC2221,SC2222
+  case "$rel" in
+    .env|.env.*|*/.env|*/.env.*|storage|storage/*|*/storage|*/storage/*|uploads|uploads/*|*/uploads|*/uploads/*|public/uploads|public/uploads/*|*/public/uploads|*/public/uploads/*|logs|logs/*|*/logs|*/logs/*|backups|backups/*|*/backups|*/backups/*|runtime|runtime/*|*/runtime|*/runtime/*|cache|cache/*|*/cache|*/cache/*|sessions|sessions/*|*/sessions|*/sessions/*|tmp|tmp/*|*/tmp|*/tmp/*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+is_classification() {
+  case "${1:-}" in
+    OWNED_RUNTIME_CODE|COMPOSER_DEPENDENCY|VERSIONED_DATABASE_CODE|DEVELOPMENT_OR_OPERATIONS|UNCLASSIFIED_RUNTIME_FILE) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+secure_regular_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%u:%g:%a' -- "$path" 2>/dev/null || true)" == '0:0:600' ]]
+}
+
+secure_directory() {
+  local path="$1"
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  [[ "$(stat -c '%u:%g:%a' -- "$path" 2>/dev/null || true)" == '0:0:700' ]]
+}
+
+cleanup() {
+  if [[ -n "$artifact_input" && -f "$artifact_input" && ! -L "$artifact_input" ]]; then
+    rm -f -- "$artifact_input"
+  fi
+}
+trap cleanup EXIT
+
+parse_args() {
+  [[ "$#" -eq 5 && "$1" == 'audit' && "$2" == '--baseline-id' && "$4" == '--artifact-sha' ]] || { usage; audit_fail 'ARGUMENTS_INVALID'; }
+  baseline_id="$3"
+  artifact_sha="$5"
+  is_sha "$baseline_id" || audit_fail 'BASELINE_ID_INVALID'
+  is_sha "$artifact_sha" || audit_fail 'ARTIFACT_SHA_INVALID'
+}
+
+validate_baseline() {
+  local baseline_dir="$BASELINE_ROOT/$baseline_id"
+  local manifest="$baseline_dir/manifest.tsv"
+  local manifest_sha stored_sha stored_id
+  secure_directory "$BASELINE_ROOT" || audit_fail 'BASELINE_ROOT_SECURITY_INVALID'
+  secure_directory "$baseline_dir" || audit_fail 'BASELINE_DIRECTORY_SECURITY_INVALID'
+  for file in manifest.tsv manifest.sha256 baseline-id metadata.txt symlinks.tsv exclusions.tsv; do
+    secure_regular_file "$baseline_dir/$file" || audit_fail 'BASELINE_FILE_SECURITY_INVALID'
+  done
+  stored_id="$(tr -d '\r\n' < "$baseline_dir/baseline-id")"
+  [[ "$stored_id" == "$baseline_id" ]] || audit_fail 'BASELINE_ID_FILE_MISMATCH'
+  manifest_sha="$(sha256sum -- "$manifest" | awk '{print $1}')"
+  [[ "$manifest_sha" =~ ^[0-9a-f]{64}$ ]] || audit_fail 'BASELINE_MANIFEST_HASH_UNAVAILABLE'
+  stored_sha="$(tr -d '\r\n' < "$baseline_dir/manifest.sha256")"
+  [[ "$stored_sha" == "$manifest_sha" ]] || audit_fail 'BASELINE_MANIFEST_CHECKSUM_MISMATCH'
+  [[ "${manifest_sha:0:40}" == "$baseline_id" ]] || audit_fail 'BASELINE_ID_DERIVATION_MISMATCH'
+  grep -Fqx "baseline_id=$baseline_id" "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_ID_MISMATCH'
+  grep -Fqx "manifest_sha256=$manifest_sha" "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_MANIFEST_MISMATCH'
+  grep -Fqx 'hash_unavailable=0' "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_HASH_INCOMPLETE'
+  grep -Fqx 'metadata_unavailable=0' "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_METADATA_INCOMPLETE'
+  grep -Fqx 'secrets_content=NOT_CAPTURED' "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_SECRETS_CONTRACT_INVALID'
+  grep -Fqx 'persistent_content=NOT_CAPTURED' "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_PERSISTENT_CONTRACT_INVALID'
+  grep -Fqx 'clinical_content=NOT_CAPTURED' "$baseline_dir/metadata.txt" || audit_fail 'BASELINE_METADATA_CLINICAL_CONTRACT_INVALID'
+}
+
+remember_parent_dirs() {
+  local rel="$1" current='.' part
+  local -a parts=()
+  IFS='/' read -r -a parts <<< "$rel"
+  for part in "${parts[@]:0:${#parts[@]}-1}"; do
+    [[ -n "$part" ]] || continue
+    if [[ "$current" == '.' ]]; then current="$part"; else current="$current/$part"; fi
+    known_dirs["$current"]=1
+  done
+}
+
+load_artifact_manifest() {
+  local rel hash extra rows=0
+  artifact_hash=()
+  while IFS=$'\t' read -r rel hash extra; do
+    [[ -z "$rel" && -z "${hash:-}" && -z "${extra:-}" ]] && continue
+    rows=$((rows + 1))
+    (( rows <= MAX_ARTIFACT_MANIFEST_ROWS )) || audit_fail 'ARTIFACT_MANIFEST_TOO_LARGE'
+    if [[ -n "${extra:-}" ]] || ! safe_relative_path "$rel" || ! [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || [[ -n "${artifact_hash[$rel]+present}" ]]; then
+      audit_fail 'ARTIFACT_MANIFEST_FORMAT_INVALID'
+    fi
+    artifact_hash["$rel"]="$hash"
+    remember_parent_dirs "$rel"
+  done < "$artifact_input"
+  (( rows > 0 )) || audit_fail 'ARTIFACT_MANIFEST_EMPTY'
+}
+
+load_baseline_manifest() {
+  local rel size hash owner group mode mtime classification read_status extra format
+  baseline_hash=()
+  baseline_size=()
+  baseline_owner=()
+  baseline_group=()
+  baseline_mode=()
+  baseline_mtime=()
+  baseline_classification=()
+  known_dirs=([.]=1)
+  while IFS=$'\t' read -r rel size hash owner group mode mtime classification read_status extra; do
+    [[ -z "$rel" && -z "${hash:-}" && -z "${extra:-}" ]] && continue
+    format='CURRENT_9_COLUMN'
+    if [[ -z "${read_status:-}" && -z "${extra:-}" ]]; then
+      read_status='READABLE'
+      format='LEGACY_8_COLUMN'
+    fi
+    if [[ -n "${extra:-}" ]] || ! safe_relative_path "$rel" || ! [[ "$size" =~ ^[0-9]+$ ]] || ! [[ "$hash" =~ ^[0-9a-f]{64}$ ]] || ! [[ "$mode" =~ ^[0-9]{3,4}$ ]] || ! [[ "$read_status" == 'READABLE' ]] || [[ -n "${baseline_hash[$rel]+present}" ]]; then
+      audit_fail 'BASELINE_MANIFEST_FORMAT_INVALID'
+    fi
+    is_classification "$classification" || audit_fail 'BASELINE_CLASSIFICATION_INVALID'
+    baseline_hash["$rel"]="$hash"
+    baseline_size["$rel"]="$size"
+    baseline_owner["$rel"]="$owner"
+    baseline_group["$rel"]="$group"
+    baseline_mode["$rel"]="$mode"
+    baseline_mtime["$rel"]="$mtime"
+    baseline_classification["$rel"]="$classification"
+    remember_parent_dirs "$rel"
+    [[ "$format" == 'CURRENT_9_COLUMN' || "$format" == 'LEGACY_8_COLUMN' ]] || audit_fail 'BASELINE_FORMAT_INVALID'
+  done < "$BASELINE_ROOT/$baseline_id/manifest.tsv"
+  (( ${#baseline_hash[@]} > 0 )) || audit_fail 'BASELINE_MANIFEST_EMPTY'
+}
+
+materialize_artifact_manifest() {
+  artifact_input="$(mktemp /var/tmp/voxelpacs-runtime-extra-auditor.XXXXXX)"
+  chmod 0600 -- "$artifact_input"
+  chown root:root -- "$artifact_input"
+  local bytes
+  cat > "$artifact_input"
+  bytes="$(wc -c < "$artifact_input")"
+  [[ "$bytes" =~ ^[0-9]+$ && "$bytes" -le "$MAX_ARTIFACT_MANIFEST_BYTES" ]] || audit_fail 'ARTIFACT_MANIFEST_TOO_LARGE'
+  secure_regular_file "$artifact_input" || audit_fail 'ARTIFACT_INPUT_SECURITY_INVALID'
+}
+
+is_excluded_path() {
+  case "$1" in
+    .env|.env.*|storage|storage/*|uploads|uploads/*|public/uploads|public/uploads/*|logs|logs/*|backups|backups/*|runtime|runtime/*|cache|cache/*|sessions|sessions/*|tmp|tmp/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+count_out_of_scope() {
+  local rel path
+  out_of_scope_count=0
+  for rel in .env .env.production .env.local .env.staging .env.testing storage uploads public/uploads logs backups runtime cache sessions tmp; do
+    path="$APP_ROOT/$rel"
+    if [[ -e "$path" || -L "$path" ]]; then out_of_scope_count=$((out_of_scope_count + 1)); fi
+  done
+}
+
+runtime_metadata() {
+  local path="$1" size owner group mode mtime mtime_utc
+  read -r size owner group mode mtime < <(stat -c '%s %U %G %a %Y' -- "$path") || return 1
+  [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+  mtime_utc="$(date -u -d "@$mtime" '+%Y-%m-%dT%H:%M:%SZ')" || return 1
+  printf '%s\t%s\t%s\t%s\t%s\n' "$size" "$owner" "$group" "$mode" "$mtime_utc"
+}
+
+runtime_path_known() {
+  [[ -n "${artifact_hash[$1]+present}" || -n "${baseline_hash[$1]+present}" ]]
+}
+
+enumerate_runtime() {
+  runtime_files=0
+  expected_versioned_artifact=0
+  expected_artifact_mismatch=0
+  expected_artifact_unreadable=0
+  missing_artifact_files=0
+  extra_files=0
+  known_runtime_artifact=0
+  baseline_extra_unclassified=0
+  missing_from_baseline=0
+  metadata_mismatch=0
+  runtime_content_mismatch=0
+  unreadable_or_unverifiable=0
+  unexpected_directories=0
+  count_out_of_scope
+
+  while IFS= read -r -d '' entry; do
+    rel="${entry#"$APP_ROOT/"}"
+    is_excluded_path "$rel" && continue
+    if [[ -L "$entry" || ! -f "$entry" ]]; then
+      unreadable_or_unverifiable=$((unreadable_or_unverifiable + 1))
+      if [[ -n "${artifact_hash[$rel]+present}" || -n "${baseline_hash[$rel]+present}" ]]; then
+        runtime_files=$((runtime_files + 1))
+      else
+        extra_files=$((extra_files + 1))
+      fi
+      continue
+    fi
+    runtime_files=$((runtime_files + 1))
+    actual_hash="$(sha256sum -- "$entry" 2>/dev/null | awk '{print $1}' || true)"
+    if ! [[ "$actual_hash" =~ ^[0-9a-f]{64}$ ]]; then
+      unreadable_or_unverifiable=$((unreadable_or_unverifiable + 1))
+      if [[ -n "${artifact_hash[$rel]+present}" ]]; then expected_artifact_unreadable=$((expected_artifact_unreadable + 1)); else extra_files=$((extra_files + 1)); fi
+      continue
+    fi
+    if [[ -n "${artifact_hash[$rel]+present}" ]]; then
+      if [[ "$actual_hash" == "${artifact_hash[$rel]}" ]]; then expected_versioned_artifact=$((expected_versioned_artifact + 1)); else expected_artifact_mismatch=$((expected_artifact_mismatch + 1)); fi
+      continue
+    fi
+
+    extra_files=$((extra_files + 1))
+    if [[ -z "${baseline_hash[$rel]+present}" ]]; then
+      missing_from_baseline=$((missing_from_baseline + 1))
+      continue
+    fi
+    if [[ "$actual_hash" != "${baseline_hash[$rel]}" ]]; then
+      runtime_content_mismatch=$((runtime_content_mismatch + 1))
+      continue
+    fi
+    if ! metadata="$(runtime_metadata "$entry")"; then
+      unreadable_or_unverifiable=$((unreadable_or_unverifiable + 1))
+      continue
+    fi
+    IFS=$'\t' read -r runtime_size runtime_owner runtime_group runtime_mode runtime_mtime <<< "$metadata"
+    expected_metadata="${baseline_size[$rel]}"$'\t'"${baseline_owner[$rel]}"$'\t'"${baseline_group[$rel]}"$'\t'"${baseline_mode[$rel]}"$'\t'"${baseline_mtime[$rel]}"
+    actual_metadata="$runtime_size"$'\t'"$runtime_owner"$'\t'"$runtime_group"$'\t'"$runtime_mode"$'\t'"$runtime_mtime"
+    if [[ "$actual_metadata" != "$expected_metadata" ]]; then
+      metadata_mismatch=$((metadata_mismatch + 1))
+    elif [[ "${baseline_classification[$rel]}" == 'UNCLASSIFIED_RUNTIME_FILE' ]]; then
+      baseline_extra_unclassified=$((baseline_extra_unclassified + 1))
+    else
+      known_runtime_artifact=$((known_runtime_artifact + 1))
+    fi
+  done < <(find -P "$APP_ROOT" -xdev \
+    \( -path "$APP_ROOT/.env" -o -path "$APP_ROOT/.env.*" -o -path "$APP_ROOT/storage" -o -path "$APP_ROOT/storage/*" -o -path "$APP_ROOT/uploads" -o -path "$APP_ROOT/uploads/*" -o -path "$APP_ROOT/public/uploads" -o -path "$APP_ROOT/public/uploads/*" -o -path "$APP_ROOT/logs" -o -path "$APP_ROOT/logs/*" -o -path "$APP_ROOT/backups" -o -path "$APP_ROOT/backups/*" -o -path "$APP_ROOT/runtime" -o -path "$APP_ROOT/runtime/*" -o -path "$APP_ROOT/cache" -o -path "$APP_ROOT/cache/*" -o -path "$APP_ROOT/sessions" -o -path "$APP_ROOT/sessions/*" -o -path "$APP_ROOT/tmp" -o -path "$APP_ROOT/tmp/*" \) -prune -o \( -type f -o -type l \) -print0)
+
+  while IFS= read -r -d '' dir; do
+    [[ "$dir" == "$APP_ROOT" ]] && continue
+    rel="${dir#"$APP_ROOT/"}"
+    [[ -z "$rel" ]] && continue
+    is_excluded_path "$rel" && continue
+    if [[ -z "${known_dirs[$rel]+present}" ]]; then unexpected_directories=$((unexpected_directories + 1)); fi
+  done < <(find -P "$APP_ROOT" -xdev \
+    \( -path "$APP_ROOT/.env" -o -path "$APP_ROOT/.env.*" -o -path "$APP_ROOT/storage" -o -path "$APP_ROOT/storage/*" -o -path "$APP_ROOT/uploads" -o -path "$APP_ROOT/uploads/*" -o -path "$APP_ROOT/public/uploads" -o -path "$APP_ROOT/public/uploads/*" -o -path "$APP_ROOT/logs" -o -path "$APP_ROOT/logs/*" -o -path "$APP_ROOT/backups" -o -path "$APP_ROOT/backups/*" -o -path "$APP_ROOT/runtime" -o -path "$APP_ROOT/runtime/*" -o -path "$APP_ROOT/cache" -o -path "$APP_ROOT/cache/*" -o -path "$APP_ROOT/sessions" -o -path "$APP_ROOT/sessions/*" -o -path "$APP_ROOT/tmp" -o -path "$APP_ROOT/tmp/*" \) -prune -o -type d -print0)
+
+  for rel in "${!artifact_hash[@]}"; do
+    path="$APP_ROOT/$rel"
+    if [[ ! -f "$path" || -L "$path" ]]; then missing_artifact_files=$((missing_artifact_files + 1)); fi
+  done
+}
+
+print_result() {
+  local audit='PASS' audit_rc=0 evidence='COMPLETE' reason='NONE'
+  if (( expected_artifact_mismatch > 0 || expected_artifact_unreadable > 0 || missing_artifact_files > 0 || missing_from_baseline > 0 || metadata_mismatch > 0 || runtime_content_mismatch > 0 || unreadable_or_unverifiable > 0 || unexpected_directories > 0 )); then
+    audit='FAIL'; audit_rc=65; evidence='INSUFFICIENT'; reason='CONFIRMED_DRIFT_OR_UNVERIFIABLE_RUNTIME_STATE'
+  elif (( baseline_extra_unclassified > 0 )); then
+    audit='INCOMPLETE'; audit_rc=66; evidence='INSUFFICIENT'; reason='BASELINE_EXTRA_UNCLASSIFIED'
+  fi
+  printf 'AUDIT_MODE=READ_ONLY\nMECHANISM_VERSION=%s\nBASELINE_ID=NOT_EXPOSED\nARTIFACT_SHA=NOT_EXPOSED\n' "$MECHANISM_VERSION"
+  printf 'ARTIFACT_PROVENANCE=CALLER_SUPPLIED_MANIFEST\nARTIFACT_MANIFEST=VALID\nBASELINE_PROVENANCE=VALIDATED_ROOT_CONTROLLED\nRUNTIME_ROOT=VALIDATED_FIXED_SCOPE\n'
+  printf 'RUNTIME_FILES=%s\nARTIFACT_FILES=%s\nBASELINE_FILES=%s\nEXTRA_FILES=%s\n' "$runtime_files" "${#artifact_hash[@]}" "${#baseline_hash[@]}" "$extra_files"
+  printf 'CATEGORY_EXPECTED_VERSIONED_ARTIFACT=%s\nCATEGORY_EXPECTED_ARTIFACT_MISMATCH=%s\nCATEGORY_KNOWN_RUNTIME_ARTIFACT=%s\nCATEGORY_BASELINE_EXTRA_UNCLASSIFIED=%s\nCATEGORY_MISSING_FROM_BASELINE=%s\nCATEGORY_METADATA_MISMATCH=%s\nCATEGORY_RUNTIME_CONTENT_MISMATCH=%s\nCATEGORY_UNREADABLE_OR_UNVERIFIABLE=%s\nCATEGORY_OUT_OF_SCOPE=%s\nUNEXPECTED_DIRECTORIES=%s\nMISSING_ARTIFACT_FILES=%s\n' "$expected_versioned_artifact" "$expected_artifact_mismatch" "$known_runtime_artifact" "$baseline_extra_unclassified" "$missing_from_baseline" "$metadata_mismatch" "$runtime_content_mismatch" "$unreadable_or_unverifiable" "$out_of_scope_count" "$unexpected_directories" "$missing_artifact_files"
+  printf 'EXTRA_FILES_AUDITED=%s\nEXTRA_EVIDENCE=%s\nAUDIT=%s\nREASON=%s\nRAW_CONTENT_EXPOSED=NO\nINDIVIDUAL_HASHES_EXPOSED=NO\nINDIVIDUAL_PATHS_EXPOSED=NO\nDRIFT_GATE_INTEGRATION=NOT_EXECUTED\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_CALLED=NO\nSMB_CALLED=NO\nTRANSMISSION=NO\nDICOM_CSTORE=NOT_CHANGED\n' "$extra_files" "$evidence" "$audit" "$reason"
+  return "$audit_rc"
+}
+
+require_root_and_caller() {
+  [[ "$EUID" -eq 0 ]] || audit_fail 'ROOT_REQUIRED'
+  case "${SUDO_USER:-}" in
+    ''|manus-admin) ;;
+    *) audit_fail 'CALLER_NOT_ALLOWLISTED' ;;
+  esac
+}
+
+require_root_and_caller
+parse_args "$@"
+[[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || audit_fail 'APP_ROOT_INVALID'
+materialize_artifact_manifest
+validate_baseline
+load_artifact_manifest
+load_baseline_manifest
+enumerate_runtime
+print_result
