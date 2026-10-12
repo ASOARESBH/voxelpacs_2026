@@ -11,13 +11,33 @@ Ele não cria Request, Outbox ou Job; não arma filas; não executa Worker; não
 O comando é instalado em contexto isolado e deve ser executado somente pelo mecanismo administrativo allowlisted definido para o runtime, como o usuário de aplicação apropriado. O modo sem argumentos preserva o contrato legado de `controlled_production`; o fluxo de laudo liberado sem input manual deve usar explicitamente `automatic_production`:
 
 ```text
-php /usr/local/libexec/voxelpacs/philips_nondicom_production_diagnostic.php
-php /usr/local/libexec/voxelpacs/philips_nondicom_production_diagnostic.php --dispatch-mode=automatic_production
+php /opt/voxelpacs/diagnostics/philips-nondicom/philips_nondicom_production_diagnostic.php
+php /opt/voxelpacs/diagnostics/philips-nondicom/philips_nondicom_production_diagnostic.php --dispatch-mode=automatic_production
 ```
 
 Somente os valores fechados `automatic_production` e `controlled_production` são aceitos. Argumentos adicionais ou modos desconhecidos são rejeitados antes de carregar o diagnóstico.
 
 O caminho acima é um contrato de instalação, não uma autorização para instalar ou executar em produção nesta PR. A instalação requer procedimento operacional separado, backup da configuração administrativa e validação da allowlist.
+
+## Provisionamento administrativo independente
+
+O componente instalado fora do artefato da aplicação é atualizado somente pelo provisioner versionado:
+
+```text
+scripts/provision-philips-nondicom-production-diagnostic.sh
+```
+
+O provisioner exige execução root-controlled, checkout limpo e `--expected-sha` igual ao `HEAD` do checkout. Além disso, compara o blob Git atual do diagnóstico e do próprio provisioner com os blobs da SHA esperada; isso bloqueia alterações locais escondidas por `assume-unchanged`. O alvo é fixo em `/opt/voxelpacs/diagnostics/philips-nondicom/philips_nondicom_production_diagnostic.php`; não aceita source, destination, comando ou caminho fornecido pelo operador. A atualização materializa o diagnóstico via `git show` da SHA validada, usa staging no mesmo diretório, valida `php -l`, compara o SHA publicado com a origem e cria backup root-only antes da substituição.
+
+Interfaces:
+
+```text
+provision-philips-nondicom-production-diagnostic.sh --expected-sha <sha> --dry-run [--upgrade]
+provision-philips-nondicom-production-diagnostic.sh --expected-sha <sha> --install [--upgrade]
+provision-philips-nondicom-production-diagnostic.sh --rollback --backup-id <backup-id>
+```
+
+Esse mecanismo não instala sudoers, não altera `.env`, flags, banco, schema, Worker, Bridge, policy, SMB ou DICOM/C-STORE. Ele também não executa `systemctl`, Worker, `runOne`, Bridge ou transporte. O provisionamento do diagnóstico é administrativamente independente do deploy da aplicação, mas **não contorna nem transforma o drift gate em PASS**: `DRIFT_GATE=NOT_MODIFIED` é emitido pelo próprio mecanismo. A instalação/execução em produção continua exigindo autorização operacional separada e validação da SHA da `main`.
 
 O diagnóstico não carrega `app/bootstrap.php`: evita sessão, criação de diretórios e os handlers web. Ele carrega apenas o autoloader da aplicação, lê o `.env` canônico sem emitir seus valores, usa PDO com `SELECT` parametrizado e consulta `systemctl` somente com argumentos fixos de leitura.
 
@@ -84,6 +104,8 @@ Exemplo de decisão (sem valores de ambiente):
 php -l bin/philips_nondicom_production_diagnostic.php
 php -l tests/philips_nondicom_production_diagnostic_static.php
 php tests/philips_nondicom_production_diagnostic_static.php
+bash tests/deploy/philips_nondicom_production_diagnostic_provisioner_static.sh
+bash tests/deploy/philips_nondicom_production_diagnostic_provisioner_isolated.sh
 ```
 
-Os testes são sintéticos: não acessam banco, Host 1, Host 2, Bridge, SMB ou dados clínicos.
+Os testes são sintéticos: não acessam banco, Host 1, Host 2, Bridge, SMB ou dados clínicos. O teste estático verifica a origem por SHA, alvo fixo, backup/rollback, staging, separação do deploy e ausência de operações genéricas. O teste isolado verifica dry-run sem lock/backup, symlink quebrado fail-closed, instalação com backup, checksum e metadados root-only, bloqueio de rollback após alteração posterior do alvo, rollback válido e SHA inválida. A corrida necessária para forçar falha do rollback automático não é fabricada no fixture; o caminho é revisado estaticamente e emite `ROLLBACK=FAILED` sem ocultar o estado.

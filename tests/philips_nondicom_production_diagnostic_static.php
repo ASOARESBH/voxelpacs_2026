@@ -18,9 +18,11 @@ $expect = static function (bool $condition, string $message) use ($fail): void {
 $source = file_get_contents($diagnosticPath);
 $expect(is_string($source), 'diagnostic source is readable');
 $expect(str_contains($source, 'class PhilipsNonDicomProductionDiagnostic'), 'diagnostic class exists');
+$expect(str_contains($source, "private const VERSION = '1.2.0'"), 'diagnostic contract version is current');
 $expect(str_contains($source, "DISPATCH_MODE_AUTOMATIC = 'automatic_production'"), 'automatic mode is explicit');
 $expect(str_contains($source, "DISPATCH_MODE_CONTROLLED = 'controlled_production'"), 'controlled mode is explicit');
 $expect(str_contains($source, "--dispatch-mode="), 'dispatch mode CLI option is explicit');
+$expect(str_contains($source, 'parseDispatchModeArguments'), 'CLI parsing is centralized');
 $expect(str_contains($source, "private const TENANT_ID = 2"), 'tenant is fixed to 2');
 $expect(str_contains($source, "private const DESTINATION_ID = 7"), 'destination is fixed to 7');
 $expect(str_contains($source, 'task_site_alias_valid'), 'diagnostic validates the technical alias separately');
@@ -99,6 +101,34 @@ $expect(
     $class::normalizeDispatchMode('controlled_production') === $class::DISPATCH_MODE_CONTROLLED,
     'controlled mode normalizes'
 );
+$expect(
+    $class::parseDispatchModeArguments([]) === $class::DISPATCH_MODE_CONTROLLED,
+    'no arguments preserve the controlled default'
+);
+$expect(
+    $class::parseDispatchModeArguments(['--dispatch-mode=automatic_production']) === $class::DISPATCH_MODE_AUTOMATIC,
+    'automatic CLI argument is accepted'
+);
+$expect(
+    $class::parseDispatchModeArguments(['--dispatch-mode=controlled_production']) === $class::DISPATCH_MODE_CONTROLLED,
+    'controlled CLI argument is accepted'
+);
+$expect(
+    $class::parseDispatchModeArguments(['--dispatch-mode=invalid']) === null,
+    'unknown CLI mode is rejected'
+);
+$expect(
+    $class::parseDispatchModeArguments(['--dispatch-mode=automatic_production', '--unexpected']) === null,
+    'additional CLI arguments are rejected'
+);
+$expect(
+    $class::parseDispatchModeArguments(['--dispatch-mode=automatic_production ']) === null,
+    'trailing whitespace in CLI mode is rejected'
+);
+$expect(
+    $class::parseDispatchModeArguments(["--dispatch-mode=automatic_production\n"]) === null,
+    'control characters in CLI mode are rejected'
+);
 $invalidModeRejected = false;
 try {
     $class::normalizeDispatchMode('invalid');
@@ -162,6 +192,59 @@ $sanitized = $class::sanitize([
 ]);
 $expect(!array_key_exists('password', $sanitized), 'password key is removed');
 $expect(!array_key_exists('nested', $sanitized) || !array_key_exists('patient_name', $sanitized['nested']), 'patient key is removed');
+$sanitizedInfrastructure = $class::sanitize([
+    'hostname' => 'private-prod-host',
+    'task_site_value' => 'private-pacs-name',
+    'bridge_url' => 'https://private.invalid',
+    'hmac' => 'never-output',
+    'certificate' => 'never-output',
+    'sha256' => str_repeat('a', 64),
+    'safe' => 'PASS',
+]);
+$expect(!array_key_exists('hostname', $sanitizedInfrastructure), 'hostname key is removed');
+$expect(!array_key_exists('task_site_value', $sanitizedInfrastructure), 'task-site value key is removed');
+$expect(!array_key_exists('bridge_url', $sanitizedInfrastructure), 'bridge URL key is removed');
+$expect(!array_key_exists('hmac', $sanitizedInfrastructure), 'HMAC key is removed');
+$expect(!array_key_exists('certificate', $sanitizedInfrastructure), 'certificate key is removed');
+$expect(!array_key_exists('sha256', $sanitizedInfrastructure), 'hash key is removed');
+$sanitizedValues = $class::sanitize([
+    'safe' => 'https://private.invalid/path',
+]);
+$expect(($sanitizedValues['safe'] ?? '') === 'REDACTED', 'URL value is redacted');
+$sanitizedHeader = $class::sanitize([
+    'safe' => 'X-Private-Header: never-output',
+]);
+$expect(($sanitizedHeader['safe'] ?? '') === 'REDACTED', 'header value is redacted');
+$sanitizedHash = $class::sanitize([
+    'safe' => str_repeat('b', 64),
+]);
+$expect(($sanitizedHash['safe'] ?? '') === 'REDACTED', 'hash value is redacted');
+$sensitiveValues = [
+    'smb://private.invalid/share',
+    'x://private.invalid/value',
+    'customscheme-that-is-longer-than-sixteen://private.invalid/value',
+    'Authorization: Bearer private',
+    'Cookie: private=value',
+    'A: secret',
+    'X_Test: secret',
+    'X.Test: secret',
+    'X+Foo: secret',
+    '-----BEGIN CERTIFICATE-----',
+    '-----END CERTIFICATE-----',
+    str_repeat('c', 32),
+    str_repeat('d', 40),
+    str_repeat('e', 64),
+    str_repeat('F', 24),
+    str_repeat('G', 28),
+    str_repeat('Q', 44),
+    base64_encode(str_repeat('A', 16)),
+    base64_encode(str_repeat('A', 17)),
+    base64_encode(str_repeat('A', 20)),
+];
+foreach ($sensitiveValues as $sensitiveValue) {
+    $sanitizedSensitiveValue = $class::sanitize(['safe' => $sensitiveValue]);
+    $expect(($sanitizedSensitiveValue['safe'] ?? '') === 'REDACTED', 'sensitive value is redacted');
+}
 $expect(($sanitized['transmission_executed'] ?? true) === false, 'transmission marker is forced false');
 
 $expect($class::overall(['runtime' => 'PASS', 'worker' => 'PASS']) === 'READY', 'all-pass aggregate is READY');

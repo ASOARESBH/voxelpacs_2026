@@ -20,7 +20,7 @@ use Throwable;
 
 final class PhilipsNonDicomProductionDiagnostic
 {
-    private const VERSION = '1.1.0';
+    private const VERSION = '1.2.0';
     private const DEFAULT_APP_ROOT = '/var/www/voxelpacs/app';
     private const TENANT_ID = 2;
     private const DESTINATION_ID = 7;
@@ -57,11 +57,27 @@ final class PhilipsNonDicomProductionDiagnostic
 
     public static function normalizeDispatchMode(?string $dispatchMode): string
     {
-        return match (trim((string) $dispatchMode)) {
+        return match ($dispatchMode) {
             self::DISPATCH_MODE_AUTOMATIC => self::DISPATCH_MODE_AUTOMATIC,
             self::DISPATCH_MODE_CONTROLLED => self::DISPATCH_MODE_CONTROLLED,
             default => throw new \InvalidArgumentException('invalid_dispatch_mode'),
         };
+    }
+
+    /** @param list<string> $arguments */
+    public static function parseDispatchModeArguments(array $arguments): ?string
+    {
+        if ($arguments === []) {
+            return self::DISPATCH_MODE_CONTROLLED;
+        }
+        if (count($arguments) !== 1 || !str_starts_with($arguments[0], '--dispatch-mode=')) {
+            return null;
+        }
+        try {
+            return self::normalizeDispatchMode(substr($arguments[0], strlen('--dispatch-mode=')));
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
     }
 
     /** @return array<string,mixed> */
@@ -279,14 +295,52 @@ final class PhilipsNonDicomProductionDiagnostic
     /** @param array<string,mixed> $data */
     public static function sanitize(array $data): array
     {
-        $blocked = '/password|secret|token|private|authorization|cookie|dsn|connection|xml|pdf|dicom|patient|cpf|accession|laudo|payload|body|content/i';
-        $walk = static function (mixed $value) use (&$walk, $blocked): mixed {
+        $blocked = '/password|secret|token|private|authorization|cookie|dsn|connection|xml|pdf|dicom|patient|cpf|accession|laudo|payload|body|content|hostname|task_site_value|url|uri|header|hmac|certificate|cert|key|hash|checksum|(?:^|_)sha(?:1|224|256|384|512)?(?:_|$)/i';
+        $allowedKeys = [
+            'active', 'auto_trigger', 'bridge_client_reference', 'bridge_gate', 'bridges',
+            'canonical_task_site_id_match', 'configured', 'credential_chain',
+            'credential_configured', 'delivery_profile', 'destination_7', 'diagnostic',
+            'dispatch_mode', 'effective', 'enabled', 'environment', 'error_category',
+            'gates', 'gateway_bridge', 'id', 'job_destination_id', 'jobs_cancelled',
+            'jobs_dead_letter', 'jobs_delivered', 'jobs_failed', 'jobs_pending',
+            'jobs_processing', 'jobs_retrying', 'main_pid', 'mode',
+            'multiple_related_units', 'outbox_cancelled', 'outbox_dead_letter',
+            'outbox_destination_filter', 'outbox_failed', 'outbox_pending',
+            'outbox_processing', 'outbox_scope', 'php_version', 'process_count',
+            'queue', 'readonly_test', 'reference', 'report_candidate', 'report_id',
+            'report_version', 'released', 'runtime', 'safe', 'smb',
+            'smb_share_configured', 'source_precedence', 'status', 'study_linked',
+            'target_reference', 'target_site_id_match', 'task_site_alias_present',
+            'task_site_alias_valid', 'task_site_id_match', 'task_site_value_present',
+            'tenant_2_observed_only', 'tenant_id', 'tenant_pacs', 'transport',
+            'transport_protocol', 'transmission_executed', 'unit', 'version',
+            'version_present', 'worker', 'worker_kill_switch', 'worker_unit',
+            'server_pacs_id', 'server_pacs_active', 'server_pacs_authorized',
+            'secret_resolution', 'structural_eligibility', 'scope', 'reason', 'timestamp_utc', 'units',
+        ];
+        $allowedFlag = static fn (string $key): bool => in_array($key, [
+            'VOXEL_REPORT_DELIVERY_HUB_ENABLED',
+            'VOXEL_REPORT_DELIVERY_REQUESTS_ENABLED',
+            'PHILIPS_FOLDER_DELIVERY_ENABLED',
+            'PHILIPS_NON_DICOM_DELIVERY_ENABLED',
+            'PHILIPS_NON_DICOM_SMB_TEST_ENABLED',
+            'PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED',
+            'VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH',
+        ], true);
+        $blockedValue = '~\b[a-z][a-z0-9+.-]*://'
+            . '|(?:^|[\r\n[:space:]])[a-z][a-z0-9_.+\-]{0,127}[[:space:]]*:'
+            . '|-----BEGIN[[:space:]A-Z0-9-]+-----|-----END[[:space:]A-Z0-9-]+-----'
+            . '|(?<![A-Za-z0-9])[a-f0-9]{32}(?![A-Za-z0-9])'
+            . '|(?<![A-Za-z0-9])[a-f0-9]{40}(?![A-Za-z0-9])'
+            . '|(?<![A-Za-z0-9])[a-f0-9]{64}(?![A-Za-z0-9])'
+            . '|(?<![A-Za-z0-9+\/_-])(?:[A-Za-z0-9+\/_-]{24,}|[A-Za-z0-9+\/_-]{23,}=|[A-Za-z0-9+\/_-]{22,}==)(?![A-Za-z0-9+\/_=-])~i';
+        $walk = static function (mixed $value) use (&$walk, $blocked, $allowedKeys, $allowedFlag, $blockedValue): mixed {
             if (is_array($value)) {
                 $clean = [];
                 foreach ($value as $key => $item) {
                     $keyText = (string) $key;
                     if (preg_match($blocked, $keyText) === 1
-                        && !in_array($keyText, ['transmission_executed'], true)
+                        || (!in_array($keyText, $allowedKeys, true) && !$allowedFlag($keyText))
                     ) {
                         continue;
                     }
@@ -295,14 +349,13 @@ final class PhilipsNonDicomProductionDiagnostic
                 return $clean;
             }
             if (is_string($value)) {
-                if (preg_match($blocked, $value) === 1) {
+                if (preg_match($blockedValue, $value) === 1) {
                     return 'REDACTED';
                 }
                 return self::safeText($value);
             }
             return $value;
         };
-
         $clean = $walk($data);
         if (!is_array($clean)) {
             return ['overall' => 'BLOCKED', 'transmission_executed' => false];
@@ -729,22 +782,11 @@ namespace {
     $root = '/var/www/voxelpacs/app';
     require_once $root . '/app/autoload.php';
     $arguments = array_slice($argv ?? [], 1);
-    $dispatchMode = \App\Diagnostics\PhilipsNonDicomProductionDiagnostic::DISPATCH_MODE_CONTROLLED;
-    if (count($arguments) === 1 && str_starts_with($arguments[0], '--dispatch-mode=')) {
-        try {
-            $dispatchMode = \App\Diagnostics\PhilipsNonDicomProductionDiagnostic::normalizeDispatchMode(
-                substr($arguments[0], strlen('--dispatch-mode='))
-            );
-        } catch (\InvalidArgumentException) {
-            $dispatchMode = null;
-        }
-    } elseif ($arguments !== []) {
-        $dispatchMode = null;
-    }
+    $dispatchMode = \App\Diagnostics\PhilipsNonDicomProductionDiagnostic::parseDispatchModeArguments($arguments);
     if ($dispatchMode === null) {
         echo json_encode([
             'diagnostic' => 'philips_nondicom_production',
-            'version' => '1.1.0',
+            'version' => '1.2.0',
             'mode' => 'READ_ONLY',
             'overall' => 'BLOCKED',
             'error_category' => 'ARGUMENTS_NOT_ALLOWED',
