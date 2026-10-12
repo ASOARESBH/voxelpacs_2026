@@ -61,7 +61,7 @@ PY
   chmod 0755 "$root/scripts/provision-production-baseline-capture.sh" "$root/scripts/capture-production-baseline.sh" "$root/ops/deploy/voxelpacs-production-baseline-capture"
   chmod 0644 "$root/ops/sudoers/voxelpacs-production-baseline-capture"
   chmod 0755 "$capture_parent" "$sudoers_parent" "$operation_parent" "$(dirname "$lock_path")"
-  chown -R root:root "$root" "$target"
+  run_as_root chown root:root "$capture_parent" "$sudoers_parent"
   git -C "$root" init -q
   git -C "$root" config user.email 'test@example.invalid'
   git -C "$root" config user.name 'VOXEL PACS test'
@@ -94,10 +94,10 @@ grep -Fxq 'UPGRADE_APPLIED=NO' <<<"$install_output" || fail normal_upgrade_marke
 [[ "$(stat -c '%u:%g:%a' "$capture_target")" == '0:0:555' ]] || fail normal_capture_mode
 [[ "$(stat -c '%u:%g:%a' "$wrapper_target")" == '0:0:555' ]] || fail normal_wrapper_mode
 [[ "$(stat -c '%u:%g:%a' "$sudoers_target")" == '0:0:440' ]] || fail normal_sudoers_mode
-visudo -cf "$sudoers_target" >/dev/null || fail normal_sudoers_syntax
+run_as_root visudo -cf "$sudoers_target" >/dev/null || fail normal_sudoers_syntax
 before_capture="$(sha256sum "$capture_target")"
 before_wrapper="$(sha256sum "$wrapper_target")"
-before_sudoers="$(sha256sum "$sudoers_target")"
+before_sudoers="$(run_as_root sha256sum "$sudoers_target")"
 set +e
 second_output="$(run_provisioner --install 2>&1)"
 second_rc=$?
@@ -106,7 +106,7 @@ set -e
 grep -Fq 'CAPTURE_ALREADY_INSTALLED' <<<"$second_output" || fail normal_existing_reason
 [[ "$(sha256sum "$capture_target")" == "$before_capture" ]] || fail normal_capture_changed
 [[ "$(sha256sum "$wrapper_target")" == "$before_wrapper" ]] || fail normal_wrapper_changed
-[[ "$(sha256sum "$sudoers_target")" == "$before_sudoers" ]] || fail normal_sudoers_changed
+[[ "$(run_as_root sha256sum "$sudoers_target")" == "$before_sudoers" ]] || fail normal_sudoers_changed
 
 create_historical_fixture() {
   local name="$1" root target capture_parent sudoers_parent operation_parent lock_path
@@ -131,7 +131,7 @@ create_historical_fixture() {
   chmod 0755 "$root/scripts/provision-production-baseline-capture.sh" "$root/scripts/capture-production-baseline.sh" "$root/ops/deploy/voxelpacs-production-baseline-capture"
   chmod 0644 "$root/ops/sudoers/voxelpacs-production-baseline-capture"
   chmod 0755 "$capture_parent" "$sudoers_parent" "$operation_parent" "$(dirname "$lock_path")"
-  chown -R root:root "$root" "$target"
+  run_as_root chown root:root "$capture_parent" "$sudoers_parent"
   git -C "$root" add scripts ops
   git -C "$root" commit -q -m 'test: baseline provisioner historical sources'
   cp -- "$source_provisioner" "$root/scripts/provision-production-baseline-capture.sh"
@@ -157,7 +157,7 @@ path.write_text(text)
 PY
   chmod 0755 "$root/scripts/provision-production-baseline-capture.sh" "$root/scripts/capture-production-baseline.sh" "$root/ops/deploy/voxelpacs-production-baseline-capture"
   chmod 0644 "$root/ops/sudoers/voxelpacs-production-baseline-capture"
-  chown -R root:root "$root"
+  run_as_root chown root:root "$capture_parent" "$sudoers_parent"
   git -C "$root" add scripts ops
   git -C "$root" commit -q -m 'test: baseline provisioner updated sources'
   printf 'fixture-history-marker\n' > "$root/fixture-history-marker"
@@ -181,11 +181,11 @@ for path in scripts/capture-production-baseline.sh ops/deploy/voxelpacs-producti
     ops/sudoers/*) target="$upgrade_sudoers" ;;
   esac
   mkdir -p "$(dirname "$target")"
-  git -C "$upgrade_root" show "$upgrade_sha^^:$path" > "$target"
-  chown root:root "$target"
+  git -C "$upgrade_root" show "$upgrade_sha^^:$path" | run_as_root tee "$target" >/dev/null
+  run_as_root chown root:root "$target"
   case "$target" in
-    "$upgrade_sudoers") chmod 0440 "$target" ;;
-    *) chmod 0555 "$target" ;;
+    "$upgrade_sudoers") run_as_root chmod 0440 "$target" ;;
+    *) run_as_root chmod 0555 "$target" ;;
   esac
 done
 upgrade_run() {
@@ -197,13 +197,13 @@ grep -Fxq 'TARGETS_EXIST=PASS' <<<"$upgrade_dry" || fail upgrade_targets
 grep -Fxq 'DRY_RUN=PASS' <<<"$upgrade_dry" || fail upgrade_dry
 old_upgrade_capture="$(sha256sum "$upgrade_capture")"
 old_upgrade_wrapper="$(sha256sum "$upgrade_wrapper")"
-old_upgrade_sudoers="$(sha256sum "$upgrade_sudoers")"
+old_upgrade_sudoers="$(run_as_root sha256sum "$upgrade_sudoers")"
 upgrade_output="$(upgrade_run --install)"
 grep -Fxq 'UPGRADE_APPLIED=YES' <<<"$upgrade_output" || fail upgrade_applied
 grep -Fxq 'ROLLBACK=NOT_NEEDED' <<<"$upgrade_output" || fail upgrade_no_rollback
 [[ "$(sha256sum "$upgrade_capture")" != "$old_upgrade_capture" ]] || fail capture_not_updated
 [[ "$(sha256sum "$upgrade_wrapper")" != "$old_upgrade_wrapper" ]] || fail wrapper_not_updated
-[[ "$(sha256sum "$upgrade_sudoers")" == "$old_upgrade_sudoers" ]] || fail sudoers_not_preserved
+[[ "$(run_as_root sha256sum "$upgrade_sudoers")" == "$old_upgrade_sudoers" ]] || fail sudoers_not_preserved
 [[ "$(stat -c '%u:%g:%a' "$upgrade_capture")" == '0:0:555' ]] || fail upgrade_capture_mode
 [[ "$(stat -c '%u:%g:%a' "$upgrade_wrapper")" == '0:0:555' ]] || fail upgrade_wrapper_mode
 [[ "$(stat -c '%u:%g:%a' "$upgrade_sudoers")" == '0:0:440' ]] || fail upgrade_sudoers_mode
@@ -214,12 +214,12 @@ unknown_provisioner="$unknown_root/scripts/provision-production-baseline-capture
 unknown_capture="$fixture_root/targets/unknown/usr/local/sbin/voxelpacs-capture-production-baseline"
 unknown_wrapper="$fixture_root/targets/unknown/usr/local/sbin/voxelpacs-production-baseline-capture"
 unknown_sudoers="$fixture_root/targets/unknown/etc/sudoers.d/voxelpacs-production-baseline-capture"
-printf 'foreign\n' > "$unknown_capture"
-cp -- "$source_wrapper" "$unknown_wrapper"
-cp -- "$source_sudoers" "$unknown_sudoers"
-chown root:root "$unknown_capture" "$unknown_wrapper" "$unknown_sudoers"
-chmod 0555 "$unknown_capture" "$unknown_wrapper"
-chmod 0440 "$unknown_sudoers"
+printf 'foreign\n' | run_as_root tee "$unknown_capture" >/dev/null
+run_as_root cp -- "$source_wrapper" "$unknown_wrapper"
+run_as_root cp -- "$source_sudoers" "$unknown_sudoers"
+run_as_root chown root:root "$unknown_capture" "$unknown_wrapper" "$unknown_sudoers"
+run_as_root chmod 0555 "$unknown_capture" "$unknown_wrapper"
+run_as_root chmod 0440 "$unknown_sudoers"
 set +e
 unknown_output="$(run_as_root env -u SUDO_USER bash "$unknown_provisioner" --expected-sha "$unknown_sha" --upgrade --dry-run 2>&1)"
 unknown_rc=$?
@@ -233,12 +233,12 @@ auth_provisioner="$auth_root/scripts/provision-production-baseline-capture.sh"
 auth_capture="$fixture_root/targets/bad-mode/usr/local/sbin/voxelpacs-capture-production-baseline"
 auth_wrapper="$fixture_root/targets/bad-mode/usr/local/sbin/voxelpacs-production-baseline-capture"
 auth_sudoers="$fixture_root/targets/bad-mode/etc/sudoers.d/voxelpacs-production-baseline-capture"
-git -C "$auth_root" show "$auth_sha^^:scripts/capture-production-baseline.sh" > "$auth_capture"
-git -C "$auth_root" show "$auth_sha^^:ops/deploy/voxelpacs-production-baseline-capture" > "$auth_wrapper"
-git -C "$auth_root" show "$auth_sha^^:ops/sudoers/voxelpacs-production-baseline-capture" > "$auth_sudoers"
-chown root:root "$auth_capture" "$auth_wrapper" "$auth_sudoers"
-chmod 0755 "$auth_capture" "$auth_wrapper"
-chmod 0440 "$auth_sudoers"
+git -C "$auth_root" show "$auth_sha^^:scripts/capture-production-baseline.sh" | run_as_root tee "$auth_capture" >/dev/null
+git -C "$auth_root" show "$auth_sha^^:ops/deploy/voxelpacs-production-baseline-capture" | run_as_root tee "$auth_wrapper" >/dev/null
+git -C "$auth_root" show "$auth_sha^^:ops/sudoers/voxelpacs-production-baseline-capture" | run_as_root tee "$auth_sudoers" >/dev/null
+run_as_root chown root:root "$auth_capture" "$auth_wrapper" "$auth_sudoers"
+run_as_root chmod 0755 "$auth_capture" "$auth_wrapper"
+run_as_root chmod 0440 "$auth_sudoers"
 set +e
 mode_output="$(run_as_root env -u SUDO_USER bash "$auth_provisioner" --expected-sha "$auth_sha" --upgrade --dry-run 2>&1)"
 mode_rc=$?
@@ -287,16 +287,16 @@ for path in scripts/capture-production-baseline.sh ops/deploy/voxelpacs-producti
     ops/deploy/*) target="$rollback_wrapper" ;;
     ops/sudoers/*) target="$rollback_sudoers" ;;
   esac
-  git -C "$rollback_root" show "$rollback_sha^^:$path" > "$target"
-  chown root:root "$target"
+  git -C "$rollback_root" show "$rollback_sha^^:$path" | run_as_root tee "$target" >/dev/null
+  run_as_root chown root:root "$target"
   case "$target" in
-    "$rollback_sudoers") chmod 0440 "$target" ;;
-    *) chmod 0555 "$target" ;;
+    "$rollback_sudoers") run_as_root chmod 0440 "$target" ;;
+    *) run_as_root chmod 0555 "$target" ;;
   esac
 done
 rollback_before_capture="$(sha256sum "$rollback_capture")"
 rollback_before_wrapper="$(sha256sum "$rollback_wrapper")"
-rollback_before_sudoers="$(sha256sum "$rollback_sudoers")"
+rollback_before_sudoers="$(run_as_root sha256sum "$rollback_sudoers")"
 python3 - "$rollback_provisioner" <<'PY'
 from pathlib import Path
 import sys
@@ -321,6 +321,6 @@ grep -Fq 'TEST_INJECTED_UPGRADE_FAILURE' <<<"$rollback_output" || fail upgrade_f
 grep -Fq 'ROLLBACK=PASS' <<<"$rollback_output" || fail upgrade_rollback_missing
 [[ "$(sha256sum "$rollback_capture")" == "$rollback_before_capture" ]] || fail rollback_capture_not_restored
 [[ "$(sha256sum "$rollback_wrapper")" == "$rollback_before_wrapper" ]] || fail rollback_wrapper_not_restored
-[[ "$(sha256sum "$rollback_sudoers")" == "$rollback_before_sudoers" ]] || fail rollback_sudoers_not_restored
+[[ "$(run_as_root sha256sum "$rollback_sudoers")" == "$rollback_before_sudoers" ]] || fail rollback_sudoers_not_restored
 
 printf 'TEST=PASS\nPROVISIONER_UPGRADE_ISOLATED=PASS\nDRY_RUN=PASS\nINSTALL=PASS\nUPGRADE=PASS\nHISTORICAL_PROVENANCE=PASS\nNO_REPLACE=PASS\nPREEXISTING_PRESERVED=PASS\nSUDOERS_PRESERVED=PASS\nINVALID_MODE_REJECTED=PASS\nUNKNOWN_PROVENANCE_REJECTED=PASS\nPARTIAL_INSTALL_CLEANUP=PASS\nUPGRADE_ROLLBACK=PASS\nPRODUCTION_CHANGED=NO\n'
