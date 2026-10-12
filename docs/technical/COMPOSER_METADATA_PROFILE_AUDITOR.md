@@ -9,7 +9,7 @@
 
 no metadata fixo `vendor/composer/installed.php`.
 
-O helper recebe por `stdin` um perfil sanitizado produzido localmente para o artefato, lê o arquivo efetivo no runtime e procura um sidecar root-only opcional na baseline.
+O helper recebe por `stdin` um perfil sanitizado produzido localmente para o artefato, lê o arquivo efetivo no runtime e procura o sidecar root-only produzido pela captura oficial na baseline.
 
 ## Interface
 
@@ -76,9 +76,11 @@ Comparação incompleta retorna código de saída não-zero (`65`). Nunca deve s
 
 O helper não cria, atualiza, captura ou altera a baseline.
 
-### Limitação de proveniência da captura
+### Proveniência da captura
 
-O mecanismo atual `scripts/capture-production-baseline.sh` produz `manifest.tsv`, `manifest.sha256`, `baseline-id`, symlinks, exclusões e metadados sanitizados, mas não produz ainda o `composer-profile.tsv` com o contrato acima. Portanto, a captura atual não é tratada como prova implícita do perfil Composer: sem um sidecar gerado por mecanismo oficial compatível, o resultado obrigatório é `BASELINE_PROFILE=UNVERIFIED`, `AUDIT=INCOMPLETE` e código `65`. Não é permitido criar o sidecar manualmente para fazer o diagnóstico passar.
+O mecanismo oficial `scripts/capture-production-baseline.sh`, chamado pelo wrapper root-controlled `ops/deploy/voxelpacs-production-baseline-capture`, produz `manifest.tsv`, `manifest.sha256`, `baseline-id`, symlinks, exclusões, metadados sanitizados e o `composer-profile.tsv` com o contrato acima. A SHA usada no perfil vem exclusivamente da âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`; ela não é inferida do runtime nem fornecida pelo caller.
+
+Se a captura anterior não possuir esse sidecar, o resultado obrigatório continua sendo `BASELINE_PROFILE=UNVERIFIED`, `AUDIT=INCOMPLETE` e código `65`. Não é permitido criar ou copiar o sidecar manualmente para fazer o diagnóstico passar.
 
 ## Estados e diagnóstico
 

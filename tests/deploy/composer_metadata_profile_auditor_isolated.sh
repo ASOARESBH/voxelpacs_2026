@@ -66,6 +66,8 @@ metadata_unavailable=0
 secrets_content=NOT_CAPTURED
 persistent_content=NOT_CAPTURED
 clinical_content=NOT_CAPTURED
+composer_profile=STATE_ONLY_V1
+composer_profile_source=official_root_controlled_baseline_profile_v1
 EOF
 : > "$baseline_dir/symlinks.tsv"
 : > "$baseline_dir/exclusions.tsv"
@@ -142,6 +144,8 @@ metadata_unavailable=0
 secrets_content=NOT_CAPTURED
 persistent_content=NOT_CAPTURED
 clinical_content=NOT_CAPTURED
+composer_profile=STATE_ONLY_V1
+composer_profile_source=official_root_controlled_baseline_profile_v1
 EOF
 chmod 0600 "$baseline_root/$baseline_sha/metadata.txt"
 

@@ -14,6 +14,9 @@ if (!is_string($script)) {
 $required = [
     "readonly DEFAULT_SOURCE_ROOT='/var/www/voxelpacs/app'",
     "readonly DEFAULT_OUTPUT_ROOT='/var/lib/voxelpacs/baselines'",
+    "composer_profile_sha=''",
+    '--composer-profile-sha)',
+    'COMPOSER_PROFILE_SHA_INVALID',
     'find -P "$source_root" -xdev',
     'sha256sum -- "$entry"',
     'HASH_READ_PERMISSION_DENIED',
@@ -28,6 +31,13 @@ $required = [
     'SECRETS_CAPTURED=NO',
     'PERSISTENT_CONTENT_CAPTURED=NO',
     'CLINICAL_CONTENT_CAPTURED=NO',
+    'composer-profile.tsv',
+    'official_root_controlled_baseline_profile_v1',
+    'composer_profile=STATE_ONLY_V1',
+    'composer_profile_source=official_root_controlled_baseline_profile_v1',
+    'PROFILE_FORMAT=STATE_ONLY_V1',
+    'RAW_VALUES_EXPOSED=NO',
+    'HASHES_EXPOSED=NO',
     'install -m 600 -- "$manifest_tmp"',
     'chmod 700 -- "$staged_dir"',
 ];

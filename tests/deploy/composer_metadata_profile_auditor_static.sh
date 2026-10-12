@@ -30,6 +30,8 @@ grep -Fq 'profile_manifest_sha256' "$helper" || fail baseline_manifest_binding
 grep -Fq 'BASELINE_METADATA_HASH_INCOMPLETE' "$helper" || fail baseline_metadata_completeness
 grep -Fq 'BASELINE_SYMLINKS_SECURITY_INVALID' "$helper" || fail baseline_auxiliary_files
 grep -Fq 'BASELINE_ID_DERIVATION_MISMATCH' "$helper" || fail baseline_id_derivation
+grep -Fq 'composer_profile=STATE_ONLY_V1' "$helper" || fail baseline_composer_profile_metadata
+grep -Fq 'composer_profile_source=official_root_controlled_baseline_profile_v1' "$helper" || fail baseline_composer_profile_source
 
 grep -Fq '/usr/local/sbin/voxelpacs-composer-metadata-profile-auditor --baseline-id' "$sudoers" || fail sudoers_command
 ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$sudoers" || fail generic_sudo

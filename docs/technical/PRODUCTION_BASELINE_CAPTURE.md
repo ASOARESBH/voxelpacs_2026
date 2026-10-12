@@ -11,7 +11,7 @@ origem: /var/www/voxelpacs/app
 saída:  /var/lib/voxelpacs/baselines
 ```
 
-A captura registra somente metadados, hashes, symlinks e classificações. `.env`, storage, uploads, logs, backups, PDFs, XMLs, DICOM e conteúdo clínico não são copiados.
+A captura registra somente metadados, hashes, symlinks, classificações e o perfil técnico sanitizado do Composer. O sidecar `composer-profile.tsv` contém apenas estados de referência e é vinculado ao manifesto do mesmo baseline. `.env`, storage, uploads, logs, backups, PDFs, XMLs, DICOM e conteúdo clínico não são copiados.
 
 ## Provisionamento versionado
 
@@ -32,6 +32,14 @@ Ele instala atomicamente, como `root:root`:
 /etc/sudoers.d/voxelpacs-production-baseline-capture      0440
 ```
 
+Antes da captura, a aprovação administrativa independente da SHA usada no perfil Composer deve existir em:
+
+```text
+/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha  root:root 0600
+```
+
+O arquivo contém exatamente uma SHA de `main` aprovada por linha. O provisioner apenas valida essa âncora; não a cria, altera ou infere do checkout.
+
 A allowlist concede somente:
 
 ```bash
@@ -42,7 +50,9 @@ Não há shell, path, source, destination, comando, SQL, systemd, Bridge, SMB, W
 
 ## Execução e resultado
 
-O wrapper chama o script versionado com `--require-complete`. Se alguma hash não puder ser lida, retorna `BASELINE_CAPTURE=INCOMPLETE` e não publica o diretório da captura. Em sucesso, retorna somente o identificador técnico do baseline, contagens e categorias de segurança.
+O wrapper lê a SHA aprovada da âncora root-only e chama o script versionado com `--composer-profile-sha <SHA>` e `--require-complete`. O capturador lê somente o caminho fixo `vendor/composer/installed.php` e publica, junto do baseline, `composer-profile.tsv` com o contrato `official_root_controlled_baseline_profile_v1`. O sidecar contém `SOURCE_SHA`, `NULL`, `OTHER_SHA` ou `UNRESOLVED`, nunca o valor de referência nem o conteúdo do arquivo.
+
+Se o `installed.php` não existir, não for regular, não puder ser lido ou tiver estrutura ambígua, retorna `BASELINE_CAPTURE=INCOMPLETE` e não publica o diretório da captura. Em sucesso, o wrapper retorna somente o identificador técnico do baseline, contagens, o estado `COMPOSER_PROFILE=PASS` e categorias de segurança.
 
 O identificador do baseline é uma hash técnica do manifesto, não é SHA de commit. O backup root-only da release atual deve ser criado, validado e submetido a restore-test antes da captura integral.
 

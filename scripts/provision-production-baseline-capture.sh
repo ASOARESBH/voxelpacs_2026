@@ -82,6 +82,9 @@ validate_capture_contract() {
   grep -Fqx "readonly DEFAULT_OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$CAPTURE_SOURCE" || fail 'CAPTURE_OUTPUT_ROOT_INVALID'
   grep -Fq 'find -P "$source_root" -xdev' "$CAPTURE_SOURCE" || fail 'CAPTURE_TRAVERSAL_CONTRACT_INVALID'
   grep -Fq 'require_complete' "$CAPTURE_SOURCE" || fail 'CAPTURE_COMPLETENESS_CONTRACT_INVALID'
+  grep -Fq -- '--composer-profile-sha' "$CAPTURE_SOURCE" || fail 'CAPTURE_COMPOSER_PROFILE_ARGUMENT_INVALID'
+  grep -Fq 'official_root_controlled_baseline_profile_v1' "$CAPTURE_SOURCE" || fail 'CAPTURE_COMPOSER_PROFILE_CONTRACT_INVALID'
+  grep -Fq 'composer-profile.tsv' "$CAPTURE_SOURCE" || fail 'CAPTURE_COMPOSER_PROFILE_OUTPUT_INVALID'
   bash -n "$CAPTURE_SOURCE"
 }
 
@@ -89,8 +92,12 @@ validate_wrapper_contract() {
   grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$WRAPPER_SOURCE" || fail 'WRAPPER_SOURCE_ROOT_INVALID'
   grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$WRAPPER_SOURCE" || fail 'WRAPPER_OUTPUT_ROOT_INVALID'
   grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$WRAPPER_SOURCE" || fail 'WRAPPER_CAPTURE_PATH_INVALID'
+  grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'" "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_PATH_INVALID'
   grep -Fq '[[ "$#" -eq 1 && "$1" == '\''capture'\'' ]]' "$WRAPPER_SOURCE" || fail 'WRAPPER_ARGUMENT_CONTRACT_INVALID'
-  ! grep -Eq 'eval|systemctl|smbclient|curl[[:space:]]|mysql|psql|composer|NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$WRAPPER_SOURCE" || fail 'WRAPPER_GENERIC_OPERATION_PRESENT'
+  grep -Fq -- '--composer-profile-sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_ARGUMENT_INVALID'
+  grep -Fq 'read_approved_composer_profile_sha' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_APPROVAL_INVALID'
+  grep -Fq 'COMPOSER_PROFILE=PASS' "$WRAPPER_SOURCE" || fail 'WRAPPER_COMPOSER_PROFILE_RESULT_INVALID'
+  ! grep -Eq 'eval|systemctl|smbclient|curl[[:space:]]|mysql|psql|composer[[:space:]]|NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$WRAPPER_SOURCE" || fail 'WRAPPER_GENERIC_OPERATION_PRESENT'
   bash -n "$WRAPPER_SOURCE"
 }
 
