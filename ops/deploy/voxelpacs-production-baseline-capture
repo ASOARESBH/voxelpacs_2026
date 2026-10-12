@@ -8,6 +8,7 @@ export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 readonly SOURCE_ROOT='/var/www/voxelpacs/app'
 readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'
 readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'
+readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha'
 readonly MECHANISM_VERSION='1'
 
 fail() {
@@ -23,11 +24,27 @@ require_root_and_caller() {
   esac
 }
 
+read_approved_composer_profile_sha() {
+  local parent metadata value
+  parent="$(dirname -- "$COMPOSER_PROFILE_SHA_FILE")"
+  [[ -d "$parent" && ! -L "$parent" ]] || fail 'COMPOSER_PROFILE_APPROVAL_DIRECTORY_INVALID'
+  metadata="$(stat -c '%u:%g:%a' -- "$parent" 2>/dev/null || true)"
+  [[ "$metadata" == 0:0:* ]] || fail 'COMPOSER_PROFILE_APPROVAL_DIRECTORY_OWNERSHIP_INVALID'
+  [[ "${metadata##*:}" =~ ^[0-7]{3,4}$ ]] || fail 'COMPOSER_PROFILE_APPROVAL_DIRECTORY_MODE_INVALID'
+  (( (8#${metadata##*:} & 18) == 0 )) || fail 'COMPOSER_PROFILE_APPROVAL_DIRECTORY_WRITEABLE'
+  [[ -f "$COMPOSER_PROFILE_SHA_FILE" && ! -L "$COMPOSER_PROFILE_SHA_FILE" ]] || fail 'COMPOSER_PROFILE_APPROVAL_FILE_INVALID'
+  [[ "$(stat -c '%u:%g:%a' -- "$COMPOSER_PROFILE_SHA_FILE" 2>/dev/null || true)" == '0:0:600' ]] || fail 'COMPOSER_PROFILE_APPROVAL_FILE_SECURITY_INVALID'
+  value="$(tr -d '\r\n' < "$COMPOSER_PROFILE_SHA_FILE")"
+  [[ "$value" =~ ^[0-9a-f]{40}$ ]] || fail 'COMPOSER_PROFILE_APPROVAL_SHA_INVALID'
+  printf '%s' "$value"
+}
+
 require_root_and_caller
 [[ "$#" -eq 1 && "$1" == 'capture' ]] || fail 'ARGUMENTS_INVALID'
 [[ -x "$CAPTURE_SCRIPT" && ! -L "$CAPTURE_SCRIPT" ]] || fail 'CAPTURE_SCRIPT_UNAVAILABLE'
 [[ -d "$SOURCE_ROOT" && ! -L "$SOURCE_ROOT" ]] || fail 'SOURCE_ROOT_INVALID'
 [[ -d "$(dirname -- "$OUTPUT_ROOT")" && ! -L "$(dirname -- "$OUTPUT_ROOT")" ]] || fail 'OUTPUT_PARENT_INVALID'
+composer_profile_sha="$(read_approved_composer_profile_sha)"
 
 result_file="$(mktemp /var/tmp/voxelpacs-production-baseline.XXXXXX)"
 cleanup() {
@@ -38,6 +55,7 @@ trap cleanup EXIT
 if ! "$CAPTURE_SCRIPT" \
   --source-root "$SOURCE_ROOT" \
   --output-dir "$OUTPUT_ROOT" \
+  --composer-profile-sha "$composer_profile_sha" \
   --require-complete >"$result_file" 2>/dev/null; then
   hash_unavailable="$(/usr/bin/awk -F= '$1 == "HASH_UNAVAILABLE" {print $2; exit}' "$result_file")"
   [[ "$hash_unavailable" =~ ^[0-9]+$ ]] || hash_unavailable='UNKNOWN'
@@ -54,5 +72,5 @@ excluded_count="$(/usr/bin/awk -F= '$1 == "EXCLUDED_COUNT" {print $2; exit}' "$r
 [[ "$symlink_count" =~ ^[0-9]+$ ]] || fail 'SYMLINK_COUNT_INVALID'
 [[ "$excluded_count" =~ ^[0-9]+$ ]] || fail 'EXCLUDED_COUNT_INVALID'
 
-printf 'BASELINE_CAPTURE=PASS\nMECHANISM_VERSION=%s\nBASELINE_ID=%s\nFILE_COUNT=%s\nSYMLINK_COUNT=%s\nEXCLUDED_COUNT=%s\nSECRETS_CAPTURED=NO\nPERSISTENT_CONTENT_CAPTURED=NO\nCLINICAL_CONTENT_CAPTURED=NO\nPRODUCTION_CHANGED=YES\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' \
+printf 'BASELINE_CAPTURE=PASS\nCOMPOSER_PROFILE=PASS\nPROFILE_FORMAT=STATE_ONLY_V1\nRAW_VALUES_EXPOSED=NO\nHASHES_EXPOSED=NO\nMECHANISM_VERSION=%s\nBASELINE_ID=%s\nFILE_COUNT=%s\nSYMLINK_COUNT=%s\nEXCLUDED_COUNT=%s\nSECRETS_CAPTURED=NO\nPERSISTENT_CONTENT_CAPTURED=NO\nCLINICAL_CONTENT_CAPTURED=NO\nPRODUCTION_CHANGED=YES\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nTRANSMISSION=NO\n' \
   "$MECHANISM_VERSION" "$baseline_id" "$file_count" "$symlink_count" "$excluded_count"

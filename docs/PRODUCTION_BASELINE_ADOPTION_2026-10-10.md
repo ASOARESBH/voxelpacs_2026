@@ -16,6 +16,8 @@ A captura é somente leitura sobre a raiz efetiva da aplicação e registra, por
 - classificação técnica;
 - estado `READABLE` ou `HASH_READ_PERMISSION_DENIED`.
 
+Para `vendor/composer/installed.php`, a captura também produz o perfil sanitizado `composer-profile.tsv`, contendo somente os estados técnicos das referências `root` e `voxel/bi`. O perfil é vinculado ao checksum do manifesto e à SHA de `main` aprovada em âncora root-only; nenhum valor de referência ou conteúdo do arquivo é copiado.
+
 Symlinks são registrados separadamente com alvo, owner, group, modo e mtime. O capturador não segue symlinks.
 
 O capturador exclui e apenas contabiliza, sem copiar conteúdo:
@@ -38,7 +40,7 @@ O script versionado é `scripts/capture-production-baseline.sh`. Ele:
 
 Para uma captura integral do Host 1, o script deve ser executado por um mecanismo root-controlled previamente aprovado. Não se deve ampliar `sudoers` de forma genérica nem copiar a chave privada do administrador.
 
-O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; o caller pode executar apenas `capture`, sem fornecer path, comando, shell ou destino.
+O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; na captura, o wrapper exige a âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`, e o caller pode executar apenas `capture`, sem fornecer path, comando, shell, destino ou SHA.
 
 ## Backup protegido
 
@@ -92,5 +94,5 @@ Equivalência funcional não é inferida por coincidência de hashes. Ela exige 
 
 - O baseline foi preparado em branch própria a partir da `main` limpa e integrado à `main` após atualização com a base atual e checks remotos verdes.
 - A primeira leitura como `manus-admin` encontrou arquivos legados sem permissão de leitura; isso é registrado como lacuna, não mascarado como sucesso.
-- A captura integral deve usar o provisionador root-controlled, sem alterar a aplicação ativa.
+- A captura integral deve usar o provisionador root-controlled, sem alterar a aplicação ativa; a ausência ou ambiguidade do `installed.php` bloqueia e não publica o baseline.
 - O provisionamento do helper e a captura do baseline permanecem separados de deploy, migration, Worker, Job, Bridge, SMB, Philips e DICOM/C-STORE.

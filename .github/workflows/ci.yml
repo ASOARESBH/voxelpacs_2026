@@ -180,6 +180,29 @@ jobs:
       - name: Run isolated transaction tests
         run: sudo -n env -u SUDO_USER bash tests/deploy_transaction_inspection_reconciliation.sh
 
+  production-baseline-capture:
+    name: Production baseline capture and Composer sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash and PHP syntax
+        run: |
+          bash -n scripts/capture-production-baseline.sh
+          bash -n scripts/provision-production-baseline-capture.sh
+          bash -n ops/deploy/voxelpacs-production-baseline-capture
+          php -l tests/deploy/production_baseline_capture_static.php
+          bash -n tests/deploy/production_baseline_provisioner_static.sh
+          bash -n tests/deploy/production_baseline_capture_isolated.sh
+
+      - name: Validate static safety contracts
+        run: |
+          php tests/deploy/production_baseline_capture_static.php
+          bash tests/deploy/production_baseline_provisioner_static.sh
+
+      - name: Run isolated capture and sidecar tests
+        run: bash tests/deploy/production_baseline_capture_isolated.sh
+
   runtime-drift-manifest-reader:
     name: Root-controlled runtime drift manifest reader
     runs-on: ubuntu-latest

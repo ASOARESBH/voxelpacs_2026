@@ -52,7 +52,7 @@
 - O modo padrão registra arquivos cujo hash não pôde ser lido como `HASH_READ_PERMISSION_DENIED`; `--require-complete` falha fechado para uma captura integral.
 - O baseline é uma evidência inicial, não uma autorização de deploy. Após sua aprovação, o GitHub/main volta a ser a fonte oficial das alterações futuras.
 
-O provisionamento root-controlled da captura usa `scripts/provision-production-baseline-capture.sh`, instala o wrapper fixo e o capturador em `/usr/local/sbin` e uma regra sudoers limitada à operação `capture`. O caller não fornece origem, destino, shell ou comando; o helper não acessa banco, serviços, Worker, Bridge ou SMB.
+O provisionamento root-controlled da captura usa `scripts/provision-production-baseline-capture.sh`, instala o wrapper fixo e o capturador em `/usr/local/sbin` e uma regra sudoers limitada à operação `capture`. O wrapper lê a SHA do perfil Composer somente da âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`; o capturador publica o sidecar sanitizado vinculado ao manifesto. O caller não fornece origem, destino, shell, comando ou SHA; o helper não acessa banco, serviços, Worker, Bridge ou SMB.
 
 ## Flag SMB read-only Non-DICOM
 
