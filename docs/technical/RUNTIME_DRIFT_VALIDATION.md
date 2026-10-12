@@ -23,9 +23,9 @@ O gate retorna `DRIFT_GATE=PASS` somente quando:
 
 O comparador aceita também o manifesto root-controlled legado de oito colunas produzido antes da coluna explícita `READABLE`. Essa compatibilidade só é válida quando a linha tem exatamente oito colunas, o digest SHA-256 completo é válido e a classificação permanece permitida; o gate reporta `BASELINE_FORMAT=LEGACY_8_COLUMN`. Linhas com digest ausente, colunas extras, path inválido ou classificação desconhecida continuam bloqueadas.
 
-## Exceção explícita
+## Exceções explícitas
 
-A única exceção de conteúdo prevista nesta versão é:
+A exceção de conteúdo do metadata Composer prevista nesta versão é:
 
 ```text
 PATH=vendor/composer/installed.php
@@ -34,6 +34,17 @@ RUNTIME_HASH=BASELINE_HASH
 ```
 
 Isso reconhece que o metadata gerado pelo Composer pode diferir do arquivo produzido no artefato, mas exige identidade comprovada com o baseline root-controlled. Não é permitido aceitar a pasta `vendor/` genericamente nem ignorar o arquivo sem verificar path, tipo, legibilidade, hash e classificação.
+
+Esta versão também aceita somente os dois deltas de código abaixo, quando o arquivo efetivo do runtime coincide exatamente com o hash da baseline root-controlled e a classificação da baseline é `OWNED_RUNTIME_CODE`:
+
+```text
+PATH=app/Services/PhilipsSubmissionMetadataResolver.php
+PATH=app/Services/ReportVersionPatientNameService.php
+BASELINE_CLASSIFICATION=OWNED_RUNTIME_CODE
+RUNTIME_HASH=BASELINE_HASH
+```
+
+Essa exceção é uma allowlist de paths fechada, não uma aceitação geral de código antigo, de qualquer arquivo em `app/` ou de qualquer diferença encontrada no runtime. O artefato da `main` continua sendo a versão que será publicada; a exceção apenas permite concluir o gate de uma normalização controlada. Um path novo, um hash diferente da baseline, uma classificação diferente ou um arquivo extra continuam bloqueando o gate.
 
 ## Extras históricos
 
