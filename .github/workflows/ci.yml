@@ -440,3 +440,34 @@ jobs:
 
       - name: Run static safety contract
         run: php tests/philips_nondicom_b6_selector_static.php
+
+  composer-profile-approval:
+    name: Composer profile approval helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bash syntax
+        run: |
+          bash -n scripts/provision-composer-profile-approval.sh
+          bash -n tests/deploy/composer_profile_approval_static.sh
+          bash -n tests/deploy/composer_profile_approval_isolated.sh
+
+      - name: ShellCheck
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning -x \
+              scripts/provision-composer-profile-approval.sh \
+              tests/deploy/composer_profile_approval_static.sh \
+              tests/deploy/composer_profile_approval_isolated.sh
+          else
+            echo "SHELLCHECK=NOT_AVAILABLE"
+          fi
+
+      - name: Validate static safety contract
+        run: bash tests/deploy/composer_profile_approval_static.sh
+
+      - name: Run isolated approval tests
+        run: sudo -n env -u SUDO_USER bash tests/deploy/composer_profile_approval_isolated.sh
