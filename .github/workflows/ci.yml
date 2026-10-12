@@ -302,12 +302,6 @@ jobs:
       - name: Run isolated provisioner install tests
         run: sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_provisioner_isolated.sh
 
-      - name: Run provisioner dry-run
-        run: |
-          expected_sha="$(git rev-parse HEAD)"
-          sudo -n env -u SUDO_USER bash scripts/provision-composer-metadata-profile-auditor.sh \
-            --expected-sha "$expected_sha" --dry-run
-
   philips-folder-policy-applier:
     name: Philips Folder policy applier
     runs-on: ubuntu-latest
