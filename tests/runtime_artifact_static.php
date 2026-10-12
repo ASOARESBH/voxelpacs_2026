@@ -52,8 +52,9 @@ foreach ([
     'PRODUCTION_CHANGED=NO',
     'normalize_composer_root_reference()',
     "COMPOSER_ROOT_REFERENCE_SHAPE_INVALID",
-    "COMPOSER_ROOT_REFERENCE_MISMATCH",
     'python3 - "$installed" "$current_sha"',
+    "current == f\"'{sha}'\"",
+    "root = root[:start] + f\"'{sha}'\" + root[end:]",
 ] as $marker) {
     expect_runtime_artifact(str_contains($builder, $marker), "Builder sem proteção: {$marker}");
 }
@@ -102,6 +103,14 @@ expect_runtime_artifact(
 expect_runtime_artifact(
     strpos($builder, 'normalize_composer_root_reference') < strrpos($builder, 'bash "$ROOT/scripts/verify-composer-tree.sh"'),
     'builder deve normalizar metadata Composer antes do guard final'
+);
+expect_runtime_artifact(
+    substr_count($builder, 'cd -- "$ROOT" && bash "$ROOT/scripts/verify-composer-tree.sh"') >= 2,
+    'builder deve executar cada guard Composer dentro do checkout do artefato'
+);
+expect_runtime_artifact(
+    !str_contains($builder, 'COMPOSER_ROOT_REFERENCE_MISMATCH'),
+    'builder não deve rejeitar uma referência root hexadecimal válida que será normalizada'
 );
 expect_runtime_artifact(
     str_contains($deploy, 'ENV_PRESERVED=YES')

@@ -9,6 +9,8 @@
 
 O comparador não publica arquivos, não altera o runtime, não acessa banco, não inicia serviços e não chama Worker, Bridge, SMB, Philips ou DICOM.
 
+O builder do artefato pode corrigir atomicamente somente o campo `root.reference` de `vendor/composer/installed.php` quando Composer deixou uma referência hexadecimal válida de outra revisão no checkout detached. A operação exige exatamente um campo root estrutural, não altera `composer.json`, `composer.lock` ou referências de pacotes e é seguida pelo guard final; valores ausentes, duplicados ou malformados continuam bloqueados.
+
 ## Política fail-closed
 
 O gate retorna `DRIFT_GATE=PASS` somente quando:
