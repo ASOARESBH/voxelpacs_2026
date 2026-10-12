@@ -32,6 +32,7 @@ sed \
   "$source_helper" > "$fixture_helper"
 chmod 0755 "$fixture_helper"
 mkdir -p "$app/vendor/composer" "$baseline_root/$baseline_sha"
+baseline_dir="$baseline_root/$baseline_sha"
 cat > "$app/vendor/composer/installed.php" <<EOF
 <?php
 return array(
@@ -48,16 +49,30 @@ return array(
 EOF
 chmod 0644 "$app/vendor/composer/installed.php"
 
-cat > "$baseline_root/$baseline_sha/baseline-id" <<EOF
-$baseline_sha
+printf '%s\n' 'baseline-manifest-fixture' > "$baseline_dir/manifest.tsv"
+manifest_sha="$(sha256sum "$baseline_dir/manifest.tsv" | awk '{print $1}')"
+old_baseline_dir="$baseline_dir"
+baseline_sha="${manifest_sha:0:40}"
+baseline_dir="$baseline_root/$baseline_sha"
+mv -- "$old_baseline_dir" "$baseline_dir"
+printf '%s\n' "$baseline_sha" > "$baseline_dir/baseline-id"
+printf '%s\n' "$manifest_sha" > "$baseline_dir/manifest.sha256"
+cat > "$baseline_dir/metadata.txt" <<EOF
+mechanism_version=1
+baseline_id=$baseline_sha
+manifest_sha256=$manifest_sha
+hash_unavailable=0
+metadata_unavailable=0
+secrets_content=NOT_CAPTURED
+persistent_content=NOT_CAPTURED
+clinical_content=NOT_CAPTURED
 EOF
-printf '%s\n' 'baseline-manifest-fixture' > "$baseline_root/$baseline_sha/manifest.tsv"
-manifest_sha="$(sha256sum "$baseline_root/$baseline_sha/manifest.tsv" | awk '{print $1}')"
-printf '%s\n' "$manifest_sha" > "$baseline_root/$baseline_sha/manifest.sha256"
+: > "$baseline_dir/symlinks.tsv"
+: > "$baseline_dir/exclusions.tsv"
 printf 'profile_source\tofficial_root_controlled_baseline_profile_v1\nprofile_baseline_id\t%s\nprofile_manifest_sha256\t%s\nprofile_artifact_sha\t%s\nroot_reference_state\tSOURCE_SHA\npackage_reference_state\tSOURCE_SHA\n' \
-  "$baseline_sha" "$manifest_sha" "$artifact_sha" > "$baseline_root/$baseline_sha/composer-profile.tsv"
-chmod 0700 "$baseline_root" "$baseline_root/$baseline_sha"
-chmod 0600 "$baseline_root/$baseline_sha/baseline-id" "$baseline_root/$baseline_sha/manifest.tsv" "$baseline_root/$baseline_sha/manifest.sha256" "$baseline_root/$baseline_sha/composer-profile.tsv"
+  "$baseline_sha" "$manifest_sha" "$artifact_sha" > "$baseline_dir/composer-profile.tsv"
+chmod 0700 "$baseline_root" "$baseline_dir"
+chmod 0600 "$baseline_dir/baseline-id" "$baseline_dir/manifest.tsv" "$baseline_dir/manifest.sha256" "$baseline_dir/metadata.txt" "$baseline_dir/symlinks.tsv" "$baseline_dir/exclusions.tsv" "$baseline_dir/composer-profile.tsv"
 run_as_root chown -R root:root "$baseline_root"
 
 artifact_profile="$fixture_root/artifact-profile.tsv"
@@ -110,6 +125,25 @@ set -e
 grep -Fxq 'RUNTIME_PACKAGE_REFERENCE_STATE=UNRESOLVED' <<<"$ambiguous" || fail ambiguous_package_state
 grep -Fxq 'PROFILE_DIAGNOSIS=PROFILE_FIELDS_INDETERMINATE' <<<"$ambiguous" || fail ambiguous_diagnosis
 grep -Fxq 'AUDIT=INCOMPLETE' <<<"$ambiguous" || fail ambiguous_audit_status
+
+rm -f -- "$baseline_root/$baseline_sha/metadata.txt"
+set +e
+missing_metadata="$(run_helper 2>&1)"
+missing_metadata_rc=$?
+set -e
+[[ "$missing_metadata_rc" -eq 64 ]] || fail missing_metadata_exit_code
+grep -Fq 'REASON=BASELINE_METADATA_SECURITY_INVALID' <<<"$missing_metadata" || fail missing_metadata_rejected
+cat > "$baseline_root/$baseline_sha/metadata.txt" <<EOF
+mechanism_version=1
+baseline_id=$baseline_sha
+manifest_sha256=$manifest_sha
+hash_unavailable=0
+metadata_unavailable=0
+secrets_content=NOT_CAPTURED
+persistent_content=NOT_CAPTURED
+clinical_content=NOT_CAPTURED
+EOF
+chmod 0600 "$baseline_root/$baseline_sha/metadata.txt"
 
 cat > "$app/vendor/composer/installed.php" <<EOF
 <?php
@@ -333,4 +367,4 @@ bash "$profile_repo/scripts/build-composer-metadata-profile.sh" \
   --output "$unclosed_profile" > "$fixture_root/unclosed-profile-builder.out"
 grep -Fqx $'root_reference_state\tUNRESOLVED' "$unclosed_profile" || fail profile_builder_unclosed_root
 
-printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nDUPLICATE_REFERENCES=PASS\nDUPLICATE_PACKAGE=PASS\nUNCLOSED_STRUCTURES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nFAIL_STATUS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'
+printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nDUPLICATE_REFERENCES=PASS\nDUPLICATE_PACKAGE=PASS\nUNCLOSED_STRUCTURES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_METADATA=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nFAIL_STATUS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'

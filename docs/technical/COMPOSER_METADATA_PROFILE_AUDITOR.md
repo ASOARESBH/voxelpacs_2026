@@ -62,7 +62,7 @@ root_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
 package_reference_state\tSOURCE_SHA|NULL|OTHER_SHA|UNRESOLVED
 ```
 
-O sidecar somente é considerado verificável quando produzido pelo mecanismo root-controlled oficial, com `profile_source` fixo, `profile_baseline_id` igual ao diretório da captura, checksum do `manifest.tsv` e base do artefato explícita. O helper valida `manifest.tsv`, `manifest.sha256`, o `baseline-id`, ownership/modos root-only e a igualdade do checksum declarado no sidecar com o checksum do manifesto. Sem o manifesto íntegro, o resultado é `BLOCKED`; sem o sidecar comprovadamente vinculado, o resultado é:
+O sidecar somente é considerado verificável quando produzido pelo mecanismo root-controlled oficial, com `profile_source` fixo, `profile_baseline_id` igual ao diretório da captura, checksum do `manifest.tsv` e base do artefato explícita. Antes disso, o helper exige `manifest.tsv`, `manifest.sha256`, `metadata.txt`, `symlinks.tsv`, `exclusions.tsv` e `baseline-id`, todos root-only; valida a completude da captura (`hash_unavailable=0`, `metadata_unavailable=0`), os contratos de não captura de segredos/persistência/conteúdo clínico e a derivação do `baseline-id` como prefixo do checksum do manifesto. Sem a captura oficial íntegra, o resultado é `BLOCKED`; sem o sidecar comprovadamente vinculado, o resultado é:
 
 ```text
 BASELINE_PROFILE=UNVERIFIED
@@ -155,7 +155,7 @@ sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_auditor_iso
 sudo -n env -u SUDO_USER bash tests/deploy/composer_metadata_profile_provisioner_isolated.sh
 ```
 
-Os testes cobrem igualdade, divergência, referências duplicadas, pacote duplicado, referências ambíguas, pacote ausente, campos ausentes, estruturas truncadas, vínculo de baseline, baseline não verificável, escopo do sudoers, origem Git, aprovação administrativa, diretórios inseguros, instalação real isolada, no-replace, preservação de destinos preexistentes, limpeza de falha parcial e não exposição de valores.
+Os testes cobrem igualdade, divergência, referências duplicadas, pacote duplicado, referências ambíguas, pacote ausente, campos ausentes, estruturas truncadas, vínculo de baseline, completude/arquivos auxiliares do baseline, baseline não verificável, escopo do sudoers, origem Git, aprovação administrativa, diretórios inseguros, instalação real isolada, no-replace, preservação de destinos preexistentes, limpeza de falha parcial e não exposição de valores.
 
 ## Estado operacional
 

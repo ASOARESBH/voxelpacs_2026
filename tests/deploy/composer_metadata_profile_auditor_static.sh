@@ -27,6 +27,9 @@ grep -Fq 'HASHES_EXPOSED=NO' "$helper" || fail hash_contract
 grep -Fq 'READY_FOR_DEPLOY=NO' "$helper" || fail deploy_guard
 grep -Fq "audit_status='INCOMPLETE'" "$helper" || fail incomplete_audit_contract
 grep -Fq 'profile_manifest_sha256' "$helper" || fail baseline_manifest_binding
+grep -Fq 'BASELINE_METADATA_HASH_INCOMPLETE' "$helper" || fail baseline_metadata_completeness
+grep -Fq 'BASELINE_SYMLINKS_SECURITY_INVALID' "$helper" || fail baseline_auxiliary_files
+grep -Fq 'BASELINE_ID_DERIVATION_MISMATCH' "$helper" || fail baseline_id_derivation
 
 grep -Fq '/usr/local/sbin/voxelpacs-composer-metadata-profile-auditor --baseline-id' "$sudoers" || fail sudoers_command
 ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$sudoers" || fail generic_sudo

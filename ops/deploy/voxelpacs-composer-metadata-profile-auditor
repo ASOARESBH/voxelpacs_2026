@@ -231,6 +231,7 @@ read_baseline_profile() {
   local profile="$baseline_dir/$BASELINE_PROFILE_NAME"
   local manifest="$baseline_dir/manifest.tsv"
   local manifest_checksum="$baseline_dir/manifest.sha256"
+  local metadata="$baseline_dir/metadata.txt"
   local key value extra rows=0
   local baseline_manifest_sha actual_manifest_sha
   local baseline_profile_source='' baseline_profile_id=''
@@ -244,10 +245,22 @@ read_baseline_profile() {
   [[ "$(tr -d '\r\n' < "$baseline_dir/baseline-id")" == "$baseline_id" ]] || fail 'BASELINE_ID_FILE_MISMATCH'
   secure_regular_file "$manifest" || fail 'BASELINE_MANIFEST_SECURITY_INVALID'
   secure_regular_file "$manifest_checksum" || fail 'BASELINE_MANIFEST_CHECKSUM_SECURITY_INVALID'
+  secure_regular_file "$metadata" || fail 'BASELINE_METADATA_SECURITY_INVALID'
+  secure_regular_file "$baseline_dir/symlinks.tsv" || fail 'BASELINE_SYMLINKS_SECURITY_INVALID'
+  secure_regular_file "$baseline_dir/exclusions.tsv" || fail 'BASELINE_EXCLUSIONS_SECURITY_INVALID'
   baseline_manifest_sha="$(tr -d '\r\n' < "$manifest_checksum")"
   [[ "$baseline_manifest_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'BASELINE_MANIFEST_CHECKSUM_INVALID'
   actual_manifest_sha="$(sha256sum -- "$manifest" | awk '{print $1}')"
   [[ "$actual_manifest_sha" == "$baseline_manifest_sha" ]] || fail 'BASELINE_MANIFEST_CHECKSUM_MISMATCH'
+  [[ "${actual_manifest_sha:0:40}" == "$baseline_id" ]] || fail 'BASELINE_ID_DERIVATION_MISMATCH'
+  grep -Fqx 'mechanism_version=1' "$metadata" || fail 'BASELINE_METADATA_MECHANISM_INVALID'
+  grep -Fqx "baseline_id=$baseline_id" "$metadata" || fail 'BASELINE_METADATA_ID_MISMATCH'
+  grep -Fqx "manifest_sha256=$baseline_manifest_sha" "$metadata" || fail 'BASELINE_METADATA_MANIFEST_MISMATCH'
+  grep -Fqx 'hash_unavailable=0' "$metadata" || fail 'BASELINE_METADATA_HASH_INCOMPLETE'
+  grep -Fqx 'metadata_unavailable=0' "$metadata" || fail 'BASELINE_METADATA_METADATA_INCOMPLETE'
+  grep -Fqx 'secrets_content=NOT_CAPTURED' "$metadata" || fail 'BASELINE_METADATA_SECRETS_CONTRACT_INVALID'
+  grep -Fqx 'persistent_content=NOT_CAPTURED' "$metadata" || fail 'BASELINE_METADATA_PERSISTENT_CONTRACT_INVALID'
+  grep -Fqx 'clinical_content=NOT_CAPTURED' "$metadata" || fail 'BASELINE_METADATA_CLINICAL_CONTRACT_INVALID'
   if [[ ! -e "$profile" ]]; then
     return 0
   fi
