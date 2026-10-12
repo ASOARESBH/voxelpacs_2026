@@ -133,10 +133,10 @@ Ele suporta `--dry-run` e `--install`, mas esta implementação não provisiona 
 Antes de qualquer modo, o provisioner exige a âncora administrativa externa:
 
 ```text
-/etc/voxelpacs/voxelpacs-composer-metadata-profile-approved-main-shas  root:root 0600
+/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas  root:root 0600
 ```
 
-O diretório pai também deve ser root-owned e não gravável por grupo/outros. O arquivo contém uma SHA de `main` aprovada por processo administrativo independente por linha; a SHA fornecida ao caller somente é aceita quando aparece exatamente nessa allowlist. A ausência, formato inválido ou divergência bloqueia (`EXPECTED_SHA_NOT_APPROVED`). Essa âncora não é criada pelo provisioner e não é inferida do checkout local.
+O diretório pai dedicado também deve ser `root:root` e não gravável por grupo/outros. O arquivo contém uma SHA de `main` aprovada por processo administrativo independente por linha; a SHA fornecida ao caller somente é aceita quando aparece exatamente nessa allowlist. A ausência, formato inválido ou divergência bloqueia (`EXPECTED_SHA_NOT_APPROVED`). Essa âncora não é criada pelo provisioner e não é inferida do checkout local. O parent compartilhado `/etc/voxelpacs` não é lido nem alterado.
 
 Destinos previstos:
 

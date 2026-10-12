@@ -56,6 +56,8 @@ O provisionamento root-controlled da captura usa `scripts/provision-production-b
 
 A aprovação inicial ou reconciliação dessa âncora é uma capacidade administrativa separada em `scripts/provision-composer-profile-approval.sh`. Seus modos fixos `inspect`, `dry-run` e `apply` validam o checkout limpo, a `origin/main` e o remoto canônico antes de aceitar qualquer SHA. O modo `dry-run` não altera configuração; o modo `apply` só cria/reconcilia o parent dedicado `/etc/voxelpacs-composer-profile` e cria a âncora ausente sem substituir uma âncora existente. O parent compartilhado `/etc/voxelpacs` não é tocado. Owner, group, mode, symlink, entradas inesperadas, divergência da âncora e falhas de validação final são fail-closed. A capacidade não executa a captura, o drift gate ou qualquer operação clínica.
 
+O auditor de perfil Composer usa uma allowlist independente no mesmo parent dedicado, em `/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas`. O provisioner valida essa âncora sem ler ou alterar o parent compartilhado `/etc/voxelpacs`; a ausência, divergência ou insegurança da aprovação bloqueia o provisionamento.
+
 ## Flag SMB read-only Non-DICOM
 
 O helper `scripts/provision-philips-nondicom-smb-readonly-flag.sh` instala a interface fixa `ops/deploy/voxelpacs-philips-nondicom-smb-readonly-flag` e seu sudoers dedicado. O helper só opera sobre `PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED` no `.env` canônico, exige backup root-only, preserva o checksum do restante do arquivo e oferece `status`, `dry-run`, `apply` e rollback por `backup-id` hexadecimal fixo. Não aceita caminhos, chaves, valores ou comandos arbitrários e não acessa banco, serviços, Bridge, SMB, Worker ou DICOM.
