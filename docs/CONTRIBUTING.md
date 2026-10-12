@@ -4,11 +4,7 @@ Obrigado por contribuir com o VOXEL PACS! Este guia descreve como colaborar com 
 
 ## Fluxo de Trabalho
 
-O VOXEL PACS não usa branches de feature, Pull Request nem merge. Toda alteração vai por **commit direto na `main`**, seguido de deploy controlado:
-
-```
-testes → commit direto na main → push → autorização explícita → backup/drift → deploy controlado
-```
+O VOXEL PACS não usa branches de feature, Pull Request, revisão nem merge. Toda alteração pelo Git é feita **somente por commit direto na `main`** (commit + push).
 
 1. **Atualize a `main` local** com a árvore de trabalho limpa:
    ```bash
@@ -27,8 +23,6 @@ testes → commit direto na main → push → autorização explícita → backu
    ```
 
 4. **Envie para o remoto** com `git push origin main`. Nunca use force push nem reescreva o histórico da `main`.
-
-5. **Deploy controlado**: só depois de autorização explícita, backup e verificação de drift.
 
 ## Convenções de Código
 

@@ -267,12 +267,10 @@ Existem 3 logos em `public/assets/img/`:
 4. git add <arquivos alterados>
 5. git commit -m "feat: descrição da funcionalidade"   (commit direto na main)
 6. git push origin main
-7. Pedir autorização explícita para o deploy
-8. Backup e verificação de drift
-9. Deploy controlado
-10. Tag de versão (opcional): git tag v1.x.x
+7. Tag de versão (opcional): git tag v1.x.x
 
-Não há branch de feature, Pull Request nem merge.
+Toda alteração pelo Git é feita somente por commit direto na main.
+Não há branch de feature, Pull Request, revisão nem merge.
 ```
 
 ---

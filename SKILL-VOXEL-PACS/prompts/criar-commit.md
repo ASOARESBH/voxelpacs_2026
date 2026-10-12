@@ -24,16 +24,9 @@ checagem é feita no Service, não depende do frontend enviar o filtro.
 
 ## Fluxo obrigatório
 
-O commit é feito **diretamente na `main`**, sem branch dedicada, Pull Request ou merge:
+Toda alteração pelo Git é feita **somente por commit direto na `main`** (`git commit` + `git push origin main`). Não há branch dedicada, Pull Request, revisão, merge, etapa de autorização, backup/drift ou deploy atrelados ao fluxo Git.
 
-1. `git pull --ff-only origin main` com a árvore de trabalho limpa;
-2. testar localmente;
-3. commit na `main` e `git push origin main`;
-4. pedir autorização explícita para o deploy;
-5. backup e verificação de drift;
-6. deploy controlado.
-
-Nunca reescrever a `main` nem usar force push. Como não há revisão por PR, o corpo do commit deve deixar claros o motivo, o impacto, o risco e como reverter.
+Antes do commit, atualize a `main` local (`git pull --ff-only origin main`). Nunca reescreva a `main` nem use force push. O corpo do commit deve deixar claros o motivo e, quando a mudança não for trivial, o risco e como reverter.
 
 ## Checklist antes de gerar o commit
 

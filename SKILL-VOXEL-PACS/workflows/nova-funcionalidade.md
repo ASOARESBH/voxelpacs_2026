@@ -7,4 +7,4 @@
 5. **Implementar** seguindo os templates de `templates/` e os padrões de `patterns/`. Se a funcionalidade cria ou altera qualquer view em `app/Views/`, toda string nova visível ao usuário vai em `t('modulo.tela.elemento')`, adicionada nos 3 arquivos de `lang/` (pt_BR/en/es) — nunca hardcoded (ver `patterns/padrao-i18n.md`, regra permanente desde 2026-07-15).
 6. **Validar** — rodar os `diagnostics/` relevantes (ao menos duplicação e segurança; DICOM/HL7 se tocado; `diagnostics/i18n.md` se alguma view foi tocada).
 7. **Documentar** — atualizar `modules/<modulo>.md`, `indexes/` afetados, e `architecture/dependencias.md` se novas dependências foram criadas.
-8. **Commit direto na `main`** — usar `prompts/criar-commit.md`. Não há Pull Request nem merge: o fluxo é testes → commit direto na `main` → push → autorização explícita → backup/drift → deploy controlado.
+8. **Commit direto na `main`** — usar `prompts/criar-commit.md`. Toda alteração pelo Git é feita somente por commit direto na `main` (commit + push), sem Pull Request, revisão ou merge.
