@@ -32,6 +32,14 @@ foreach ([
     ["d.ambiente = 'homologacao'", 'homologação obrigatória'],
     ["d.transport = 'philips_non_dicom'", 'transporte Non-DICOM obrigatório'],
     ["a.artifact_type = 'pdf'", 'artifact PDF obrigatório'],
+    ['automatic_resend_eligible', 'elegibilidade do reenvio automático'],
+    ["j.status IN ('queued', 'failed')", 'status permitido no reenvio automático'],
+    ["j.delivery_profile = 'submission_document'", 'perfil submission_document no reenvio automático'],
+    ["d.ambiente = 'producao'", 'produção obrigatória no reenvio automático'],
+    ['d.disparar_na_liberacao = 1', 'disparo automático habilitado'],
+    ['o.delivery_request_id IS NULL', 'ausência de Delivery Request controlada'],
+    ['j.locked_at IS NULL', 'job sem lock'],
+    ['j.remote_reference IS NULL', 'ausência de resultado remoto'],
 ] as [$needle, $label]) {
     $expect(str_contains($listJobs, $needle), "Contrato ausente: {$label}.");
 }
@@ -44,11 +52,15 @@ foreach ([
     ['/retry-homologation', 'rota de reenvio existente'],
     ['confirm_manual_homologation_retry', 'confirmação explícita do reenvio'],
     ['manual_retry_eligible', 'flag de elegibilidade'],
+    ['automatic-resend-form', 'formulário de reenvio automático'],
+    ['/resend-automatic', 'rota de reenvio automático'],
+    ['confirm_automatic_resend', 'confirmação explícita do reenvio automático'],
 ] as [$needle, $label]) {
     $expect(str_contains($view, $needle), "View sem {$label}.");
 }
 
 $expect(str_contains($routes, '/jobs/{jobId}/retry-homologation'), 'Rota manual por Job não localizada.');
+$expect(str_contains($routes, '/jobs/{jobId}/resend-automatic'), 'Rota de reenvio automático não localizada.');
 
 foreach (['pt_BR', 'en', 'es'] as $locale) {
     $catalog = (string) file_get_contents($root . "/lang/{$locale}.php");
@@ -61,6 +73,12 @@ foreach (['pt_BR', 'en', 'es'] as $locale) {
         'delivery_hub.jobs.sem_acao',
         'delivery_hub.jobs.reenviar_homologacao',
         'delivery_hub.jobs.reenviar_homologacao_ajuda',
+        'delivery_hub.jobs.reenviar_automatico',
+        'delivery_hub.jobs.reenviar_automatico_ajuda',
+        'delivery_hub.jobs.confirmar_reenvio_automatico',
+        'delivery_hub.jobs.reenvio_automatico_aceito',
+        'delivery_hub.jobs.erro_confirmacao_reenvio_automatico',
+        'delivery_hub.jobs.erro_reenvio_automatico',
     ] as $key) {
         $expect(str_contains($catalog, "'{$key}'"), "Chave i18n ausente em {$locale}: {$key}.");
     }

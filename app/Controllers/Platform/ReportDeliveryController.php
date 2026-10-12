@@ -350,6 +350,56 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    public function resendAutomaticProduction(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_permissao_reenvio_automatico')], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_sessao_reenvio_automatico')], 419);
+        }
+        if (!$this->tenantModel->find($tenantId)) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_negocio_reenvio_automatico')], 404);
+        }
+        if ((string) ($_POST['confirm_automatic_resend'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_confirmacao_reenvio_automatico')], 422);
+        }
+
+        try {
+            $result = $this->repository->resendAutomaticProductionJob($jobId, $tenantId);
+            AuditLogger::log('report_delivery.automatic_production_resend', 'pacs_report_delivery_jobs', $result['job_id'], [
+                'tenant_id' => $tenantId,
+                'destination_id' => $result['destination_id'],
+                'actor' => (int) Auth::userId(),
+                'action' => 'automatic_production_resend',
+                'previous_status' => $result['previous_status'],
+                'new_status' => $result['new_status'],
+                'attempt_number' => $result['attempt_number'],
+                'automatic_dispatch_date' => 'database_current_date',
+                'clinical_snapshot_changed' => false,
+                'transmission_started' => false,
+            ], $tenantId);
+            $this->json([
+                'success' => true,
+                'message' => t('delivery_hub.jobs.reenvio_automatico_aceito'),
+                'job_id' => $result['job_id'],
+                'previous_status' => $result['previous_status'],
+                'new_status' => $result['new_status'],
+            ]);
+        } catch (DomainException $e) {
+            $errorCode = (int) $e->getCode();
+            $status = in_array($errorCode, [404, 409], true) ? $errorCode : 422;
+            $this->json(['success' => false, 'message' => t($e->getMessage())], $status);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::resendAutomaticProduction] Falha no reenvio automático', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_reenvio_automatico')], 500);
+        }
+    }
+
     public function resendReleasedReport(int $tenantId, int $reportId): void
     {
         if (!$this->isPlatformAdmin()) {

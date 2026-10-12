@@ -790,7 +790,7 @@ class ReportDeliveryRepository
                     j.delivered_at, j.remote_reference, j.last_error, j.created_at,
                     d.nome AS destination_name, d.ambiente AS destination_environment,
                     d.enabled AS destination_enabled, o.report_id, o.report_version,
-                    o.estudo_id, o.event_type,
+                    o.estudo_id, o.event_type, o.payload_json AS automatic_resend_payload,
                     e.patient_name, e.patient_name_display, e.tags_raw,
                     COALESCE(e.accession_number, '') AS accession_number,
                     CASE WHEN j.status IN ('failed', 'dead_letter')
@@ -805,7 +805,20 @@ class ReportDeliveryRepository
                                       AND a.tenant_id = j.tenant_id
                                       AND a.artifact_type = 'pdf'
                                )
-                         THEN 1 ELSE 0 END AS manual_retry_eligible
+                         THEN 1 ELSE 0 END AS manual_retry_eligible,
+                    CASE WHEN j.status IN ('queued', 'failed')
+                               AND j.transport = 'philips_non_dicom'
+                               AND j.delivery_profile = 'submission_document'
+                               AND d.transport = 'philips_non_dicom'
+                               AND d.ambiente = 'producao'
+                               AND d.enabled = 1
+                               AND d.disparar_na_liberacao = 1
+                               AND o.event_type = 'report.released'
+                               AND o.delivery_request_id IS NULL
+                               AND j.locked_at IS NULL
+                               AND j.locked_by IS NULL
+                               AND (j.remote_reference IS NULL OR j.remote_reference = '')
+                         THEN 1 ELSE 0 END AS automatic_resend_eligible
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_destinations d
                      ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
@@ -825,6 +838,9 @@ class ReportDeliveryRepository
         $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($jobs as &$job) {
             $job['patient_name'] = DicomPersonName::displayFromStudy($job) ?: '—';
+            $job['automatic_resend_eligible'] = (int) ($job['automatic_resend_eligible'] ?? 0) === 1
+                && self::isAutomaticProductionPayload($job['automatic_resend_payload'] ?? null) ? 1 : 0;
+            unset($job['automatic_resend_payload']);
         }
         unset($job);
 
@@ -1015,6 +1031,112 @@ class ReportDeliveryRepository
         $stmt->execute([':id' => $jobId, ':tenant_id' => $tenantId]);
 
         return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Rearma uma única entrega automática de produção para a data atual do
+     * banco. O snapshot/outbox/job clínico permanece imutável; somente os
+     * campos operacionais de fila são atualizados.
+     *
+     * @return array{job_id:int,destination_id:int,previous_status:string,new_status:string,attempt_number:int}
+     */
+    public function resendAutomaticProductionJob(int $jobId, int $tenantId): array
+    {
+        if ($jobId <= 0 || $tenantId <= 0) {
+            throw new DomainException('delivery_hub.jobs.erro_job_invalido_reenvio_automatico', 422);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT j.id, j.destination_id, j.tenant_id, j.status, j.attempt_count,
+                        j.locked_at, j.locked_by, j.remote_reference, j.transport,
+                        j.delivery_profile, d.enabled, d.ambiente,
+                        d.transport AS destination_transport, d.disparar_na_liberacao,
+                        o.event_type, o.delivery_request_id, o.payload_json
+                 FROM pacs_report_delivery_jobs j
+                 INNER JOIN pacs_report_delivery_destinations d
+                         ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_outbox o
+                         ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 WHERE j.id = :job_id
+                   AND j.tenant_id = :tenant_id
+                 FOR UPDATE"
+            );
+            $stmt->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!is_array($job)) {
+                throw new DomainException('delivery_hub.jobs.erro_job_nao_encontrado_reenvio_automatico', 404);
+            }
+
+            $eligible = in_array((string) ($job['status'] ?? ''), ['queued', 'failed'], true)
+                && (string) ($job['transport'] ?? '') === 'philips_non_dicom'
+                && (string) ($job['delivery_profile'] ?? '') === 'submission_document'
+                && (string) ($job['destination_transport'] ?? '') === 'philips_non_dicom'
+                && (string) ($job['ambiente'] ?? '') === 'producao'
+                && (int) ($job['enabled'] ?? 0) === 1
+                && (int) ($job['disparar_na_liberacao'] ?? 0) === 1
+                && (string) ($job['event_type'] ?? '') === 'report.released'
+                && ($job['delivery_request_id'] ?? null) === null
+                && self::isAutomaticProductionPayload($job['payload_json'] ?? null)
+                && ($job['locked_at'] ?? null) === null
+                && ($job['locked_by'] ?? null) === null
+                && trim((string) ($job['remote_reference'] ?? '')) === '';
+            if (!$eligible) {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_automatico', 422);
+            }
+
+            $update = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                    SET status = 'queued',
+                        next_attempt_at = NOW(),
+                        worker_eligible_at = NOW(),
+                        automatic_dispatch_date = CURRENT_DATE,
+                        locked_at = NULL,
+                        locked_by = NULL,
+                        last_error = NULL,
+                        updated_at = NOW()
+                  WHERE id = :job_id
+                    AND tenant_id = :tenant_id
+                    AND status IN ('queued', 'failed')
+                    AND locked_at IS NULL
+                    AND locked_by IS NULL
+                    AND (remote_reference IS NULL OR remote_reference = '')"
+            );
+            $update->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            if ($update->rowCount() !== 1) {
+                throw new DomainException('delivery_hub.jobs.erro_job_conflito_reenvio_automatico', 409);
+            }
+
+            $this->pdo->commit();
+
+            return [
+                'job_id' => (int) $job['id'],
+                'destination_id' => (int) $job['destination_id'],
+                'previous_status' => (string) $job['status'],
+                'new_status' => 'queued',
+                'attempt_number' => (int) $job['attempt_count'] + 1,
+            ];
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private static function isAutomaticProductionPayload(mixed $payloadJson): bool
+    {
+        if (!is_string($payloadJson) || trim($payloadJson) === '') {
+            return false;
+        }
+        $payload = json_decode($payloadJson, true);
+        if (!is_array($payload) || ($payload['dispatch_mode'] ?? null) !== 'automatic_production') {
+            return false;
+        }
+
+        return !array_key_exists('delivery_request_id', $payload)
+            && !array_key_exists('task_site_id_alias', $payload);
     }
 
     /**
