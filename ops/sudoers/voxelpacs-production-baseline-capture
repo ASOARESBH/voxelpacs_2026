@@ -1,3 +1,4 @@
-# VOXEL PACS — allowlist da captura root-controlled do baseline
+# VOXEL PACS — allowlist da captura/refresh root-controlled do baseline
 # Validar com: visudo -cf /etc/sudoers.d/voxelpacs-production-baseline-capture
 manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-production-baseline-capture capture
+manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile

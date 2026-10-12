@@ -21,10 +21,12 @@ grep -Fqx "readonly SOURCE_ROOT='/var/www/voxelpacs/app'" "$wrapper" || fail fix
 grep -Fqx "readonly OUTPUT_ROOT='/var/lib/voxelpacs/baselines'" "$wrapper" || fail fixed_output_root
 grep -Fqx "readonly CAPTURE_SCRIPT='/usr/local/sbin/voxelpacs-capture-production-baseline'" "$wrapper" || fail fixed_capture_path
 grep -Fqx "readonly COMPOSER_PROFILE_SHA_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-profile-approved-main-sha'" "$wrapper" || fail fixed_profile_approval_path
-grep -Fq "[[ \"\$#\" -eq 1 && \"\$1\" == 'capture' ]]" "$wrapper" || fail fixed_arguments
+grep -Fq '1:capture)' "$wrapper" || fail fixed_capture_arguments
+grep -Fq '1:refresh-profile)' "$wrapper" || fail fixed_refresh_arguments
 grep -Fq -- '--composer-profile-sha' "$wrapper" || fail fixed_profile_argument
 grep -Fq 'read_approved_composer_profile_sha' "$wrapper" || fail fixed_profile_approval_reader
-grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$sudoers" || fail sudoers_command
+grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$sudoers" || fail sudoers_capture_command
+grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile' "$sudoers" || fail sudoers_refresh_command
 grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$sudoers" || fail sudoers_caller
 
 for file in "$wrapper" "$sudoers"; do
@@ -38,6 +40,10 @@ grep -Fq 'error_file=' "$wrapper" || fail failure_error_capture_missing
 grep -Fq 'REASON=' "$wrapper" || fail failure_reason_contract_missing
 grep -Fq 'CAPTURE_FAILED_SANITIZED' "$wrapper" || fail failure_reason_sanitization_missing
 grep -Fq 'HASH_UNAVAILABLE=' "$wrapper" || fail hash_unavailable_contract_missing
+grep -Fq 'PROFILE_REFRESH=PASS' "$wrapper" || fail profile_refresh_result_contract_missing
+grep -Fq 'BASELINE_PROFILE_ALREADY_EXISTS' "$wrapper" || fail profile_refresh_no_replace_missing
+grep -Fq 'REFRESH_BACKUP_PARENT=' "$wrapper" || fail profile_refresh_backup_path_missing
+grep -Fq 'ORIGINAL_PRESERVED=YES' "$wrapper" || fail profile_refresh_rollback_contract_missing
 
 ! grep -Eq '^[[:space:]]*eval([[:space:]]|$)' "$provisioner" || fail executable_eval
 ! grep -Eq '^[[:space:]]*(systemctl|smbclient|curl|mysql|psql|composer|git[[:space:]]+(push|checkout))([[:space:]]|$)' "$provisioner" || fail executable_generic_operation
@@ -59,4 +65,4 @@ grep -Fq 'mv -f -- "$stage_capture" "$INSTALLED_CAPTURE"' "$provisioner" || fail
 grep -Fq 'mv -f -- "$stage_wrapper" "$INSTALLED_WRAPPER"' "$provisioner" || fail wrapper_atomic_move_missing
 grep -Fq 'mv -f -- "$stage_sudoers" "$INSTALLED_SUDOERS"' "$provisioner" || fail sudoers_atomic_move_missing
 
-printf 'TEST=PASS\nSTATIC=PASS\nSUDOERS_SYNTAX=PASS\nFIXED_SCOPE=PASS\nUPGRADE_CONTRACT=PASS\nHISTORICAL_PROVENANCE=PASS\nROLLBACK_CONTRACT=PASS\nGENERIC_OPERATIONS=ABSENT\nPRODUCTION_CHANGED=NO\n'
+printf 'TEST=PASS\nSTATIC=PASS\nSUDOERS_SYNTAX=PASS\nFIXED_SCOPE=PASS\nREFRESH_PROFILE_CONTRACT=PASS\nUPGRADE_CONTRACT=PASS\nHISTORICAL_PROVENANCE=PASS\nROLLBACK_CONTRACT=PASS\nGENERIC_OPERATIONS=ABSENT\nPRODUCTION_CHANGED=NO\n'
