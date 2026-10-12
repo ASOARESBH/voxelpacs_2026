@@ -26,7 +26,7 @@ create_fixture_repo() {
   local target_root="$fixture_root/targets/$name"
   local helper_parent="$target_root/usr/local/sbin"
   local sudoers_parent="$target_root/etc/sudoers.d"
-  local approval_parent="$target_root/etc/voxelpacs"
+  local approval_parent="$target_root/etc/voxelpacs-composer-profile"
   local lock_root="$fixture_root/locks/$name"
   mkdir -p "$root/scripts" "$root/ops/deploy" "$root/ops/sudoers" "$helper_parent" "$sudoers_parent" "$approval_parent" "$lock_root"
   cp -- "$source_provisioner" "$root/scripts/provision-composer-metadata-profile-auditor.sh"
@@ -38,7 +38,7 @@ create_fixture_repo() {
     -e "s|readonly INSTALLED_HELPER='/usr/local/sbin/voxelpacs-composer-metadata-profile-auditor'|readonly INSTALLED_HELPER='$helper_parent/voxelpacs-composer-metadata-profile-auditor'|" \
     -e "s|readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-composer-metadata-profile-auditor'|readonly INSTALLED_SUDOERS='$sudoers_parent/voxelpacs-composer-metadata-profile-auditor'|" \
     -e "s|readonly LOCK_PATH='/run/lock/voxelpacs-composer-metadata-profile-auditor-provision.lock'|readonly LOCK_PATH='$lock_root/provision.lock'|" \
-    -e "s|readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-metadata-profile-approved-main-shas'|readonly APPROVAL_FILE='$approval_parent/approved-main-shas'|" \
+    -e "s|readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas'|readonly APPROVAL_FILE='$approval_parent/approved-main-shas'|" \
     "$root/scripts/provision-composer-metadata-profile-auditor.sh"
   chmod 0755 "$root/scripts/provision-composer-metadata-profile-auditor.sh" "$root/ops/deploy/voxelpacs-composer-metadata-profile-auditor"
   chmod 0644 "$root/ops/sudoers/voxelpacs-composer-metadata-profile-auditor"
@@ -160,9 +160,9 @@ git -C "$failure" add scripts/provision-composer-metadata-profile-auditor.sh
 git -C "$failure" commit -q -m 'test: inject second install failure'
 git -C "$failure" update-ref refs/remotes/origin/main HEAD
 failure_sha="$(git -C "$failure" rev-parse HEAD)"
-printf '%s\n' "$failure_sha" > "$fixture_root/targets/failure/etc/voxelpacs/approved-main-shas"
-chown root:root "$fixture_root/targets/failure/etc/voxelpacs/approved-main-shas"
-chmod 0600 "$fixture_root/targets/failure/etc/voxelpacs/approved-main-shas"
+printf '%s\n' "$failure_sha" > "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
+chown root:root "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
+chmod 0600 "$fixture_root/targets/failure/etc/voxelpacs-composer-profile/approved-main-shas"
 set +e
 failure_output="$(run_as_root env -u SUDO_USER bash "$failure_provisioner" --expected-sha "$failure_sha" --install 2>&1)"
 failure_rc=$?

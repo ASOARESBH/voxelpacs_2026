@@ -20,7 +20,7 @@ readonly INSTALLED_SUDOERS='/etc/sudoers.d/voxelpacs-composer-metadata-profile-a
 readonly LOCK_PATH='/run/lock/voxelpacs-composer-metadata-profile-auditor-provision.lock'
 readonly HELPER_PARENT='/usr/local/sbin'
 readonly SUDOERS_PARENT='/etc/sudoers.d'
-readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-metadata-profile-approved-main-shas'
+readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas'
 
 mode=''
 expected_sha=''

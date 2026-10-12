@@ -47,7 +47,7 @@ grep -Fq "readonly CANONICAL_REMOTE='https://github.com/ASOARESBH/voxelpacs_2026
 grep -Fq 'validate_admin_directory' "$provisioner" || fail admin_directory_contract
 grep -Fq 'link_no_replace' "$provisioner" || fail no_replace_contract
 grep -Fq 'EXPECTED_SHA_NOT_ORIGIN_MAIN' "$provisioner" || fail origin_main_contract
-grep -Fq "readonly APPROVAL_FILE='/etc/voxelpacs/voxelpacs-composer-metadata-profile-approved-main-shas'" "$provisioner" || fail approval_file_contract
+grep -Fq "readonly APPROVAL_FILE='/etc/voxelpacs-composer-profile/voxelpacs-composer-metadata-profile-approved-main-shas'" "$provisioner" || fail approval_file_contract
 grep -Fq 'EXPECTED_SHA_NOT_APPROVED' "$provisioner" || fail approval_contract
 
 grep -Fq 'profile_artifact_sha' "$profile_builder" || fail builder_profile_key
