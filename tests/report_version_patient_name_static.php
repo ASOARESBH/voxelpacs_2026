@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 require_once $root . '/app/autoload.php';
 
 use App\Helpers\DicomPersonName;
+use App\Services\PhilipsSubmissionMetadataResolver;
 use App\Services\ReportVersionPatientNameService;
 
 function expect_version_name(bool $condition, string $message): void
@@ -62,6 +63,31 @@ $fromFlat = $service->resolve(['patient_name' => 'Flat Display Name']);
 expect_version_name($fromFlat['source'] === 'patient_name_fallback', 'Flat name must use the automatic fallback source');
 expect_version_name($fromFlat['family'] === 'Flat', 'Flat name must use its first token as family');
 expect_version_name($fromFlat['given'] === 'Display' && $fromFlat['middle'] === 'Name', 'Automatic flat-name fallback must map intermediate and last tokens');
+
+$fromShortFlat = $service->resolve(['patient_name' => 'ALFA BETA']);
+expect_version_name(
+    $fromShortFlat['source'] === 'patient_name_fallback'
+        && $fromShortFlat['family'] === 'ALFA'
+        && $fromShortFlat['given'] === 'BETA'
+        && $fromShortFlat['middle'] === '',
+    'Two-token flat names must map to Family/Given and keep Middle empty without duplication'
+);
+
+$resolvedShortMetadata = (new PhilipsSubmissionMetadataResolver())->resolve([
+    'patient_name_family' => $fromShortFlat['family'],
+    'patient_name_given' => $fromShortFlat['given'],
+    'patient_name_middle' => $fromShortFlat['middle'],
+    'patient_name_source' => $fromShortFlat['source'],
+], [
+    'dispatch_mode' => 'automatic_production',
+]);
+expect_version_name(
+    $resolvedShortMetadata['task_patient_humanname_family'] === 'ALFA'
+        && $resolvedShortMetadata['task_patient_humanname_given'] === 'BETA'
+        && $resolvedShortMetadata['task_patient_humanname_middle'] === ''
+        && $resolvedShortMetadata['patient_name_as_family'] === false,
+    'Automatic production must use frozen Family/Given and keep the homologation-only family flag disabled'
+);
 
 $missingPatientName = false;
 try {

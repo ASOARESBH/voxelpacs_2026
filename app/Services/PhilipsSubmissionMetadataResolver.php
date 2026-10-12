@@ -62,8 +62,14 @@ final class PhilipsSubmissionMetadataResolver
         }
 
         $patientName = $this->versionPatientName($payload);
+        // A versão congelada já contém os componentes resolvidos. Um fallback
+        // com Family e Given válidos não é Family-only; a marca só permanece
+        // para o caso histórico de token único, que continua dependente da
+        // política de homologação no gerador.
         $patientNameAsFamily = $patientName !== null
-            && ($payload['patient_name_source'] ?? null) === 'patient_name_fallback';
+            && ($payload['patient_name_source'] ?? null) === 'patient_name_fallback'
+            && ($patientName['given'] ?? '') === ''
+            && ($patientName['middle'] ?? '') === '';
         if ($patientName === null) {
             foreach ([
                 [self::patientNameFromTagsRaw($payload['tags_raw'] ?? null), true],

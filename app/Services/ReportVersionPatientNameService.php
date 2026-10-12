@@ -103,6 +103,8 @@ final class ReportVersionPatientNameService
     /**
      * Converte nome plano para o contrato de saída solicitado pelo Philips.
      * Ex.: "LUIS ANTONIO DA SILVA" → LUIS / ANTONIO DA / SILVA.
+     * Para exatamente dois tokens, o segundo é Given e Middle permanece vazio;
+     * nunca se repete Family para preencher um componente ausente.
      * Para um único token, Given permanece vazio e o destino pode bloquear a
      * liberação; não é permitido inventar um componente ausente.
      *
@@ -114,6 +116,16 @@ final class ReportVersionPatientNameService
         $tokens = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $count = count($tokens);
         $family = (string) ($tokens[0] ?? '');
+        if ($count === 2) {
+            return $this->validated(
+                $family,
+                (string) $tokens[1],
+                '',
+                'patient_name_fallback',
+                true
+            );
+        }
+
         $given = $count > 2
             ? implode(' ', array_slice($tokens, 1, -1))
             : (string) ($tokens[1] ?? '');
