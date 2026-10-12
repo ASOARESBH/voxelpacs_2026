@@ -42,6 +42,8 @@ Para uma captura integral do Host 1, o script deve ser executado por um mecanism
 
 O mecanismo versionado para essa execução é `scripts/provision-production-baseline-capture.sh`. Ele instala somente o capturador, o wrapper fixo e o sudoers dedicado, todos com ownership/mode mínimos e validação `visudo`; na captura, o wrapper exige a âncora root-only `/etc/voxelpacs/voxelpacs-composer-profile-approved-main-sha`, e o caller pode executar apenas `capture`, sem fornecer path, comando, shell, destino ou SHA. Se os destinos já existirem, o modo normal continua no-replace; o modo `--upgrade` só é aceito quando os três blobs existentes forem comprovados no histórico da `origin/main`, com owner/mode regulares, staging no mesmo filesystem e rollback fail-closed em falha parcial.
 
+A configuração inicial ou reconciliação dessa âncora não é feita manualmente. O procedimento versionado separado é `scripts/provision-composer-profile-approval.sh`, documentado em `docs/technical/COMPOSER_PROFILE_APPROVAL.md`. Primeiro executa-se `--inspect` e `--dry-run`; somente uma autorização administrativa posterior pode executar `--apply`. O helper aceita exclusivamente os caminhos fixos, prova a `origin/main` no remoto canônico, não sobrescreve âncora existente e falha fechado diante de owner, group, mode, symlink, entrada inesperada ou divergência.
+
 ## Backup protegido
 
 Antes de qualquer proposta de baseline, deve existir backup root-only verificável da release atualmente instalada. O backup usa o helper oficial:
