@@ -6,7 +6,9 @@ umask 077
 export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 
 readonly COMPOSER_METADATA_PATH='vendor/composer/installed.php'
-readonly MECHANISM_VERSION='1'
+readonly MECHANISM_VERSION='2'
+readonly APPROVED_CODE_DELTA_PATH_1='app/Services/PhilipsSubmissionMetadataResolver.php'
+readonly APPROVED_CODE_DELTA_PATH_2='app/Services/ReportVersionPatientNameService.php'
 
 runtime_root=''
 artifact_manifest=''
@@ -20,6 +22,13 @@ usage() {
 fail_preflight() {
   printf 'DRIFT_GATE=BLOCKED\nREASON=%s\nPRODUCTION_CHANGED=NO\n' "$1" >&2
   exit 64
+}
+
+is_approved_code_delta_path() {
+  case "$1" in
+    "$APPROVED_CODE_DELTA_PATH_1"|"$APPROVED_CODE_DELTA_PATH_2") return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 safe_relative_path() {
@@ -131,6 +140,7 @@ extras_not_in_baseline=0
 extra_hash_mismatch=0
 extra_unreadable=0
 mismatch_paths=''
+expected_target_deltas=0
 
 for rel in "${!artifact_hash[@]}"; do
   expected_files=$((expected_files + 1))
@@ -152,6 +162,8 @@ for rel in "${!artifact_hash[@]}"; do
   mismatch_paths+="$rel "
   if [[ "$rel" == "$COMPOSER_METADATA_PATH" && -n "${baseline_hash[$rel]+present}" && "${baseline_classification[$rel]}" == 'COMPOSER_DEPENDENCY' && "$actual" == "${baseline_hash[$rel]}" ]]; then
     composer_exception=$((composer_exception + 1))
+  elif is_approved_code_delta_path "$rel" && [[ -n "${baseline_hash[$rel]+present}" ]] && [[ "${baseline_classification[$rel]}" == 'OWNED_RUNTIME_CODE' ]] && [[ "$actual" == "${baseline_hash[$rel]}" ]]; then
+    expected_target_deltas=$((expected_target_deltas + 1))
   else
     mismatch_uncovered=$((mismatch_uncovered + 1))
   fi
@@ -193,8 +205,8 @@ elif [[ "$baseline_legacy_entries" -gt 0 ]]; then
   baseline_format='LEGACY_8_COLUMN'
 fi
 
-printf 'MECHANISM_VERSION=%s\nCOMPOSER_METADATA_PATH=%s\nARTIFACT_MANIFEST_ENTRIES=%s\nBASELINE_MANIFEST_ENTRIES=%s\nBASELINE_FORMAT=%s\nBASELINE_LEGACY_ENTRIES=%s\nBASELINE_CURRENT_ENTRIES=%s\nEXPECTED_FILES=%s\nCONTENT_MATCH=%s\nCONTENT_MISMATCH=%s\nCOMPOSER_METADATA_EXCEPTION=%s\nMISMATCH_UNCOVERED=%s\nMISSING=%s\nUNREADABLE=%s\nINVALID_ARTIFACT_ENTRIES=%s\nINVALID_BASELINE_ENTRIES=%s\nEXTRA_FILES=%s\nEXTRAS_IN_BASELINE=%s\nEXTRAS_NOT_IN_BASELINE=%s\nEXTRA_HASH_MISMATCH=%s\nEXTRA_UNREADABLE=%s\nMISMATCH_PATHS=%s\n' \
-  "$MECHANISM_VERSION" "$COMPOSER_METADATA_PATH" "$artifact_entries" "$baseline_entries" "$baseline_format" "$baseline_legacy_entries" "$baseline_current_entries" "$expected_files" "$content_match" "$content_mismatch" "$composer_exception" "$mismatch_uncovered" "$missing" "$unreadable" "$invalid_artifact_entries" "$invalid_baseline_entries" "$extra_files" "$extras_in_baseline" "$extras_not_in_baseline" "$extra_hash_mismatch" "$extra_unreadable" "${mismatch_paths% }"
+printf 'MECHANISM_VERSION=%s\nCOMPOSER_METADATA_PATH=%s\nAPPROVED_CODE_DELTA_PATHS=%s,%s\nARTIFACT_MANIFEST_ENTRIES=%s\nBASELINE_MANIFEST_ENTRIES=%s\nBASELINE_FORMAT=%s\nBASELINE_LEGACY_ENTRIES=%s\nBASELINE_CURRENT_ENTRIES=%s\nEXPECTED_FILES=%s\nCONTENT_MATCH=%s\nCONTENT_MISMATCH=%s\nCOMPOSER_METADATA_EXCEPTION=%s\nEXPECTED_TARGET_DELTAS=%s\nMISMATCH_UNCOVERED=%s\nMISSING=%s\nUNREADABLE=%s\nINVALID_ARTIFACT_ENTRIES=%s\nINVALID_BASELINE_ENTRIES=%s\nEXTRA_FILES=%s\nEXTRAS_IN_BASELINE=%s\nEXTRAS_NOT_IN_BASELINE=%s\nEXTRA_HASH_MISMATCH=%s\nEXTRA_UNREADABLE=%s\nMISMATCH_PATHS=%s\n' \
+  "$MECHANISM_VERSION" "$COMPOSER_METADATA_PATH" "$APPROVED_CODE_DELTA_PATH_1" "$APPROVED_CODE_DELTA_PATH_2" "$artifact_entries" "$baseline_entries" "$baseline_format" "$baseline_legacy_entries" "$baseline_current_entries" "$expected_files" "$content_match" "$content_mismatch" "$composer_exception" "$expected_target_deltas" "$mismatch_uncovered" "$missing" "$unreadable" "$invalid_artifact_entries" "$invalid_baseline_entries" "$extra_files" "$extras_in_baseline" "$extras_not_in_baseline" "$extra_hash_mismatch" "$extra_unreadable" "${mismatch_paths% }"
 
 if [[ "$artifact_entries" -eq 0 || "$baseline_entries" -eq 0 || "$invalid_artifact_entries" -ne 0 || "$invalid_baseline_entries" -ne 0 || "$missing" -ne 0 || "$unreadable" -ne 0 || "$mismatch_uncovered" -ne 0 || "$extras_not_in_baseline" -ne 0 || "$extra_hash_mismatch" -ne 0 || "$extra_unreadable" -ne 0 ]]; then
   printf 'DRIFT_GATE=FAIL\nREASON=UNCLASSIFIED_OR_UNPROVEN_DRIFT\n'
@@ -202,4 +214,4 @@ if [[ "$artifact_entries" -eq 0 || "$baseline_entries" -eq 0 || "$invalid_artifa
   exit 65
 fi
 
-printf 'DRIFT_GATE=PASS\nPOLICY=BASELINE_EXTRAS_AND_EXPLICIT_COMPOSER_METADATA\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_CALLED=NO\nSMB_CALLED=NO\nTRANSMISSION=NO\n'
+printf 'DRIFT_GATE=PASS\nPOLICY=BASELINE_EXTRAS_EXPLICIT_COMPOSER_AND_APPROVED_CODE_DELTAS\nPRODUCTION_CHANGED=NO\nDATABASE_CHANGED=NO\nWORKER_STARTED=NO\nBRIDGE_CALLED=NO\nSMB_CALLED=NO\nTRANSMISSION=NO\n'
