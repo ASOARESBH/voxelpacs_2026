@@ -107,12 +107,15 @@ def root_reference_state() -> str:
     depth = 0
     direct = []
     nested = 0
+    closed = False
+    malformed = False
     for line in lines:
         if depth == 0:
             if ROOT_START.search(line):
                 depth = 1
             continue
         if depth == 1 and VERSIONS_START.search(line):
+            malformed = True
             break
         if "'reference'" in line:
             if depth == 1:
@@ -121,8 +124,9 @@ def root_reference_state() -> str:
                 nested += 1
         depth += delta(line)
         if depth <= 0:
+            closed = True
             break
-    if len(direct) == 1 and nested == 0:
+    if closed and not malformed and len(direct) == 1 and nested == 0:
         return direct[0]
     return 'UNRESOLVED'
 
@@ -132,6 +136,7 @@ def package_reference_state() -> str:
     package_found = False
     direct = []
     any_references = 0
+    closed = False
     for line in lines:
         if versions_depth == 0:
             if VERSIONS_START.search(line):
@@ -153,8 +158,9 @@ def package_reference_state() -> str:
                     direct.append(line_reference_state(line))
             package_depth += delta(line)
             if package_depth <= 0:
+                closed = True
                 break
-    if package_found and len(direct) == 1 and any_references == 1:
+    if package_found and closed and len(direct) == 1 and any_references == 1:
         return direct[0]
     return 'UNRESOLVED'
 

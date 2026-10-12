@@ -116,6 +116,20 @@ cat > "$app/vendor/composer/installed.php" <<EOF
 return array(
     'root' => array(
         'reference' => '$artifact_sha',
+EOF
+set +e
+unclosed_root="$(run_helper 2>&1)"
+unclosed_root_rc=$?
+set -e
+[[ "$unclosed_root_rc" -eq 65 ]] || fail unclosed_root_exit_code
+grep -Fxq 'RUNTIME_ROOT_REFERENCE_STATE=UNRESOLVED' <<<"$unclosed_root" || fail unclosed_root_state
+grep -Fxq 'AUDIT=INCOMPLETE' <<<"$unclosed_root" || fail unclosed_root_audit_status
+
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$artifact_sha',
     ),
     'versions' => array(
         'other/package' => array(
@@ -232,4 +246,17 @@ grep -Fqx $'package_reference_state\tSOURCE_SHA' "$profile_output" || fail profi
 ! grep -Fq "$other_sha" "$profile_output" || fail profile_builder_raw_value
 ! grep -Fq "'reference'" "$profile_output" || fail profile_builder_raw_key
 
-printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'
+cat > "$app/vendor/composer/installed.php" <<EOF
+<?php
+return array(
+    'root' => array(
+        'reference' => '$expected_head',
+EOF
+unclosed_profile="$fixture_root/unclosed-profile.tsv"
+bash "$profile_repo/scripts/build-composer-metadata-profile.sh" \
+  --input "$app/vendor/composer/installed.php" \
+  --expected-sha "$expected_head" \
+  --output "$unclosed_profile" > "$fixture_root/unclosed-profile-builder.out"
+grep -Fqx $'root_reference_state\tUNRESOLVED' "$unclosed_profile" || fail profile_builder_unclosed_root
+
+printf 'TEST=PASS\nISOLATED=PASS\nEQUALITY=PASS\nDIVERGENCE=PASS\nAMBIGUOUS_REFERENCES=PASS\nUNCLOSED_STRUCTURES=PASS\nABSENT_PACKAGE=PASS\nMISSING_FIELDS=PASS\nBASELINE_BINDING=PASS\nBASELINE_UNAVAILABLE=PASS\nPROFILE_BUILDER=PASS\nRAW_VALUES_NOT_EXPOSED=PASS\nINCOMPLETE_NOT_PASS=PASS\nREADY_FOR_DEPLOY=NO\nPRODUCTION_CHANGED=NO\n'

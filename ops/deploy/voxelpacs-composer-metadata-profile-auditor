@@ -129,6 +129,9 @@ extract_reference_state() {
       package_direct_references=0
       package_any_references=0
       package_found=0
+      root_closed=0
+      root_malformed=0
+      package_closed=0
       direct_state="UNRESOLVED"
       package_state="UNRESOLVED"
     }
@@ -143,6 +146,7 @@ extract_reference_state() {
           next
         }
         if (root_depth > 0 && root_depth == 1 && line ~ /\x27versions\x27[[:space:]]*=>[[:space:]]*array[[:space:]]*\(/) {
+          root_malformed=1
           exit
         }
         if (root_depth > 0 && line ~ /\x27reference\x27[[:space:]]*=>/) {
@@ -155,7 +159,10 @@ extract_reference_state() {
         }
         if (root_depth > 0) {
           root_depth += opens-closes
-          if (root_depth <= 0) exit
+          if (root_depth <= 0) {
+            root_closed=1
+            exit
+          }
         }
         next
       }
@@ -183,14 +190,17 @@ extract_reference_state() {
           }
         }
         package_depth += opens-closes
-        if (package_depth <= 0) exit
+        if (package_depth <= 0) {
+          package_closed=1
+          exit
+        }
       }
     }
     END {
       if (scope == "root") {
-        if (direct_references == 1 && nested_references == 0) print direct_state
+        if (root_closed == 1 && root_malformed == 0 && direct_references == 1 && nested_references == 0) print direct_state
         else print "UNRESOLVED"
-      } else if (package_found == 1 && package_direct_references == 1 && package_any_references == 1) {
+      } else if (package_found == 1 && package_closed == 1 && package_direct_references == 1 && package_any_references == 1) {
         print package_state
       } else {
         print "UNRESOLVED"
