@@ -62,6 +62,8 @@ Ao editar um destino, o serializador da view remove da cópia de configuração 
 
 Jobs automáticos de `report.released` preservam `j.destination_id` como referência histórica e de auditoria. Para `philips_non_dicom`, o claim do Worker valida e hidrata exatamente esse Destination persistido dentro do escopo `tenant + transport + ambiente=producao + enabled + disparar_na_liberacao`; não usa `APP_ENV` para escolher outro ambiente, não faz fallback para homologação e bloqueia qualquer mismatch. Outros transportes automáticos preservam o resolver dinâmico existente. O Destination e o profile resolvidos são mantidos somente no contexto de memória do Worker e registrados em metadata sanitizada da attempt; o schema e o Job persistido não são alterados.
 
+A data de elegibilidade (`automatic_dispatch_date`) é comparada com `CURRENT_DATE` do mesmo banco que grava o Job. O Worker, os diagnósticos read-only e o seletor B6 usam o relógio compartilhado do banco, não o timezone local do processo PHP; assim, a virada de dia do banco e a do Worker permanecem consistentes.
+
 Delivery Requests vinculadas permanecem fora da re-resolução: o binding autorizado e o digest do Destination continuam sendo verificados exatamente como materializados. O ramo `philips_non_dicom` propaga o ID efetivo ao `PhilipsFolderDeliveryService`/`PhilipsFolderGatewayBridgeClient`; `dicom_pdf` continua usando o cliente DICOM/C-STORE existente e não é encaminhado à Bridge Folder.
 
 ## Delivery Request

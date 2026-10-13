@@ -46,6 +46,11 @@ class ReportDeliveryWorkerRepository
         return $this->lastLedgerFailureStage;
     }
 
+    public function currentDatabaseDate(): string
+    {
+        return ReportDeliveryClock::currentDatabaseDate($this->pdo);
+    }
+
     /** @return array<string,mixed>|null */
     public function claimNextJob(string $workerId, array $transports = [], ?string $currentDate = null): ?array
     {
@@ -63,7 +68,7 @@ class ReportDeliveryWorkerRepository
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
-        $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
+        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentDatabaseDate($this->pdo);
         $parameters = [':automatic_today' => $currentDate];
         $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         if ($transports !== []) {
@@ -162,9 +167,7 @@ class ReportDeliveryWorkerRepository
         if ($transports === []) {
             return null;
         }
-        $currentDate = $this->validDate($currentDate) ? $currentDate : date('Y-m-d');
         $placeholders = [];
-        $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
         $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         $requestsEnabled = $this->requestsFeatureEnabled();
         $requestSelect = 'o.delivery_request_id';
@@ -176,6 +179,8 @@ class ReportDeliveryWorkerRepository
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
+        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentDatabaseDate($this->pdo);
+        $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
         foreach ($transports as $index => $transport) {
             $placeholder = ':transport_' . $index;
             $placeholders[] = $placeholder;

@@ -20,6 +20,8 @@ foreach ([$noSend, $pdf] as $service) {
     $expect(str_contains($service, 'j.worker_eligible_at <= NOW()'), 'Diagnostics must use the database clock for worker eligibility.');
     $expect(str_contains($service, 'j.next_attempt_at <= NOW()'), 'Diagnostics must use the database clock for retry eligibility.');
     $expect(str_contains($service, 'j.automatic_dispatch_date = :automatic_today'), 'Diagnostics must compare automatic date with the worker date parameter.');
+    $expect(str_contains($service, 'ReportDeliveryClock::currentDatabaseDate($this->pdo)'), 'Diagnostics must derive automatic date from the database clock.');
+    $expect(!str_contains($service, "date('Y-m-d')"), 'Diagnostics must not derive automatic date from the PHP timezone.');
     $expect(str_contains($service, 'WORKER_NOT_ELIGIBLE'), 'Worker eligibility failure must remain fail-closed.');
     $expect(str_contains($service, 'NEXT_ATTEMPT_NOT_ELIGIBLE'), 'Next-attempt failure must remain fail-closed.');
     $expect(str_contains($service, 'AUTOMATIC_DATE_NOT_ELIGIBLE'), 'Automatic-date failure must remain fail-closed.');
@@ -31,6 +33,8 @@ foreach ([$noSend, $pdf] as $service) {
 
 $expect(str_contains($worker, 'j.worker_eligible_at <= NOW()'), 'Worker predicate must remain the source contract.');
 $expect(str_contains($worker, 'j.automatic_dispatch_date = :automatic_today'), 'Worker automatic date predicate must remain the source contract.');
+$expect(str_contains($worker, 'ReportDeliveryClock::currentDatabaseDate($this->pdo)'), 'Worker repository fallback must use the database clock.');
+$expect(!str_contains($worker, "date('Y-m-d')"), 'Worker repository must not derive automatic date from the PHP timezone.');
 foreach ([$noSendCli, $pdfCli] as $cli) {
     $expect(str_contains($cli, "'worker_eligibility'"), 'CLI must expose worker eligibility sanitised state.');
     $expect(str_contains($cli, "'automatic_date_eligibility'"), 'CLI must expose automatic date sanitised state.');
