@@ -12,8 +12,8 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         $this->pdo = $pdo;
     }
     /**
-     * O id canônico é reports.assinado_por. A versão exata e o estudo são
-     * joins obrigatórios, e o nome vem do cadastro médico ativo do tenant.
+     * O usuário canônico é report_versions.usuario_id. A versão exata e o estudo são
+     * joins obrigatórios; o XML recebe bi_medicos.id e o nome vem do cadastro ativo.
      * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
      */
     public function findSignerForReportVersion(
@@ -28,7 +28,7 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         try {
             $pdo = $this->pdo ??= Database::getInstance();
             $statement = $pdo->prepare(
-                'SELECT r.assinado_por AS id,\n'
+                'SELECT m.id AS id,\n'
                 . '       r.tenant_id AS tenant_id,\n'
                 . '       m.nome AS nome,\n'
                 . '       m.ativo AS ativo\n'
@@ -40,14 +40,14 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
                 . '        ON rv.report_id = r.id\n'
                 . '       AND rv.versao = :report_version\n'
                 . 'INNER JOIN bi_medicos m\n'
-                . '        ON m.usuario_id = r.assinado_por\n'
+                . '        ON m.usuario_id = rv.usuario_id\n'
                 . '       AND m.tenant_id = r.tenant_id\n'
                 . '       AND m.ativo = 1\n'
                 . 'WHERE r.id = :report_id\n'
                 . '  AND r.tenant_id = :tenant_id\n'
                 . '  AND r.estudo_id = :study_id\n'
-                . '  AND r.assinado_por IS NOT NULL\n'
-                . '  AND r.assinado_por > 0\n'
+                . '  AND rv.usuario_id IS NOT NULL\n'
+                . '  AND rv.usuario_id > 0\n'
                 . '  AND rv.acao IN (\'assinado\', \'liberado\')\n'
                 . 'LIMIT 2'
             );

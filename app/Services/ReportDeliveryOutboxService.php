@@ -379,7 +379,7 @@ class ReportDeliveryOutboxService
     private function loadFrozenSigner(int $tenantId, int $reportId, int $studyId, int $reportVersion): ?array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT r.assinado_por AS id,
+            "SELECT m.id AS id,
                     r.tenant_id,
                     m.nome
                FROM reports r
@@ -390,14 +390,14 @@ class ReportDeliveryOutboxService
                        ON rv.report_id = r.id
                       AND rv.versao = :report_version
                INNER JOIN bi_medicos m
-                       ON m.usuario_id = r.assinado_por
+                       ON m.usuario_id = rv.usuario_id
                       AND m.tenant_id = r.tenant_id
                       AND m.ativo = 1
               WHERE r.id = :report_id
                 AND r.tenant_id = :tenant_id
                 AND r.estudo_id = :study_id
-                AND r.assinado_por IS NOT NULL
-                AND r.assinado_por > 0
+                AND rv.usuario_id IS NOT NULL
+                AND rv.usuario_id > 0
                 AND rv.acao IN ('assinado', 'liberado')
               LIMIT 2"
         );

@@ -41,7 +41,8 @@ expect_profile(!str_contains($metadataResolver, 'referringPhysicianRaw'), 'Metad
 expect_profile(str_contains($metadataResolver, 'studyDocumentDate'), 'Metadata resolver must derive date from StudyDate/StudyTime');
 expect_profile(str_contains($generator, 'encoding="iso-8859-1"'), 'Generator must preserve ISO-8859-1 contract');
 expect_profile(str_contains($outbox, 'author_signer_id'), 'Outbox must freeze signer identity for new automatic jobs');
-expect_profile(str_contains($outbox, 'r.assinado_por'), 'Outbox signer snapshot must use report signatory');
+expect_profile(str_contains($outbox, 'm.id AS id'), 'Outbox signer snapshot must emit the bi_medicos ID');
+expect_profile(str_contains($outbox, 'm.usuario_id = rv.usuario_id'), 'Outbox signer snapshot must use the exact version signer');
 expect_profile(str_contains($contract, 'signatário'), 'Contract must document signer semantics');
 expect_profile(str_contains($contract, 'ReferringPhysicianName'), 'Contract must distinguish requesting physician');
 expect_profile(str_contains($contract, 'task_image_date'), 'Contract must document image date');

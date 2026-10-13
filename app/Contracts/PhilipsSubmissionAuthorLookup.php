@@ -8,8 +8,9 @@ interface PhilipsSubmissionAuthorLookup
 {
     /**
      * Retorna o signatário congelado pela versão clínica vinculada ao job.
-     * O id retornado é o bi_users.id do médico que assinou a versão; o nome
-     * vem do cadastro bi_medicos ativo do mesmo tenant.
+     * O vínculo canônico é report_versions.usuario_id; o id retornado é o
+     * bi_medicos.id do médico que assinou a versão e o nome vem do cadastro
+     * bi_medicos ativo do mesmo tenant.
      *
      * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
      */
