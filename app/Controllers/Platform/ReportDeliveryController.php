@@ -400,6 +400,59 @@ class ReportDeliveryController extends Controller
         }
     }
 
+    public function resendDeadLetter(int $tenantId, int $jobId): void
+    {
+        if (!$this->isPlatformAdmin()) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_permissao_reenvio_dead_letter')], 403);
+        }
+        if (!$this->validCsrf()) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_sessao_reenvio_dead_letter')], 419);
+        }
+        if (!$this->tenantModel->find($tenantId)) {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_negocio_reenvio_dead_letter')], 404);
+        }
+        if ((string) ($_POST['confirm_dead_letter_resend'] ?? '') !== '1') {
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_confirmacao_reenvio_dead_letter')], 422);
+        }
+
+        try {
+            $result = $this->repository->createAutomaticProductionJobFromDeadLetter($jobId, $tenantId);
+            AuditLogger::log('report_delivery.dead_letter_resend_job_created', 'pacs_report_delivery_jobs', $result['new_job_id'], [
+                'tenant_id' => $tenantId,
+                'source_job_id' => $result['source_job_id'],
+                'new_job_id' => $result['new_job_id'],
+                'new_outbox_id' => $result['new_outbox_id'],
+                'destination_id' => $result['destination_id'],
+                'actor' => (int) Auth::userId(),
+                'action' => 'dead_letter_resend_new_identity',
+                'created' => $result['created'],
+                'clinical_snapshot_changed' => false,
+                'transmission_started' => false,
+            ], $tenantId);
+            $this->json([
+                'success' => true,
+                'message' => $result['created']
+                    ? t('delivery_hub.jobs.reenvio_dead_letter_aceito')
+                    : t('delivery_hub.jobs.reenvio_dead_letter_ja_existente'),
+                'source_job_id' => $result['source_job_id'],
+                'job_id' => $result['new_job_id'],
+                'outbox_id' => $result['new_outbox_id'],
+                'transmission_started' => false,
+            ]);
+        } catch (DomainException $e) {
+            $errorCode = (int) $e->getCode();
+            $status = in_array($errorCode, [404, 409], true) ? $errorCode : 422;
+            $this->json(['success' => false, 'message' => t($e->getMessage())], $status);
+        } catch (Throwable $e) {
+            Logger::error('[ReportDeliveryController::resendDeadLetter] Falha ao criar nova identidade de reenvio', [
+                'tenant_id' => $tenantId,
+                'job_id' => $jobId,
+                'error_class' => get_class($e),
+            ]);
+            $this->json(['success' => false, 'message' => t('delivery_hub.jobs.erro_reenvio_dead_letter')], 500);
+        }
+    }
+
     public function resendReleasedReport(int $tenantId, int $reportId): void
     {
         if (!$this->isPlatformAdmin()) {
