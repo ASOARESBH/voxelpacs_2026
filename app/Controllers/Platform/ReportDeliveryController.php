@@ -907,6 +907,28 @@ class ReportDeliveryController extends Controller
         if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             throw new DomainException('A configuração pública deve ser um JSON válido.');
         }
+        if ($transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT) {
+            // Destinations criados antes do contrato signer-first podem ainda
+            // carregar autoria administrativa no JSON. Esses campos não são
+            // rejeitados como requisito funcional nem reaproveitados: são
+            // removidos na próxima gravação administrativa, inclusive para
+            // profile pdf_only, sem tocar em credenciais ou outros campos.
+            $legacyAuthorFields = [
+                'task_author_source',
+                'task_author_id',
+                'task_author_humanname_family',
+                'task_author_humanname_given',
+                'task_author_humanname_middle',
+            ];
+            foreach ($legacyAuthorFields as $legacyAuthorField) {
+                unset($decoded[$legacyAuthorField]);
+            }
+            if (is_array($decoded['philips_submission'] ?? null)) {
+                foreach ($legacyAuthorFields as $legacyAuthorField) {
+                    unset($decoded['philips_submission'][$legacyAuthorField]);
+                }
+            }
+        }
         $isPhilipsSubmissionDocument = $transport === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             && ($decoded['delivery_profile'] ?? '') === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT;
         $isControlledProductionSubmission = $isPhilipsSubmissionDocument && $environment === 'producao';
@@ -1068,13 +1090,6 @@ class ReportDeliveryController extends Controller
             if (!is_bool($value) && !(is_int($value) && in_array($value, [0, 1], true))
                 && !(is_string($value) && in_array(strtolower(trim($value)), ['true', 'false', '1', '0'], true))) {
                 throw new DomainException("Campo {$field} inválido no perfil Philips XML.");
-            }
-        }
-
-        if (array_key_exists('task_author_source', $submission)) {
-            $authorSource = $submission['task_author_source'] ?? null;
-            if ($authorSource !== null && (!is_string($authorSource) || trim($authorSource) !== '')) {
-                throw new DomainException('A autoria Philips é resolvida pelo signatário da versão liberada.');
             }
         }
 

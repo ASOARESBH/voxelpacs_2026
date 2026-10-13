@@ -45,7 +45,7 @@ foreach ([
     "report_versions rv",
     "SIGNER_VERSION",
     "AND r.tenant_id = :tenant_id",
-    "AND m.ativo = 1",
+    'LIMIT 2',
     "job_claimed",
     "database_changed",
     "transmission",
@@ -64,6 +64,8 @@ foreach ([
 $expect(!str_contains($diagnostic, "'patient_name'"), 'diagnóstico não pode retornar nome do paciente');
 $expect(str_contains($diagnostic, "'name_materialized' => 'NO'"), 'diagnóstico não comprova que nome do autor não foi materializado');
 $expect(str_contains($diagnostic, "'task_author_id' => \$resolved ? 'REAL'"), 'auditor não classifica ID real do signatário');
+$expect(!str_contains($diagnostic, 'AND m.ativo = 1'), 'auditor não pode invalidar autoria por inatividade posterior');
+$expect(str_contains($diagnostic, "count(\$rows) === 1"), 'auditor deve falhar fechado para cadastro duplicado');
 
 foreach ([
     "readonly DIAGNOSTIC='/usr/local/libexec/voxelpacs/philips_job_522_readonly_audit.php'",

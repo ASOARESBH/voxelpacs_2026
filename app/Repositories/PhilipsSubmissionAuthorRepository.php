@@ -13,7 +13,9 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
     }
     /**
      * O usuário canônico é report_versions.usuario_id. A versão exata e o estudo são
-     * joins obrigatórios; o XML recebe bi_medicos.id e o nome vem do cadastro ativo.
+     * joins obrigatórios; o XML recebe bi_medicos.id e o nome do cadastro resolvido.
+     * O estado ativo não é reavaliado: desativar o cadastro depois da assinatura
+     * não pode mudar a autoria histórica. Duplicidade continua falhando fechado.
      * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
      */
     public function findSignerForReportVersion(
@@ -42,7 +44,6 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
                 . 'INNER JOIN bi_medicos m\n'
                 . '        ON m.usuario_id = rv.usuario_id\n'
                 . '       AND m.tenant_id = r.tenant_id\n'
-                . '       AND m.ativo = 1\n'
                 . 'WHERE r.id = :report_id\n'
                 . '  AND r.tenant_id = :tenant_id\n'
                 . '  AND r.estudo_id = :study_id\n'
@@ -74,7 +75,7 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         $tenantId = (int) ($row['tenant_id'] ?? 0);
         $name = is_string($row['nome'] ?? null) ? trim($row['nome']) : '';
         $active = (int) ($row['ativo'] ?? 0);
-        if ($id <= 0 || $tenantId <= 0 || $name === '' || $active !== 1) {
+        if ($id <= 0 || $tenantId <= 0 || $name === '') {
             return null;
         }
         return [

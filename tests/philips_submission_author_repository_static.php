@@ -35,6 +35,8 @@ foreach ([
 foreach (['INSERT INTO', 'UPDATE ', 'DELETE FROM', 'DROP ', 'TRUNCATE ', 'ALTER TABLE'] as $forbidden) {
     $expect(!str_contains(strtoupper($source), $forbidden), "Author repository must not contain {$forbidden}");
 }
+$expect(!str_contains($source, 'm.ativo = 1'), 'Historical signer lookup must not require active status');
+$expect(str_contains($source, 'count($rows) === 1'), 'Duplicate signer rows must fail closed');
 
 $interface = file_get_contents($root . '/app/Contracts/PhilipsSubmissionAuthorLookup.php');
 $expect(is_string($interface), 'Author lookup contract must be readable');
@@ -42,7 +44,8 @@ $expect(str_contains($interface, 'findSignerForReportVersion('), 'Lookup contrac
 
 echo "PHILIPS_SUBMISSION_AUTHOR_REPOSITORY_STATIC_OK\n";
 echo "TENANT_SCOPE=PASS\n";
-echo "ACTIVE_FILTER=PASS\n";
+echo "ACTIVE_STATUS_IGNORED=PASS\n";
+echo "DUPLICATE_FAIL_CLOSED=PASS\n";
 echo "VERSION_SIGNER_SCOPE=PASS\n";
 echo "PREPARED_QUERY=PASS\n";
 echo "READ_ONLY=PASS\n";

@@ -24,7 +24,10 @@ foreach (['PROFILE_SUBMISSION_DOCUMENT', 'validatePhilipsSubmissionConfiguration
 }
 expect_profile(!str_contains($controller, 'allowDefaultAuthor'), 'Controller must not expose a default-author permission');
 expect_profile(!str_contains($controller, "'task_author_id' => 'identificador"), 'Controller must not require configured author ID');
-expect_profile(str_contains($controller, 'A autoria Philips é resolvida pelo signatário'), 'Controller must explain signer-only authorship');
+expect_profile(str_contains($controller, 'contrato signer-first'), 'Controller must explain legacy-author cleanup');
+expect_profile(str_contains($controller, '$legacyAuthorFields'), 'Controller must define the legacy author field set');
+expect_profile(str_contains($controller, "unset(\$decoded[\$legacyAuthorField])"), 'Controller must remove root legacy author fields');
+expect_profile(str_contains($controller, "unset(\$decoded['philips_submission'][\$legacyAuthorField])"), 'Controller must remove nested legacy author fields');
 expect_profile(!str_contains($view, 'nondicom-task-author-source'), 'View must not expose author source selector');
 expect_profile(!str_contains($view, 'nondicom-task-author-id'), 'View must not expose author ID input');
 expect_profile(!str_contains($view, 'syncTaskAuthorSource'), 'View must not retain default-author JavaScript');
@@ -48,6 +51,7 @@ expect_profile(str_contains($contract, 'ReferringPhysicianName'), 'Contract must
 expect_profile(str_contains($contract, 'task_image_date'), 'Contract must document image date');
 echo "REPORT_DELIVERY_SUBMISSION_PROFILE_STATIC_OK\n";
 echo "SIGNER_ONLY_CONFIGURATION=PASS\n";
+echo "LEGACY_AUTHOR_CLEANUP=PASS\n";
 echo "DEFAULT_999_REMOVED=PASS\n";
 echo "REFERRING_PHYSICIAN_NOT_AUTHOR=PASS\n";
 echo "OUTBOX_SIGNER_FREEZE=PASS\n";

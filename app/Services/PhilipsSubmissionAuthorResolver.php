@@ -70,7 +70,6 @@ final class PhilipsSubmissionAuthorResolver
         }
         if ($signer === null
             || (int) ($signer['tenant_id'] ?? 0) !== (int) ($deliveryContext['tenant_id'] ?? 0)
-            || (int) ($signer['ativo'] ?? 0) !== 1
             || !is_string($signer['nome'] ?? null)
             || trim($signer['nome']) === '') {
             return $base;

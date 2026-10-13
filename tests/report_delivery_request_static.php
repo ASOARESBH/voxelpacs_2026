@@ -158,6 +158,8 @@ foreach (['prepare', 'prepareRecovery', 'approve', 'materialize', 'arm', 'cancel
     expect_request(str_contains($service, "public function {$method}"), "Service method {$method} missing");
 }
 expect_request(str_contains($service, 'findActiveForInput'), 'Service must expose read-only active Request resumption');
+expect_request(str_contains($service, '$legacyAuthorField') && str_contains($service, 'unset($submission[$legacyAuthorField])'), 'Legacy author fields must be ignored for controlled historical destinations');
+expect_request(!str_contains($service, 'A autoria Philips é resolvida pelo signatário da versão liberada.'), 'Legacy author source must not invalidate an existing controlled destination');
 foreach (['prepared', 'approved', 'materialized', 'armed', 'processing', 'delivered', 'failed', 'cancelled', 'expired'] as $state) {
     expect_request(str_contains($migration, "'{$state}'"), "State {$state} missing from migration");
 }

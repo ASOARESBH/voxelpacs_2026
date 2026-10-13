@@ -392,7 +392,6 @@ class ReportDeliveryOutboxService
                INNER JOIN bi_medicos m
                        ON m.usuario_id = rv.usuario_id
                       AND m.tenant_id = r.tenant_id
-                      AND m.ativo = 1
               WHERE r.id = :report_id
                 AND r.tenant_id = :tenant_id
                 AND r.estudo_id = :study_id

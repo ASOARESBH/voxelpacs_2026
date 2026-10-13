@@ -58,6 +58,19 @@ $expect($resolved['task_author_humanname_given'] === 'Hugo', 'First token must b
 $expect($resolved['task_author_humanname_family'] === 'Willian F. de Barros', 'Remaining tokens must be author family');
 $expect($resolved['task_author_humanname_middle'] === '', 'Author middle must remain empty');
 $expect($resolved['author_humanname_flat'] === false, 'Multi-token author must be structured');
+$queuedLegacy = $resolver->resolve(array_replace($payload, [
+    'status' => 'queued',
+    'philips_submission' => [
+        'task_author_source' => 'default',
+        'task_author_id' => '999',
+    ],
+]), [], $context, []);
+$expect($queuedLegacy['task_author_id'] === '4', 'Queued legacy job must resolve the version signer, not configured author');
+$expect($queuedLegacy['task_author_humanname_given'] === 'Hugo', 'Signer must remain distinct from referring physician');
+$lookup->versionSigner['ativo'] = 0;
+$inactiveSigner = $resolver->resolve($payload, [], $context, []);
+$expect($inactiveSigner['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_REAL_AUTHOR_AVAILABLE, 'Inactive registry must not rewrite historical signer');
+$expect($inactiveSigner['task_author_id'] === '4', 'Inactive registry must preserve real signer ID');
 $frozenPayload = [
     'author_signer_id' => 9,
     'author_signer_tenant_id' => 2,
@@ -134,8 +147,14 @@ $expect(!str_contains($source, "'task_author_source' => 'default'"), 'Default so
 echo "PHILIPS_SUBMISSION_AUTHOR_RESOLVER_STATIC_OK\n";
 echo "SIGNER_SOURCE=PASS\n";
 echo "SIGNER_ID=PASS\n";
+echo "AUTHOR_DISTINCT_FROM_REQUESTER=PASS\n";
+echo "QUEUED_LEGACY_JOB=PASS\n";
 echo "SIGNER_NAME_RULE=PASS\n";
 echo "TENANT_SCOPE=PASS\n";
+echo "CROSS_TENANT_FAIL_CLOSED=PASS\n";
+echo "INACTIVE_SIGNER_PRESERVED=PASS\n";
+echo "SINGLE_TOKEN_NAME=PASS\n";
+echo "PARTICLES_ACCENTS=PASS\n";
 echo "MISSING_SIGNER_FAIL_CLOSED=PASS\n";
 echo "DEFAULT_999_REMOVED=PASS\n";
 echo "ISO_8859_1=PASS\n";

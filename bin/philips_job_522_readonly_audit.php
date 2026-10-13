@@ -312,14 +312,13 @@ final class PhilipsJob522ReadonlyAudit
                INNER JOIN bi_medicos m
                        ON m.usuario_id = rv.usuario_id
                       AND m.tenant_id = r.tenant_id
-                      AND m.ativo = 1
               WHERE r.id = :report_id
                 AND r.tenant_id = :tenant_id
                 AND r.estudo_id = :study_id
                 AND rv.usuario_id IS NOT NULL
                 AND rv.usuario_id > 0
                 AND rv.acao IN ('assinado', 'liberado')
-              LIMIT 1"
+              LIMIT 2"
         );
         $statement->execute([
             ':report_id' => $reportId,
@@ -327,17 +326,16 @@ final class PhilipsJob522ReadonlyAudit
             ':study_id' => $studyId,
             ':tenant_id' => self::TENANT_ID,
         ]);
-        $row = $statement->fetch(PDO::FETCH_ASSOC);
-        $resolved = is_array($row)
-            && (int) ($row['author_id'] ?? 0) > 0
-            && (int) ($row['tenant_id'] ?? 0) === self::TENANT_ID
-            && (int) ($row['ativo'] ?? 0) === 1;
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $resolved = count($rows) === 1
+            && (int) ($rows[0]['author_id'] ?? 0) > 0
+            && (int) ($rows[0]['tenant_id'] ?? 0) === self::TENANT_ID;
         return [
             'status' => $resolved ? 'PASS' : 'BLOCKED',
             'source' => 'SIGNER_VERSION',
             'scope' => 'TENANT_SCOPED',
             'task_author_id' => $resolved ? 'REAL' : 'INVALID_OR_MISSING',
-            'lookup' => $resolved ? 'RESOLVED' : 'NOT_FOUND_OR_INACTIVE',
+            'lookup' => $resolved ? 'RESOLVED' : 'NOT_FOUND_OR_DUPLICATE',
             'name_materialized' => 'NO',
         ];
     }

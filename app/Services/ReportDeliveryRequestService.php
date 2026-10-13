@@ -474,9 +474,17 @@ final class ReportDeliveryRequestService
             || $this->isTrue($submission['task_delete_file'] ?? true)) {
             throw new DomainException('Destination controlado não possui metadata submission_document completa.', 422);
         }
-        if (array_key_exists('task_author_source', $submission)
-            && trim((string) ($submission['task_author_source'] ?? '')) !== '') {
-            throw new DomainException('A autoria Philips é resolvida pelo signatário da versão liberada.', 422);
+        // Destinations históricos podem carregar autoria administrativa no
+        // objeto nested. Esses campos são legado não funcional: não invalidam
+        // D6/D7 e nunca entram no pacote; a origem única é a versão clínica.
+        foreach ([
+            'task_author_source',
+            'task_author_id',
+            'task_author_humanname_family',
+            'task_author_humanname_given',
+            'task_author_humanname_middle',
+        ] as $legacyAuthorField) {
+            unset($submission[$legacyAuthorField]);
         }
         if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && (int) ($submission['task_site_id'] ?? 0) !== 2) {
             throw new DomainException('Destination 6 não possui SITE_ID de homologação esperado.', 422);
