@@ -160,7 +160,7 @@ final class PhilipsSubmissionPackageProducer
         array $configuration,
         string $pdfFilename,
         array $deliveryContext,
-        bool $diagnosticFallbackAllowed = false
+        bool $noSendDiagnostic = false
     ): array
     {
         $input = $this->metadata->resolve($payload, $deliveryContext);
@@ -172,8 +172,6 @@ final class PhilipsSubmissionPackageProducer
             'task_file_path',
             'task_site_id',
             'task_document_name',
-            'task_author_id',
-            'task_author_source',
             'task_delete_file',
             'task_document_type_applicable',
             'task_document_type',
@@ -183,7 +181,7 @@ final class PhilipsSubmissionPackageProducer
                 $input[$field] = $settings[$field];
             }
         }
-        $authorResolution = $diagnosticFallbackAllowed
+        $authorResolution = $noSendDiagnostic
             ? $this->authorResolver->resolveForNoSendDiagnostic($payload, $configuration, $deliveryContext, $input)
             : $this->authorResolver->resolve($payload, $configuration, $deliveryContext, $input);
         $input = array_replace($input, $authorResolution);

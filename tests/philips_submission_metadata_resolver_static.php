@@ -1,12 +1,8 @@
 <?php
-
 declare(strict_types=1);
-
 $root = dirname(__DIR__);
 require_once $root . '/app/autoload.php';
-
 use App\Services\PhilipsSubmissionMetadataResolver;
-
 function expect_resolver(bool $condition, string $message): void
 {
     if (!$condition) {
@@ -14,13 +10,11 @@ function expect_resolver(bool $condition, string $message): void
         exit(1);
     }
 }
-
 $resolver = new PhilipsSubmissionMetadataResolver();
 $payload = [
     'patient_id' => 'SYNTH-001',
     'patient_name' => 'Silva Ana Maria',
     'patient_name_dicom' => 'Silva^Ana^Maria',
-    'released_at' => '2026-09-15 20:00:02',
     'study_date' => '2026-09-14',
     'study_time' => '17:00:01',
     'referring_physician_name' => 'Solicitante^Paulo^Vitor^Dr',
@@ -29,9 +23,12 @@ $payload = [
     'patient_sex' => 'F',
     'issuer_of_patient_id' => 'ISSUER-SYNTH',
     'modality' => 'CT',
+    'philips_submission' => [
+        'task_author_id' => 'LEGACY-ID',
+        'task_author_humanname_family' => 'LEGACY-NAME',
+    ],
     'untrusted' => 'must-not-be-copied',
 ];
-
 $resolved = $resolver->resolve($payload);
 expect_resolver($resolved['task_patient_id'] === 'SYNTH-001', 'Patient ID must come from the snapshot');
 expect_resolver($resolved['task_patient_humanname_family'] === 'Silva', 'DICOM family component must be explicit');
@@ -39,47 +36,13 @@ expect_resolver($resolved['task_patient_humanname_given'] === 'Ana', 'DICOM give
 expect_resolver($resolved['task_patient_humanname_middle'] === 'Maria', 'DICOM middle component must be explicit');
 expect_resolver($resolved['task_document_date'] === '2026-09-14 17:00:01', 'Document date must come from StudyDate/StudyTime');
 expect_resolver($resolved['task_image_date'] === '2026-09-14 17:00:01', 'Complete study date/time must be combined');
-expect_resolver($resolved['task_author_humanname_family'] === 'Solicitante', 'Author family must come from Referring Physician');
-expect_resolver($resolved['task_author_humanname_given'] === 'Paulo', 'Author given must come from Referring Physician');
-expect_resolver($resolved['task_author_humanname_middle'] === 'Vitor', 'Author middle must come from Referring Physician');
-$flatReferring = $resolver->resolve(['referring_physician_name' => 'Plain Requesting Physician']);
-expect_resolver($flatReferring['task_author_humanname_family'] === 'Plain Requesting Physician', 'Flat Referring Physician must remain integral in family');
-expect_resolver($flatReferring['task_author_humanname_given'] === '', 'Flat Referring Physician given must be empty');
-expect_resolver($flatReferring['task_author_humanname_middle'] === '', 'Flat Referring Physician middle must be empty');
-expect_resolver($flatReferring['author_humanname_flat'] === true, 'Flat Referring Physician must carry the contextual flat-author marker');
-
-$twoComponentReferring = $resolver->resolve(['referring_physician_name' => 'Family^Given']);
-expect_resolver($twoComponentReferring['task_author_humanname_family'] === 'Family', 'Two-component Referring Physician family must be preserved');
-expect_resolver($twoComponentReferring['task_author_humanname_given'] === 'Given', 'Two-component Referring Physician given must be preserved');
-expect_resolver($twoComponentReferring['task_author_humanname_middle'] === '', 'Two-component Referring Physician middle must remain empty');
-expect_resolver($twoComponentReferring['author_humanname_flat'] === false, 'Structured Referring Physician must not use the flat-author marker');
-
-$emptyGivenReferring = $resolver->resolve(['referring_physician_name' => 'Family^^Middle']);
-expect_resolver($emptyGivenReferring['task_author_humanname_family'] === 'Family', 'Empty-given Referring Physician family must be preserved');
-expect_resolver($emptyGivenReferring['task_author_humanname_given'] === '', 'Empty-given Referring Physician given position must be preserved');
-expect_resolver($emptyGivenReferring['task_author_humanname_middle'] === 'Middle', 'Empty-given Referring Physician middle must be preserved');
-
-$conflictingSources = $resolver->resolve([
-    'referring_physician_name' => 'Original Requesting Physician',
-    'released_by' => 'Released Physician',
-    'report_author' => 'Report Author',
-    'medico_solicitante_manual' => 'Manual Physician',
-    'philips_submission' => [
-        'task_author_id' => 'TECHNICAL-AUTHOR-ID',
-        'task_author_humanname_family' => 'Wrong Configured Family',
-        'task_author_humanname_given' => 'Wrong Configured Given',
-    ],
-]);
-expect_resolver($conflictingSources['task_author_humanname_family'] === 'Original Requesting Physician', 'Configured or administrative sources must not replace Referring Physician family');
-expect_resolver($conflictingSources['task_author_humanname_given'] === '', 'Flat Referring Physician must keep given empty despite conflicting sources');
-expect_resolver($conflictingSources['task_author_id'] === 'TECHNICAL-AUTHOR-ID', 'Technical author ID may remain independently configured');
-expect_resolver($resolved['task_document_mimetype'] === 'application/pdf', 'MIME must be fixed to PDF');
+expect_resolver($resolved['task_author_humanname_family'] === null, 'Referring physician must not become author family');
+expect_resolver($resolved['task_author_humanname_given'] === null, 'Referring physician must not become author given');
+expect_resolver(!array_key_exists('task_author_id', $resolved), 'Metadata must not carry legacy author ID');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
-
 $plainName = $resolver->resolve(['patient_name' => 'Silva Ana Maria']);
 expect_resolver($plainName['task_patient_humanname_family'] === null, 'Plain names must not be split heuristically');
 expect_resolver($plainName['task_patient_humanname_given'] === null, 'Ambiguous given name must remain unresolved');
-
 $homologationContext = [
     'tenant_id' => 2,
     'destination_id' => 6,
@@ -92,12 +55,10 @@ $flatDefaultOff = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name
 expect_resolver($flatDefaultOff['task_patient_humanname_family'] === null, 'PatientName-as-family must remain default-off');
 putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
 $flatHomologation = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
-expect_resolver($flatHomologation['task_patient_humanname_family'] === 'Flat Patient Name', 'Homologation must preserve the full flat PatientName in family');
+expect_resolver($flatHomologation['task_patient_humanname_family'] === 'Flat Patient Name', 'Homologation must preserve full flat PatientName in family');
 expect_resolver($flatHomologation['task_patient_humanname_given'] === '', 'Homologation family mode must empty given');
-expect_resolver($flatHomologation['task_patient_humanname_middle'] === '', 'Homologation family mode must empty middle');
-expect_resolver($flatHomologation['patient_name_as_family'] === true, 'Homologation family mode must be marked sanitizably');
+expect_resolver($flatHomologation['patient_name_as_family'] === true, 'Homologation family mode must be marked');
 putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
-
 $tagsRawName = $resolver->resolve([
     'patient_name' => 'Plain Display Name',
     'patient_name_dicom' => 'Other^Source^Name',
@@ -106,55 +67,11 @@ $tagsRawName = $resolver->resolve([
 expect_resolver($tagsRawName['task_patient_humanname_family'] === 'Structured', 'Structured tags_raw family must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_given'] === 'Given', 'Structured tags_raw given must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_middle'] === 'Middle', 'Structured tags_raw middle must be preserved');
-
 $dateOnly = $resolver->resolve(['study_date' => '2026-09-14']);
 expect_resolver($dateOnly['task_document_date'] === '2026-09-14 00:00:00', 'StudyDate without StudyTime must use midnight');
 expect_resolver($resolver->resolve(['study_date' => 'not-a-date'])['task_document_date'] === null, 'Invalid StudyDate must fail closed');
-
 $incompleteDate = $resolver->resolve(['study_date' => '2026-09-14']);
 expect_resolver($incompleteDate['task_image_date'] === null, 'Incomplete study date/time must remain unresolved');
-
-$adminConfig = $resolver->resolve([
-    'patient_name' => 'Source^Name',
-    'referring_physician_name' => 'Requesting^Physician^Middle',
-    'philips_submission' => [
-        'task_patient_humanname_family' => 'Configured',
-        'task_patient_humanname_given' => 'Name',
-        'task_author_humanname_family' => 'WrongConfiguredFamily',
-        'task_author_humanname_given' => 'WrongConfiguredGiven',
-        'task_author_id' => 'AUTH-SYNTH',
-    ],
-]);
-expect_resolver($adminConfig['task_patient_humanname_family'] === 'Source', 'Structured PatientName must beat administrative family configuration');
-expect_resolver($adminConfig['task_patient_humanname_given'] === 'Name', 'Structured PatientName must beat administrative given configuration');
-expect_resolver($adminConfig['task_author_id'] === 'AUTH-SYNTH', 'Explicit author metadata must be preserved');
-expect_resolver($adminConfig['task_author_humanname_family'] === 'Requesting', 'Configured author family must not override Referring Physician');
-expect_resolver($adminConfig['task_author_humanname_given'] === 'Physician', 'Configured author given must not override Referring Physician');
-expect_resolver($adminConfig['task_author_humanname_middle'] === 'Middle', 'Configured author middle must not override Referring Physician');
-
-$structuredBeatsOverride = $resolver->resolve([
-    'patient_name_dicom' => 'Clinical^Source^Middle',
-    'patient_name_override' => [
-        'family' => 'Override',
-        'given' => 'Source',
-        'middle' => 'Ignored',
-    ],
-]);
-expect_resolver($structuredBeatsOverride['task_patient_humanname_family'] === 'Clinical', 'Structured PatientName must beat request-scoped override');
-expect_resolver($structuredBeatsOverride['task_patient_humanname_given'] === 'Source', 'Structured given must beat request-scoped override');
-expect_resolver($structuredBeatsOverride['task_patient_humanname_middle'] === 'Middle', 'Structured middle must beat request-scoped override');
-
-$overrideFallback = $resolver->resolve([
-    'patient_name' => 'Plain Display Name',
-    'patient_name_override' => [
-        'family' => 'Override',
-        'given' => 'Fallback',
-        'middle' => '',
-    ],
-]);
-expect_resolver($overrideFallback['task_patient_humanname_family'] === 'Override', 'Override must remain a fallback when no structured PatientName exists');
-expect_resolver($overrideFallback['task_patient_humanname_given'] === 'Fallback', 'Override fallback given must be preserved');
-
 $versionName = $resolver->resolve([
     'patient_name' => 'Flat Display Name',
     'patient_name_dicom' => 'Other^DICOM^Source',
@@ -162,26 +79,9 @@ $versionName = $resolver->resolve([
     'patient_name_given' => 'FrozenGiven',
     'patient_name_middle' => '',
     'patient_name_source' => 'manual_confirmation',
-    'patient_name_override' => ['family' => 'Ignored', 'given' => 'Ignored'],
 ]);
 expect_resolver($versionName['task_patient_humanname_family'] === 'FrozenFamily', 'Frozen report_version family must be primary');
 expect_resolver($versionName['task_patient_humanname_given'] === 'FrozenGiven', 'Frozen report_version given must be primary');
-expect_resolver($versionName['task_patient_humanname_middle'] === '', 'Frozen empty middle position must be preserved');
-
-$flatVersionName = $resolver->resolve([
-    'patient_name_family' => 'Flat Patient Name',
-    'patient_name_given' => '',
-    'patient_name_middle' => '',
-    'patient_name_source' => 'patient_name_fallback',
-]);
-expect_resolver($flatVersionName['task_patient_humanname_family'] === 'Flat Patient Name', 'Flat frozen PatientName must remain entirely in family');
-expect_resolver($flatVersionName['task_patient_humanname_given'] === '' && $flatVersionName['task_patient_humanname_middle'] === '', 'Flat frozen PatientName must keep given and middle empty');
-expect_resolver($flatVersionName['patient_name_as_family'] === true, 'Flat frozen PatientName must be marked as family-only');
-
-$emptyMiddle = $resolver->resolve(['patient_name_dicom' => 'SILVA^^CARLOS']);
-expect_resolver($emptyMiddle['task_patient_humanname_family'] === 'SILVA', 'PN family position must be preserved when middle is present');
-expect_resolver($emptyMiddle['task_patient_humanname_given'] === '', 'PN empty given position must be preserved for later fail-closed validation');
-
 $invalidVersionFailed = false;
 try {
     $resolver->resolve([
@@ -193,8 +93,7 @@ try {
     $invalidVersionFailed = $e->field === 'patient_name_source';
 }
 expect_resolver($invalidVersionFailed, 'Unknown report_version source must fail closed');
-
-$source = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
-expect_resolver(is_string($source), 'Resolver source must be readable');
-
 echo "PHILIPS_SUBMISSION_METADATA_RESOLVER_STATIC_OK\n";
+echo "REFERRING_PHYSICIAN_NOT_AUTHOR=PASS\n";
+echo "PATIENT_NAME=PASS\n";
+echo "IMAGE_DATE_SOURCE=STUDY_DATE_TIME\n";

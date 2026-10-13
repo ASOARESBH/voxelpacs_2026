@@ -716,8 +716,6 @@ class ReportDeliveryController extends Controller
                 'task_file_path',
                 'task_site_id',
                 'task_document_name',
-                'task_author_id',
-                'task_author_source',
                 'task_document_type_applicable',
                 'task_document_type',
                 'task_modalities',
@@ -935,10 +933,7 @@ class ReportDeliveryController extends Controller
             }
             $decoded['philips_submission']['task_site_id'] = $serverName;
         }
-        $allowDefaultAuthor = $isPhilipsSubmissionDocument
-            && $environment === 'producao'
-            && !empty($_POST['disparar_na_liberacao']);
-        $this->validateTransportConfiguration($transport, $decoded, $allowDefaultAuthor);
+        $this->validateTransportConfiguration($transport, $decoded);
         if ($secret !== '') {
             $decodedSecret = json_decode($secret, true);
             if (!is_array($decodedSecret) || json_last_error() !== JSON_ERROR_NONE) {
@@ -966,7 +961,7 @@ class ReportDeliveryController extends Controller
     }
 
     /** @param array<string,mixed> $configuration */
-    private function validateTransportConfiguration(string $transport, array $configuration, bool $allowDefaultAuthor = false): void
+    private function validateTransportConfiguration(string $transport, array $configuration): void
     {
         $host = trim((string) ($configuration['host'] ?? ''));
         $port = (int) ($configuration['port'] ?? 0);
@@ -1042,13 +1037,13 @@ class ReportDeliveryController extends Controller
                 throw new DomainException('Configuração SMB Non-DICOM inválida.');
             }
             if ($profile === PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT) {
-                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null, $allowDefaultAuthor);
+                $this->validatePhilipsSubmissionConfiguration($configuration['philips_submission'] ?? null);
             }
         }
     }
 
     /** @param mixed $submission */
-    private function validatePhilipsSubmissionConfiguration(mixed $submission, bool $allowDefaultAuthor = false): void
+    private function validatePhilipsSubmissionConfiguration(mixed $submission): void
     {
         if (!is_array($submission)) {
             throw new DomainException('Configure o contrato Philips XML antes de habilitar este perfil.');
@@ -1058,7 +1053,6 @@ class ReportDeliveryController extends Controller
             'task_file_path' => 'caminho Philips do XML',
             'task_site_id' => 'SITE_ID Philips',
             'task_document_name' => 'nome do documento Philips',
-            'task_author_id' => 'identificador do autor Philips',
         ] as $field => $label) {
             $value = $submission[$field] ?? null;
             if (!is_string($value) || trim($value) === '' || strlen($value) > 1000 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
@@ -1079,28 +1073,8 @@ class ReportDeliveryController extends Controller
 
         if (array_key_exists('task_author_source', $submission)) {
             $authorSource = $submission['task_author_source'] ?? null;
-            if (!is_string($authorSource) || !in_array($authorSource, ['bi_medicos', 'default'], true)) {
-                throw new DomainException('A fonte do autor Philips deve ser bi_medicos ou default.');
-            }
-            if ($authorSource === 'bi_medicos'
-                && preg_match('/^[1-9][0-9]*$/', trim((string) ($submission['task_author_id'] ?? ''))) !== 1) {
-                throw new DomainException('A fonte bi_medicos exige identificador numérico positivo.');
-            }
-            if ($authorSource === 'default') {
-                if (!$allowDefaultAuthor) {
-                    throw new DomainException('A fonte default do autor Philips exige disparo automático em produção.');
-                }
-                $defaultAuthorName = $submission['task_author_humanname_family'] ?? null;
-                if (trim((string) ($submission['task_author_id'] ?? '')) !== '999') {
-                    throw new DomainException('A fonte default exige o identificador técnico 999.');
-                }
-                if (!is_string($defaultAuthorName)
-                    || trim($defaultAuthorName) === ''
-                    || strlen($defaultAuthorName) > 1000
-                    || preg_match('//u', $defaultAuthorName) !== 1
-                    || preg_match('/[\x00-\x1F\x7F]/', $defaultAuthorName) === 1) {
-                    throw new DomainException('Informe o texto do autor padrão para o perfil Philips XML.');
-                }
+            if ($authorSource !== null && (!is_string($authorSource) || trim($authorSource) !== '')) {
+                throw new DomainException('A autoria Philips é resolvida pelo signatário da versão liberada.');
             }
         }
 

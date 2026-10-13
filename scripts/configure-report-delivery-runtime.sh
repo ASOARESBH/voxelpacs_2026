@@ -13,10 +13,6 @@ readonly MANAGED_KEYS=(
   PHILIPS_NON_DICOM_DELIVERY_ENABLED
   PHILIPS_NON_DICOM_SMB_TEST_ENABLED
   PHILIPS_NON_DICOM_SMB_READONLY_TEST_ENABLED
-  PHILIPS_AUTHOR_FALLBACK_ENABLED
-  PHILIPS_AUTHOR_FALLBACK_FAMILY
-  PHILIPS_AUTHOR_FALLBACK_GIVEN
-  PHILIPS_AUTHOR_FALLBACK_MIDDLE
   VOXEL_REPORT_DELIVERY_WORKER_KILL_SWITCH
 )
 
@@ -35,7 +31,7 @@ Uso:
   configure-report-delivery-runtime.sh --apply KEY=VALUE [...]
   configure-report-delivery-runtime.sh --rollback BACKUP_DIRECTORY
 
-Somente flags allowlisted são aceitas. Valores de fallback usam ASCII restrito.
+Somente flags allowlisted são aceitas.
 --dry-run não grava nada.
 --apply cria backup root-only e altera apenas as chaves informadas.
 --rollback restaura o .env.before de um backup criado por --apply.
@@ -66,22 +62,11 @@ normalize_assignment() {
   is_managed_key "$key" || fail 'key_not_allowlisted'
   [[ -z "${requested_seen[$key]:-}" ]] || fail 'duplicate_assignment'
   requested_seen[$key]=1
-  if [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_FAMILY' ]]; then
-    [[ "$value" =~ ^[A-Za-z0-9._-]{1,120}$ ]] || fail 'fallback_family_invalid'
-    normalized_value="$value"
-  elif [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_GIVEN' ]]; then
-    [[ "$value" =~ ^[A-Za-z0-9._-]{1,120}$ ]] || fail 'fallback_given_invalid'
-    normalized_value="$value"
-  elif [[ "$key" == 'PHILIPS_AUTHOR_FALLBACK_MIDDLE' ]]; then
-    [[ "$value" =~ ^[A-Za-z0-9._-]{0,120}$ ]] || fail 'fallback_middle_invalid'
-    normalized_value="$value"
-  else
-    case "${value,,}" in
-      1|true|yes|on) normalized_value='true' ;;
-      0|false|no|off) normalized_value='false' ;;
-      *) fail 'boolean_value_invalid' ;;
-    esac
-  fi
+  case "${value,,}" in
+    1|true|yes|on) normalized_value='true' ;;
+    0|false|no|off) normalized_value='false' ;;
+    *) fail 'boolean_value_invalid' ;;
+  esac
   requested+=("$key")
   normalized+=("$key=$normalized_value")
 }
@@ -103,11 +88,7 @@ print_plan() {
     key="${item%%=*}"
     value="${item#*=}"
     display_value="$value"
-    if [[ "$key" != PHILIPS_AUTHOR_FALLBACK_FAMILY
-      && "$key" != PHILIPS_AUTHOR_FALLBACK_GIVEN
-      && "$key" != PHILIPS_AUTHOR_FALLBACK_MIDDLE ]]; then
-      display_value="${value^^}"
-    fi
+    display_value="${value^^}"
     printf 'PLAN_%s=%s\n' "$key" "$display_value"
   done
 }
