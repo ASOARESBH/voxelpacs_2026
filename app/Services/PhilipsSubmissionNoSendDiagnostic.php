@@ -45,7 +45,7 @@ final class PhilipsSubmissionNoSendDiagnostic
             'next_attempt_eligibility' => 'NOT_VALIDATED',
             'automatic_date_eligibility' => 'NOT_VALIDATED',
             'alias_source' => 'frozen_request_payload',
-            'alias_valid' => 'FAIL',
+            'alias_valid' => 'NOT_VALIDATED',
             'canonical_binding' => 'NOT_REVALIDATED',
             'xml_serialized' => 'NOT_EXECUTED',
             'author_source' => PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED,
@@ -95,8 +95,12 @@ final class PhilipsSubmissionNoSendDiagnostic
                 : 'frozen_request_payload';
             $this->assertIdentity($job, $payload, $tenantId, $jobId, $dispatchMode);
             $this->assertPayloadIdentity($job, $payload, $tenantId, $dispatchMode);
-            $this->assertAliasSnapshot($job, $payload, $dispatchMode);
-            $result['alias_valid'] = 'PASS';
+            $aliasValid = $this->aliasSnapshotPass($job, $payload, $dispatchMode);
+            $result['alias_valid'] = $aliasValid ? 'PASS' : 'FAIL';
+            if (!$aliasValid) {
+                throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
+            }
+            $this->assertJobPristine($job);
 
             if ($dispatchMode === self::AUTOMATIC_MODE) {
                 $snapshot = (new \App\Repositories\ReportDeliveryRequestRepository($this->pdo))->findReportVersion(
@@ -203,7 +207,6 @@ final class PhilipsSubmissionNoSendDiagnostic
             || (string) ($job['destination_transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($job['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
             || (string) ($job['ambiente'] ?? '') !== 'producao'
-            || (string) ($job['outbox_status'] ?? '') !== 'queued'
             || (int) ($job['destination_enabled'] ?? 0) !== 1
             || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode
             || !in_array($dispatchMode, [self::CONTROLLED_MODE, self::AUTOMATIC_MODE], true)) {
@@ -221,12 +224,6 @@ final class PhilipsSubmissionNoSendDiagnostic
             || (string) ($job['request_transport'] ?? '') !== PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
             || (string) ($job['request_dispatch_mode'] ?? '') !== self::CONTROLLED_MODE) {
             throw new RuntimeException('JOB_IDENTITY_MISMATCH');
-        }
-        if ((string) ($job['status'] ?? '') !== 'queued'
-            || (int) ($job['attempt_count'] ?? -1) !== 0
-            || ($job['locked_at'] ?? null) !== null
-            || ($job['locked_by'] ?? null) !== null) {
-            throw new RuntimeException('JOB_NOT_PRISTINE');
         }
     }
 
@@ -254,24 +251,31 @@ final class PhilipsSubmissionNoSendDiagnostic
     }
 
     /** @param array<string,mixed> $job @param array<string,mixed> $payload */
-    private function assertAliasSnapshot(array $job, array $payload, string $dispatchMode): void
+    private function aliasSnapshotPass(array $job, array $payload, string $dispatchMode): bool
     {
         $destinationAlias = trim((string) ($job['task_site_id_alias'] ?? ''));
         if ($dispatchMode === self::AUTOMATIC_MODE) {
-            if (preg_match(self::ALIAS_PATTERN, $destinationAlias) !== 1) {
-                throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
-            }
-            return;
+            return preg_match(self::ALIAS_PATTERN, $destinationAlias) === 1;
         }
-        $requestAlias = trim((string) ($job['request_task_site_id_alias'] ?? ''));
+        $requestAlias = trim((string) ($job['request_task_site_alias'] ?? ''));
         $payloadAlias = trim((string) ($payload['task_site_id_alias'] ?? ''));
-        if (preg_match(self::ALIAS_PATTERN, $destinationAlias) !== 1
-            || preg_match(self::ALIAS_PATTERN, $requestAlias) !== 1
-            || preg_match(self::ALIAS_PATTERN, $payloadAlias) !== 1
-            || !hash_equals($destinationAlias, $requestAlias)
-            || !hash_equals($requestAlias, $payloadAlias)
-            || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode) {
-            throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
+        return preg_match(self::ALIAS_PATTERN, $destinationAlias) === 1
+            && preg_match(self::ALIAS_PATTERN, $requestAlias) === 1
+            && preg_match(self::ALIAS_PATTERN, $payloadAlias) === 1
+            && hash_equals($destinationAlias, $requestAlias)
+            && hash_equals($requestAlias, $payloadAlias)
+            && (string) ($payload['dispatch_mode'] ?? '') === $dispatchMode;
+    }
+
+    /** @param array<string,mixed> $job */
+    private function assertJobPristine(array $job): void
+    {
+        if ((string) ($job['outbox_status'] ?? '') !== 'queued'
+            || (string) ($job['status'] ?? '') !== 'queued'
+            || (int) ($job['attempt_count'] ?? -1) !== 0
+            || ($job['locked_at'] ?? null) !== null
+            || ($job['locked_by'] ?? null) !== null) {
+            throw new RuntimeException('JOB_NOT_PRISTINE');
         }
     }
 

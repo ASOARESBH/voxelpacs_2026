@@ -35,6 +35,12 @@ A execução:
 - não grava PDF, XML, artifact, attempt, lock, Job, Request ou Outbox;
 - não chama Worker, Bridge, SMB, DICOM, C-STORE ou endpoint externo.
 
+O diagnóstico separa `JOB_IDENTITY_MISMATCH`, `ALIAS_SNAPSHOT_MISMATCH` e
+`JOB_NOT_PRISTINE`: respectivamente, divergência de binding técnico, alias
+inválido/divergente e Job/Outbox fora do estado inicial exigido pelo preflight.
+Assim, um Job em retry, processing, failed ou com tentativa/lock não é reportado
+como se tivesse falha de identidade ou de alias.
+
 A renderização em memória é uma validação técnica do caminho oficial do
 renderer. O PDF efetivamente utilizado pelo Worker continua sendo o snapshot
 imutável lido e validado; o diagnóstico não substitui esse snapshot nem cria

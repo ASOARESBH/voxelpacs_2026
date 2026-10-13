@@ -25,6 +25,13 @@ A validação falha fechado quando:
 - o payload/configuração não pode ser decodificado;
 - a composição do XML não satisfaz o contrato Philips.
 
+As falhas são classificadas separadamente: `JOB_IDENTITY_MISMATCH` indica
+divergência de tenant, destino, transporte, profile ou modo; `ALIAS_SNAPSHOT_MISMATCH`
+indica alias inválido ou divergente; e `JOB_NOT_PRISTINE` indica Job/Outbox fora do
+estado inicial (`queued`, tentativa zero e sem lock). O campo sanitizado
+`alias_valid` permanece `NOT_VALIDATED` quando a validação do alias ainda não foi
+alcançada, evitando que uma falha anterior seja apresentada como falha de alias.
+
 O produtor hidrata o snapshot sem consumir override e serializa o XML somente em memória. O conteúdo do XML, PDF, nomes clínicos, Patient ID, credenciais e hashes não são retornados ou registrados. O resultado informa apenas estados técnicos e IDs internos. Para o ramo automático, o alias é projetado pelo contexto do Destination no Worker; não se exige Request nem se fabrica alias no payload.
 
 ## Proibições

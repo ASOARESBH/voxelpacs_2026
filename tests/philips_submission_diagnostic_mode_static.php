@@ -27,7 +27,9 @@ foreach ([$noSend, $pdf] as $service) {
 expect_diagnostic_mode(
     str_contains($noSend, "'runtime_destination_context'")
         && str_contains($noSend, "destination_auto")
-        && str_contains($noSend, 'canonicalBindingPass'),
+        && str_contains($noSend, 'canonicalBindingPass')
+        && str_contains($noSend, "'alias_valid' => 'NOT_VALIDATED'")
+        && str_contains($noSend, "JOB_NOT_PRISTINE"),
     'Automatic no-send validation must use the runtime Destination context and canonical binding.'
 );
 expect_diagnostic_mode(
@@ -45,7 +47,9 @@ expect_diagnostic_mode(
 expect_diagnostic_mode(
     str_contains($pdf, "'NOT_APPLICABLE'")
         && str_contains($pdf, "destination['task_site_id_alias']")
-        && str_contains($pdf, 'expectedAlias'),
+        && str_contains($pdf, 'expectedAlias')
+        && str_contains($pdf, "JOB_IDENTITY_MISMATCH")
+        && str_contains($pdf, "JOB_NOT_PRISTINE"),
     'Automatic PDF validation must distinguish runtime alias and non-applicable Request digests.'
 );
 expect_diagnostic_mode(
