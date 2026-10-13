@@ -23,10 +23,10 @@ class ReportDeliveryOutboxService
     }
 
     /**
-     * Verifica a compatibilidade do PatientName congelado antes da transição
+     * Verifica os campos indispensáveis do documento antes da transição
      * clínica para liberado. A assinatura pode continuar sendo persistida,
-     * mas um destino submission_document sem Given deve impedir a liberação
-     * e a criação de qualquer Outbox/Job incompatível.
+     * mas um destino submission_document sem Given ou AccessionNumber deve
+     * impedir a liberação e a criação de qualquer Outbox/Job incompatível.
      *
      * @return array{allowed:bool,reason:?string,destinations:array<int,array<string,mixed>>,submission_document_count:int}
      */
@@ -54,6 +54,7 @@ class ReportDeliveryOutboxService
                 fn(array $destination): bool => $this->isSubmissionDocumentDestination($repository, $destination)
             ));
             $given = trim((string) ($patientName['given'] ?? ''));
+            $accessionNumber = trim((string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''));
 
             if ($submissionDestinations !== [] && $given === '') {
                 Logger::warning('[ReportDeliveryCompatibility] Liberação bloqueada por Given ausente', [
@@ -66,6 +67,22 @@ class ReportDeliveryOutboxService
                 return [
                     'allowed' => false,
                     'reason' => 'patient_name_given_required',
+                    'destinations' => $destinations,
+                    'submission_document_count' => count($submissionDestinations),
+                ];
+            }
+
+            if ($submissionDestinations !== [] && $accessionNumber === '') {
+                Logger::warning('[ReportDeliveryCompatibility] Liberação bloqueada por AccessionNumber ausente', [
+                    'tenant_id' => $tenantId,
+                    'report_id' => $reportId,
+                    'dispatch_mode' => $dispatchMode,
+                    'submission_document_count' => count($submissionDestinations),
+                    'reason' => 'accession_number_required',
+                ]);
+                return [
+                    'allowed' => false,
+                    'reason' => 'accession_number_required',
                     'destinations' => $destinations,
                     'submission_document_count' => count($submissionDestinations),
                 ];
