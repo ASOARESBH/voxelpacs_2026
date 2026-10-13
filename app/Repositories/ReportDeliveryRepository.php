@@ -819,6 +819,27 @@ class ReportDeliveryRepository
                                AND j.locked_by IS NULL
                                AND (j.remote_reference IS NULL OR j.remote_reference = '')
                          THEN 1 ELSE 0 END AS automatic_resend_eligible
+                    ,CASE WHEN j.status = 'dead_letter'
+                               AND o.status = 'dead_letter'
+                               AND j.transport = 'philips_non_dicom'
+                               AND j.delivery_profile = 'submission_document'
+                               AND d.transport = 'philips_non_dicom'
+                               AND d.ambiente = 'producao'
+                               AND d.enabled = 1
+                               AND d.disparar_na_liberacao = 1
+                               AND o.event_type = 'report.released'
+                               AND o.delivery_request_id IS NULL
+                               AND j.locked_at IS NULL
+                               AND j.locked_by IS NULL
+                               AND (j.remote_reference IS NULL OR j.remote_reference = '')
+                               AND EXISTS (
+                                   SELECT 1
+                                     FROM pacs_report_delivery_artifacts a
+                                    WHERE a.outbox_id = j.outbox_id
+                                      AND a.tenant_id = j.tenant_id
+                                      AND a.artifact_type = 'pdf'
+                               )
+                         THEN 1 ELSE 0 END AS dead_letter_resend_eligible
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_destinations d
                      ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
@@ -839,6 +860,8 @@ class ReportDeliveryRepository
         foreach ($jobs as &$job) {
             $job['patient_name'] = DicomPersonName::displayFromStudy($job) ?: '—';
             $job['automatic_resend_eligible'] = (int) ($job['automatic_resend_eligible'] ?? 0) === 1
+                && self::isAutomaticProductionPayload($job['automatic_resend_payload'] ?? null) ? 1 : 0;
+            $job['dead_letter_resend_eligible'] = (int) ($job['dead_letter_resend_eligible'] ?? 0) === 1
                 && self::isAutomaticProductionPayload($job['automatic_resend_payload'] ?? null) ? 1 : 0;
             unset($job['automatic_resend_payload']);
         }
@@ -1116,6 +1139,186 @@ class ReportDeliveryRepository
                 'previous_status' => (string) $job['status'],
                 'new_status' => 'queued',
                 'attempt_number' => (int) $job['attempt_count'] + 1,
+            ];
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria uma nova outbox e um novo Job para uma falha terminal de produção.
+     * O Job original, seus attempts e artifacts permanecem históricos.
+     *
+     * @return array{source_job_id:int,new_job_id:int,new_outbox_id:int,destination_id:int,created:bool}
+     */
+    public function createAutomaticProductionJobFromDeadLetter(int $jobId, int $tenantId): array
+    {
+        if ($jobId <= 0 || $tenantId <= 0) {
+            throw new DomainException('delivery_hub.jobs.erro_job_invalido_reenvio_dead_letter', 422);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT j.id, j.outbox_id, j.destination_id, j.tenant_id, j.estabelecimento_id,
+                        j.status, j.locked_at, j.locked_by, j.remote_reference,
+                        j.transport, j.delivery_profile,
+                        d.enabled, d.ambiente, d.transport AS destination_transport,
+                        d.disparar_na_liberacao, d.configuration_json,
+                        o.status AS outbox_status, o.report_id, o.estudo_id,
+                        o.delivery_request_id,
+                        o.report_version, o.event_type, o.payload_json,
+                        o.estabelecimento_id AS outbox_estabelecimento_id
+                 FROM pacs_report_delivery_jobs j
+                 INNER JOIN pacs_report_delivery_destinations d
+                         ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+                 INNER JOIN pacs_report_delivery_outbox o
+                         ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+                 WHERE j.id = :job_id
+                   AND j.tenant_id = :tenant_id
+                 FOR UPDATE"
+            );
+            $stmt->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!is_array($job)) {
+                throw new DomainException('delivery_hub.jobs.erro_job_nao_encontrado_reenvio_dead_letter', 404);
+            }
+
+            $eligible = (string) ($job['status'] ?? '') === 'dead_letter'
+                && (string) ($job['outbox_status'] ?? '') === 'dead_letter'
+                && (string) ($job['transport'] ?? '') === 'philips_non_dicom'
+                && (string) ($job['delivery_profile'] ?? '') === 'submission_document'
+                && (string) ($job['destination_transport'] ?? '') === 'philips_non_dicom'
+                && (string) ($job['ambiente'] ?? '') === 'producao'
+                && (int) ($job['enabled'] ?? 0) === 1
+                && (int) ($job['disparar_na_liberacao'] ?? 0) === 1
+                && (string) ($job['event_type'] ?? '') === 'report.released'
+                && ($job['delivery_request_id'] ?? null) === null
+                && self::isAutomaticProductionPayload($job['payload_json'] ?? null)
+                && ($job['locked_at'] ?? null) === null
+                && ($job['locked_by'] ?? null) === null
+                && trim((string) ($job['remote_reference'] ?? '')) === '';
+            if (!$eligible) {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
+            }
+
+            $artifactStmt = $this->pdo->prepare(
+                "SELECT id, storage_path, sha256, file_size_bytes
+                   FROM pacs_report_delivery_artifacts
+                  WHERE outbox_id = :outbox_id
+                    AND tenant_id = :tenant_id
+                    AND artifact_type = 'pdf'
+                  LIMIT 1
+                  FOR UPDATE"
+            );
+            $artifactStmt->execute([':outbox_id' => (int) $job['outbox_id'], ':tenant_id' => $tenantId]);
+            $artifact = $artifactStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $storagePath = trim((string) ($artifact['storage_path'] ?? ''));
+            $storedHash = strtolower(trim((string) ($artifact['sha256'] ?? '')));
+            $storedSize = (int) ($artifact['file_size_bytes'] ?? 0);
+            $actualSize = $storagePath !== '' && is_file($storagePath) ? @filesize($storagePath) : false;
+            $actualHash = $storagePath !== '' && is_file($storagePath) ? @hash_file('sha256', $storagePath) : false;
+            if ((int) ($artifact['id'] ?? 0) <= 0
+                || !is_readable($storagePath)
+                || !is_int($actualSize)
+                || $storedSize <= 0
+                || $actualSize !== $storedSize
+                || !is_string($actualHash)
+                || !preg_match('/^[a-f0-9]{64}$/', $storedHash)
+                || !hash_equals($storedHash, strtolower($actualHash))) {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
+            }
+
+            $payload = json_decode((string) $job['payload_json'], true);
+            if (!is_array($payload)) {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
+            }
+
+            $today = (string) $this->pdo->query('SELECT CURRENT_DATE')->fetchColumn();
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $today) !== 1) {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
+            }
+
+            $resendKey = hash('sha256', implode('|', [
+                'report-delivery-dead-letter-resend-v1',
+                $tenantId,
+                $jobId,
+            ]));
+            $payload['dispatch_mode'] = 'automatic_production';
+            $payload['automatic_dispatch_date'] = $today;
+            $payload['resend_source_job_id'] = $jobId;
+            $payload['resend_reason'] = 'dead_letter';
+            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+            $outboxId = $this->createOutboxIfAbsent(
+                $tenantId,
+                $job['outbox_estabelecimento_id'] !== null ? (int) $job['outbox_estabelecimento_id'] : null,
+                (int) $job['report_id'],
+                (int) $job['estudo_id'],
+                (int) $job['report_version'],
+                'report.released',
+                $resendKey,
+                $payload,
+                'submission_document'
+            );
+            if ($outboxId <= 0) {
+                throw new DomainException('delivery_hub.jobs.erro_job_conflito_reenvio_dead_letter', 409);
+            }
+
+            $destination = [
+                'id' => (int) $job['destination_id'],
+                'transport' => (string) $job['destination_transport'],
+                'configuration_json' => (string) ($job['configuration_json'] ?? ''),
+            ];
+            if ($this->deliveryProfileForDestination($destination) !== 'submission_document') {
+                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
+            }
+
+            $created = $this->createJobs(
+                $outboxId,
+                $tenantId,
+                $job['estabelecimento_id'] !== null ? (int) $job['estabelecimento_id'] : null,
+                $resendKey,
+                [$destination],
+                $today,
+                (int) $job['report_id'],
+                (int) $job['report_version'],
+                $resendKey
+            );
+
+            $lookup = $this->pdo->prepare(
+                "SELECT id
+                   FROM pacs_report_delivery_jobs
+                  WHERE outbox_id = :outbox_id
+                    AND destination_id = :destination_id
+                    AND tenant_id = :tenant_id
+                  LIMIT 1"
+            );
+            $lookup->execute([
+                ':outbox_id' => $outboxId,
+                ':destination_id' => (int) $job['destination_id'],
+                ':tenant_id' => $tenantId,
+            ]);
+            $newJobId = (int) $lookup->fetchColumn();
+            if ($newJobId <= 0) {
+                throw new DomainException('delivery_hub.jobs.erro_job_conflito_reenvio_dead_letter', 409);
+            }
+
+            if ($created === 1) {
+                $this->markOutboxQueued($outboxId);
+            }
+
+            $this->pdo->commit();
+
+            return [
+                'source_job_id' => (int) $job['id'],
+                'new_job_id' => $newJobId,
+                'new_outbox_id' => $outboxId,
+                'destination_id' => (int) $job['destination_id'],
+                'created' => $created === 1,
             ];
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {

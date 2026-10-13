@@ -341,7 +341,7 @@ $transportLabels = [
                         <tbody>
                             <?php if (!$jobs): ?><tr><td colspan="8" class="text-center text-muted py-4"><?= $escape(t('delivery_hub.jobs.vazio')) ?></td></tr><?php endif; ?>
                             <?php foreach ($jobs as $job): ?>
-                                <?php $jobStatus = (string) ($job['status'] ?? ''); $jobId = (int) ($job['id'] ?? 0); $automaticResendEligible = (int) ($job['automatic_resend_eligible'] ?? 0) === 1; ?>
+                                <?php $jobStatus = (string) ($job['status'] ?? ''); $jobId = (int) ($job['id'] ?? 0); $automaticResendEligible = (int) ($job['automatic_resend_eligible'] ?? 0) === 1; $deadLetterResendEligible = (int) ($job['dead_letter_resend_eligible'] ?? 0) === 1; ?>
                                 <tr>
                                     <td><code>#<?= $jobId ?></code><div class="small text-muted">Tentativas: <?= (int) ($job['attempt_count'] ?? 0) ?></div></td>
                                     <td><?= $escape((string) ($job['patient_name'] ?? '—')) ?></td>
@@ -355,6 +355,11 @@ $transportLabels = [
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/retry-homologation" class="d-inline manual-homologation-retry-form">
                                                 <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_manual_homologation_retry" value="1">
                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="<?= $escape(t('delivery_hub.jobs.reenviar_homologacao_ajuda')) ?>"><?= $escape(t('delivery_hub.jobs.reenviar_homologacao')) ?></button>
+                                            </form>
+                                        <?php elseif ($deadLetterResendEligible && $jobId > 0): ?>
+                                            <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/resend-dead-letter" class="d-inline dead-letter-resend-form">
+                                                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>"><input type="hidden" name="confirm_dead_letter_resend" value="1">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="<?= $escape(t('delivery_hub.jobs.reenviar_dead_letter_ajuda')) ?>"><?= $escape(t('delivery_hub.jobs.reenviar_automatico')) ?></button>
                                             </form>
                                         <?php elseif ($automaticResendEligible && $jobId > 0): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/resend-automatic" class="d-inline automatic-resend-form">
@@ -1156,6 +1161,28 @@ $transportLabels = [
             } catch (_) {
                 resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
                 resendFeedback.textContent = <?= json_encode(t('delivery_hub.jobs.erro_reenvio_automatico'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+            } finally {
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+    document.querySelectorAll('.dead-letter-resend-form').forEach((resendForm) => {
+        resendForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!window.confirm(<?= json_encode(t('delivery_hub.jobs.confirmar_reenvio_dead_letter'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)) return;
+            const submitButton = resendForm.querySelector('button[type="submit"]');
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const response = await fetch(resendForm.action, { method: 'POST', body: new FormData(resendForm), credentials: 'same-origin' });
+                const result = await response.json().catch(() => ({ success: false, message: <?= json_encode(t('delivery_hub.released.resposta_invalida'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> }));
+                resendFeedback.className = 'alert mt-4 mb-0 ' + (result.success ? 'alert-success' : 'alert-danger');
+                resendFeedback.textContent = result.message || <?= json_encode(t('delivery_hub.jobs.erro_reenvio_dead_letter'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+                resendFeedback.classList.remove('d-none');
+                if (result.success) window.setTimeout(() => window.location.reload(), 1200);
+            } catch (_) {
+                resendFeedback.className = 'alert mt-4 mb-0 alert-danger';
+                resendFeedback.textContent = <?= json_encode(t('delivery_hub.jobs.erro_reenvio_dead_letter'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
                 resendFeedback.classList.remove('d-none');
             } finally {
                 if (submitButton) submitButton.disabled = false;
