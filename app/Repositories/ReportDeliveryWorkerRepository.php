@@ -100,7 +100,7 @@ class ReportDeliveryWorkerRepository
                    AND j.worker_eligible_at <= NOW()
                    AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
                    AND (o.delivery_request_id IS NULL OR (d.enabled = 1 AND d.ambiente IN ('homologacao', 'producao'))){$requestWhere}{$transportWhere}
-                 ORDER BY j.created_at ASC
+                 ORDER BY j.created_at ASC, j.id ASC
                  LIMIT 1
                  {$jobLockClause}"
             );
@@ -763,6 +763,26 @@ class ReportDeliveryWorkerRepository
             $this->lastLedgerFailureStage = 'commit';
             $this->pdo->commit();
             $this->lastLedgerFailureStage = null;
+            if ($status === 'dead_letter' && $this->isAutomaticProductionSubmissionJob($job)) {
+                $failureStage = (string) ($metadata['stage'] ?? 'unknown');
+                $reasonCategory = (string) ($metadata['reason_category'] ?? 'unknown');
+                if (preg_match('/\A[a-z0-9_:-]{1,64}\z/i', $failureStage) !== 1) {
+                    $failureStage = 'unknown';
+                }
+                if (preg_match('/\A[a-z0-9_:-]{1,64}\z/i', $reasonCategory) !== 1) {
+                    $reasonCategory = 'unknown';
+                }
+                Logger::warning('[ReportDeliveryWorker] PHILIPS_NON_DICOM_MANUAL_RECOVERY_REQUIRED', [
+                    'job_id' => $jobId,
+                    'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                    'attempt_number' => $attempt,
+                    'outcome' => $status,
+                    'failure_stage' => $failureStage,
+                    'reason_category' => $reasonCategory,
+                    'queue_policy' => 'oldest_first',
+                    'next_action' => 'manual_resend_dead_letter',
+                ]);
+            }
             return true;
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -773,9 +793,23 @@ class ReportDeliveryWorkerRepository
     }
 
     /** @param array<string,mixed> $job */
+    private function isAutomaticProductionSubmissionJob(array $job): bool
+    {
+        if ((string) ($job['transport'] ?? '') !== 'philips_non_dicom'
+            || (string) ($job['delivery_profile'] ?? '') !== 'submission_document') {
+            return false;
+        }
+        $payload = json_decode((string) ($job['payload_json'] ?? ''), true);
+        return is_array($payload) && ($payload['dispatch_mode'] ?? null) === 'automatic_production';
+    }
+
+    /** @param array<string,mixed> $job */
     private function effectiveMaxAttempts(array $job): int
     {
         if ($this->oneShotJobId !== null && (int) ($job['id'] ?? 0) === $this->oneShotJobId) {
+            return 1;
+        }
+        if ($this->isAutomaticProductionSubmissionJob($job)) {
             return 1;
         }
 
@@ -865,7 +899,7 @@ class ReportDeliveryWorkerRepository
                         ON pno.delivery_request_id = o.delivery_request_id AND pno.tenant_id = j.tenant_id"
             : '';
         $stmt = $this->pdo->prepare(
-            "SELECT j.*, d.max_attempts, {$requestSelect}, {$overrideSelect}
+            "SELECT j.*, o.payload_json, d.max_attempts, {$requestSelect}, {$overrideSelect}
              FROM pacs_report_delivery_jobs j
              INNER JOIN pacs_report_delivery_outbox o ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
              {$destinationJoin}

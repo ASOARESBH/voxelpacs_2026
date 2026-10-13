@@ -96,6 +96,13 @@ expect_claim(str_contains($repository, 'beginTransaction()') && str_contains($re
 expect_claim(str_contains($repository, 'lastLedgerFailureStage'), 'ledger must expose only a sanitized failure stage');
 expect_claim(str_contains($worker, "'ledger_stage' => " . '$this->repository->lastLedgerFailureStage() ?? \'unknown\''), 'worker must log the sanitized ledger stage');
 expect_claim(!str_contains($worker, "'sql' =>") && !str_contains($worker, "'params' =>"), 'worker failure logging must not include SQL or parameters');
+expect_claim(str_contains($claimNext, 'ORDER BY j.created_at ASC, j.id ASC'), 'automatic queue must be oldest-first with deterministic id tie-breaker');
+expect_claim(str_contains($repository, 'o.payload_json'), 'failure policy must receive the frozen dispatch payload');
+expect_claim(str_contains($repository, 'private function isAutomaticProductionSubmissionJob(array $job)'), 'automatic submission jobs must be identified explicitly');
+expect_claim(str_contains($repository, 'if ($this->isAutomaticProductionSubmissionJob($job))') && str_contains($repository, 'PHILIPS_NON_DICOM_MANUAL_RECOVERY_REQUIRED'), 'automatic submission failures must require manual recovery and emit a sanitized event');
+$manualRecoveryLogStart = strpos($repository, 'PHILIPS_NON_DICOM_MANUAL_RECOVERY_REQUIRED');
+$manualRecoveryLog = $manualRecoveryLogStart === false ? '' : substr($repository, $manualRecoveryLogStart, 900);
+expect_claim(!str_contains($manualRecoveryLog, "'payload_json' =>") && !str_contains($manualRecoveryLog, "'configuration_json' =>"), 'queue failure event must not log payload or configuration');
 expect_claim(str_contains($repository, "'completed_at = NOW(), updated_at = NOW()'") && str_contains($repository, "'updated_at = NOW()'"), 'request sync must avoid duplicate updated_at assignment');
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 
