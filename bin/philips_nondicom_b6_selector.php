@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace App\Diagnostics {
 
 use App\Core\PostgresPdo;
+use App\Services\ReportDeliveryClock;
 use PDO;
 use Throwable;
 
@@ -221,7 +222,7 @@ final class PhilipsNonDicomB6Selector
         if (!$this->dateIsEligible($job['worker_eligible_at'] ?? null)) {
             return ['candidate' => false, 'reason' => 'EXCLUDED_WORKER_ELIGIBILITY'];
         }
-        if (!$this->automaticDateIsEligible($job['automatic_dispatch_date'] ?? null)) {
+        if (!$this->automaticDateIsEligible($pdo, $job['automatic_dispatch_date'] ?? null)) {
             return ['candidate' => false, 'reason' => 'EXCLUDED_AUTOMATIC_DATE'];
         }
         if ((int) ($job['destination_row_id'] ?? 0) !== self::DESTINATION_ID
@@ -349,10 +350,10 @@ final class PhilipsNonDicomB6Selector
         return $timestamp !== false && $timestamp <= time();
     }
 
-    private function automaticDateIsEligible(mixed $value): bool
+    private function automaticDateIsEligible(PDO $pdo, mixed $value): bool
     {
         $value = trim((string) ($value ?? ''));
-        return $value === '' || $value === date('Y-m-d');
+        return $value === '' || $value === ReportDeliveryClock::currentDatabaseDate($pdo);
     }
 
     /** @return array{source:string,keys:array<string,bool>} */

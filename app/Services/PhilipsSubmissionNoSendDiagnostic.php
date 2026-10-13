@@ -176,7 +176,7 @@ final class PhilipsSubmissionNoSendDiagnostic
         $stmt->execute([
             ':job_id' => $jobId,
             ':tenant_id' => $tenantId,
-            ':automatic_today' => date('Y-m-d'),
+            ':automatic_today' => ReportDeliveryClock::currentDatabaseDate($this->pdo),
         ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return is_array($row) ? $row : null;

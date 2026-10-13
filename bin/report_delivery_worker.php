@@ -88,7 +88,8 @@ final class LocalDicomDeliveryWorker
             return 78;
         }
         $this->repository->enableOneShotForJob($jobId);
-        $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), date('Y-m-d'));
+        $clinicalDate = $this->repository->currentDatabaseDate();
+        $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), $clinicalDate);
         if ($job === null) {
             fwrite(STDERR, "controlled_job_not_eligible\n");
             return 3;
@@ -108,7 +109,7 @@ final class LocalDicomDeliveryWorker
         Logger::info('[ReportDeliveryWorker] Serviço local iniciado', ['worker_id' => $this->workerId]);
         while (true) {
             try {
-                $clinicalDate = date('Y-m-d');
+                $clinicalDate = $this->repository->currentDatabaseDate();
                 $expired = $this->repository->expireAutomaticJobsBefore($clinicalDate);
                 if ($expired > 0) {
                     Logger::warning('[ReportDeliveryWorker] Pendências automáticas expiradas', ['count' => $expired]);
