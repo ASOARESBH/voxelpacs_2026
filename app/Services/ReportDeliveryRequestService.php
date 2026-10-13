@@ -460,6 +460,16 @@ final class ReportDeliveryRequestService
         if (!is_array($configuration) || (string) ($configuration['delivery_profile'] ?? '') !== 'submission_document') {
             throw new DomainException('Destination controlado não possui profile submission_document persistido.', 422);
         }
+        $legacyAuthorFields = [
+            'task_author_source',
+            'task_author_id',
+            'task_author_humanname_family',
+            'task_author_humanname_given',
+            'task_author_humanname_middle',
+        ];
+        foreach ($legacyAuthorFields as $legacyAuthorField) {
+            unset($configuration[$legacyAuthorField]);
+        }
         foreach (array_keys($configuration) as $key) {
             if (str_starts_with((string) $key, 'task_')) {
                 throw new DomainException('Destination controlado ainda possui task_* legado na raiz.', 422);
@@ -477,13 +487,7 @@ final class ReportDeliveryRequestService
         // Destinations históricos podem carregar autoria administrativa no
         // objeto nested. Esses campos são legado não funcional: não invalidam
         // D6/D7 e nunca entram no pacote; a origem única é a versão clínica.
-        foreach ([
-            'task_author_source',
-            'task_author_id',
-            'task_author_humanname_family',
-            'task_author_humanname_given',
-            'task_author_humanname_middle',
-        ] as $legacyAuthorField) {
+        foreach ($legacyAuthorFields as $legacyAuthorField) {
             unset($submission[$legacyAuthorField]);
         }
         if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && (int) ($submission['task_site_id'] ?? 0) !== 2) {
