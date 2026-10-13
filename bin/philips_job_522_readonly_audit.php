@@ -273,8 +273,7 @@ final class PhilipsJob522ReadonlyAudit
             && (string) ($job['environment'] ?? '') === 'producao'
             && (int) ($job['enabled'] ?? 0) === 1
             && (string) ($job['delivery_profile'] ?? '') === 'submission_document'
-            && preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) === 1
-            && (string) ($submission['task_author_source'] ?? '') === 'bi_medicos';
+            && preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) === 1;
         return [
             'status' => $valid ? 'PASS' : 'BLOCKED',
             'destination_id' => self::DESTINATION_ID,
@@ -284,7 +283,7 @@ final class PhilipsJob522ReadonlyAudit
             'enabled' => (int) ($job['enabled'] ?? 0) === 1 ? 'YES' : 'NO',
             'profile' => (string) ($job['delivery_profile'] ?? ''),
             'task_site_alias' => preg_match('/^[A-Za-z0-9._-]{1,120}$/', $alias) === 1 ? 'VALID' : 'INVALID',
-            'author_source' => (string) ($submission['task_author_source'] ?? 'MISSING'),
+            'author_source' => 'SIGNER_VERSION',
             'automatic_trigger' => (int) ($job['disparar_na_liberacao'] ?? 0) === 1 ? 'ON' : 'OFF',
         ];
     }
@@ -292,51 +291,56 @@ final class PhilipsJob522ReadonlyAudit
     /** @param array<string,mixed> $job @return array<string,mixed> */
     private function authorState(PDO $pdo, array $job): array
     {
-        $configuration = $this->jsonObject($job['configuration_json'] ?? null) ?? [];
-        $submission = is_array($configuration['philips_submission'] ?? null)
-            ? $configuration['philips_submission']
-            : [];
-        $source = trim((string) ($submission['task_author_source'] ?? ''));
-        $authorId = $submission['task_author_id'] ?? null;
-        $authorIdValid = is_int($authorId) && $authorId > 0
-            || is_string($authorId) && preg_match('/^[1-9][0-9]*$/', trim($authorId)) === 1;
-        if ($source !== 'bi_medicos' || !$authorIdValid || $this->dispatchMode($job) !== 'automatic_production') {
+        $reportId = (int) ($job['report_id'] ?? 0);
+        $version = (int) ($job['report_version'] ?? 0);
+        $studyId = (int) ($job['estudo_id'] ?? 0);
+        if ($reportId <= 0 || $version <= 0 || $studyId <= 0) {
             return [
                 'status' => 'BLOCKED',
-                'source' => $source === '' ? 'MISSING' : $source,
-                'task_author_id' => $authorIdValid ? 'POSITIVE_INTEGER' : 'INVALID_OR_MISSING',
+                'source' => 'SIGNER_VERSION',
+                'task_author_id' => 'INVALID_OR_MISSING',
                 'lookup' => 'NOT_EXECUTED',
             ];
         }
-
         $statement = $pdo->prepare(
-            'SELECT id, tenant_id, ativo
-               FROM bi_medicos
-              WHERE id = :author_id
-                AND tenant_id = :tenant_id
-                AND ativo = 1
-                AND NULLIF(TRIM(nome), \'\') IS NOT NULL
-              LIMIT 1'
+            "SELECT r.assinado_por AS author_id, r.tenant_id, m.ativo
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e
+                       ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+               INNER JOIN report_versions rv
+                       ON rv.report_id = r.id AND rv.versao = :report_version
+               INNER JOIN bi_medicos m
+                       ON m.usuario_id = r.assinado_por
+                      AND m.tenant_id = r.tenant_id
+                      AND m.ativo = 1
+              WHERE r.id = :report_id
+                AND r.tenant_id = :tenant_id
+                AND r.estudo_id = :study_id
+                AND r.assinado_por IS NOT NULL
+                AND r.assinado_por > 0
+                AND rv.acao IN ('assinado', 'liberado')
+              LIMIT 1"
         );
         $statement->execute([
-            ':author_id' => (int) $authorId,
+            ':report_id' => $reportId,
+            ':report_version' => $version,
+            ':study_id' => $studyId,
             ':tenant_id' => self::TENANT_ID,
         ]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
         $resolved = is_array($row)
-            && (int) ($row['id'] ?? 0) === (int) $authorId
+            && (int) ($row['author_id'] ?? 0) > 0
             && (int) ($row['tenant_id'] ?? 0) === self::TENANT_ID
             && (int) ($row['ativo'] ?? 0) === 1;
         return [
             'status' => $resolved ? 'PASS' : 'BLOCKED',
-            'source' => 'BI_MEDICOS',
+            'source' => 'SIGNER_VERSION',
             'scope' => 'TENANT_SCOPED',
-            'task_author_id' => 'POSITIVE_INTEGER',
+            'task_author_id' => $resolved ? 'REAL' : 'INVALID_OR_MISSING',
             'lookup' => $resolved ? 'RESOLVED' : 'NOT_FOUND_OR_INACTIVE',
             'name_materialized' => 'NO',
         ];
     }
-
     /** @return array<string,mixed> */
     private function reportState(PDO $pdo, array $job): array
     {

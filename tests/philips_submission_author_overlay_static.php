@@ -22,7 +22,11 @@ $producer = $reflection->newInstanceWithoutConstructor();
 $metadataProperty = $reflection->getProperty('metadata');
 $metadataProperty->setValue($producer, new App\Services\PhilipsSubmissionMetadataResolver());
 $authorResolverProperty = $reflection->getProperty('authorResolver');
-$authorResolverProperty->setValue($producer, new App\Services\PhilipsSubmissionAuthorResolver());
+$authorResolverProperty->setValue($producer, new App\Services\PhilipsSubmissionAuthorResolver(new class implements App\Contracts\PhilipsSubmissionAuthorLookup {
+    public function findSignerForReportVersion(int $tenantId, int $reportId, int $reportVersion, int $studyId): ?array {
+        return ['id' => 4, 'tenant_id' => 2, 'nome' => 'Hugo Willian F. de Barros', 'ativo' => 1];
+    }
+}));
 $resolvedInput = $reflection->getMethod('resolvedInput');
 $resolvedInput->setAccessible(true);
 
@@ -37,6 +41,12 @@ $payload = [
     'study_time' => '10:11:12',
     'modality' => 'CT',
     'referring_physician_name' => null,
+    'author_signer_id' => 4,
+    'author_signer_tenant_id' => 2,
+    'author_signer_report_id' => 492,
+    'author_signer_report_version' => 2,
+    'author_signer_study_id' => 1,
+    'author_signer_name' => 'Hugo Willian F. de Barros',
     'philips_submission' => [],
 ];
 $configuration = [
@@ -70,9 +80,9 @@ $automaticInput = $resolvedInput->invoke($producer, $payload, $configuration, $p
 
 foreach ([
     'task_author_id' => '4',
-    'task_author_humanname_family' => 'CONFIGURED-FAMILY',
-    'task_author_humanname_given' => 'CONFIGURED-GIVEN',
-    'task_author_humanname_middle' => 'CONFIGURED-MIDDLE',
+    'task_author_humanname_family' => 'Willian F. de Barros',
+    'task_author_humanname_given' => 'Hugo',
+    'task_author_humanname_middle' => '',
 ] as $field => $expected) {
     expect_author_overlay(($automaticInput[$field] ?? null) === $expected, "Automatic overlay must provide {$field}");
 }
@@ -84,10 +94,10 @@ $document = (new App\Services\PhilipsSubmissionDocumentGenerator())->generate(
 );
 expect_author_overlay($document->content !== '', 'XML generation must produce content');
 expect_author_overlay(str_contains($document->content, 'encoding="iso-8859-1"'), 'XML must retain ISO-8859-1 declaration');
-expect_author_overlay(str_contains($document->content, '<task_author_id>4</task_author_id>'), 'XML must include configured author ID');
-expect_author_overlay(str_contains($document->content, '<task_author_humanname_family>CONFIGURED-FAMILY</task_author_humanname_family>'), 'XML must include configured author family');
-expect_author_overlay(str_contains($document->content, '<task_author_humanname_given>CONFIGURED-GIVEN</task_author_humanname_given>'), 'XML must include configured author given');
-expect_author_overlay(str_contains($document->content, '<task_author_humanname_middle>CONFIGURED-MIDDLE</task_author_humanname_middle>'), 'XML must include configured author middle');
+expect_author_overlay(str_contains($document->content, '<task_author_id>4</task_author_id>'), 'XML must include signer ID');
+expect_author_overlay(str_contains($document->content, '<task_author_humanname_family>Willian F. de Barros</task_author_humanname_family>'), 'XML must include signer family');
+expect_author_overlay(str_contains($document->content, '<task_author_humanname_given>Hugo</task_author_humanname_given>'), 'XML must include signer given');
+expect_author_overlay(str_contains($document->content, '<task_author_humanname_middle></task_author_humanname_middle>'), 'XML must include empty signer middle');
 expect_author_overlay(function_exists('simplexml_load_string') && simplexml_load_string($document->content) !== false, 'XML must be well formed');
 
 $controlledPayload = array_replace($payload, [
@@ -96,9 +106,9 @@ $controlledPayload = array_replace($payload, [
 ]);
 $controlledContext = array_replace($automaticContext, ['dispatch_mode' => 'controlled_production']);
 $controlledInput = $resolvedInput->invoke($producer, $controlledPayload, $configuration, $pdfFilename, $controlledContext);
-expect_author_overlay(($controlledInput['task_author_humanname_family'] ?? null) === 'CLINICAL', 'Controlled production must preserve clinical author family precedence');
-expect_author_overlay(($controlledInput['task_author_humanname_given'] ?? null) === 'SOURCE', 'Controlled production must preserve clinical author given precedence');
-expect_author_overlay(($controlledInput['task_author_humanname_middle'] ?? null) === 'NAME', 'Controlled production must preserve clinical author middle precedence');
+expect_author_overlay(($controlledInput['task_author_humanname_family'] ?? null) === 'Willian F. de Barros', 'Controlled production must preserve signer family precedence');
+expect_author_overlay(($controlledInput['task_author_humanname_given'] ?? null) === 'Hugo', 'Controlled production must preserve signer given precedence');
+expect_author_overlay(($controlledInput['task_author_humanname_middle'] ?? null) === '', 'Controlled production must preserve signer middle precedence');
 
 echo "PHILIPS_SUBMISSION_AUTHOR_OVERLAY_STATIC_OK\n";
 echo "PDF_ARTIFACT=PASS\n";

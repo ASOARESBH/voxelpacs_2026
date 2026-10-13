@@ -33,15 +33,17 @@ foreach ([
     "private const DESTINATION_ID = 7",
     "'philips_non_dicom'",
     "'submission_document'",
-    "'automatic_production'",
     "SET TRANSACTION READ ONLY",
     "pacs_report_delivery_jobs",
     "pacs_report_delivery_outbox",
     "pacs_report_delivery_destinations",
     "pacs_report_delivery_attempts",
     "bi_medicos",
-    "AND tenant_id = :tenant_id",
-    "AND ativo = 1",
+    "r.assinado_por AS author_id",
+    "report_versions rv",
+    "SIGNER_VERSION",
+    "AND r.tenant_id = :tenant_id",
+    "AND m.ativo = 1",
     "job_claimed",
     "database_changed",
     "transmission",
@@ -59,8 +61,7 @@ foreach ([
 }
 $expect(!str_contains($diagnostic, "'patient_name'"), 'diagnóstico não pode retornar nome do paciente');
 $expect(str_contains($diagnostic, "'name_materialized' => 'NO'"), 'diagnóstico não comprova que nome do autor não foi materializado');
-$expect(str_contains($diagnostic, "if (\$source !== 'bi_medicos'"), 'fonte de autor não é fail-closed');
-$expect(str_contains($diagnostic, "\$this->dispatchMode(\$job) !== 'automatic_production'"), 'lookup não está limitado ao modo automático');
+$expect(str_contains($diagnostic, "'task_author_id' => \$resolved ? 'REAL'"), 'auditor não classifica ID real do signatário');
 
 foreach ([
     "readonly DIAGNOSTIC='/usr/local/libexec/voxelpacs/philips_job_522_readonly_audit.php'",

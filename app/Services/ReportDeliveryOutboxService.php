@@ -242,6 +242,15 @@ class ReportDeliveryOutboxService
             $payload['patient_name_middle'] = $frozenPatientName['middle'];
             $payload['patient_name_source'] = $frozenPatientName['source'];
             $payload['referring_physician_name'] = $estudo->referring_physician_name ?? null;
+            $frozenSigner = $this->loadFrozenSigner($tenantId, $reportId, $estudoId, $reportVersion);
+            if ($frozenSigner !== null) {
+                $payload['author_signer_id'] = $frozenSigner['id'];
+                $payload['author_signer_tenant_id'] = $frozenSigner['tenant_id'];
+                $payload['author_signer_report_id'] = $reportId;
+                $payload['author_signer_report_version'] = $reportVersion;
+                $payload['author_signer_study_id'] = $estudoId;
+                $payload['author_signer_name'] = $frozenSigner['nome'];
+            }
         }
 
         try {
@@ -364,6 +373,51 @@ class ReportDeliveryOutboxService
             'middle' => trim((string) ($row['patient_name_middle'] ?? '')),
             'source' => $source,
         ];
+    }
+
+    /** @return array{id:int,tenant_id:int,nome:string}|null */
+    private function loadFrozenSigner(int $tenantId, int $reportId, int $studyId, int $reportVersion): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT r.assinado_por AS id,
+                    r.tenant_id,
+                    m.nome
+               FROM reports r
+               INNER JOIN bi_pacs_estudos e
+                       ON e.id = r.estudo_id
+                      AND e.tenant_id = r.tenant_id
+               INNER JOIN report_versions rv
+                       ON rv.report_id = r.id
+                      AND rv.versao = :report_version
+               INNER JOIN bi_medicos m
+                       ON m.usuario_id = r.assinado_por
+                      AND m.tenant_id = r.tenant_id
+                      AND m.ativo = 1
+              WHERE r.id = :report_id
+                AND r.tenant_id = :tenant_id
+                AND r.estudo_id = :study_id
+                AND r.assinado_por IS NOT NULL
+                AND r.assinado_por > 0
+                AND rv.acao IN ('assinado', 'liberado')
+              LIMIT 2"
+        );
+        $stmt->execute([
+            ':tenant_id' => $tenantId,
+            ':report_id' => $reportId,
+            ':study_id' => $studyId,
+            ':report_version' => $reportVersion,
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== 1) {
+            return null;
+        }
+        $row = $rows[0];
+        $id = (int) ($row['id'] ?? 0);
+        $name = is_string($row['nome'] ?? null) ? trim($row['nome']) : '';
+        if ($id <= 0 || (int) ($row['tenant_id'] ?? 0) !== $tenantId || $name === '') {
+            return null;
+        }
+        return ['id' => $id, 'tenant_id' => $tenantId, 'nome' => $name];
     }
 
     private function enabled(): bool

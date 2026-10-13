@@ -10,7 +10,7 @@ O diagnóstico não deve ser usado para reprocessar, enviar ou alterar o Job. El
 - tenant, Destination, transport e profile;
 - estado `queued`, contador de attempts e lock;
 - existência estrutural do report, versão e estudo vinculado;
-- `task_author_source=bi_medicos` e resolução tenant-scoped de `task_author_id`, sem materializar o nome;
+- `reports.assinado_por` e resolução tenant-scoped do `task_author_id` real do signatário, sem materializar o nome;
 - flags efetivas essenciais e estado read-only da unit do Worker.
 
 ## Limites
@@ -26,10 +26,15 @@ O helper e o diagnóstico:
 - não exibem nomes de paciente, nome do médico, payload, hashes completos, credenciais ou conteúdo clínico;
 - falham fechado em caso de identidade, schema, autor, digest, lock ou estado incompatível.
 
-A regra `task_author_source=bi_medicos` só é aceita para `automatic_production`. A consulta do autor exige simultaneamente:
+A consulta do autor exige a versão exata vinculada ao Job e, simultaneamente:
 
 ```text
-bi_medicos.id = task_author_id
+reports.assinado_por = task_author_id
+reports.tenant_id = 2
+report_versions.report_id = reports.id
+report_versions.versao = Job.report_version
+bi_pacs_estudos.id = Job.estudo_id
+bi_medicos.usuario_id = reports.assinado_por
 bi_medicos.tenant_id = 2
 bi_medicos.ativo = 1
 nome não vazio

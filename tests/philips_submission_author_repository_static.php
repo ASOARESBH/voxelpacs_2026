@@ -17,14 +17,16 @@ $expect = static function (bool $condition, string $message) use ($fail): void {
 $source = file_get_contents($root . '/app/Repositories/PhilipsSubmissionAuthorRepository.php');
 $expect(is_string($source), 'Author repository source must be readable');
 foreach ([
-    'SELECT id, tenant_id, nome, ativo',
-    'WHERE id = :author_id',
-    'AND tenant_id = :tenant_id',
-    'AND ativo = 1',
-    "'author_id' => \$authorId",
-    "'tenant_id' => \$tenantId",
     'Database::getInstance()',
     'PDO::FETCH_ASSOC',
+    'findSignerForReportVersion',
+    'r.assinado_por AS id',
+    'INNER JOIN report_versions rv',
+    'rv.versao = :report_version',
+    'r.estudo_id = :study_id',
+    'rv.acao IN (',
+    'assinado',
+    'liberado',
 ] as $required) {
     $expect(str_contains($source, $required), "Author repository must contain {$required}");
 }
@@ -34,10 +36,11 @@ foreach (['INSERT INTO', 'UPDATE ', 'DELETE FROM', 'DROP ', 'TRUNCATE ', 'ALTER 
 
 $interface = file_get_contents($root . '/app/Contracts/PhilipsSubmissionAuthorLookup.php');
 $expect(is_string($interface), 'Author lookup contract must be readable');
-$expect(str_contains($interface, 'findActiveBiMedico(int $tenantId, int $authorId)'), 'Lookup contract must require tenant and author IDs');
+$expect(str_contains($interface, 'findSignerForReportVersion('), 'Lookup contract must expose version signer resolution');
 
 echo "PHILIPS_SUBMISSION_AUTHOR_REPOSITORY_STATIC_OK\n";
 echo "TENANT_SCOPE=PASS\n";
 echo "ACTIVE_FILTER=PASS\n";
+echo "VERSION_SIGNER_SCOPE=PASS\n";
 echo "PREPARED_QUERY=PASS\n";
 echo "READ_ONLY=PASS\n";

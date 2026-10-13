@@ -471,13 +471,12 @@ final class ReportDeliveryRequestService
             || (string) ($submission['task_document_name'] ?? '') !== 'LAUDO RADIOLOGICO'
             || !$this->isTrue($submission['task_document_type_applicable'] ?? false)
             || (string) ($submission['task_document_type'] ?? '') !== '11502-2'
-            || $this->isTrue($submission['task_delete_file'] ?? true)
-            || (int) ($submission['task_author_id'] ?? 0) <= 0) {
+            || $this->isTrue($submission['task_delete_file'] ?? true)) {
             throw new DomainException('Destination controlado não possui metadata submission_document completa.', 422);
         }
-        if ($dispatchMode === self::DISPATCH_MODE_PRODUCTION
-            && ($submission['task_author_source'] ?? null) === 'bi_medicos') {
-            throw new DomainException('A fonte bi_medicos deve ser resolvida somente no automatic_production.', 422);
+        if (array_key_exists('task_author_source', $submission)
+            && trim((string) ($submission['task_author_source'] ?? '')) !== '') {
+            throw new DomainException('A autoria Philips é resolvida pelo signatário da versão liberada.', 422);
         }
         if ($dispatchMode === self::DISPATCH_MODE_HOMOLOGATION && (int) ($submission['task_site_id'] ?? 0) !== 2) {
             throw new DomainException('Destination 6 não possui SITE_ID de homologação esperado.', 422);
