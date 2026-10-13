@@ -118,6 +118,7 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             if (!$aliasPass) {
                 throw new RuntimeException('ALIAS_SNAPSHOT_MISMATCH');
             }
+            $this->assertJobPristine($job);
 
             $reportSnapshot = $snapshotService->resolveExplicit(
                 $tenantId,
@@ -288,23 +289,16 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             || (string) ($destination['ambiente'] ?? '') !== 'producao'
             || (int) ($destination['enabled'] ?? 0) !== 1
             || (string) ($payload['dispatch_mode'] ?? '') !== $dispatchMode
-            || (string) ($job['status'] ?? '') !== 'queued'
-            || (string) ($job['outbox_status'] ?? '') !== 'queued'
-            || (int) ($job['attempt_count'] ?? -1) !== 0
-            || ($job['locked_at'] ?? null) !== null
-            || ($job['locked_by'] ?? null) !== null
         ) {
-            throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+            throw new RuntimeException('JOB_IDENTITY_MISMATCH');
         }
         if ($dispatchMode === self::AUTOMATIC_MODE) {
             if ($request !== null
                 || (int) ($job['delivery_request_id'] ?? 0) > 0
                 || (int) ($destination['disparar_na_liberacao'] ?? 0) !== 1
                 || (string) ($job['event_type'] ?? '') !== 'report.released'
-                || (int) ($job['report_id'] ?? 0) !== (int) ($payload['report_id'] ?? 0)
-                || (int) ($job['report_version'] ?? 0) !== (int) ($payload['report_version'] ?? 0)
-                || (int) ($job['estudo_id'] ?? 0) !== (int) ($payload['estudo_id'] ?? 0)) {
-                throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+                ) {
+                throw new RuntimeException('JOB_IDENTITY_MISMATCH');
             }
         } elseif ($request === null
             || (int) ($request['tenant_id'] ?? 0) !== $tenantId
@@ -317,7 +311,19 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
             || (string) ($request['delivery_profile'] ?? '') !== PhilipsFolderDeliveryService::PROFILE_SUBMISSION_DOCUMENT
             || (string) ($request['dispatch_mode'] ?? '') !== self::CONTROLLED_MODE
             || (string) ($request['status'] ?? '') !== 'armed') {
-            throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+            throw new RuntimeException('JOB_IDENTITY_MISMATCH');
+        }
+    }
+
+    /** @param array<string,mixed> $job */
+    private function assertJobPristine(array $job): void
+    {
+        if ((string) ($job['status'] ?? '') !== 'queued'
+            || (string) ($job['outbox_status'] ?? '') !== 'queued'
+            || (int) ($job['attempt_count'] ?? -1) !== 0
+            || ($job['locked_at'] ?? null) !== null
+            || ($job['locked_by'] ?? null) !== null) {
+            throw new RuntimeException('JOB_NOT_PRISTINE');
         }
     }
 
@@ -406,7 +412,7 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
         if ($payloadMode === self::CONTROLLED_MODE && $request !== null && $requestMode === self::CONTROLLED_MODE) {
             return self::CONTROLLED_MODE;
         }
-        throw new RuntimeException('JOB_NOT_PRISTINE_OR_IDENTITY_MISMATCH');
+        throw new RuntimeException('JOB_IDENTITY_MISMATCH');
     }
 
     /** @param array<string,mixed> $request @param array<string,mixed> $destination @param array<string,mixed> $report @return array{snapshot_digest:bool,destination_digest:bool,destination_timestamp:bool} */

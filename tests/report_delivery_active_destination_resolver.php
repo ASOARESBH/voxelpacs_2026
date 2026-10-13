@@ -216,6 +216,7 @@ $historicalAutomaticJob = [
 $resolvedExecution = $resolveMethod->invoke($workerRepository, $historicalAutomaticJob);
 $assert($resolvedExecution['destination_id'] === 7 && $resolvedExecution['effective_destination_id'] === 7, 'Automatic Non-DICOM must use the persisted production Destination ID even when APP_ENV is staging.');
 $assert($resolvedExecution['configuration_json'] === $productionPhilips['configuration_json'], 'Worker must hydrate the effective Destination configuration.');
+$assert(($pdo->lastParameters[':id'] ?? null) === 7 && ($pdo->lastParameters[':tenant_id'] ?? null) === 2, 'Automatic binding must pass the persisted destination and tenant to the repository contract.');
 $wrongScopeJob = array_replace($historicalAutomaticJob, ['destination_id' => 6]);
 $pdo->setDestinationResult(6, 2, $homologationPhilips);
 try {
