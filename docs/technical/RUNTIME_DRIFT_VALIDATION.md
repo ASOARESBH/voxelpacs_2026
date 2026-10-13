@@ -2,30 +2,61 @@
 
 ## Objetivo
 
-`scripts/validate-runtime-drift.sh` compara, somente por leitura, o runtime efetivo com:
+O drift gate responde a uma única pergunta: **alguém alterou a produção fora do Git?**
 
-1. o manifesto do artefato oficial construído da SHA da `main`; e
-2. o manifesto root-controlled do baseline aprovado.
+Para isso, `scripts/validate-runtime-drift.sh` (versão 3) compara, somente por leitura, o runtime efetivo com:
+
+1. o manifesto do **último commit publicado** em produção, construído pelo builder oficial a partir desse SHA; e
+2. o manifesto root-controlled do baseline aprovado, usado apenas para os arquivos que estão no runtime mas fora do commit publicado (extras históricos).
+
+O código novo que vai ser publicado **não participa** da comparação. Uma alteração legítima commitada na `main` nunca aparece como drift, e não existe mais lista manual de "deltas aprovados" para editar a cada deploy.
 
 O comparador não publica arquivos, não altera o runtime, não acessa banco, não inicia serviços e não chama Worker, Bridge, SMB, Philips ou DICOM.
 
-O builder do artefato pode corrigir atomicamente somente o campo `root.reference` de `vendor/composer/installed.php` quando Composer deixou uma referência hexadecimal válida de outra revisão no checkout detached. A operação exige exatamente um campo root estrutural, não altera `composer.json`, `composer.lock` ou referências de pacotes e é seguida pelo guard final; valores ausentes, duplicados ou malformados continuam bloqueados.
+## Qual é o "último commit publicado"
+
+É o SHA usado no último `voxelpacs-deploy-runtime --sha <sha>` bem-sucedido. O builder grava esse mesmo SHA em `vendor/composer/installed.php` (campo `root.reference`), então o próprio gate o informa em toda execução:
+
+```text
+RUNTIME_PUBLISHED_SHA=<sha>|UNAVAILABLE
+```
+
+O fluxo é:
+
+1. Descobrir o SHA publicado: executar o gate uma vez (com o manifesto do commit que se acredita estar publicado) e ler `RUNTIME_PUBLISHED_SHA`, ou consultar o registro de transações do deploy em `/var/lib/voxelpacs/deploy/releases/transactions/<sha>/` com `status=published`.
+2. Construir o manifesto desse SHA, em checkout limpo e detached desse commit:
+
+   ```bash
+   git checkout --detach <sha-publicado>
+   bash scripts/build-runtime-artifact.sh \
+     --expected-sha <sha-publicado> \
+     --output /tmp/publicado.zip \
+     --manifest /tmp/publicado.manifest.tsv \
+     --checksum /tmp/publicado.sha256
+   ```
+
+3. Executar o gate com esse manifesto (ver "Uso").
+4. Se `DRIFT_GATE=PASS`, publicar o SHA novo da `main` normalmente. Depois da publicação, o SHA novo passa a ser o "último commit publicado" da próxima verificação.
 
 ## Política fail-closed
 
 O gate retorna `DRIFT_GATE=PASS` somente quando:
 
-- todos os arquivos esperados do artefato existem, são regulares e legíveis;
+- todos os arquivos do commit publicado existem no runtime, são regulares e legíveis;
+- o conteúdo de cada um é idêntico ao do commit publicado (exceção: metadata Composer, abaixo);
 - os manifestos têm paths seguros, hashes válidos e nenhuma duplicidade;
-- todo mismatch está coberto por uma exceção explícita;
-- todo extra fora do artefato está no baseline e possui exatamente o mesmo hash;
-- não há extra sem baseline, hash divergente, arquivo esperado ausente ou arquivo ilegível.
+- todo arquivo do runtime fora do commit publicado está no baseline e possui exatamente o mesmo hash.
 
-O comparador aceita também o manifesto root-controlled legado de oito colunas produzido antes da coluna explícita `READABLE`. Essa compatibilidade só é válida quando a linha tem exatamente oito colunas, o digest SHA-256 completo é válido e a classificação permanece permitida; o gate reporta `BASELINE_FORMAT=LEGACY_8_COLUMN`. Linhas com digest ausente, colunas extras, path inválido ou classificação desconhecida continuam bloqueadas.
+Qualquer arquivo editado direto no servidor, arquivo novo criado fora do Git, arquivo removido ou extra divergente do baseline resulta em:
 
-## Exceções explícitas
+```text
+DRIFT_GATE=FAIL
+REASON=RUNTIME_CHANGED_OUTSIDE_PUBLISHED_COMMIT
+```
 
-A exceção de conteúdo do metadata Composer prevista nesta versão é:
+O comparador aceita também o manifesto de baseline legado de oito colunas, produzido antes da coluna `READABLE`. Essa compatibilidade só vale quando a linha tem exatamente oito colunas, o digest SHA-256 completo é válido e a classificação é permitida; o gate reporta `BASELINE_FORMAT=LEGACY_8_COLUMN`.
+
+## Exceção explícita do metadata Composer
 
 ```text
 PATH=vendor/composer/installed.php
@@ -33,18 +64,9 @@ BASELINE_CLASSIFICATION=COMPOSER_DEPENDENCY
 RUNTIME_HASH=BASELINE_HASH
 ```
 
-Isso reconhece que o metadata gerado pelo Composer pode diferir do arquivo produzido no artefato, mas exige identidade comprovada com o baseline root-controlled. Não é permitido aceitar a pasta `vendor/` genericamente nem ignorar o arquivo sem verificar path, tipo, legibilidade, hash e classificação.
+Quando o manifesto é construído do mesmo SHA publicado, o `installed.php` normalmente coincide, porque o builder grava o `root.reference` desse SHA. A exceção cobre apenas runtimes cujo metadata ainda é o do baseline root-controlled. Não existe exceção genérica para `vendor/`.
 
-Esta versão também aceita somente os dois deltas de código abaixo, quando o arquivo efetivo do runtime coincide exatamente com o hash da baseline root-controlled e a classificação da baseline é `OWNED_RUNTIME_CODE`:
-
-```text
-PATH=app/Services/PhilipsSubmissionMetadataResolver.php
-PATH=app/Services/ReportVersionPatientNameService.php
-BASELINE_CLASSIFICATION=OWNED_RUNTIME_CODE
-RUNTIME_HASH=BASELINE_HASH
-```
-
-Essa exceção é uma allowlist de paths fechada, não uma aceitação geral de código antigo, de qualquer arquivo em `app/` ou de qualquer diferença encontrada no runtime. O artefato da `main` continua sendo a versão que será publicada; a exceção apenas permite concluir o gate de uma normalização controlada. Um path novo, um hash diferente da baseline, uma classificação diferente ou um arquivo extra continuam bloqueando o gate.
+A allowlist fixa de deltas de código da versão 2 (`PhilipsSubmissionMetadataResolver.php` e `ReportVersionPatientNameService.php`) foi removida: com a referência no commit publicado, ela deixou de ser necessária.
 
 ## Extras históricos
 
@@ -55,36 +77,48 @@ RUNTIME_PATH ∈ BASELINE_MANIFEST
 RUNTIME_HASH = BASELINE_HASH
 ```
 
-Um extra ausente do baseline ou com hash divergente mantém o gate bloqueado. O baseline não autoriza código novo nem substitui a `main` como fonte oficial.
+Um extra ausente do baseline ou com hash divergente mantém o gate bloqueado.
 
 ## Uso
 
-No checkout local, o comparador continua disponível para testes com manifestos já acessíveis:
+No checkout local, para testes com manifestos já acessíveis:
 
 ```bash
 bash scripts/validate-runtime-drift.sh \
   --runtime-root /var/www/voxelpacs/app \
-  --artifact-manifest /path/protegido/artifact.manifest.tsv \
+  --published-manifest /tmp/publicado.manifest.tsv \
   --baseline-manifest /var/lib/voxelpacs/baselines/<baseline-id>/manifest.tsv
 ```
 
-No Host 1, quando o baseline é root-owned, o fluxo oficial usa o gate root-controlled da PR #111 e fornece somente o manifesto do artefato por `stdin`:
+No Host 1, com baseline root-owned, o gate root-controlled recebe por `stdin` somente o manifesto do commit publicado:
 
 ```bash
-cat artifact.manifest.tsv \
+cat /tmp/publicado.manifest.tsv \
   | sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate \
       --baseline-id <baseline-id>
 ```
 
-O gate chama o leitor fixo, valida checksum/ownership/formato e entrega a saída ao comparador instalado em caminho fixo. O caller não fornece path de runtime, baseline, comando ou destino. Nenhum dos modos aceita opções de cópia, publicação, exclusão ou execução de serviço.
+O caller não fornece path de runtime, baseline, comando ou destino. A allowlist de sudo não muda em relação à versão 2.
+
+## Instalação da versão 3 no Host 1
+
+Os helpers instalados em `/usr/local/sbin` são atualizados pelo procedimento existente, a partir de checkout limpo da `main` com a SHA exata:
+
+```bash
+sudo bash scripts/upgrade-runtime-drift-manifest-reader.sh --expected-sha <sha-da-main> --dry-run
+sudo bash scripts/upgrade-runtime-drift-manifest-reader.sh --expected-sha <sha-da-main> --upgrade
+```
+
+O upgrade faz backup root-only dos helpers atuais e restaura automaticamente em caso de falha.
 
 ## Saída sanitizada
 
-A saída contém somente contagens, categorias e estados operacionais. Não imprime conteúdo de arquivos, hashes individuais, PHI, secrets, URLs privadas ou credenciais.
-
-Estados relevantes:
+A saída contém somente contagens, categorias, o SHA publicado e os paths divergentes. Não imprime conteúdo de arquivos, hashes individuais, PHI, secrets, URLs privadas ou credenciais.
 
 ```text
+MECHANISM_VERSION=3
+REFERENCE=LAST_PUBLISHED_COMMIT
+RUNTIME_PUBLISHED_SHA=<sha>|UNAVAILABLE
 DRIFT_GATE=PASS|FAIL|BLOCKED
 PRODUCTION_CHANGED=NO
 DATABASE_CHANGED=NO
@@ -96,4 +130,4 @@ TRANSMISSION=NO
 
 ## Rollback
 
-O comparador não executa rollback. Em caso de `FAIL`, o fluxo deve preservar o runtime e usar o backup root-only já validado somente por procedimento de deploy/rollback separado e autorizado.
+O comparador não executa rollback. Em caso de `FAIL`, preservar o runtime e investigar os `MISMATCH_PATHS`: a correção de um arquivo alterado fora do Git é commitar a alteração na `main` (se for legítima) ou republicar o commit publicado (se não for).

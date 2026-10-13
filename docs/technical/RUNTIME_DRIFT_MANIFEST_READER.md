@@ -32,10 +32,10 @@ O leitor nunca imprime conteúdo de arquivo, dados clínicos, PDF, XML, segredo,
 
 ## Gate oficial
 
-Após provisionamento no Host 1, o fluxo root-controlled recebe somente o manifesto do artefato por `stdin`:
+Após provisionamento no Host 1, o fluxo root-controlled recebe por `stdin` somente o manifesto do último commit publicado (ver `RUNTIME_DRIFT_VALIDATION.md`):
 
 ```bash
-cat artifact.manifest.tsv \
+cat publicado.manifest.tsv \
   | sudo -n /usr/local/sbin/voxelpacs-runtime-drift-gate \
       --baseline-id <baseline-id>
 ```

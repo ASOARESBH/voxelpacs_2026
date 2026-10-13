@@ -83,9 +83,10 @@ validate_contracts() {
   grep -Fqx "readonly RUNTIME_ROOT='/var/www/voxelpacs/app'" "$GATE_SOURCE" || fail 'GATE_RUNTIME_ROOT_INVALID'
   grep -Fqx "readonly READER='/usr/local/sbin/voxelpacs-runtime-drift-manifest-reader'" "$GATE_SOURCE" || fail 'GATE_READER_PATH_INVALID'
   grep -Fqx "readonly COMPARATOR='/usr/local/sbin/voxelpacs-validate-runtime-drift'" "$GATE_SOURCE" || fail 'GATE_COMPARATOR_PATH_INVALID'
-  grep -Fqx "readonly MECHANISM_VERSION='2'" "$COMPARATOR_SOURCE" || fail 'COMPARATOR_VERSION_INVALID'
-  grep -Fqx "readonly APPROVED_CODE_DELTA_PATH_1='app/Services/PhilipsSubmissionMetadataResolver.php'" "$COMPARATOR_SOURCE" || fail 'COMPARATOR_ALLOWLIST_INVALID'
-  grep -Fqx "readonly APPROVED_CODE_DELTA_PATH_2='app/Services/ReportVersionPatientNameService.php'" "$COMPARATOR_SOURCE" || fail 'COMPARATOR_ALLOWLIST_INVALID'
+  grep -Fqx "readonly MECHANISM_VERSION='3'" "$COMPARATOR_SOURCE" || fail 'COMPARATOR_VERSION_INVALID'
+  grep -Fqx "readonly REFERENCE_POLICY='LAST_PUBLISHED_COMMIT'" "$COMPARATOR_SOURCE" || fail 'COMPARATOR_REFERENCE_POLICY_INVALID'
+  ! grep -Fq 'APPROVED_CODE_DELTA' "$COMPARATOR_SOURCE" || fail 'COMPARATOR_LEGACY_ALLOWLIST_PRESENT'
+  grep -Fq -- '--published-manifest "$published_manifest"' "$GATE_SOURCE" || fail 'GATE_PUBLISHED_MANIFEST_CONTRACT_INVALID'
   bash -n "$READER_SOURCE"
   bash -n "$GATE_SOURCE"
   bash -n "$COMPARATOR_SOURCE"

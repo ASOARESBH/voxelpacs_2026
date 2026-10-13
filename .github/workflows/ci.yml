@@ -241,6 +241,8 @@ jobs:
           bash -n tests/deploy/runtime_drift_manifest_reader_isolated.sh
           bash -n tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh
           bash -n tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh
+          bash -n tests/deploy/runtime_drift_policy_static.sh
+          bash -n tests/deploy/runtime_drift_policy_isolated.sh
 
       - name: ShellCheck
         run: |
@@ -254,7 +256,9 @@ jobs:
               tests/deploy/runtime_drift_manifest_reader_static.sh \
               tests/deploy/runtime_drift_manifest_reader_isolated.sh \
               tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh \
-              tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh
+              tests/deploy/runtime_drift_manifest_reader_upgrade_isolated.sh \
+              tests/deploy/runtime_drift_policy_static.sh \
+              tests/deploy/runtime_drift_policy_isolated.sh
           else
             echo "SHELLCHECK=NOT_AVAILABLE"
           fi
@@ -264,6 +268,11 @@ jobs:
 
       - name: Run isolated reader and gate tests
         run: sudo -n env -u SUDO_USER bash tests/deploy/runtime_drift_manifest_reader_isolated.sh
+
+      - name: Validate drift policy (last published commit)
+        run: |
+          bash tests/deploy/runtime_drift_policy_static.sh
+          bash tests/deploy/runtime_drift_policy_isolated.sh
 
       - name: Validate upgrade helper contract
         run: bash tests/deploy/runtime_drift_manifest_reader_upgrade_static.sh
