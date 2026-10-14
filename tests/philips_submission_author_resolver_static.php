@@ -67,12 +67,18 @@ $queuedLegacy = $resolver->resolve(array_replace($payload, [
 ]), [], $context, []);
 $expect($queuedLegacy['task_author_id'] === '4', 'Queued legacy job must resolve the version signer, not configured author');
 $expect($queuedLegacy['task_author_humanname_given'] === 'Hugo', 'Signer must remain distinct from referring physician');
+$releasedByOtherUser = $resolver->resolve(array_replace($payload, [
+    'released_by' => 'different-user',
+    'status' => 'queued',
+]), [], array_replace($context, ['report_version' => 8]), []);
+$expect($releasedByOtherUser['task_author_id'] === '4', 'Release actor must not replace the signed-version author');
+$expect($releasedByOtherUser['author_source'] === PhilipsSubmissionAuthorResolver::SOURCE_SIGNER, 'Release actor must not become the Philips author');
 $lookup->versionSigner['ativo'] = 0;
 $inactiveSigner = $resolver->resolve($payload, [], $context, []);
 $expect($inactiveSigner['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_REAL_AUTHOR_AVAILABLE, 'Inactive registry must not rewrite historical signer');
 $expect($inactiveSigner['task_author_id'] === '4', 'Inactive registry must preserve real signer ID');
 $frozenPayload = [
-    'author_signer_id' => 9,
+    'author_signer_id' => 4,
     'author_signer_tenant_id' => 2,
     'author_signer_report_id' => 526,
     'author_signer_report_version' => 5,
@@ -80,11 +86,11 @@ $frozenPayload = [
     'author_signer_name' => 'Álvaro da Silva',
 ];
 $frozen = $resolver->resolve($frozenPayload, [], $context, []);
-$expect($frozen['task_author_id'] === '9', 'Frozen signer must take precedence over lookup');
+$expect($frozen['task_author_id'] === '4', 'Frozen signer display identity must retain the canonical signer ID');
 $expect($frozen['task_author_humanname_given'] === 'Álvaro', 'Frozen signer name must preserve accents');
 $expect($frozen['task_author_humanname_family'] === 'da Silva', 'Frozen signer particles must remain in family');
 $single = $resolver->resolve([
-    'author_signer_id' => 10,
+    'author_signer_id' => 4,
     'author_signer_tenant_id' => 2,
     'author_signer_report_id' => 526,
     'author_signer_report_version' => 5,
@@ -94,6 +100,16 @@ $single = $resolver->resolve([
 $expect($single['task_author_humanname_family'] === 'Madonna', 'Single-token author must remain family');
 $expect($single['task_author_humanname_given'] === '', 'Single-token author given must be empty');
 $expect($single['author_humanname_flat'] === true, 'Single-token author must use flat contract');
+$mismatchedFrozenId = $resolver->resolve([
+    'author_signer_id' => 9,
+    'author_signer_tenant_id' => 2,
+    'author_signer_report_id' => 526,
+    'author_signer_report_version' => 5,
+    'author_signer_study_id' => 1,
+    'author_signer_name' => 'Outro Médico',
+], [], $context, []);
+$expect($mismatchedFrozenId['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Frozen ID different from signed version must fail closed');
+$expect($mismatchedFrozenId['task_author_id'] === null, 'Mismatched frozen ID must not be emitted');
 $wrongTenant = $resolver->resolve([
     'author_signer_id' => 9,
     'author_signer_tenant_id' => 3,
@@ -137,7 +153,7 @@ $xml = (new PhilipsSubmissionDocumentGenerator())->generate(
 );
 $encodedGiven = mb_convert_encoding('Álvaro', 'ISO-8859-1', 'UTF-8');
 $expect(str_contains($xml->content, 'encoding="iso-8859-1"'), 'XML must retain ISO-8859-1 declaration');
-$expect(str_contains($xml->content, '<task_author_id>9</task_author_id>'), 'XML must carry signer ID');
+$expect(str_contains($xml->content, '<task_author_id>4</task_author_id>'), 'XML must carry signer ID');
 $expect(str_contains($xml->content, '<task_author_humanname_given>' . $encodedGiven . '</task_author_humanname_given>'), 'XML must carry accented given name');
 $expect(!str_contains($xml->content, '999'), 'XML must never carry the default author ID');
 $source = file_get_contents($root . '/app/Services/PhilipsSubmissionAuthorResolver.php');
@@ -149,12 +165,14 @@ echo "SIGNER_SOURCE=PASS\n";
 echo "SIGNER_ID=PASS\n";
 echo "AUTHOR_DISTINCT_FROM_REQUESTER=PASS\n";
 echo "QUEUED_LEGACY_JOB=PASS\n";
+echo "RELEASE_ACTOR_NOT_AUTHOR=PASS\n";
 echo "SIGNER_NAME_RULE=PASS\n";
 echo "TENANT_SCOPE=PASS\n";
 echo "CROSS_TENANT_FAIL_CLOSED=PASS\n";
 echo "INACTIVE_SIGNER_PRESERVED=PASS\n";
 echo "SINGLE_TOKEN_NAME=PASS\n";
 echo "PARTICLES_ACCENTS=PASS\n";
+echo "FROZEN_ID_MUST_MATCH_SIGNER=PASS\n";
 echo "MISSING_SIGNER_FAIL_CLOSED=PASS\n";
 echo "DEFAULT_999_REMOVED=PASS\n";
 echo "ISO_8859_1=PASS\n";

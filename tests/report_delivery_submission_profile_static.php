@@ -15,8 +15,9 @@ $authorResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionAuth
 $metadataResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
 $generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+$authorRepository = file_get_contents($root . '/app/Repositories/PhilipsSubmissionAuthorRepository.php');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-foreach ([$controller, $view, $producer, $authorResolver, $metadataResolver, $generator, $outbox, $contract] as $source) {
+foreach ([$controller, $view, $producer, $authorResolver, $metadataResolver, $generator, $outbox, $authorRepository, $contract] as $source) {
     expect_profile(is_string($source), 'Submission source must be readable');
 }
 foreach (['PROFILE_SUBMISSION_DOCUMENT', 'validatePhilipsSubmissionConfiguration', 'task_file_path', 'task_site_id', 'task_document_name', 'task_delete_file', 'task_document_type_applicable', '11502-2'] as $marker) {
@@ -44,8 +45,11 @@ expect_profile(!str_contains($metadataResolver, 'referringPhysicianRaw'), 'Metad
 expect_profile(str_contains($metadataResolver, 'studyDocumentDate'), 'Metadata resolver must derive date from StudyDate/StudyTime');
 expect_profile(str_contains($generator, 'encoding="iso-8859-1"'), 'Generator must preserve ISO-8859-1 contract');
 expect_profile(str_contains($outbox, 'author_signer_id'), 'Outbox must freeze signer identity for new automatic jobs');
-expect_profile(str_contains($outbox, 'm.id AS id'), 'Outbox signer snapshot must emit the bi_medicos ID');
-expect_profile(str_contains($outbox, 'm.usuario_id = rv.usuario_id'), 'Outbox signer snapshot must use the exact version signer');
+expect_profile(str_contains($outbox, 'PhilipsSubmissionAuthorRepository'), 'Outbox must use the central signer repository');
+expect_profile(str_contains($outbox, 'findSignerForReportVersion'), 'Outbox must use the signed-version lookup');
+expect_profile(str_contains($authorRepository, 'm.id AS id'), 'Signer repository must emit the bi_medicos ID');
+expect_profile(str_contains($authorRepository, "rv.acao = \\'assinado\\'"), 'Signer repository must use the signed version action');
+expect_profile(str_contains($authorRepository, 'rv.versao <= :report_version'), 'Signer repository must bound signed version by the release version');
 expect_profile(str_contains($contract, 'signatário'), 'Contract must document signer semantics');
 expect_profile(str_contains($contract, 'ReferringPhysicianName'), 'Contract must distinguish requesting physician');
 expect_profile(str_contains($contract, 'task_image_date'), 'Contract must document image date');

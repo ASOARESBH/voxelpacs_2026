@@ -26,9 +26,11 @@ foreach ([
     'INNER JOIN report_versions rv',
     'rv.versao = :report_version',
     'r.estudo_id = :study_id',
-    'rv.acao IN (',
-    'assinado',
     'liberado',
+    "rv.acao = \\'assinado\\'",
+    'rv.versao <= :report_version',
+    'ORDER BY rv.versao DESC',
+    "if (\$action === 'assinado')",
 ] as $required) {
     $expect(str_contains($source, $required), "Author repository must contain {$required}");
 }

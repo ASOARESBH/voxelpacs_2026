@@ -12,10 +12,10 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         $this->pdo = $pdo;
     }
     /**
-     * O usuário canônico é report_versions.usuario_id. A versão exata e o estudo são
-     * joins obrigatórios; o XML recebe bi_medicos.id e o nome do cadastro resolvido.
-     * O estado ativo não é reavaliado: desativar o cadastro depois da assinatura
-     * não pode mudar a autoria histórica. Duplicidade continua falhando fechado.
+     * Resolve o médico que assinou o laudo, nunca o usuário que apenas liberou.
+     * Para uma versão `assinado`, usa a própria versão; para `liberado`, usa a
+     * versão `assinado` mais recente com número menor ou igual ao Job.
+     * O estado ativo não é reavaliado e a duplicidade falha fechado.
      * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
      */
     public function findSignerForReportVersion(
@@ -29,6 +29,16 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         }
         try {
             $pdo = $this->pdo ??= Database::getInstance();
+            $signerVersion = $this->resolveSignerVersion(
+                $pdo,
+                $tenantId,
+                $reportId,
+                $reportVersion,
+                $studyId
+            );
+            if ($signerVersion === null) {
+                return null;
+            }
             $statement = $pdo->prepare(
                 'SELECT m.id AS id,\n'
                 . '       r.tenant_id AS tenant_id,\n'
@@ -40,7 +50,7 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
                 . '       AND e.tenant_id = r.tenant_id\n'
                 . 'INNER JOIN report_versions rv\n'
                 . '        ON rv.report_id = r.id\n'
-                . '       AND rv.versao = :report_version\n'
+                . '       AND rv.versao = :signer_version\n'
                 . 'INNER JOIN bi_medicos m\n'
                 . '        ON m.usuario_id = rv.usuario_id\n'
                 . '       AND m.tenant_id = r.tenant_id\n'
@@ -49,13 +59,13 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
                 . '  AND r.estudo_id = :study_id\n'
                 . '  AND rv.usuario_id IS NOT NULL\n'
                 . '  AND rv.usuario_id > 0\n'
-                . '  AND rv.acao IN (\'assinado\', \'liberado\')\n'
+                . '  AND rv.acao = \'assinado\'\n'
                 . 'LIMIT 2'
             );
             $statement->execute([
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
-                'report_version' => $reportVersion,
+                'signer_version' => $signerVersion,
                 'study_id' => $studyId,
             ]);
             $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -63,6 +73,74 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
             return null;
         }
         return count($rows) === 1 ? $this->normalizeRow($rows[0]) : null;
+    }
+
+    private function resolveSignerVersion(
+        PDO $pdo,
+        int $tenantId,
+        int $reportId,
+        int $reportVersion,
+        int $studyId
+    ): ?int {
+        $targetStatement = $pdo->prepare(
+            'SELECT rv.acao\n'
+            . 'FROM reports r\n'
+            . 'INNER JOIN bi_pacs_estudos e\n'
+            . '        ON e.id = r.estudo_id\n'
+            . '       AND e.tenant_id = r.tenant_id\n'
+            . 'INNER JOIN report_versions rv\n'
+            . '        ON rv.report_id = r.id\n'
+            . '       AND rv.versao = :report_version\n'
+            . 'WHERE r.id = :report_id\n'
+            . '  AND r.tenant_id = :tenant_id\n'
+            . '  AND r.estudo_id = :study_id\n'
+            . 'LIMIT 2'
+        );
+        $targetStatement->execute([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $reportVersion,
+            'study_id' => $studyId,
+        ]);
+        $targetRows = $targetStatement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($targetRows) !== 1) {
+            return null;
+        }
+
+        $action = (string) ($targetRows[0]['acao'] ?? '');
+        if ($action === 'assinado') {
+            return $reportVersion;
+        }
+        if ($action !== 'liberado') {
+            return null;
+        }
+
+        $signedStatement = $pdo->prepare(
+            'SELECT rv.versao\n'
+            . 'FROM reports r\n'
+            . 'INNER JOIN bi_pacs_estudos e\n'
+            . '        ON e.id = r.estudo_id\n'
+            . '       AND e.tenant_id = r.tenant_id\n'
+            . 'INNER JOIN report_versions rv\n'
+            . '        ON rv.report_id = r.id\n'
+            . 'WHERE r.id = :report_id\n'
+            . '  AND r.tenant_id = :tenant_id\n'
+            . '  AND r.estudo_id = :study_id\n'
+            . '  AND rv.acao = \'assinado\'\n'
+            . '  AND rv.versao <= :report_version\n'
+            . '  AND rv.usuario_id IS NOT NULL\n'
+            . '  AND rv.usuario_id > 0\n'
+            . 'ORDER BY rv.versao DESC\n'
+            . 'LIMIT 1'
+        );
+        $signedStatement->execute([
+            'tenant_id' => $tenantId,
+            'report_id' => $reportId,
+            'report_version' => $reportVersion,
+            'study_id' => $studyId,
+        ]);
+        $signedVersion = (int) $signedStatement->fetchColumn();
+        return $signedVersion > 0 ? $signedVersion : null;
     }
 
     /** @return array{id:int,tenant_id:int,nome:string,ativo:int}|null */

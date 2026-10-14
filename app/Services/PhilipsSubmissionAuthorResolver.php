@@ -59,14 +59,25 @@ final class PhilipsSubmissionAuthorResolver
             'task_author_id_resolution' => 'UNRESOLVED',
         ];
 
-        $signer = $this->frozenSigner($payload, $deliveryContext);
-        if ($signer === null) {
-            $signer = $this->authorLookup->findSignerForReportVersion(
-                $this->positiveInteger($deliveryContext['tenant_id'] ?? null) ?? 0,
-                $this->positiveInteger($deliveryContext['report_id'] ?? null) ?? 0,
-                $this->positiveInteger($deliveryContext['report_version'] ?? null) ?? 0,
-                $this->positiveInteger($deliveryContext['estudo_id'] ?? null) ?? 0
-            );
+        $versionSigner = $this->authorLookup->findSignerForReportVersion(
+            $this->positiveInteger($deliveryContext['tenant_id'] ?? null) ?? 0,
+            $this->positiveInteger($deliveryContext['report_id'] ?? null) ?? 0,
+            $this->positiveInteger($deliveryContext['report_version'] ?? null) ?? 0,
+            $this->positiveInteger($deliveryContext['estudo_id'] ?? null) ?? 0
+        );
+        $frozenSigner = $this->frozenSigner($payload, $deliveryContext);
+        if ($frozenSigner !== null) {
+            if ($frozenSigner === []
+                || $versionSigner === null
+                || (int) ($frozenSigner['id'] ?? 0) !== (int) ($versionSigner['id'] ?? 0)
+                || (int) ($frozenSigner['tenant_id'] ?? 0) !== (int) ($versionSigner['tenant_id'] ?? 0)) {
+                return $base;
+            }
+            // Preserve the immutable display name, but only after proving that
+            // its ID is the signer resolved from report_versions.
+            $signer = $frozenSigner;
+        } else {
+            $signer = $versionSigner;
         }
         if ($signer === null
             || (int) ($signer['tenant_id'] ?? 0) !== (int) ($deliveryContext['tenant_id'] ?? 0)
@@ -89,8 +100,9 @@ final class PhilipsSubmissionAuthorResolver
 
     /**
      * Campos congelados são aceitos somente quando a identidade completa do
-     * job confere com o contexto atual. Campo parcial ou divergente falha
-     * fechado e não é substituído silenciosamente por configuração legada.
+     * job confere com o contexto atual e com o ID resolvido na versão assinada.
+     * Campo parcial ou divergente falha fechado e não é substituído silenciosamente
+     * por configuração legada.
      * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
      */
     private function frozenSigner(array $payload, array $context): ?array

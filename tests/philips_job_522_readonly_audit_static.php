@@ -38,12 +38,13 @@ foreach ([
     "pacs_report_delivery_outbox",
     "pacs_report_delivery_destinations",
     "pacs_report_delivery_attempts",
-    "bi_medicos",
-    "m.id AS author_id",
-    "m.usuario_id = rv.usuario_id",
+    "PhilipsSubmissionAuthorRepository",
+    "findSignerForReportVersion",
     "rv.usuario_id IS NOT NULL",
     "report_versions rv",
     "SIGNER_VERSION",
+    "version_action",
+    "LATEST_ASSINADO_LE_JOB_VERSION",
     "AND r.tenant_id = :tenant_id",
     'LIMIT 2',
     "job_claimed",
@@ -65,7 +66,7 @@ $expect(!str_contains($diagnostic, "'patient_name'"), 'diagnóstico não pode re
 $expect(str_contains($diagnostic, "'name_materialized' => 'NO'"), 'diagnóstico não comprova que nome do autor não foi materializado');
 $expect(str_contains($diagnostic, "'task_author_id' => \$resolved ? 'REAL'"), 'auditor não classifica ID real do signatário');
 $expect(!str_contains($diagnostic, 'AND m.ativo = 1'), 'auditor não pode invalidar autoria por inatividade posterior');
-$expect(str_contains($diagnostic, "count(\$rows) === 1"), 'auditor deve falhar fechado para cadastro duplicado');
+$expect(str_contains($diagnostic, "count(\$versionRows) !== 1"), 'auditor deve falhar fechado para versão ausente ou duplicada');
 
 foreach ([
     "readonly DIAGNOSTIC='/usr/local/libexec/voxelpacs/philips_job_522_readonly_audit.php'",
