@@ -15,6 +15,7 @@ namespace App\Diagnostics {
 use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\PostgresPdo;
 use App\Core\SqlHelper;
+use App\Repositories\PhilipsSubmissionAuthorRepository;
 use PDO;
 use Throwable;
 
@@ -300,44 +301,95 @@ final class PhilipsJob522ReadonlyAudit
                 'source' => 'SIGNER_VERSION',
                 'task_author_id' => 'INVALID_OR_MISSING',
                 'lookup' => 'NOT_EXECUTED',
+                'version_action' => 'UNKNOWN',
+                'signer_version_rule' => 'UNRESOLVED',
             ];
         }
-        $statement = $pdo->prepare(
-            "SELECT r.assinado_por AS author_id, r.tenant_id, m.ativo
+        $versionStatement = $pdo->prepare(
+            "SELECT rv.acao
                FROM reports r
                INNER JOIN bi_pacs_estudos e
                        ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
                INNER JOIN report_versions rv
                        ON rv.report_id = r.id AND rv.versao = :report_version
-               INNER JOIN bi_medicos m
-                       ON m.usuario_id = r.assinado_por
-                      AND m.tenant_id = r.tenant_id
-                      AND m.ativo = 1
               WHERE r.id = :report_id
                 AND r.tenant_id = :tenant_id
                 AND r.estudo_id = :study_id
-                AND r.assinado_por IS NOT NULL
-                AND r.assinado_por > 0
-                AND rv.acao IN ('assinado', 'liberado')
-              LIMIT 1"
+              LIMIT 2"
         );
-        $statement->execute([
+        $versionStatement->execute([
             ':report_id' => $reportId,
             ':report_version' => $version,
             ':study_id' => $studyId,
             ':tenant_id' => self::TENANT_ID,
         ]);
-        $row = $statement->fetch(PDO::FETCH_ASSOC);
-        $resolved = is_array($row)
-            && (int) ($row['author_id'] ?? 0) > 0
-            && (int) ($row['tenant_id'] ?? 0) === self::TENANT_ID
-            && (int) ($row['ativo'] ?? 0) === 1;
+        $versionRows = $versionStatement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($versionRows) !== 1) {
+            return [
+                'status' => 'BLOCKED',
+                'source' => 'SIGNER_VERSION',
+                'task_author_id' => 'INVALID_OR_MISSING',
+                'lookup' => 'VERSION_NOT_FOUND_OR_DUPLICATE',
+                'version_action' => 'UNKNOWN',
+                'signer_version_rule' => 'UNRESOLVED',
+                'name_materialized' => 'NO',
+            ];
+        }
+
+        $versionAction = (string) ($versionRows[0]['acao'] ?? '');
+        $signerVersion = null;
+        $signerVersionRule = 'UNRESOLVED';
+        if ($versionAction === 'assinado') {
+            $signerVersion = $version;
+            $signerVersionRule = 'EXACT_ASSINADO';
+        } elseif ($versionAction === 'liberado') {
+            $signedStatement = $pdo->prepare(
+                "SELECT rv.versao
+                   FROM reports r
+                   INNER JOIN bi_pacs_estudos e
+                           ON e.id = r.estudo_id AND e.tenant_id = r.tenant_id
+                   INNER JOIN report_versions rv
+                           ON rv.report_id = r.id
+                  WHERE r.id = :report_id
+                    AND r.tenant_id = :tenant_id
+                    AND r.estudo_id = :study_id
+                    AND rv.acao = 'assinado'
+                    AND rv.versao <= :report_version
+                    AND rv.usuario_id IS NOT NULL
+                    AND rv.usuario_id > 0
+                  ORDER BY rv.versao DESC
+                  LIMIT 1"
+            );
+            $signedStatement->execute([
+                ':report_id' => $reportId,
+                ':report_version' => $version,
+                ':study_id' => $studyId,
+                ':tenant_id' => self::TENANT_ID,
+            ]);
+            $candidateVersion = (int) $signedStatement->fetchColumn();
+            if ($candidateVersion > 0) {
+                $signerVersion = $candidateVersion;
+                $signerVersionRule = 'LATEST_ASSINADO_LE_JOB_VERSION';
+            }
+        }
+
+        $signer = $signerVersion === null
+            ? null
+            : (new PhilipsSubmissionAuthorRepository($pdo))->findSignerForReportVersion(
+                self::TENANT_ID,
+                $reportId,
+                $signerVersion,
+                $studyId
+            );
+        $resolved = $signer !== null;
         return [
             'status' => $resolved ? 'PASS' : 'BLOCKED',
             'source' => 'SIGNER_VERSION',
             'scope' => 'TENANT_SCOPED',
             'task_author_id' => $resolved ? 'REAL' : 'INVALID_OR_MISSING',
-            'lookup' => $resolved ? 'RESOLVED' : 'NOT_FOUND_OR_INACTIVE',
+            'lookup' => $resolved ? 'RESOLVED' : 'NOT_FOUND_OR_DUPLICATE_OR_NO_SIGNED_VERSION',
+            'version_action' => in_array($versionAction, ['assinado', 'liberado'], true) ? $versionAction : 'UNSUPPORTED',
+            'signer_version_rule' => $signerVersionRule,
             'name_materialized' => 'NO',
         ];
     }

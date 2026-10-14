@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
+use App\Repositories\PhilipsSubmissionAuthorRepository;
 use App\Repositories\ReportDeliveryRepository;
 use PDO;
 use Throwable;
@@ -378,46 +379,20 @@ class ReportDeliveryOutboxService
     /** @return array{id:int,tenant_id:int,nome:string}|null */
     private function loadFrozenSigner(int $tenantId, int $reportId, int $studyId, int $reportVersion): ?array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT r.assinado_por AS id,
-                    r.tenant_id,
-                    m.nome
-               FROM reports r
-               INNER JOIN bi_pacs_estudos e
-                       ON e.id = r.estudo_id
-                      AND e.tenant_id = r.tenant_id
-               INNER JOIN report_versions rv
-                       ON rv.report_id = r.id
-                      AND rv.versao = :report_version
-               INNER JOIN bi_medicos m
-                       ON m.usuario_id = r.assinado_por
-                      AND m.tenant_id = r.tenant_id
-                      AND m.ativo = 1
-              WHERE r.id = :report_id
-                AND r.tenant_id = :tenant_id
-                AND r.estudo_id = :study_id
-                AND r.assinado_por IS NOT NULL
-                AND r.assinado_por > 0
-                AND rv.acao IN ('assinado', 'liberado')
-              LIMIT 2"
+        $signer = (new PhilipsSubmissionAuthorRepository($this->pdo))->findSignerForReportVersion(
+            $tenantId,
+            $reportId,
+            $reportVersion,
+            $studyId
         );
-        $stmt->execute([
-            ':tenant_id' => $tenantId,
-            ':report_id' => $reportId,
-            ':study_id' => $studyId,
-            ':report_version' => $reportVersion,
-        ]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (count($rows) !== 1) {
+        if ($signer === null) {
             return null;
         }
-        $row = $rows[0];
-        $id = (int) ($row['id'] ?? 0);
-        $name = is_string($row['nome'] ?? null) ? trim($row['nome']) : '';
-        if ($id <= 0 || (int) ($row['tenant_id'] ?? 0) !== $tenantId || $name === '') {
-            return null;
-        }
-        return ['id' => $id, 'tenant_id' => $tenantId, 'nome' => $name];
+        return [
+            'id' => $signer['id'],
+            'tenant_id' => $signer['tenant_id'],
+            'nome' => $signer['nome'],
+        ];
     }
 
     private function enabled(): bool

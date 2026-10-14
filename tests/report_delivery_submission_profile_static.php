@@ -15,8 +15,9 @@ $authorResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionAuth
 $metadataResolver = file_get_contents($root . '/app/Services/PhilipsSubmissionMetadataResolver.php');
 $generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+$authorRepository = file_get_contents($root . '/app/Repositories/PhilipsSubmissionAuthorRepository.php');
 $contract = file_get_contents($root . '/docs/PHILIPS_SUBMISSION_DOCUMENT_CONTRACT.md');
-foreach ([$controller, $view, $producer, $authorResolver, $metadataResolver, $generator, $outbox, $contract] as $source) {
+foreach ([$controller, $view, $producer, $authorResolver, $metadataResolver, $generator, $outbox, $authorRepository, $contract] as $source) {
     expect_profile(is_string($source), 'Submission source must be readable');
 }
 foreach (['PROFILE_SUBMISSION_DOCUMENT', 'validatePhilipsSubmissionConfiguration', 'task_file_path', 'task_site_id', 'task_document_name', 'task_delete_file', 'task_document_type_applicable', '11502-2'] as $marker) {
@@ -24,7 +25,10 @@ foreach (['PROFILE_SUBMISSION_DOCUMENT', 'validatePhilipsSubmissionConfiguration
 }
 expect_profile(!str_contains($controller, 'allowDefaultAuthor'), 'Controller must not expose a default-author permission');
 expect_profile(!str_contains($controller, "'task_author_id' => 'identificador"), 'Controller must not require configured author ID');
-expect_profile(str_contains($controller, 'A autoria Philips é resolvida pelo signatário'), 'Controller must explain signer-only authorship');
+expect_profile(str_contains($controller, 'contrato signer-first'), 'Controller must explain legacy-author cleanup');
+expect_profile(str_contains($controller, '$legacyAuthorFields'), 'Controller must define the legacy author field set');
+expect_profile(str_contains($controller, "unset(\$decoded[\$legacyAuthorField])"), 'Controller must remove root legacy author fields');
+expect_profile(str_contains($controller, "unset(\$decoded['philips_submission'][\$legacyAuthorField])"), 'Controller must remove nested legacy author fields');
 expect_profile(!str_contains($view, 'nondicom-task-author-source'), 'View must not expose author source selector');
 expect_profile(!str_contains($view, 'nondicom-task-author-id'), 'View must not expose author ID input');
 expect_profile(!str_contains($view, 'syncTaskAuthorSource'), 'View must not retain default-author JavaScript');
@@ -41,12 +45,17 @@ expect_profile(!str_contains($metadataResolver, 'referringPhysicianRaw'), 'Metad
 expect_profile(str_contains($metadataResolver, 'studyDocumentDate'), 'Metadata resolver must derive date from StudyDate/StudyTime');
 expect_profile(str_contains($generator, 'encoding="iso-8859-1"'), 'Generator must preserve ISO-8859-1 contract');
 expect_profile(str_contains($outbox, 'author_signer_id'), 'Outbox must freeze signer identity for new automatic jobs');
-expect_profile(str_contains($outbox, 'r.assinado_por'), 'Outbox signer snapshot must use report signatory');
+expect_profile(str_contains($outbox, 'PhilipsSubmissionAuthorRepository'), 'Outbox must use the central signer repository');
+expect_profile(str_contains($outbox, 'findSignerForReportVersion'), 'Outbox must use the signed-version lookup');
+expect_profile(str_contains($authorRepository, 'm.id AS id'), 'Signer repository must emit the bi_medicos ID');
+expect_profile(str_contains($authorRepository, "rv.acao = \\'assinado\\'"), 'Signer repository must use the signed version action');
+expect_profile(str_contains($authorRepository, 'rv.versao <= :report_version'), 'Signer repository must bound signed version by the release version');
 expect_profile(str_contains($contract, 'signatário'), 'Contract must document signer semantics');
 expect_profile(str_contains($contract, 'ReferringPhysicianName'), 'Contract must distinguish requesting physician');
 expect_profile(str_contains($contract, 'task_image_date'), 'Contract must document image date');
 echo "REPORT_DELIVERY_SUBMISSION_PROFILE_STATIC_OK\n";
 echo "SIGNER_ONLY_CONFIGURATION=PASS\n";
+echo "LEGACY_AUTHOR_CLEANUP=PASS\n";
 echo "DEFAULT_999_REMOVED=PASS\n";
 echo "REFERRING_PHYSICIAN_NOT_AUTHOR=PASS\n";
 echo "OUTBOX_SIGNER_FREEZE=PASS\n";
