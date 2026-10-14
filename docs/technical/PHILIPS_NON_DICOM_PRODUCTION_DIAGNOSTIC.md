@@ -100,6 +100,22 @@ Exemplo de decisão (sem valores de ambiente):
 
 ## Testes locais
 
+### Probe pós-publicação de liberações
+
+Para uma auditoria read-only do intervalo posterior a uma publicação, use o
+probe versionado abaixo com o timestamp UTC da transação de deploy:
+
+```text
+php bin/philips_report_release_health_probe.php --since=<timestamp-ISO-8601>
+```
+
+O probe consulta somente auditoria de assinatura/liberação, contagens
+tenant-scoped de Outbox/Jobs dos Destinations 6/7 e padrões allowlisted dos
+logs. Ele informa `DATABASE_CHANGED=NO`, não cria sessão clínica, não executa
+Worker, não chama Bridge/SMB e não imprime conteúdo clínico. A categoria
+`author_signer_mismatch` é distinta de `AUTHOR_UNRESOLVED` e bloqueia a entrega
+antes da Bridge.
+
 ```text
 php -l bin/philips_nondicom_production_diagnostic.php
 php -l tests/philips_nondicom_production_diagnostic_static.php

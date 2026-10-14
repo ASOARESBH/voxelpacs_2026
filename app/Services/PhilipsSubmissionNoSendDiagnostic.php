@@ -52,6 +52,7 @@ final class PhilipsSubmissionNoSendDiagnostic
             'author_decision' => PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED,
             'author_fallback_used' => 'NO',
             'task_author_id_resolution' => 'NOT_PRESENT',
+            'author_failure_category' => null,
             'artifact_written' => 'NO',
             'attempt_created' => 'NO',
             'job_claimed' => 'NO',
@@ -125,6 +126,12 @@ final class PhilipsSubmissionNoSendDiagnostic
             $result['task_author_id_resolution'] = (string) ($validation['task_author_id_resolution'] ?? 'NOT_PRESENT');
             $result['status'] = 'PASS';
         } catch (Throwable $error) {
+            if ($error instanceof PhilipsSubmissionAuthorMismatchException) {
+                $result['author_source'] = PhilipsSubmissionAuthorResolver::SOURCE_SIGNER;
+                $result['author_decision'] = PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_SIGNER_MISMATCH;
+                $result['task_author_id_resolution'] = 'SIGNER_ID_MISMATCH';
+                $result['author_failure_category'] = PhilipsSubmissionAuthorMismatchException::CODE;
+            }
             $result['failure_code'] = $this->failureCode($error);
         } finally {
             if ($transactionStarted && $this->pdo->inTransaction()) {

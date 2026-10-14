@@ -184,6 +184,9 @@ final class PhilipsSubmissionPackageProducer
         $authorResolution = $noSendDiagnostic
             ? $this->authorResolver->resolveForNoSendDiagnostic($payload, $configuration, $deliveryContext, $input)
             : $this->authorResolver->resolve($payload, $configuration, $deliveryContext, $input);
+        if (($authorResolution['author_failure_category'] ?? null) === PhilipsSubmissionAuthorMismatchException::CODE) {
+            throw new PhilipsSubmissionAuthorMismatchException();
+        }
         $input = array_replace($input, $authorResolution);
         $input['task_site_id'] = self::resolveTaskSiteId(
             $payload,

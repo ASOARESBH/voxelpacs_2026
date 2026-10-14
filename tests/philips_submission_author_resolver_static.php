@@ -108,7 +108,9 @@ $mismatchedFrozenId = $resolver->resolve([
     'author_signer_study_id' => 1,
     'author_signer_name' => 'Outro Médico',
 ], [], $context, []);
-$expect($mismatchedFrozenId['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Frozen ID different from signed version must fail closed');
+$expect($mismatchedFrozenId['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_SIGNER_MISMATCH, 'Frozen ID different from signed version must expose a dedicated fail-closed decision');
+$expect($mismatchedFrozenId['author_failure_category'] === PhilipsSubmissionAuthorResolver::FAILURE_AUTHOR_SIGNER_MISMATCH, 'Signer mismatch must expose a dedicated failure category');
+$expect($mismatchedFrozenId['task_author_id_resolution'] === 'SIGNER_ID_MISMATCH', 'Signer mismatch must not be classified as a real ID');
 $expect($mismatchedFrozenId['task_author_id'] === null, 'Mismatched frozen ID must not be emitted');
 $wrongTenant = $resolver->resolve([
     'author_signer_id' => 9,
@@ -118,7 +120,8 @@ $wrongTenant = $resolver->resolve([
     'author_signer_study_id' => 1,
     'author_signer_name' => 'Other Tenant',
 ], [], $context, []);
-$expect($wrongTenant['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED, 'Cross-tenant frozen signer must fail closed');
+$expect($wrongTenant['author_decision'] === PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_SIGNER_MISMATCH, 'Cross-tenant frozen signer must expose a dedicated fail-closed decision');
+$expect($wrongTenant['author_failure_category'] === PhilipsSubmissionAuthorResolver::FAILURE_AUTHOR_SIGNER_MISMATCH, 'Cross-tenant mismatch must expose the dedicated failure category');
 $expect($wrongTenant['task_author_id'] === null, 'Cross-tenant signer must not leave an ID');
 $lookup->versionSigner = null;
 $missing = $resolver->resolve(['referring_physician_name' => 'Solicitante Médico'], [], $context, []);

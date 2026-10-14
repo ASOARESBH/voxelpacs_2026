@@ -135,6 +135,13 @@ final class PhilipsFolderDeliveryService
             $envelope = (new GatewaySmbSecretEnvelopeService())->seal($password, (int) ($job['tenant_id'] ?? 0), $destinationId);
             try {
                 $package = (new PhilipsSubmissionPackageProducer())->produce($job, $configuration, $payload, $workerId);
+            } catch (PhilipsSubmissionAuthorMismatchException) {
+                Logger::warning('[PhilipsNonDicomDelivery] AUTHOR_SIGNER_MISMATCH', [
+                    'job_id' => $jobId,
+                    'stage' => 'author_resolution',
+                    'reason_category' => PhilipsSubmissionAuthorMismatchException::CODE,
+                ]);
+                throw new PhilipsFolderDeliveryException('author_resolution_failed', 'author_signer_mismatch');
             } catch (PhilipsXmlFieldUnresolvedException $error) {
                 Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
                     'job_id' => $jobId,
