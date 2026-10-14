@@ -13,6 +13,8 @@ final class PhilipsSubmissionAuthorResolver
     public const SOURCE_UNRESOLVED = 'UNRESOLVED';
     public const DECISION_REAL_AUTHOR_AVAILABLE = 'REAL_AUTHOR_AVAILABLE';
     public const DECISION_AUTHOR_UNRESOLVED = 'AUTHOR_UNRESOLVED';
+    public const DECISION_AUTHOR_SIGNER_MISMATCH = 'AUTHOR_SIGNER_MISMATCH';
+    public const FAILURE_AUTHOR_SIGNER_MISMATCH = PhilipsSubmissionAuthorMismatchException::CODE;
 
     public function __construct(
         private readonly PhilipsSubmissionAuthorLookup $authorLookup = new PhilipsSubmissionAuthorRepository()
@@ -57,6 +59,7 @@ final class PhilipsSubmissionAuthorResolver
             'author_fallback_used' => 'NO',
             'author_fallback_configuration' => 'NOT_APPLICABLE',
             'task_author_id_resolution' => 'UNRESOLVED',
+            'author_failure_category' => null,
         ];
 
         $versionSigner = $this->authorLookup->findSignerForReportVersion(
@@ -71,7 +74,12 @@ final class PhilipsSubmissionAuthorResolver
                 || $versionSigner === null
                 || (int) ($frozenSigner['id'] ?? 0) !== (int) ($versionSigner['id'] ?? 0)
                 || (int) ($frozenSigner['tenant_id'] ?? 0) !== (int) ($versionSigner['tenant_id'] ?? 0)) {
-                return $base;
+                return array_replace($base, [
+                    'author_source' => self::SOURCE_SIGNER,
+                    'author_decision' => self::DECISION_AUTHOR_SIGNER_MISMATCH,
+                    'task_author_id_resolution' => 'SIGNER_ID_MISMATCH',
+                    'author_failure_category' => self::FAILURE_AUTHOR_SIGNER_MISMATCH,
+                ]);
             }
             // Preserve the immutable display name, but only after proving that
             // its ID is the signer resolved from report_versions.

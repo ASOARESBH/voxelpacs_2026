@@ -34,7 +34,7 @@ $expect(str_contains($repository, "if (\$action === 'assinado')"), 'Versão assi
 $expect(str_contains($repository, "if (\$action !== 'liberado')"), 'Apenas versão liberado pode procurar assinatura anterior');
 $expect(str_contains($repository, 'rv.versao <= :report_version'), 'Assinatura anterior deve ser limitada à versão do Job');
 $expect(str_contains($repository, 'ORDER BY rv.versao DESC'), 'Duas assinaturas devem escolher a mais recente');
-$expect(str_contains($repository, "rv.acao = \'assinado\'"), 'Somente ações assinado podem fornecer a autoria');
+$expect(str_contains($repository, "rv.acao = 'assinado'"), 'Somente ações assinado podem fornecer a autoria');
 $expect(str_contains($repository, 'LIMIT 2'), 'Duplicidade de cadastro deve falhar fechado');
 $expect(str_contains($resolver, 'frozenSigner'), 'Resolver deve validar identidade congelada');
 $expect(str_contains($resolver, 'versionSigner'), 'Resolver deve validar ID contra a versão assinada');

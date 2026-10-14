@@ -48,7 +48,7 @@ expect_profile(str_contains($outbox, 'author_signer_id'), 'Outbox must freeze si
 expect_profile(str_contains($outbox, 'PhilipsSubmissionAuthorRepository'), 'Outbox must use the central signer repository');
 expect_profile(str_contains($outbox, 'findSignerForReportVersion'), 'Outbox must use the signed-version lookup');
 expect_profile(str_contains($authorRepository, 'm.id AS id'), 'Signer repository must emit the bi_medicos ID');
-expect_profile(str_contains($authorRepository, "rv.acao = \\'assinado\\'"), 'Signer repository must use the signed version action');
+expect_profile(str_contains($authorRepository, "rv.acao = 'assinado'"), 'Signer repository must use the signed version action');
 expect_profile(str_contains($authorRepository, 'rv.versao <= :report_version'), 'Signer repository must bound signed version by the release version');
 expect_profile(str_contains($contract, 'signatário'), 'Contract must document signer semantics');
 expect_profile(str_contains($contract, 'ReferringPhysicianName'), 'Contract must distinguish requesting physician');

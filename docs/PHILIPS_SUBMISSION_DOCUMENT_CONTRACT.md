@@ -101,6 +101,14 @@ Quando o POST do package termina sem uma confirmação HTTP utilizável, o clien
 
 A migration de profile é aditiva e deve ser aplicada pelo procedimento de migrations do projeto. O rollback de banco deve remover apenas a coluna nova depois de confirmar que nenhum destino ou job ativo depende dela; não se deve apagar artifacts, jobs, outboxes ou arquivos remotos como parte do rollback.
 
+### Mismatch de autoria congelada
+
+Quando um Job histórico contém o bloco `author_signer_*`, o resolver compara a identidade congelada com o signatário obtido da versão clínica. Divergência de ID, tenant, relatório, versão ou estudo não pode ser substituída por configuração legada: a decisão sanitizada é `AUTHOR_SIGNER_MISMATCH`, a resolução é `SIGNER_ID_MISMATCH` e o transporte falha fechado com `reason_category=author_signer_mismatch`, antes da Bridge. O diagnóstico no-send expõe a mesma categoria sem criar tentativa, artefato ou chamada externa.
+
+### Probe de saúde das liberações
+
+`bin/philips_report_release_health_probe.php --since=<timestamp-ISO-8601>` é somente leitura. Em uma transação PostgreSQL `READ ONLY`, por tenant, conta auditorias de `report.assinar`/`report.liberar`, Outbox/Jobs D6/D7 e presença estrutural de `author_signer_*`; em logs, conta somente padrões allowlisted de HTTP 500, rollback transacional e bloqueios de compatibilidade. Não imprime PHI, nomes, IDs clínicos, payloads, mensagens brutas ou segredos, e não altera o banco.
+
 ## Referências
 
 [1]: https://github.com/ASOARESBH/voxelpacs_2026 "VOXEL PACS — repositório do projeto"

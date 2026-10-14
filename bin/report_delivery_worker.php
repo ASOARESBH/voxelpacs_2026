@@ -41,6 +41,7 @@ final class LocalDicomDeliveryWorker
         'invalid_artifact',
         'artifact_unreadable',
         'gateway_policy_rejected',
+        'author_signer_mismatch',
         'credentials_unavailable',
         'gateway_unavailable',
             'gateway_delivery_failed',

@@ -27,7 +27,7 @@ foreach ([
     'rv.versao = :report_version',
     'r.estudo_id = :study_id',
     'liberado',
-    "rv.acao = \\'assinado\\'",
+    "rv.acao = 'assinado'",
     'rv.versao <= :report_version',
     'ORDER BY rv.versao DESC',
     "if (\$action === 'assinado')",
@@ -39,6 +39,8 @@ foreach (['INSERT INTO', 'UPDATE ', 'DELETE FROM', 'DROP ', 'TRUNCATE ', 'ALTER 
 }
 $expect(!str_contains($source, 'm.ativo = 1'), 'Historical signer lookup must not require active status');
 $expect(str_contains($source, 'count($rows) === 1'), 'Duplicate signer rows must fail closed');
+$expect(!str_contains($source, "'\\n'"), 'SQL must not encode newline as a literal backslash in single-quoted strings');
+$expect(str_contains($source, "<<<'SQL'"), 'SQL must use a literal-safe heredoc contract');
 
 $interface = file_get_contents($root . '/app/Contracts/PhilipsSubmissionAuthorLookup.php');
 $expect(is_string($interface), 'Author lookup contract must be readable');

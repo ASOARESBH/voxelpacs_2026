@@ -39,29 +39,29 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
             if ($signerVersion === null) {
                 return null;
             }
-            $statement = $pdo->prepare(
-                'SELECT m.id AS id,\n'
-                . '       r.tenant_id AS tenant_id,\n'
-                . '       m.nome AS nome,\n'
-                . '       m.ativo AS ativo\n'
-                . 'FROM reports r\n'
-                . 'INNER JOIN bi_pacs_estudos e\n'
-                . '        ON e.id = r.estudo_id\n'
-                . '       AND e.tenant_id = r.tenant_id\n'
-                . 'INNER JOIN report_versions rv\n'
-                . '        ON rv.report_id = r.id\n'
-                . '       AND rv.versao = :signer_version\n'
-                . 'INNER JOIN bi_medicos m\n'
-                . '        ON m.usuario_id = rv.usuario_id\n'
-                . '       AND m.tenant_id = r.tenant_id\n'
-                . 'WHERE r.id = :report_id\n'
-                . '  AND r.tenant_id = :tenant_id\n'
-                . '  AND r.estudo_id = :study_id\n'
-                . '  AND rv.usuario_id IS NOT NULL\n'
-                . '  AND rv.usuario_id > 0\n'
-                . '  AND rv.acao = \'assinado\'\n'
-                . 'LIMIT 2'
-            );
+            $statement = $pdo->prepare(<<<'SQL'
+SELECT m.id AS id,
+       r.tenant_id AS tenant_id,
+       m.nome AS nome,
+       m.ativo AS ativo
+FROM reports r
+INNER JOIN bi_pacs_estudos e
+        ON e.id = r.estudo_id
+       AND e.tenant_id = r.tenant_id
+INNER JOIN report_versions rv
+        ON rv.report_id = r.id
+       AND rv.versao = :signer_version
+INNER JOIN bi_medicos m
+        ON m.usuario_id = rv.usuario_id
+       AND m.tenant_id = r.tenant_id
+WHERE r.id = :report_id
+  AND r.tenant_id = :tenant_id
+  AND r.estudo_id = :study_id
+  AND rv.usuario_id IS NOT NULL
+  AND rv.usuario_id > 0
+  AND rv.acao = 'assinado'
+LIMIT 2
+SQL);
             $statement->execute([
                 'tenant_id' => $tenantId,
                 'report_id' => $reportId,
@@ -82,20 +82,20 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         int $reportVersion,
         int $studyId
     ): ?int {
-        $targetStatement = $pdo->prepare(
-            'SELECT rv.acao\n'
-            . 'FROM reports r\n'
-            . 'INNER JOIN bi_pacs_estudos e\n'
-            . '        ON e.id = r.estudo_id\n'
-            . '       AND e.tenant_id = r.tenant_id\n'
-            . 'INNER JOIN report_versions rv\n'
-            . '        ON rv.report_id = r.id\n'
-            . '       AND rv.versao = :report_version\n'
-            . 'WHERE r.id = :report_id\n'
-            . '  AND r.tenant_id = :tenant_id\n'
-            . '  AND r.estudo_id = :study_id\n'
-            . 'LIMIT 2'
-        );
+        $targetStatement = $pdo->prepare(<<<'SQL'
+SELECT rv.acao
+FROM reports r
+INNER JOIN bi_pacs_estudos e
+        ON e.id = r.estudo_id
+       AND e.tenant_id = r.tenant_id
+INNER JOIN report_versions rv
+        ON rv.report_id = r.id
+       AND rv.versao = :report_version
+WHERE r.id = :report_id
+  AND r.tenant_id = :tenant_id
+  AND r.estudo_id = :study_id
+LIMIT 2
+SQL);
         $targetStatement->execute([
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
@@ -115,24 +115,24 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
             return null;
         }
 
-        $signedStatement = $pdo->prepare(
-            'SELECT rv.versao\n'
-            . 'FROM reports r\n'
-            . 'INNER JOIN bi_pacs_estudos e\n'
-            . '        ON e.id = r.estudo_id\n'
-            . '       AND e.tenant_id = r.tenant_id\n'
-            . 'INNER JOIN report_versions rv\n'
-            . '        ON rv.report_id = r.id\n'
-            . 'WHERE r.id = :report_id\n'
-            . '  AND r.tenant_id = :tenant_id\n'
-            . '  AND r.estudo_id = :study_id\n'
-            . '  AND rv.acao = \'assinado\'\n'
-            . '  AND rv.versao <= :report_version\n'
-            . '  AND rv.usuario_id IS NOT NULL\n'
-            . '  AND rv.usuario_id > 0\n'
-            . 'ORDER BY rv.versao DESC\n'
-            . 'LIMIT 1'
-        );
+        $signedStatement = $pdo->prepare(<<<'SQL'
+SELECT rv.versao
+FROM reports r
+INNER JOIN bi_pacs_estudos e
+        ON e.id = r.estudo_id
+       AND e.tenant_id = r.tenant_id
+INNER JOIN report_versions rv
+        ON rv.report_id = r.id
+WHERE r.id = :report_id
+  AND r.tenant_id = :tenant_id
+  AND r.estudo_id = :study_id
+  AND rv.acao = 'assinado'
+  AND rv.versao <= :report_version
+  AND rv.usuario_id IS NOT NULL
+  AND rv.usuario_id > 0
+ORDER BY rv.versao DESC
+LIMIT 1
+SQL);
         $signedStatement->execute([
             'tenant_id' => $tenantId,
             'report_id' => $reportId,
