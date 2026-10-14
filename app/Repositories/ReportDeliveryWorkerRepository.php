@@ -792,6 +792,73 @@ class ReportDeliveryWorkerRepository
         }
     }
 
+    /**
+     * Encerra uma falha que ocorreu antes da chamada à Bridge.
+     * O claim já incrementou attempt_count; a reversão restaura esse contador,
+     * não cria uma linha em attempts e deixa o estudo para reenvio manual.
+     *
+     * @param array<string,mixed> $metadata
+     */
+    public function failPreBridgeJob(int $jobId, string $workerId, string $error, array $metadata = []): bool
+    {
+        $this->lastLedgerFailureStage = null;
+        $this->pdo->beginTransaction();
+        try {
+            $this->lastLedgerFailureStage = 'lock_job_pre_bridge';
+            $job = $this->lockJob($jobId, $workerId);
+            if (!$job) {
+                $this->pdo->commit();
+                return false;
+            }
+            $attemptBeforeClaim = max(0, (int) $job['attempt_count'] - 1);
+            $this->lastLedgerFailureStage = 'update_pre_bridge_job';
+            $update = $this->pdo->prepare(
+                "UPDATE pacs_report_delivery_jobs
+                 SET status = 'failed', attempt_count = :attempt_count,
+                     locked_at = NULL, locked_by = NULL, next_attempt_at = NULL,
+                     worker_eligible_at = NULL, last_error = :error
+                 WHERE id = :id AND tenant_id = :tenant_id"
+            );
+            $update->execute([
+                ':attempt_count' => $attemptBeforeClaim,
+                ':error' => mb_substr($error, 0, 5000),
+                ':id' => $jobId,
+                ':tenant_id' => (int) $job['tenant_id'],
+            ]);
+            $this->lastLedgerFailureStage = 'refresh_outbox_pre_bridge';
+            $this->refreshOutboxStatus((int) $job['outbox_id'], (int) $job['tenant_id']);
+            $this->lastLedgerFailureStage = 'commit_pre_bridge';
+            $this->pdo->commit();
+            $this->lastLedgerFailureStage = null;
+            if ($this->isAutomaticProductionSubmissionJob($job)) {
+                $failureStage = (string) ($metadata['stage'] ?? 'unknown');
+                $reasonCategory = (string) ($metadata['reason_category'] ?? 'unknown');
+                if (preg_match('/\A[a-z0-9_:-]{1,64}\z/i', $failureStage) !== 1) {
+                    $failureStage = 'unknown';
+                }
+                if (preg_match('/\A[a-z0-9_:-]{1,64}\z/i', $reasonCategory) !== 1) {
+                    $reasonCategory = 'unknown';
+                }
+                Logger::warning('[ReportDeliveryWorker] PHILIPS_NON_DICOM_PRE_BRIDGE_RECOVERY_REQUIRED', [
+                    'job_id' => $jobId,
+                    'tenant_id' => (int) ($job['tenant_id'] ?? 0),
+                    'attempt_number' => $attemptBeforeClaim,
+                    'outcome' => 'failed',
+                    'failure_stage' => $failureStage,
+                    'reason_category' => $reasonCategory,
+                    'attempt_consumed' => false,
+                    'next_action' => 'manual_resend_automatic',
+                ]);
+            }
+            return true;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     /** @param array<string,mixed> $job */
     private function isAutomaticProductionSubmissionJob(array $job): bool
     {

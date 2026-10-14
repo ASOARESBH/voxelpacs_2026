@@ -40,6 +40,7 @@ final class LocalDicomDeliveryWorker
         'invalid_configuration',
         'invalid_artifact',
         'artifact_unreadable',
+        'xml_field_unresolved',
         'gateway_policy_rejected',
         'author_signer_mismatch',
         'credentials_unavailable',
@@ -56,6 +57,14 @@ final class LocalDicomDeliveryWorker
         'configuration',
     ];
     private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
+    private const PHILIPS_PRE_BRIDGE_STAGES = [
+        'feature_disabled',
+        'invalid_configuration',
+        'invalid_artifact',
+        'credentials_unavailable',
+        'author_resolution_failed',
+        'xml_field_unresolved',
+    ];
 
     private ReportDeliveryWorkerRepository $repository;
     private ReportDeliveryArtifactService $artifactService;
@@ -256,9 +265,11 @@ final class LocalDicomDeliveryWorker
                 'stage' => $error->stage,
                 'reason_category' => $error->reasonCategory,
             ]);
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0), $this->isPhilipsPreBridgeStage($error->stage));
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            $preBridge = (string) ($job['transport'] ?? '') === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                && in_array($error->stage, ['invalid_job', 'invalid_configuration', 'invalid_payload'], true);
+            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0), $preBridge);
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
@@ -587,7 +598,12 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0): void
+    private function isPhilipsPreBridgeStage(string $stage): bool
+    {
+        return in_array($stage, self::PHILIPS_PRE_BRIDGE_STAGES, true);
+    }
+
+    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0, bool $preBridge = false): void
     {
         if ($jobId <= 0) {
             return;
@@ -602,7 +618,9 @@ final class LocalDicomDeliveryWorker
                 $metadata['effective_destination_id'] = $effectiveDestinationId;
                 $metadata['destination_resolution'] = 'execution_time';
             }
-            $recorded = $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
+            $recorded = $preBridge
+                ? $this->repository->failPreBridgeJob($jobId, $this->workerId, 'Falha pré-Bridge no worker de devolução.', $metadata)
+                : $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
             if (!$recorded) {
                 Logger::error('[ReportDeliveryWorker] Falha não registrada: lease ausente', [
                     'job_id' => $jobId,

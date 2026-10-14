@@ -106,15 +106,33 @@ Para uma auditoria read-only do intervalo posterior a uma publicação, use o
 probe versionado abaixo com o timestamp UTC da transação de deploy:
 
 ```text
-php bin/philips_report_release_health_probe.php --since=<timestamp-ISO-8601>
+php bin/philips_report_release_health_probe.php \
+  --since=<timestamp-ISO-8601> --until=<timestamp-ISO-8601>
 ```
 
 O probe consulta somente auditoria de assinatura/liberação, contagens
 tenant-scoped de Outbox/Jobs dos Destinations 6/7 e padrões allowlisted dos
-logs. Ele informa `DATABASE_CHANGED=NO`, não cria sessão clínica, não executa
-Worker, não chama Bridge/SMB e não imprime conteúdo clínico. A categoria
-`author_signer_mismatch` é distinta de `AUTHOR_UNRESOLVED` e bloqueia a entrega
-antes da Bridge.
+logs. `--until` fecha o intervalo com limite exclusivo; se omitido, o instante
+de execução é usado. Ele informa `DATABASE_CHANGED=NO`, não cria sessão clínica,
+não executa Worker, não chama Bridge/SMB e não imprime conteúdo clínico. A
+categoria `author_signer_mismatch` é distinta de `AUTHOR_UNRESOLVED` e bloqueia
+a entrega antes da Bridge. Os erros de log são também agrupados por tenant;
+linhas sem contexto de tenant ficam em `UNKNOWN`.
+
+Para testar somente a consulta de autoria publicada, sem gerar XML e ignorando
+apenas o gate de data automática, use o probe dedicado:
+
+```text
+php bin/philips_author_signer_probe.php \
+  --tenant-id=<tenant> --job-id=<job> --read-only
+```
+
+Esse probe abre uma transação PostgreSQL `READ ONLY`, executa
+`PhilipsSubmissionAuthorRepository::findSignerForReportVersion()` e sempre faz
+`ROLLBACK`. A saída é somente categórica: `SIGNER_PATH` (`SELF` ou
+`PRIOR_ASSINADO`), `SIGNER_FOUND`, `SIGNER_ID=REAL|UNRESOLVED`, `DUPLICATE`,
+`SQLSTATE` e `DATABASE_CHANGED=NO`. Não imprime nome, ID numérico, payload,
+PatientName, accession, PDF, XML ou segredo.
 
 ```text
 php -l bin/philips_nondicom_production_diagnostic.php

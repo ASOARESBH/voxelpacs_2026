@@ -28,17 +28,23 @@ final class PhilipsReportReleaseHealthProbe
     }
 
     /** @return array<string,mixed> */
-    public function run(string $since): array
+    public function run(string $since, ?string $until = null): array
     {
         $sinceDate = $this->parseSince($since);
+        $untilDate = $until === null ? new \DateTimeImmutable('now') : $this->parseSince($until);
+        if ($untilDate <= $sinceDate) {
+            throw new \InvalidArgumentException('invalid_interval');
+        }
         $result = [
             'probe' => 'philips_report_release_health',
             'mode' => 'READ_ONLY',
             'since_utc' => $sinceDate->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
+            'until_utc' => $untilDate->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),
             'database_changed' => 'NO',
             'audit' => [],
             'outbox_jobs' => [],
             'errors' => $this->emptyErrorCounters(),
+            'errors_by_tenant' => [],
             'error_source' => 'application_logs_allowlisted_patterns',
         ];
 
@@ -47,28 +53,34 @@ final class PhilipsReportReleaseHealthProbe
         $pdo->exec('SET TRANSACTION READ ONLY');
         try {
             $result['database_timezone'] = (string) $pdo->query('SHOW timezone')->fetchColumn();
-            $result['audit'] = $this->auditCounts($pdo, $sinceDate);
-            $result['outbox_jobs'] = $this->outboxJobCounts($pdo, $sinceDate);
+            $result['audit'] = $this->auditCounts($pdo, $sinceDate, $untilDate);
+            $result['outbox_jobs'] = $this->outboxJobCounts($pdo, $sinceDate, $untilDate);
         } finally {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
         }
-        $result['errors'] = $this->applicationLogCounts($sinceDate);
+        $logCounts = $this->applicationLogCounts($sinceDate, $untilDate);
+        $result['errors'] = $logCounts['errors'];
+        $result['errors_by_tenant'] = $logCounts['by_tenant'];
         return $result;
     }
 
     /** @return array<string,mixed> */
-    private function auditCounts(PDO $pdo, \DateTimeImmutable $since): array
+    private function auditCounts(PDO $pdo, \DateTimeImmutable $since, \DateTimeImmutable $until): array
     {
         $stmt = $pdo->prepare(
             "SELECT tenant_id, action, details
                FROM bi_audit_logs
               WHERE created_at >= :since
+                AND created_at < :until
                 AND action IN ('report.assinar', 'report.liberar')
               ORDER BY created_at ASC"
         );
-        $stmt->execute(['since' => $since->format('Y-m-d H:i:sP')]);
+        $stmt->execute([
+            'since' => $since->format('Y-m-d H:i:sP'),
+            'until' => $until->format('Y-m-d H:i:sP'),
+        ]);
 
         $counts = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -95,7 +107,7 @@ final class PhilipsReportReleaseHealthProbe
     }
 
     /** @return array<string,mixed> */
-    private function outboxJobCounts(PDO $pdo, \DateTimeImmutable $since): array
+    private function outboxJobCounts(PDO $pdo, \DateTimeImmutable $since, \DateTimeImmutable $until): array
     {
         $stmt = $pdo->prepare(
             "SELECT j.tenant_id, j.destination_id, j.status, j.attempt_count, o.payload_json
@@ -104,9 +116,13 @@ final class PhilipsReportReleaseHealthProbe
                        ON o.id = j.outbox_id
                       AND o.tenant_id = j.tenant_id
               WHERE j.created_at >= :since
+                AND j.created_at < :until
                 AND j.destination_id IN (6, 7)"
         );
-        $stmt->execute(['since' => $since->format('Y-m-d H:i:sP')]);
+        $stmt->execute([
+            'since' => $since->format('Y-m-d H:i:sP'),
+            'until' => $until->format('Y-m-d H:i:sP'),
+        ]);
 
         $counts = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -173,45 +189,77 @@ final class PhilipsReportReleaseHealthProbe
         ];
     }
 
-    /** @return array<string,int> */
-    private function applicationLogCounts(\DateTimeImmutable $since): array
+    /** @return array{errors:array<string,int>,by_tenant:array<string,array<string,int>>} */
+    private function applicationLogCounts(\DateTimeImmutable $since, \DateTimeImmutable $until): array
     {
         $counts = $this->emptyErrorCounters();
         $sinceLocal = $since->setTimezone(new \DateTimeZone('America/Sao_Paulo'))->format('Y-m-d H:i:s');
+        $untilLocal = $until->setTimezone(new \DateTimeZone('America/Sao_Paulo'))->format('Y-m-d H:i:s');
+        $byTenant = [];
         foreach (glob($this->appRoot . '/storage/logs/app-*.log') ?: [] as $file) {
             $handle = @fopen($file, 'rb');
             if (!is_resource($handle)) {
                 continue;
             }
             while (($line = fgets($handle)) !== false) {
-                if (strlen($line) < 21 || substr($line, 1, 19) < $sinceLocal) {
+                $lineTimestamp = substr($line, 1, 19);
+                if (strlen($line) < 21 || $lineTimestamp < $sinceLocal || $lineTimestamp >= $untilLocal) {
                     continue;
                 }
+                $context = $this->logContext($line);
+                $tenantId = is_int($context['tenant_id'] ?? null)
+                    ? (int) $context['tenant_id']
+                    : (is_string($context['tenant_id'] ?? null) && preg_match('/^[1-9][0-9]*$/', (string) $context['tenant_id']) === 1
+                        ? (int) $context['tenant_id']
+                        : null);
                 if (str_contains($line, 'ReportsController::sign error')) {
-                    $counts['http500_sign']++;
+                    $this->incrementError($counts, $byTenant, 'http500_sign', $tenantId);
                 }
                 if (str_contains($line, 'ReportsController::liberar error')) {
-                    $counts['http500_release']++;
+                    $this->incrementError($counts, $byTenant, 'http500_release', $tenantId);
                 }
                 if (str_contains($line, '[ReportService::assinar] Persistência atômica falhou')) {
-                    $counts['atomic_rollback_sign']++;
+                    $this->incrementError($counts, $byTenant, 'atomic_rollback_sign', $tenantId);
                 }
                 if (str_contains($line, '[ReportService::liberarAssinado] Persistência atômica falhou')) {
-                    $counts['atomic_rollback_release']++;
+                    $this->incrementError($counts, $byTenant, 'atomic_rollback_release', $tenantId);
                 }
                 if (str_contains($line, '[ReportDeliveryCompatibility] Liberação bloqueada') && str_contains($line, 'patient_name_given_required')) {
-                    $counts['blocked_given']++;
+                    $this->incrementError($counts, $byTenant, 'blocked_given', $tenantId);
                 }
                 if (str_contains($line, '[ReportDeliveryCompatibility] Liberação bloqueada') && str_contains($line, 'accession_number_required')) {
-                    $counts['blocked_accession']++;
+                    $this->incrementError($counts, $byTenant, 'blocked_accession', $tenantId);
                 }
                 if (str_contains($line, '[ReportDeliveryCompatibility] Não foi possível avaliar a liberação')) {
-                    $counts['release_compatibility_unavailable']++;
+                    $this->incrementError($counts, $byTenant, 'release_compatibility_unavailable', $tenantId);
                 }
             }
             fclose($handle);
         }
-        return $counts;
+        ksort($byTenant);
+        foreach ($byTenant as &$tenantCounts) {
+            ksort($tenantCounts);
+        }
+        unset($tenantCounts);
+        return ['errors' => $counts, 'by_tenant' => $byTenant];
+    }
+
+    /** @param array<string,int> $counts @param array<string,array<string,int>> $byTenant */
+    private function incrementError(array &$counts, array &$byTenant, string $category, ?int $tenantId): void
+    {
+        $counts[$category] = ($counts[$category] ?? 0) + 1;
+        $tenantKey = $tenantId !== null && $tenantId > 0 ? (string) $tenantId : 'UNKNOWN';
+        $byTenant[$tenantKey][$category] = ($byTenant[$tenantKey][$category] ?? 0) + 1;
+    }
+
+    /** @return array<string,mixed> */
+    private function logContext(string $line): array
+    {
+        if (preg_match('/(\{.*\})\s*$/', $line, $matches) !== 1) {
+            return [];
+        }
+        $context = json_decode($matches[1], true);
+        return is_array($context) ? $context : [];
     }
 
     private function parseSince(string $since): \DateTimeImmutable
@@ -287,9 +335,13 @@ namespace {
     $root = '/var/www/voxelpacs/app';
     require_once $root . '/app/autoload.php';
     $since = null;
+    $until = null;
     foreach (array_slice($argv ?? [], 1) as $argument) {
         if (str_starts_with($argument, '--since=')) {
             $since = substr($argument, strlen('--since='));
+        }
+        if (str_starts_with($argument, '--until=')) {
+            $until = substr($argument, strlen('--until='));
         }
     }
     if ($since === null || $since === '') {
@@ -298,7 +350,7 @@ namespace {
     }
     try {
         $probe = new \App\Diagnostics\PhilipsReportReleaseHealthProbe($root);
-        echo json_encode($probe->run($since), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+        echo json_encode($probe->run($since, $until), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
     } catch (Throwable $error) {
         echo "PROBE=philips_report_release_health\nMODE=READ_ONLY\nERROR=probe_unavailable\nDATABASE_CHANGED=NO\n";
         exit(1);
