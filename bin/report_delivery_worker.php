@@ -60,6 +60,7 @@ final class LocalDicomDeliveryWorker
         'host_key',
         'permission',
         'remote_io',
+        'remote_effect_uncertain',
         'configuration',
     ];
     private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
@@ -311,8 +312,17 @@ final class LocalDicomDeliveryWorker
                 'stage' => $error->stage,
                 'reason_category' => $error->reasonCategory,
             ]);
-            $attemptId = $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0), $this->isPhilipsPreBridgeStage($error->stage));
-            $result = in_array($error->reasonCategory, ['timeout', 'remote_integrity_unconfirmed', 'gateway_delivery_failed', 'remote_io'], true) ? 'UNCERTAIN' : 'FAILED';
+            $attemptId = $this->failSafely(
+                $jobId,
+                $error->stage,
+                $error->reasonCategory,
+                (int) ($job['effective_destination_id'] ?? 0),
+                (int) ($job['destination_id'] ?? 0),
+                $this->isPhilipsPreBridgeStage($error->stage),
+                $error->packageIdentity,
+                $error->packageSize
+            );
+            $result = in_array($error->reasonCategory, ['timeout', 'remote_integrity_unconfirmed', 'gateway_delivery_failed', 'remote_io', 'remote_effect_uncertain'], true) ? 'UNCERTAIN' : 'FAILED';
             return ['result' => $result, 'reason' => $error->reasonCategory ?: $error->stage, 'attempt_id' => $attemptId];
         } catch (DeliveryWorkerFailure $error) {
             $this->logPhase('DELIVERY_FAILED', $error, ['job_id' => $jobId, 'reason_category' => $error->reasonCategory ?: $error->stage]);
@@ -655,7 +665,16 @@ final class LocalDicomDeliveryWorker
         return in_array($stage, self::PHILIPS_PRE_BRIDGE_STAGES, true);
     }
 
-    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0, bool $preBridge = false): ?int
+    private function failSafely(
+        int $jobId,
+        string $stage,
+        ?string $reasonCategory = null,
+        int $effectiveDestinationId = 0,
+        int $originalDestinationId = 0,
+        bool $preBridge = false,
+        ?string $packageIdentity = null,
+        ?int $packageSize = null
+    ): ?int
     {
         if ($jobId <= 0) {
             return null;
@@ -669,6 +688,16 @@ final class LocalDicomDeliveryWorker
                 $metadata['original_destination_id'] = $originalDestinationId;
                 $metadata['effective_destination_id'] = $effectiveDestinationId;
                 $metadata['destination_resolution'] = 'execution_time';
+            }
+            if ($reasonCategory === 'remote_effect_uncertain'
+                && is_string($packageIdentity)
+                && preg_match('/\A[a-f0-9]{64}\z/i', $packageIdentity) === 1) {
+                $metadata['package_identity'] = strtolower($packageIdentity);
+                $metadata['package_verified'] = 'NOT_CONFIRMED';
+                if (is_int($packageSize) && $packageSize > 0) {
+                    $metadata['package_size'] = $packageSize;
+                }
+                $metadata['confirmation_source'] = 'bridge_state_pending';
             }
             $recorded = $preBridge
                 ? $this->repository->failPreBridgeJob($jobId, $this->workerId, 'Falha pré-Bridge no worker de devolução.', $metadata)

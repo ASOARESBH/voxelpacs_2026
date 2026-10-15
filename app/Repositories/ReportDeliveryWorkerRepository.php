@@ -850,7 +850,8 @@ class ReportDeliveryWorkerRepository
                 $metadata['effective_max_attempts'] = 1;
             }
             $maxAttempts = $this->effectiveMaxAttempts($job);
-            $deadLetter = $attempt >= $maxAttempts;
+            $remoteEffectUncertain = ($metadata['reason_category'] ?? null) === 'remote_effect_uncertain';
+            $deadLetter = $remoteEffectUncertain || $attempt >= $maxAttempts;
             $status = $deadLetter ? 'dead_letter' : 'retrying';
             $delaySeconds = min(3600, 30 * (2 ** max(0, $attempt - 1)));
             $this->lastLedgerFailureStage = 'create_attempt';

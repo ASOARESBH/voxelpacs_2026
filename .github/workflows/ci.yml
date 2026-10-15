@@ -139,6 +139,9 @@ jobs:
           php tests/report_delivery_one_shot_allowlist_executable.php
           php tests/report_delivery_one_shot_static.php
           php tests/report_delivery_delivered_path_static.php
+          php tests/philips_smb_verify_readback_static.php
+          php tests/philips_http_reconciliation_static.php
+          python3 tests/philips_smb_verify_readback_synthetic.py
 
   restricted-sync:
     name: Restricted drift sync executor

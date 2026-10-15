@@ -24,14 +24,14 @@ expect_verify_contract(str_contains($bridge, 'directory = str(POLICY.smb["remote
 expect_verify_contract(str_contains($bridge, 'return filename, f".voxel-{secrets.token_hex(12)}.part"'), 'root share must use a relative path');
 expect_verify_contract(str_contains($bridge, 'SMB_REMOTE_TARGET=%s'), 'VERIFY target telemetry missing');
 expect_verify_contract(substr_count($bridge, 'remote_target="temporary"') >= 2, 'temporary VERIFY target missing for PDF and package flows');
-expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 6, 'final target telemetry missing for preflight, final VERIFY and LIST');
+expect_verify_contract(substr_count($bridge, 'remote_target="final"') >= 2, 'final target telemetry missing for preflight and PDF-only flow');
 expect_verify_contract(str_contains($bridge, 'f"get {self._smb_arg(remote_path)} {self._smb_arg(downloaded)}"'), 'GET arguments are not quoted');
 expect_verify_contract(str_contains($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"'), 'RENAME arguments are not quoted');
 expect_verify_contract(str_contains($bridge, 'def _observe_final_list('), 'final LIST observation helper missing');
-expect_verify_contract(substr_count($bridge, 'self._observe_final_list(job_id, credentials, final_path)') >= 2, 'final LIST observation missing from one or both flows');
+expect_verify_contract(substr_count($bridge, 'self._observe_final_list(job_id, credentials, final_path)') >= 1, 'final LIST observation missing from PDF-only flow');
 expect_verify_contract(str_contains($bridge, 'xml_verification = label == "xml"'), 'package temporary VERIFY missing');
 expect_verify_contract(substr_count($bridge, "temporary_path,\n") >= 2, 'temporary VERIFY argument missing');
-expect_verify_contract(substr_count($bridge, 'smb_remote_matches(') >= 7, 'final VERIFY call missing from one or both flows');
+expect_verify_contract(substr_count($bridge, 'smb_remote_matches(') >= 5, 'temporary VERIFY call missing from one or both flows');
 
 $renamePosition = strpos($bridge, 'f"rename {self._smb_arg(temporary_path)} {self._smb_arg(final_path)}"');
 $temporaryVerifyPosition = strpos($bridge, 'remote_target="temporary"');
@@ -47,12 +47,14 @@ expect_verify_contract($observerStart !== false && $observerEnd !== false, 'fina
 $observerBody = substr($bridge, $observerStart, $observerEnd - $observerStart);
 expect_verify_contract(!str_contains($observerBody, 'raise BridgeTransferError'), 'final LIST observation must not block delivery');
 
-$packageRenamePosition = strpos($bridge, 'for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:');
-$packageFinalVerifyPosition = strpos($bridge, 'for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:');
-expect_verify_contract($packageRenamePosition !== false, 'package RENAME loop unavailable');
-expect_verify_contract($packageFinalVerifyPosition !== false, 'package VERIFY_FINAL loop unavailable');
-expect_verify_contract($packageFinalVerifyPosition > $packageRenamePosition, 'package VERIFY_FINAL must follow package RENAME');
-expect_verify_contract(strpos($bridge, 'remote_target="final"', $packageFinalVerifyPosition) !== false, 'package VERIFY_FINAL target missing');
+$packageStart = strpos($bridge, 'remote_effect_started = remote_existing_verified');
+$packageEnd = strpos($bridge, 'LOG.info("event=philips_smb_package_success', $packageStart ?: 0);
+expect_verify_contract($packageStart !== false && $packageEnd !== false, 'package flow boundaries unavailable');
+$packageFlow = substr($bridge, $packageStart, $packageEnd - $packageStart);
+expect_verify_contract(str_contains($packageFlow, 'for label, final_path, temporary_path, path, expected_hash, expected_size in missing:'), 'package sequential loop unavailable');
+expect_verify_contract(str_contains($packageFlow, 'remote_target="temporary"'), 'package must verify each .part before rename');
+expect_verify_contract(!str_contains($packageFlow, 'remote_target="final"'), 'package must not require final reread after XML rename');
+expect_verify_contract(str_contains($packageFlow, 'remote_effect_uncertain'), 'package must classify post-effect failures as uncertain');
 
 $pdfRenamePosition = strrpos($bridge, 'self._log_smb_stage(job_id, "RENAME", renamed, "none")');
 $pdfFinalVerifyPosition = strpos($bridge, 'if not self.smb_remote_matches(', $pdfRenamePosition ?: 0);

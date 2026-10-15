@@ -145,7 +145,7 @@ confirma que não há outro Job elegível no escopo por padrão, chama o PHP com
 runtime oficial, preserva stdout/stderr completo em log root-only e propaga o
 exit code do PHP sem `tee`/`grep`. O resumo do PHP usa
 `RUNONE_RESULT=DELIVERED|NOT_ELIGIBLE|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
-`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O log root-only
+`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. Quando a Bridge já pode ter produzido efeito remoto, o resultado usa `REASON=remote_effect_uncertain`, preserva a `package_identity` no state root-only e não permite retry automático. O log root-only
 também registra a fase sanitizada (`BOOTSTRAP_FAILED`, `CLAIM_EXCEPTION`,
 `NOT_ELIGIBLE`, `DELIVERY_FAILED` ou `DELIVERED`), classe, SQLSTATE e
 `basename:linha`, sem mensagem bruta. O relógio de

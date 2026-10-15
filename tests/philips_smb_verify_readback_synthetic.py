@@ -57,6 +57,7 @@ def load_real_methods(namespace: dict[str, object]) -> type:
         "smb_remote_matches",
         "_validate_submission_xml",
         "_observe_final_list",
+        "persist_remote_effect_uncertain",
         "transfer_smb",
         "deliver_submission_package_remote",
     }
@@ -130,6 +131,7 @@ def main() -> None:
             "STATE_ROOT": state_root,
             "sha256_file": sha256_file,
             "classify_transport_error": classify_transport_error,
+            "write_state": lambda _job_id, _value: None,
             "STAGE_DIAGNOSTIC_STAGES": (
                 "STAGE_ENTER", "STAGE_EXIT", "PACKAGE_OPEN", "MANIFEST", "PDF", "XML",
                 "SMB_LIST", "SMB_WRITE", "SMB_RENAME", "SMB_VERIFY",
@@ -157,10 +159,16 @@ def main() -> None:
         stages: list[tuple[str, str, str]] = []
         diagnostic_lines: list[str] = []
         corrupt_final = {"name": None}
+        corrupt_temporary = {"enabled": False}
         renamed_paths: set[str] = set()
         final_list_mode: dict[str, str] = {}
         initial_list_failure = {"classification": None}
-        rename_failure = {"enabled": False}
+        rename_failure = {"enabled": False, "target": None}
+        autoingest_consumes_after_xml_rename = {"enabled": False}
+        state_records: dict[int, dict[str, str]] = {}
+        Handler.persist_remote_effect_uncertain.__globals__["write_state"] = (
+            lambda job_id, value: state_records.__setitem__(job_id, value)
+        )
 
         def record_stage(
             _job_id: int,
@@ -206,15 +214,20 @@ def main() -> None:
                 if remote_path not in remote_store:
                     return subprocess.CompletedProcess([], 1, "", "NT_STATUS_NO_SUCH_FILE")
                 payload = remote_store[remote_path]
-                if corrupt_final["name"] == remote_path:
+                if corrupt_final["name"] == remote_path or (corrupt_temporary["enabled"] and remote_path.endswith(".part")):
                     payload = b"SYNTHETIC_FINAL_CORRUPTION\n"
                 local_path.write_bytes(payload)
                 return subprocess.CompletedProcess([], 0, "", "")
             if operation == "rename":
-                if rename_failure["enabled"]:
+                if rename_failure["enabled"] and (
+                    rename_failure["target"] is None or parts[2] == rename_failure["target"]
+                ):
                     return subprocess.CompletedProcess([], 1, "", "ACCESS_DENIED")
                 remote_store[parts[2]] = remote_store.pop(parts[1])
                 renamed_paths.add(parts[2])
+                if autoingest_consumes_after_xml_rename["enabled"] and parts[2] == xml_path.name:
+                    remote_store.pop(pdf_path.name, None)
+                    remote_store.pop(xml_path.name, None)
                 return subprocess.CompletedProcess([], 0, "", "")
             if operation == "del":
                 remote_store.pop(parts[1], None)
@@ -374,15 +387,11 @@ def main() -> None:
                 ("LIST", "final"),
                 ("LIST", "final"),
                 ("WRITE", "unknown"),
+                ("VERIFY", "temporary"),
+                ("RENAME", "unknown"),
                 ("WRITE", "unknown"),
                 ("VERIFY", "temporary"),
-                ("VERIFY", "temporary"),
                 ("RENAME", "unknown"),
-                ("RENAME", "unknown"),
-                ("VERIFY", "final"),
-                ("VERIFY", "final"),
-                ("LIST", "final"),
-                ("LIST", "final"),
             ],
         )
         for stage_name in (
@@ -401,8 +410,7 @@ def main() -> None:
         stages.clear()
         renamed_paths.clear()
         final_list_mode.clear()
-        final_list_mode[pdf_path.name] = "return_1"
-        final_list_mode[xml_path.name] = "return_1"
+        autoingest_consumes_after_xml_rename["enabled"] = True
         result = handler.deliver_submission_package_remote(
             9008,
             pdf_path.name,
@@ -414,14 +422,49 @@ def main() -> None:
             credentials,
         )
         assert result == "smb"
-        assert remote_store[pdf_path.name] == pdf_payload
-        assert remote_store[xml_path.name] == xml_payload
-        assert stages[-2:] == [
-            ("LIST", "final", "remote_io"),
-            ("LIST", "final", "remote_io"),
-        ]
+        assert pdf_path.name not in remote_store
+        assert xml_path.name not in remote_store
         assert not any(path.name.endswith(".part") for path in state_root.iterdir())
-        print("PDF_XML_FINAL_LIST_NONBLOCKING=PASS")
+        print("AUTOINGEST_CONSUMES_AFTER_XML_RENAME=PASS")
+        autoingest_consumes_after_xml_rename["enabled"] = False
+
+        remote_store.clear()
+        commands.clear()
+        stages.clear()
+        renamed_paths.clear()
+        final_list_mode.clear()
+        rename_failure["enabled"] = True
+        rename_failure["target"] = xml_path.name
+        try:
+            handler.deliver_submission_package_remote(
+                9012,
+                pdf_path.name,
+                pdf_path,
+                xml_path.name,
+                xml_path,
+                xml_task_file_path_hash,
+                False,
+                credentials,
+            )
+        except BridgeTransferError as error:
+            assert error.category == "remote_effect_uncertain"
+        else:
+            raise AssertionError("failure after PDF rename must be uncertain")
+        handler.persist_remote_effect_uncertain(
+            9012,
+            "a" * 64,
+            1234,
+            "2",
+            "7",
+            xml_task_file_path_hash,
+            "0",
+        )
+        assert state_records[9012]["state"] == "remote_effect_uncertain"
+        assert state_records[9012]["package_identity"] == "a" * 64
+        assert state_records[9012]["package_verified"] == "NOT_CONFIRMED"
+        rename_failure["enabled"] = False
+        rename_failure["target"] = None
+        print("REMOTE_EFFECT_UNCERTAIN_STATE_PERSISTED=PASS")
 
         remote_store.clear()
         commands.clear()
@@ -468,7 +511,7 @@ def main() -> None:
                 credentials,
             )
         except BridgeTransferError as error:
-            assert error.category == "invalid_artifact"
+            assert error.category == "remote_effect_uncertain"
         else:
             raise AssertionError("invalid XML must fail closed")
         assert stages[-1] == ("VERIFY", "temporary", "invalid_artifact")
@@ -478,7 +521,8 @@ def main() -> None:
         remote_store.clear()
         commands.clear()
         stages.clear()
-        corrupt_final["name"] = xml_path.name
+        corrupt_final["name"] = None
+        corrupt_temporary["enabled"] = True
         try:
             handler.deliver_submission_package_remote(
                 9003,
@@ -494,9 +538,10 @@ def main() -> None:
             assert error.category == "remote_io"
         else:
             raise AssertionError("XML final hash mismatch must fail closed")
-        assert stages[-1] == ("VERIFY", "final", "remote_io")
+        assert stages[-1] == ("VERIFY", "temporary", "remote_io")
         assert not any(path.name.endswith(".part") for path in state_root.iterdir())
         print("FINAL_XML_HASH_MISMATCH_FAIL_CLOSED=PASS")
+        corrupt_temporary["enabled"] = False
 
         remote_store.clear()
         commands.clear()

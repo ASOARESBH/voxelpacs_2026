@@ -528,6 +528,13 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(HTTPStatus.CONFLICT, {"state": "conflict"})
             return
         state_identity = str(state.get("package_identity", "")).lower()
+        if state.get("state") == "remote_effect_uncertain" and state_identity == package_hash:
+            self.respond(HTTPStatus.CONFLICT, {
+                "state": "remote_effect_uncertain",
+                "package_identity": package_hash,
+                "package_verified": "NOT_CONFIRMED",
+            })
+            return
         if (
             state.get("state") != "delivered"
             or state_identity != package_hash
@@ -734,6 +741,16 @@ class Handler(BaseHTTPRequestHandler):
                         stage_diagnostics,
                     )
         except BridgeTransferError as error:
+            if error.category == "remote_effect_uncertain":
+                self.persist_remote_effect_uncertain(
+                    job_id,
+                    package_hash,
+                    length,
+                    tenant_id_header,
+                    destination_id_header,
+                    xml_task_file_path_hash,
+                    xml_document_type_applicable,
+                )
             LOG.warning("event=philips_package_failed job_id=%s transport=%s reason_category=%s", job_id, POLICY.transport, error.category)
             self.respond(HTTPStatus.BAD_GATEWAY, {"error": "gateway_delivery_failed", "reason_category": error.category})
             return
@@ -756,6 +773,30 @@ class Handler(BaseHTTPRequestHandler):
             "sha256": package_hash,
             "package_identity": package_hash,
             "package_verified": "PASS",
+        })
+
+    def persist_remote_effect_uncertain(
+        self,
+        job_id: int,
+        package_identity: str,
+        package_size: int,
+        tenant_id: str,
+        destination_id: str,
+        task_file_path_sha256: str,
+        document_type_applicable: str,
+    ) -> None:
+        write_state(job_id, {
+            "state": "remote_effect_uncertain",
+            "sha256": package_identity,
+            "package_identity": package_identity,
+            "package_verified": "NOT_CONFIRMED",
+            "package_size": str(package_size),
+            "tenant_id": tenant_id,
+            "destination_id": destination_id,
+            "task_file_path_sha256": task_file_path_sha256,
+            "document_type_applicable": document_type_applicable,
+            "error_category": "remote_effect_uncertain",
+            "transport": "smb",
         })
 
     @contextmanager
@@ -872,6 +913,7 @@ class Handler(BaseHTTPRequestHandler):
             ("xml", xml_final, xml_temporary, xml_path, sha256_file(xml_path), xml_path.stat().st_size),
         ]
         missing = []
+        remote_existing_verified = False
         try:
             for entry in entries:
                 _label, final_path, _temporary_path, _local_path, expected_hash, expected_size = entry
@@ -912,11 +954,14 @@ class Handler(BaseHTTPRequestHandler):
                         job_id, credentials, final_path, expected_hash, expected_size,
                         stage_diagnostics=stage_diagnostics,
                     ):
+                        remote_existing_verified = True
                         continue
                     raise BridgeTransferError("remote_io")
                 missing.append(entry)
 
-            for label, _final_path, temporary_path, path, _expected_hash, _expected_size in missing:
+            remote_effect_started = remote_existing_verified
+            for label, final_path, temporary_path, path, expected_hash, expected_size in missing:
+                xml_verification = label == "xml"
                 with self._diagnostic_stage(job_id, "SMB_WRITE", stage_diagnostics) as set_return_code:
                     try:
                         uploaded = self._smb_command(
@@ -925,33 +970,42 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     except BridgeTransferError as error:
                         self._log_smb_stage(job_id, "WRITE", classification=error.category)
+                        if remote_effect_started:
+                            raise BridgeTransferError("remote_effect_uncertain") from error
                         raise
                     set_return_code(uploaded.returncode)
                     if uploaded.returncode != 0:
                         classification = classify_transport_error(uploaded.stdout + uploaded.stderr)
                         self._log_smb_stage(job_id, "WRITE", uploaded, classification)
+                        if remote_effect_started:
+                            raise BridgeTransferError("remote_effect_uncertain")
                         raise BridgeTransferError(classification)
                     self._log_smb_stage(job_id, "WRITE", uploaded, "none")
 
-            for label, _final_path, temporary_path, _path, expected_hash, expected_size in missing:
-                xml_verification = label == "xml"
-                if not self.smb_remote_matches(
-                    job_id,
-                    credentials,
-                    temporary_path,
-                    expected_hash,
-                    expected_size,
-                    pdf_filename if xml_verification else None,
-                    xml_task_file_path_hash if xml_verification else None,
-                    xml_document_type_applicable if xml_verification else None,
-                    allow_missing_patient_name_components if xml_verification else False,
-                    allow_patient_name_as_family if xml_verification else False,
-                    remote_target="temporary",
-                    stage_diagnostics=stage_diagnostics,
-                ):
+                try:
+                    temporary_matches = self.smb_remote_matches(
+                        job_id,
+                        credentials,
+                        temporary_path,
+                        expected_hash,
+                        expected_size,
+                        pdf_filename if xml_verification else None,
+                        xml_task_file_path_hash if xml_verification else None,
+                        xml_document_type_applicable if xml_verification else None,
+                        allow_missing_patient_name_components if xml_verification else False,
+                        allow_patient_name_as_family if xml_verification else False,
+                        remote_target="temporary",
+                        stage_diagnostics=stage_diagnostics,
+                    )
+                except BridgeTransferError as error:
+                    if remote_effect_started:
+                        raise BridgeTransferError("remote_effect_uncertain") from error
+                    raise
+                if not temporary_matches:
+                    if remote_effect_started:
+                        raise BridgeTransferError("remote_effect_uncertain")
                     raise BridgeTransferError("remote_io")
 
-            for label, final_path, temporary_path, _path, _expected_hash, _expected_size in missing:
                 with self._diagnostic_stage(job_id, "SMB_RENAME", stage_diagnostics) as set_return_code:
                     try:
                         renamed = self._smb_command(
@@ -960,34 +1014,18 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     except BridgeTransferError as error:
                         self._log_smb_stage(job_id, "RENAME", classification=error.category)
+                        if remote_effect_started:
+                            raise BridgeTransferError("remote_effect_uncertain") from error
                         raise
                     set_return_code(renamed.returncode)
                     if renamed.returncode != 0:
                         classification = classify_transport_error(renamed.stdout + renamed.stderr)
                         self._log_smb_stage(job_id, "RENAME", renamed, classification)
+                        if remote_effect_started:
+                            raise BridgeTransferError("remote_effect_uncertain")
                         raise BridgeTransferError(classification)
                     self._log_smb_stage(job_id, "RENAME", renamed, "none")
-
-            for label, final_path, _temporary_path, _path, expected_hash, expected_size in missing:
-                xml_verification = label == "xml"
-                if not self.smb_remote_matches(
-                    job_id,
-                    credentials,
-                    final_path,
-                    expected_hash,
-                    expected_size,
-                    pdf_filename if xml_verification else None,
-                    xml_task_file_path_hash if xml_verification else None,
-                    xml_document_type_applicable if xml_verification else None,
-                    allow_missing_patient_name_components if xml_verification else False,
-                    allow_patient_name_as_family if xml_verification else False,
-                    remote_target="final",
-                    stage_diagnostics=stage_diagnostics,
-                ):
-                    raise BridgeTransferError("remote_io")
-
-            for _label, final_path, _temporary_path, _path, _expected_hash, _expected_size in missing:
-                self._observe_final_list(job_id, credentials, final_path)
+                    remote_effect_started = True
             LOG.info("event=philips_smb_package_success job_id=%s", job_id)
             return "smb"
         finally:

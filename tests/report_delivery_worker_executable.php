@@ -40,6 +40,8 @@ final class ExecutableWorkerTestRepository extends ReportDeliveryWorkerRepositor
     public int $artifactCalls = 0;
     public string $outboxStatus = 'queued';
     public bool $automaticRetry = false;
+    /** @var array<string,mixed> */
+    public array $lastFailureMetadata = [];
 
     /** @param array<string,mixed>|null $oneShotJob @param array<string,mixed>|null $nextJob */
     public function __construct(?array $oneShotJob, bool $oneShotEligible, ?array $nextJob = null)
@@ -103,6 +105,7 @@ final class ExecutableWorkerTestRepository extends ReportDeliveryWorkerRepositor
         $this->failCalls++;
         $this->attemptId = 1;
         $this->automaticRetry = false;
+        $this->lastFailureMetadata = $metadata;
         $this->ledgerFailureStage = 'commit';
         return true;
     }
@@ -162,7 +165,12 @@ final class ExecutableWorkerTestPhilipsPort implements PhilipsFolderDeliveryPort
         string $workerId
     ): array {
         if ($this->failAfterBridge) {
-            throw new PhilipsFolderDeliveryException('gateway_invalid_response', 'authentication');
+            throw new PhilipsFolderDeliveryException(
+                'gateway_delivery_failed',
+                'remote_effect_uncertain',
+                str_repeat('e', 64),
+                2048
+            );
         }
 
         return [
@@ -267,9 +275,13 @@ try {
     $failedOutput = (string) ob_get_clean();
     $failed = executable_parse_output($failedOutput);
     executable_expect($failedExit === 4, 'Falha pós-Bridge deve retornar exit 4.');
-    executable_expect(($failed['RUNONE_RESULT'] ?? '') === 'FAILED', 'Falha pós-Bridge deve ser FAILED.');
+    executable_expect(($failed['RUNONE_RESULT'] ?? '') === 'UNCERTAIN', 'Efeito remoto incerto deve ser UNCERTAIN.');
+    executable_expect(($failed['REASON'] ?? '') === 'remote_effect_uncertain', 'Categoria de efeito remoto incerto ausente.');
     executable_expect($failedRepository->failCalls === 1, 'Falha pós-Bridge deve registrar failJob.');
     executable_expect($failedRepository->automaticRetry === false, 'Falha mockada não pode ativar retry automático.');
+    executable_expect(($failedRepository->lastFailureMetadata['reason_category'] ?? '') === 'remote_effect_uncertain', 'Categoria não persistida.');
+    executable_expect(($failedRepository->lastFailureMetadata['package_identity'] ?? '') === str_repeat('e', 64), 'Package identity não persistida.');
+    executable_expect(($failedRepository->lastFailureMetadata['package_verified'] ?? '') === 'NOT_CONFIRMED', 'Package verification incorreta.');
     echo "RUNONE_DELIVERY_FAILED_MOCK=PASS\n";
 
     $cycleRepository = new ExecutableWorkerTestRepository(null, false, executable_test_job(700));
