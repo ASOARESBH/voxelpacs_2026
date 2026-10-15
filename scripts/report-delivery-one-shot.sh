@@ -4,6 +4,8 @@ set -Eeuo pipefail
 RUNTIME_DIR=${VOXEL_REPORT_DELIVERY_RUNTIME_DIR:-/var/www/voxelpacs/app}
 SERVICE_NAME=${VOXEL_REPORT_DELIVERY_WORKER_SERVICE:-voxelpacs-report-delivery-worker.service}
 BACKUP_DIR=${VOXEL_REPORT_DELIVERY_DIAGNOSTICS_DIR:-/var/backups/voxelpacs/diagnostics}
+WORKER_ID=${VOXEL_REPORT_DELIVERY_WORKER_ID:-local-dicom-worker}
+IDLE_SECONDS=${VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS:-3}
 JOB_ID=''
 
 usage() {
@@ -18,6 +20,11 @@ for argument in "$@"; do
   esac
 done
 [ -n "$JOB_ID" ] || usage
+
+if ! [[ "$WORKER_ID" =~ ^[a-zA-Z0-9._:-]{3,120}$ ]] || ! [[ "$IDLE_SECONDS" =~ ^[0-9]+$ ]] || [ "$IDLE_SECONDS" -lt 1 ] || [ "$IDLE_SECONDS" -gt 30 ]; then
+  printf '%s\n' 'ONE_SHOT_RESULT=BLOCKED' 'REASON=invalid_worker_environment' >&2
+  exit 4
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
   printf '%s\n' 'ONE_SHOT_RESULT=BLOCKED' 'REASON=root_required' >&2
@@ -46,7 +53,7 @@ install -m 600 /dev/null "$LOG_PATH"
 
 cd "$RUNTIME_DIR"
 printf '%s\n' "HARNESS_USER=voxel" "HARNESS_CWD=$RUNTIME_DIR" "HARNESS_SCRIPT_PATH=$RUNTIME_DIR/bin/report_delivery_worker.php" >"$LOG_PATH"
-printf '%s\n' "HARNESS_LOG_PRESERVED=YES" >>"$LOG_PATH"
+printf '%s\n' "HARNESS_WORKER_ID=$WORKER_ID" "HARNESS_IDLE_SECONDS=$IDLE_SECONDS" "HARNESS_LOG_PRESERVED=YES" >>"$LOG_PATH"
 
 set +e
 runuser -u voxel -- /usr/bin/php "$RUNTIME_DIR/bin/report_delivery_one_shot_preflight.php" \
@@ -60,7 +67,10 @@ if [ "$PREFLIGHT_EXIT" -ne 0 ]; then
 fi
 
 set +e
-runuser -u voxel -- /usr/bin/php "$RUNTIME_DIR/bin/report_delivery_worker.php" \
+runuser -u voxel -- env \
+  "VOXEL_REPORT_DELIVERY_WORKER_ID=$WORKER_ID" \
+  "VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS=$IDLE_SECONDS" \
+  /usr/bin/php "$RUNTIME_DIR/bin/report_delivery_worker.php" \
   "--job-id=$JOB_ID" >>"$LOG_PATH" 2>&1
 PHP_EXIT=$?
 set -e

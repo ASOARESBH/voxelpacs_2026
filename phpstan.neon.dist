@@ -1,0 +1,20 @@
+parameters:
+    level: 5
+    paths:
+        - bin/report_delivery_worker.php
+        - app/Contracts/PhilipsFolderDeliveryPort.php
+        - app/Repositories/ReportDeliveryRepository.php
+        - app/Repositories/ReportDeliveryWorkerRepository.php
+        - app/Services/ReportDeliveryArtifactService.php
+        - app/Services/ReportDeliveryClock.php
+        - app/Services/ReportDeliveryOutboxService.php
+        - app/Services/PhilipsFolderDeliveryService.php
+        - app/Services/PhilipsFolderGatewayBridgeClient.php
+        - app/Services/PhilipsSubmissionAuthorResolver.php
+        - app/Services/PhilipsSubmissionDocumentGenerator.php
+        - app/Services/PhilipsSubmissionMetadataResolver.php
+        - app/Services/PhilipsSubmissionNoSendDiagnostic.php
+        - app/Services/PhilipsSubmissionPackageProducer.php
+    bootstrapFiles:
+        - app/autoload.php
+    reportUnmatchedIgnoredErrors: true

@@ -144,8 +144,11 @@ Ele exige Worker global parado, executa o preflight `READ ONLY` com rollback,
 confirma que não há outro Job elegível no escopo, chama o PHP como `voxel` no
 runtime oficial, preserva stdout/stderr completo em log root-only e propaga o
 exit code do PHP sem `tee`/`grep`. O resumo do PHP usa
-`RUNONE_RESULT=DELIVERED|NOT_CLAIMED|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
-`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O relógio de
+`RUNONE_RESULT=DELIVERED|NOT_ELIGIBLE|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
+`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O log root-only
+também registra a fase sanitizada (`BOOTSTRAP_FAILED`, `CLAIM_EXCEPTION`,
+`NOT_ELIGIBLE`, `DELIVERY_FAILED` ou `DELIVERED`), classe, SQLSTATE e
+`basename:linha`, sem mensagem bruta. O relógio de
 elegibilidade é a data clínica `America/Sao_Paulo`, inclusive no `runOne` e na
 expiração automática.
 

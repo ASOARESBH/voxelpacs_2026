@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Contracts\PhilipsFolderDeliveryPort;
 use App\Config\ReportDeliveryRuntimeConfig;
 use App\Core\Logger;
 
@@ -16,7 +17,7 @@ use App\Core\Logger;
  * Não conhece SMB/SFTP, endpoints remotos ou segredos. Esses detalhes ficam na
  * bridge privada root-only, que é o único componente autorizado a atravessar a VPN.
  */
-final class PhilipsFolderDeliveryService
+final class PhilipsFolderDeliveryService implements PhilipsFolderDeliveryPort
 {
     public const TRANSPORT = 'philips_folder';
     public const NON_DICOM_TRANSPORT = 'philips_non_dicom';

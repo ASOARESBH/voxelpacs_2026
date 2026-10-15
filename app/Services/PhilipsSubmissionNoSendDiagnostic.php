@@ -116,14 +116,14 @@ final class PhilipsSubmissionNoSendDiagnostic
             }
 
             $validation = $this->producer->validateNoSend($job, $configuration, $payload);
-            if (($validation['xml_serialized'] ?? 'FAIL') !== 'PASS') {
+            if ($validation['xml_serialized'] !== 'PASS') {
                 throw new RuntimeException('XML_SERIALIZATION_FAILED');
             }
             $result['xml_serialized'] = 'PASS';
-            $result['author_source'] = (string) ($validation['author_source'] ?? PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED);
-            $result['author_decision'] = (string) ($validation['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED);
-            $result['author_fallback_used'] = (string) ($validation['author_fallback_used'] ?? 'NO');
-            $result['task_author_id_resolution'] = (string) ($validation['task_author_id_resolution'] ?? 'NOT_PRESENT');
+            $result['author_source'] = $validation['author_source'];
+            $result['author_decision'] = $validation['author_decision'];
+            $result['author_fallback_used'] = $validation['author_fallback_used'];
+            $result['task_author_id_resolution'] = $validation['task_author_id_resolution'];
             $result['status'] = 'PASS';
         } catch (Throwable $error) {
             if ($error instanceof PhilipsSubmissionAuthorMismatchException) {
@@ -320,7 +320,7 @@ final class PhilipsSubmissionNoSendDiagnostic
         return trim((string) ($submission['task_site_id'] ?? '')) !== ''
             && hash_equals(
                 trim((string) ($submission['task_site_id'] ?? '')),
-                trim((string) ($server['nome'] ?? ''))
+                trim($server['nome'])
             );
     }
 

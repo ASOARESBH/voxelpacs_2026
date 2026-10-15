@@ -114,6 +114,31 @@ jobs:
           vendor/bin/phpunit tests --no-coverage
           echo "PHPUNIT=PASS"
 
+  report-delivery-quality:
+    name: Report Delivery PHPStan and executable tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, gd, zip, mbstring, xml, opcache
+          coverage: none
+
+      - name: Install dependencies (with dev)
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: PHPStan level 5 — Report Delivery graph
+        run: vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --no-progress --error-format=table
+
+      - name: Executable Worker and static contracts
+        run: |
+          php tests/report_delivery_worker_executable.php
+          php tests/report_delivery_one_shot_static.php
+          php tests/report_delivery_delivered_path_static.php
+
   restricted-sync:
     name: Restricted drift sync executor
     runs-on: ubuntu-latest

@@ -9,6 +9,7 @@ use PDO;
 use App\Core\SqlHelper;
 use App\Helpers\DicomPersonName;
 use App\Services\ReportDeliveryClock;
+use Throwable;
 
 /**
  * Persistência do VOXEL Report Delivery Hub.
@@ -442,7 +443,7 @@ class ReportDeliveryRepository
                 $this->pdo->commit();
             }
         } catch (\Throwable $e) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
+            if ($ownsTransaction) {
                 $this->pdo->rollBack();
             }
             throw $e;
@@ -454,8 +455,8 @@ class ReportDeliveryRepository
     {
         $unique = [];
         foreach ($issuers as $issuer) {
-            $value = trim((string) ($issuer['issuer'] ?? ''));
-            $normalized = trim((string) ($issuer['normalized'] ?? ''));
+            $value = trim($issuer['issuer']);
+            $normalized = trim($issuer['normalized']);
             if ($value !== '' && $normalized !== '') {
                 $unique[$normalized] = ['issuer' => $value, 'normalized' => $normalized];
             }
@@ -1536,5 +1537,47 @@ class ReportDeliveryRepository
             }
             throw $e;
         }
+    }
+
+    private function refreshOutboxStatus(int $outboxId, int $tenantId): void
+    {
+        $sql = SqlHelper::isPostgres()
+            ? "SELECT
+                   SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_count,
+                   SUM(CASE WHEN status IN ('queued', 'retrying', 'processing') THEN 1 ELSE 0 END) AS pending_count,
+                   SUM(CASE WHEN status IN ('failed', 'dead_letter') THEN 1 ELSE 0 END) AS failed_count,
+                   COUNT(*) AS total
+               FROM pacs_report_delivery_jobs
+               WHERE outbox_id = :outbox_id AND tenant_id = :tenant_id"
+            : "SELECT
+                   SUM(status = 'delivered') AS delivered_count,
+                   SUM(status IN ('queued', 'retrying', 'processing')) AS pending_count,
+                   SUM(status IN ('failed', 'dead_letter')) AS failed_count,
+                   COUNT(*) AS total
+               FROM pacs_report_delivery_jobs
+               WHERE outbox_id = :outbox_id AND tenant_id = :tenant_id";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':outbox_id' => $outboxId, ':tenant_id' => $tenantId]);
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $total = (int) ($stats['total'] ?? 0);
+        $pending = (int) ($stats['pending_count'] ?? 0);
+        $delivered = (int) ($stats['delivered_count'] ?? 0);
+        $failed = (int) ($stats['failed_count'] ?? 0);
+        $status = $total === 0
+            ? 'no_destination'
+            : ($pending > 0 ? 'processing' : ($delivered > 0 ? 'completed' : ($failed > 0 ? 'dead_letter' : 'failed')));
+
+        $update = $this->pdo->prepare(
+            "UPDATE pacs_report_delivery_outbox
+             SET status = :status,
+                 processed_at = CASE WHEN :terminal = 1 THEN NOW() ELSE processed_at END
+             WHERE id = :id AND tenant_id = :tenant_id"
+        );
+        $update->execute([
+            ':status' => $status,
+            ':terminal' => in_array($status, ['completed', 'dead_letter', 'failed', 'no_destination'], true) ? 1 : 0,
+            ':id' => $outboxId,
+            ':tenant_id' => $tenantId,
+        ]);
     }
 }

@@ -280,11 +280,7 @@ final class PhilipsSubmissionDocumentGenerator
 
     private function escapeXml(string $value, string $field): string
     {
-        $escaped = htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8', false);
-        if (!is_string($escaped)) {
-            throw new PhilipsXmlFieldUnresolvedException($field);
-        }
-        return $escaped;
+        return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8', false);
     }
 
     private function assertSerializedXml(string $encoded): void
