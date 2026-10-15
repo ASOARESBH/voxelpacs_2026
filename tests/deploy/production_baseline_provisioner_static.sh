@@ -29,7 +29,10 @@ grep -Fq 'read_approved_composer_profile_sha' "$wrapper" || fail fixed_profile_a
 grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$sudoers" || fail sudoers_capture_command
 grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile ????????????????????????????????????????' "$sudoers" || fail sudoers_refresh_command
 grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture rebind-profile ????????????????????????????????????????' "$sudoers" || fail sudoers_rebind_command
-grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$sudoers" || fail sudoers_caller
+grep -Fq 'manus-admin|manus-deploy' "$wrapper" || fail wrapper_callers
+for caller in manus-admin manus-deploy; do
+  [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$sudoers")" -eq 3 ]] || fail "sudoers_caller:${caller}"
+done
 
 for file in "$wrapper" "$sudoers"; do
   for forbidden in 'eval' 'systemctl' 'smbclient' 'curl ' 'mysql' 'psql' 'composer ' 'git push' 'git checkout' 'NOPASSWD: ALL'; do

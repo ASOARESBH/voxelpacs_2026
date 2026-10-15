@@ -73,7 +73,10 @@ validate_helper_contract() {
 }
 
 validate_sudoers() {
-  [[ "$(grep -Ec '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$SUDOERS_SOURCE")" -eq 1 ]] || fail 'SUDOERS_RULE_COUNT_INVALID'
+  local caller
+  for caller in manus-admin manus-deploy; do
+    [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$SUDOERS_SOURCE")" -eq 1 ]] || fail "SUDOERS_RULE_COUNT_INVALID_${caller}"
+  done
   grep -Fq '/usr/local/sbin/voxelpacs-runtime-extra-auditor audit --baseline-id' "$SUDOERS_SOURCE" || fail 'SUDOERS_COMMAND_MISSING'
   ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$SUDOERS_SOURCE" || fail 'GENERIC_SUDO_RULE_PRESENT'
   ! grep -Eq '/bin/(ba|d)?sh|/usr/(bin|sbin)/(cp|mv|rm|rsync|install|tee|python|php|composer|systemctl)' "$SUDOERS_SOURCE" || fail 'GENERIC_COMMAND_PRESENT'
