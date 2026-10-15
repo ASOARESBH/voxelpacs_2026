@@ -402,10 +402,21 @@ class ReportDeliveryOutboxService
 
     private function clinicalDate(string $releasedAt): string
     {
-        $date = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', substr($releasedAt, 0, 19));
+        $value = trim($releasedAt);
+        if ($value === '') {
+            throw new \InvalidArgumentException('Data de liberação inválida para a janela automática de devolutiva.');
+        }
+        $hasExplicitTimezone = preg_match('/(?:Z|[+-]\d{2}:?\d{2})\z/i', $value) === 1;
+        $date = $hasExplicitTimezone
+            ? new \DateTimeImmutable($value)
+            : \DateTimeImmutable::createFromFormat(
+                '!Y-m-d H:i:s',
+                str_replace('T', ' ', substr($value, 0, 19)),
+                new \DateTimeZone(ReportDeliveryClock::CLINICAL_TIMEZONE)
+            );
         if (!$date instanceof \DateTimeImmutable) {
             throw new \InvalidArgumentException('Data de liberação inválida para a janela automática de devolutiva.');
         }
-        return $date->format('Y-m-d');
+        return $date->setTimezone(new \DateTimeZone(ReportDeliveryClock::CLINICAL_TIMEZONE))->format('Y-m-d');
     }
 }

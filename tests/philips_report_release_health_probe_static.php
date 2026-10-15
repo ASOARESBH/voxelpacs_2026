@@ -22,6 +22,10 @@ foreach ([
     'report.liberar',
     'pacs_report_delivery_jobs',
     'pacs_report_delivery_outbox',
+    'until_utc',
+    'errors_by_tenant',
+    'created_at < :until',
+    'logContext',
     'http500_sign',
     'atomic_rollback_release',
     'author_signer_absent_or_incomplete',
@@ -54,3 +58,5 @@ fwrite(STDOUT, "READ_ONLY=PASS\n");
 fwrite(STDOUT, "NEWLINE_SQL_REGRESSION_GUARD=PASS\n");
 fwrite(STDOUT, "AUTHOR_SIGNER_MISMATCH=PASS\n");
 fwrite(STDOUT, "NO_SEND_CATEGORY=PASS\n");
+fwrite(STDOUT, "CLOSED_INTERVAL=PASS\n");
+fwrite(STDOUT, "ERRORS_BY_TENANT=PASS\n");

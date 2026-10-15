@@ -100,6 +100,21 @@ expect_claim(str_contains($claimNext, 'ORDER BY j.created_at ASC, j.id ASC'), 'a
 expect_claim(str_contains($repository, 'o.payload_json'), 'failure policy must receive the frozen dispatch payload');
 expect_claim(str_contains($repository, 'private function isAutomaticProductionSubmissionJob(array $job)'), 'automatic submission jobs must be identified explicitly');
 expect_claim(str_contains($repository, 'if ($this->isAutomaticProductionSubmissionJob($job))') && str_contains($repository, 'PHILIPS_NON_DICOM_MANUAL_RECOVERY_REQUIRED'), 'automatic submission failures must require manual recovery and emit a sanitized event');
+expect_claim(str_contains($repository, 'public function failPreBridgeJob('), 'pre-Bridge failures must have a dedicated ledger path');
+$preBridgeStart = strpos($repository, 'public function failPreBridgeJob(');
+$preBridgeEnd = strpos($repository, 'private function isAutomaticProductionSubmissionJob(', $preBridgeStart);
+$preBridge = $preBridgeStart === false || $preBridgeEnd === false ? '' : substr($repository, $preBridgeStart, $preBridgeEnd - $preBridgeStart);
+expect_claim(str_contains($preBridge, 'attemptBeforeClaim'), 'pre-Bridge failure must restore the attempt count consumed by claim');
+expect_claim(str_contains($preBridge, "SET status = 'failed', attempt_count = :attempt_count"), 'pre-Bridge failure must become terminal manual recovery');
+expect_claim(!str_contains($preBridge, 'createAttempt('), 'pre-Bridge failure must not create an attempt ledger row');
+expect_claim(str_contains($preBridge, 'PHILIPS_NON_DICOM_PRE_BRIDGE_RECOVERY_REQUIRED'), 'pre-Bridge failure must emit a sanitized recovery event');
+expect_claim(str_contains($preBridge, "'attempt_consumed' => false"), 'pre-Bridge recovery event must state that no attempt was consumed');
+expect_claim(str_contains($worker, 'isPhilipsPreBridgeStage'), 'Worker must classify Philips pre-Bridge stages');
+expect_claim(str_contains($worker, 'failPreBridgeJob'), 'Worker must route pre-Bridge stages to the no-attempt ledger');
+expect_claim(str_contains($repository, 'public function expireAutomaticJobsBefore('), 'automatic queue must expose date-expiration before claim');
+$expireCall = strpos($worker, '$this->repository->expireAutomaticJobsBefore(');
+$claimCall = strpos($worker, '$this->repository->claimNextJob(');
+expect_claim($expireCall !== false && $claimCall !== false && $expireCall < $claimCall, 'worker loop must expire old automatic jobs before claim');
 $manualRecoveryLogStart = strpos($repository, 'PHILIPS_NON_DICOM_MANUAL_RECOVERY_REQUIRED');
 $manualRecoveryLog = $manualRecoveryLogStart === false ? '' : substr($repository, $manualRecoveryLogStart, 900);
 expect_claim(!str_contains($manualRecoveryLog, "'payload_json' =>") && !str_contains($manualRecoveryLog, "'configuration_json' =>"), 'queue failure event must not log payload or configuration');
@@ -107,3 +122,4 @@ expect_claim(str_contains($repository, "'completed_at = NOW(), updated_at = NOW(
 expect_claim(!str_contains($repository, 'SKIP LOCKED'), 'test records that no SKIP LOCKED clause was present to preserve');
 
 fwrite(STDOUT, "REPORT_DELIVERY_WORKER_CLAIM_STATIC_OK\n");
+fwrite(STDOUT, "PRE_BRIDGE_NO_ATTEMPT=PASS\n");

@@ -7,9 +7,15 @@ use PDO;
 final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthorLookup
 {
     private ?PDO $pdo;
+    private ?string $lastFailureSqlState = null;
     public function __construct(?PDO $pdo = null)
     {
         $this->pdo = $pdo;
+    }
+
+    public function lastFailureSqlState(): ?string
+    {
+        return $this->lastFailureSqlState;
     }
     /**
      * Resolve o médico que assinou o laudo, nunca o usuário que apenas liberou.
@@ -27,6 +33,7 @@ final class PhilipsSubmissionAuthorRepository implements PhilipsSubmissionAuthor
         if ($tenantId <= 0 || $reportId <= 0 || $reportVersion <= 0 || $studyId <= 0) {
             return null;
         }
+        $this->lastFailureSqlState = null;
         try {
             $pdo = $this->pdo ??= Database::getInstance();
             $signerVersion = $this->resolveSignerVersion(
@@ -69,7 +76,9 @@ SQL);
                 'study_id' => $studyId,
             ]);
             $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
-        } catch (\Throwable) {
+        } catch (\Throwable $error) {
+            $code = $error instanceof \PDOException ? (string) $error->getCode() : '';
+            $this->lastFailureSqlState = preg_match('/^[0-9A-Z]{5}$/', $code) === 1 ? $code : 'UNKNOWN';
             return null;
         }
         return count($rows) === 1 ? $this->normalizeRow($rows[0]) : null;

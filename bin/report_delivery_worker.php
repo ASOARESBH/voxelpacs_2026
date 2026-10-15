@@ -11,7 +11,12 @@ use App\Services\PhilipsFolderDeliveryException;
 use App\Services\PhilipsFolderDeliveryService;
 use App\Services\PdfNonDicomArtifactProducer;
 
-require dirname(__DIR__) . '/app/bootstrap.php';
+try {
+    require dirname(__DIR__) . '/app/bootstrap.php';
+} catch (Throwable $bootstrapError) {
+    fwrite(STDERR, "RUNONE_RESULT=FAILED\nREASON=bootstrap\nJOB_ID=UNKNOWN\nATTEMPT_ID=NONE\n");
+    exit(4);
+}
 
 final class DeliveryWorkerFailure extends RuntimeException
 {
@@ -40,6 +45,7 @@ final class LocalDicomDeliveryWorker
         'invalid_configuration',
         'invalid_artifact',
         'artifact_unreadable',
+        'xml_field_unresolved',
         'gateway_policy_rejected',
         'author_signer_mismatch',
         'credentials_unavailable',
@@ -56,6 +62,14 @@ final class LocalDicomDeliveryWorker
         'configuration',
     ];
     private const CSTORE_DIAGNOSTIC_MAX_BYTES = 8192;
+    private const PHILIPS_PRE_BRIDGE_STAGES = [
+        'feature_disabled',
+        'invalid_configuration',
+        'invalid_artifact',
+        'credentials_unavailable',
+        'author_resolution_failed',
+        'xml_field_unresolved',
+    ];
 
     private ReportDeliveryWorkerRepository $repository;
     private ReportDeliveryArtifactService $artifactService;
@@ -85,18 +99,34 @@ final class LocalDicomDeliveryWorker
     public function runOne(int $jobId): int
     {
         if (ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
-            fwrite(STDERR, "worker_kill_switch_enabled\n");
-            return 78;
+            $this->emitRunOneResult('NOT_CLAIMED', 'kill_switch', $jobId, null);
+            return 4;
         }
-        $this->repository->enableOneShotForJob($jobId);
-        $clinicalDate = $this->repository->currentDatabaseDate();
-        $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), $clinicalDate);
-        if ($job === null) {
-            fwrite(STDERR, "controlled_job_not_eligible\n");
-            return 3;
+        try {
+            $this->repository->enableOneShotForJob($jobId);
+            $clinicalDate = $this->repository->currentClinicalDate();
+            $job = $this->repository->claimJobById($jobId, $this->workerId, $this->supportedTransports(), $clinicalDate);
+            if ($job === null) {
+                $reason = $this->repository->lastClaimFailureReason() ?? 'not_eligible';
+                $this->emitRunOneResult('NOT_CLAIMED', $reason, $jobId, null);
+                return 3;
+            }
+            $outcome = $this->deliver($job);
+            $this->emitRunOneResult(
+                (string) ($outcome['result'] ?? 'FAILED'),
+                (string) ($outcome['reason'] ?? 'unknown'),
+                $jobId,
+                isset($outcome['attempt_id']) ? (int) $outcome['attempt_id'] : null
+            );
+            return ($outcome['result'] ?? 'FAILED') === 'DELIVERED' ? 0 : 4;
+        } catch (Throwable $error) {
+            Logger::error('[ReportDeliveryWorker] runOne bootstrap/claim failure', [
+                'job_id' => $jobId,
+                'error_class' => get_class($error),
+            ]);
+            $this->emitRunOneResult('FAILED', 'bootstrap_or_claim', $jobId, null);
+            return 4;
         }
-        $this->deliver($job);
-        return 0;
     }
 
     public function run(): void
@@ -110,13 +140,18 @@ final class LocalDicomDeliveryWorker
         Logger::info('[ReportDeliveryWorker] Serviço local iniciado', ['worker_id' => $this->workerId]);
         while (true) {
             try {
-                $clinicalDate = $this->repository->currentDatabaseDate();
+                $clinicalDate = $this->repository->currentClinicalDate();
                 $expired = $this->repository->expireAutomaticJobsBefore($clinicalDate);
                 if ($expired > 0) {
                     Logger::warning('[ReportDeliveryWorker] Pendências automáticas expiradas', ['count' => $expired]);
                 }
                 $job = $this->repository->claimNextJob($this->workerId, $this->supportedTransports(), $clinicalDate);
                 if ($job === null) {
+                    $eligibleCount = $this->repository->countEligibleJobs($this->supportedTransports(), $clinicalDate);
+                    Logger::sanitized('[ReportDeliveryWorker] Sem job elegível para claim', [
+                        'eligible_count' => $eligibleCount,
+                        'last_no_claim_reason' => $this->repository->lastClaimFailureReason() ?? 'no_eligible_job',
+                    ]);
                     sleep($this->idleSeconds);
                     continue;
                 }
@@ -131,8 +166,8 @@ final class LocalDicomDeliveryWorker
         }
     }
 
-    /** @param array<string,mixed> $job */
-    private function deliver(array $job): void
+    /** @param array<string,mixed> $job @return array{result:string,reason:string,attempt_id:?int} */
+    private function deliver(array $job): array
     {
         $jobId = (int) ($job['id'] ?? 0);
         try {
@@ -250,21 +285,28 @@ final class LocalDicomDeliveryWorker
                     : '[ReportDeliveryWorker] Entrega DICOM concluída',
                 ['job_id' => $jobId, 'transport' => $transport, 'environment' => (string) ($job['ambiente'] ?? '')]
             );
+            return ['result' => 'DELIVERED', 'reason' => 'delivered', 'attempt_id' => $this->repository->lastAttemptId()];
         } catch (PhilipsFolderDeliveryException $error) {
             Logger::warning('[PhilipsFolderDelivery] PHILIPS_EXPORT_FAILED', [
                 'job_id' => $jobId,
                 'stage' => $error->stage,
                 'reason_category' => $error->reasonCategory,
             ]);
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            $attemptId = $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0), $this->isPhilipsPreBridgeStage($error->stage));
+            $result = in_array($error->reasonCategory, ['timeout', 'remote_integrity_unconfirmed', 'gateway_delivery_failed', 'remote_io'], true) ? 'UNCERTAIN' : 'FAILED';
+            return ['result' => $result, 'reason' => $error->reasonCategory ?: $error->stage, 'attempt_id' => $attemptId];
         } catch (DeliveryWorkerFailure $error) {
-            $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            $preBridge = (string) ($job['transport'] ?? '') === PhilipsFolderDeliveryService::NON_DICOM_TRANSPORT
+                && in_array($error->stage, ['invalid_job', 'invalid_configuration', 'invalid_payload'], true);
+            $attemptId = $this->failSafely($jobId, $error->stage, $error->reasonCategory, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0), $preBridge);
+            return ['result' => 'FAILED', 'reason' => $error->reasonCategory ?: $error->stage, 'attempt_id' => $attemptId];
         } catch (Throwable $error) {
             Logger::error('[ReportDeliveryWorker] Falha técnica de entrega', [
                 'job_id' => $jobId,
                 'error_class' => get_class($error),
             ]);
-            $this->failSafely($jobId, 'unexpected_error', null, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            $attemptId = $this->failSafely($jobId, 'unexpected_error', null, (int) ($job['effective_destination_id'] ?? 0), (int) ($job['destination_id'] ?? 0));
+            return ['result' => 'FAILED', 'reason' => 'unexpected_error', 'attempt_id' => $attemptId];
         }
     }
 
@@ -587,10 +629,15 @@ final class LocalDicomDeliveryWorker
         return $decoded;
     }
 
-    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0): void
+    private function isPhilipsPreBridgeStage(string $stage): bool
+    {
+        return in_array($stage, self::PHILIPS_PRE_BRIDGE_STAGES, true);
+    }
+
+    private function failSafely(int $jobId, string $stage, ?string $reasonCategory = null, int $effectiveDestinationId = 0, int $originalDestinationId = 0, bool $preBridge = false): ?int
     {
         if ($jobId <= 0) {
-            return;
+            return null;
         }
         try {
             $metadata = ['stage' => $stage];
@@ -602,20 +649,36 @@ final class LocalDicomDeliveryWorker
                 $metadata['effective_destination_id'] = $effectiveDestinationId;
                 $metadata['destination_resolution'] = 'execution_time';
             }
-            $recorded = $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
+            $recorded = $preBridge
+                ? $this->repository->failPreBridgeJob($jobId, $this->workerId, 'Falha pré-Bridge no worker de devolução.', $metadata)
+                : $this->repository->failJob($jobId, $this->workerId, 'Falha técnica no worker de devolução.', $metadata);
             if (!$recorded) {
                 Logger::error('[ReportDeliveryWorker] Falha não registrada: lease ausente', [
                     'job_id' => $jobId,
                     'ledger_stage' => 'lock_job_not_found',
                 ]);
+                return null;
             }
+            return $preBridge ? null : $this->repository->lastAttemptId();
         } catch (Throwable $failure) {
             Logger::error('[ReportDeliveryWorker] Não foi possível registrar falha', [
                 'job_id' => $jobId,
                 'error_class' => get_class($failure),
                 'ledger_stage' => $this->repository->lastLedgerFailureStage() ?? 'unknown',
             ]);
+            return null;
         }
+    }
+
+    private function emitRunOneResult(string $result, string $reason, int $jobId, ?int $attemptId): void
+    {
+        $allowedResults = ['CLAIMED', 'NOT_CLAIMED', 'DELIVERED', 'FAILED', 'UNCERTAIN'];
+        $result = in_array($result, $allowedResults, true) ? $result : 'FAILED';
+        $reason = preg_match('/\A[a-z0-9_:-]{1,64}\z/i', $reason) === 1 ? $reason : 'unknown';
+        fwrite(STDOUT, "RUNONE_RESULT={$result}\n");
+        fwrite(STDOUT, "REASON={$reason}\n");
+        fwrite(STDOUT, "JOB_ID={$jobId}\n");
+        fwrite(STDOUT, "ATTEMPT_ID=" . ($attemptId !== null && $attemptId > 0 ? (string) $attemptId : 'NONE') . "\n");
     }
 
     private function workerId(): string
@@ -648,17 +711,32 @@ final class LocalDicomDeliveryWorker
     }
 }
 $checkRequested = in_array('--check', $argv, true);
-if (!$checkRequested && ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+$explicitJobId = null;
+foreach ($argv as $argument) {
+    if (preg_match('/^--job-id=([1-9][0-9]*)$/', $argument, $matches) === 1) {
+        $explicitJobId = (int) $matches[1];
+        break;
+    }
+}
+if (!$checkRequested && $explicitJobId === null && ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
     fwrite(STDERR, "worker_kill_switch_enabled\n");
     exit(78);
 }
-$worker = new LocalDicomDeliveryWorker();
-if ($checkRequested) {
-    exit($worker->check());
+if ($explicitJobId !== null && ReportDeliveryRuntimeConfig::workerKillSwitchEnabled()) {
+    fwrite(STDERR, "RUNONE_RESULT=NOT_CLAIMED\nREASON=kill_switch\nJOB_ID={$explicitJobId}\nATTEMPT_ID=NONE\n");
+    exit(4);
 }
-foreach ($argv as $argument) {
-    if (preg_match('/^--job-id=([1-9][0-9]*)$/', $argument, $matches) === 1) {
-        exit($worker->runOne((int) $matches[1]));
+try {
+    $worker = new LocalDicomDeliveryWorker();
+    if ($checkRequested) {
+        exit($worker->check());
     }
+    if ($explicitJobId !== null) {
+        exit($worker->runOne($explicitJobId));
+    }
+    $worker->run();
+} catch (Throwable $error) {
+    $jobLabel = $explicitJobId !== null ? (string) $explicitJobId : 'UNKNOWN';
+    fwrite(STDERR, "RUNONE_RESULT=FAILED\nREASON=bootstrap\nJOB_ID={$jobLabel}\nATTEMPT_ID=NONE\n");
+    exit(4);
 }
-$worker->run();

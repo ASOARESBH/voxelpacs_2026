@@ -247,7 +247,7 @@ final class PhilipsSubmissionPdfReadOnlyDiagnostic
         $stmt->execute([
             ':job_id' => $jobId,
             ':tenant_id' => $tenantId,
-            ':automatic_today' => ReportDeliveryClock::currentDatabaseDate($this->pdo),
+            ':automatic_today' => ReportDeliveryClock::currentClinicalDate($this->pdo),
         ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return is_array($row) ? $row : null;
