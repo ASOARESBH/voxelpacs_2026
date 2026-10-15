@@ -16,11 +16,25 @@ const PRECACHE_ASSETS = [
     '/assets/img/logo-voxel-pacs.png',
 ];
 
+function validOfflineResponse(context) {
+    const contentType = context === 'navigation'
+        ? 'text/html; charset=utf-8'
+        : 'text/plain; charset=utf-8';
+    return new Response('', {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+            'Cache-Control': 'no-store',
+            'Content-Type': contentType,
+        },
+    });
+}
+
 function cachedOrNetworkError(request, context) {
     return caches.match(request).then(cached => {
         if (cached) return cached;
         console.warn('[PWA] sem resposta de rede ou cache: ' + context);
-        return Response.error();
+        return validOfflineResponse(context);
     });
 }
 
