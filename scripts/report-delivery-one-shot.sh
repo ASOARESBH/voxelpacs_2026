@@ -7,19 +7,34 @@ BACKUP_DIR=${VOXEL_REPORT_DELIVERY_DIAGNOSTICS_DIR:-/var/backups/voxelpacs/diagn
 WORKER_ID=${VOXEL_REPORT_DELIVERY_WORKER_ID:-local-dicom-worker}
 IDLE_SECONDS=${VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS:-3}
 JOB_ID=''
+ALLOW_OTHER_ELIGIBLE=''
 
 usage() {
-  printf '%s\n' 'Uso: report-delivery-one-shot.sh --job-id=<id>' >&2
+  printf '%s\n' 'Uso: report-delivery-one-shot.sh --job-id=<id> [--allow-other-eligible=<id>[,<id>...]]' >&2
   exit 64
 }
 
 for argument in "$@"; do
   case "$argument" in
     --job-id=[1-9][0-9]*) JOB_ID=${argument#--job-id=} ;;
+    --allow-other-eligible=[1-9][0-9]*) ALLOW_OTHER_ELIGIBLE=${argument#--allow-other-eligible=} ;;
     *) usage ;;
   esac
 done
 [ -n "$JOB_ID" ] || usage
+
+if [ -n "$ALLOW_OTHER_ELIGIBLE" ]; then
+  if ! [[ "$ALLOW_OTHER_ELIGIBLE" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; then
+    printf '%s\n' 'ONE_SHOT_RESULT=BLOCKED' 'REASON=invalid_allow_other_eligible' >&2
+    exit 4
+  fi
+  case ",$ALLOW_OTHER_ELIGIBLE," in
+    *,"$JOB_ID",*)
+      printf '%s\n' 'ONE_SHOT_RESULT=BLOCKED' 'REASON=target_in_allow_other_eligible' >&2
+      exit 4
+      ;;
+  esac
+fi
 
 if ! [[ "$WORKER_ID" =~ ^[a-zA-Z0-9._:-]{3,120}$ ]] || ! [[ "$IDLE_SECONDS" =~ ^[0-9]+$ ]] || [ "$IDLE_SECONDS" -lt 1 ] || [ "$IDLE_SECONDS" -gt 30 ]; then
   printf '%s\n' 'ONE_SHOT_RESULT=BLOCKED' 'REASON=invalid_worker_environment' >&2
@@ -57,7 +72,8 @@ printf '%s\n' "HARNESS_WORKER_ID=$WORKER_ID" "HARNESS_IDLE_SECONDS=$IDLE_SECONDS
 
 set +e
 runuser -u voxel -- /usr/bin/php "$RUNTIME_DIR/bin/report_delivery_one_shot_preflight.php" \
-  "--job-id=$JOB_ID" --expect=ELIGIBLE >>"$LOG_PATH" 2>&1
+  "--job-id=$JOB_ID" --expect=ELIGIBLE \
+  ${ALLOW_OTHER_ELIGIBLE:+"--allow-other-eligible=$ALLOW_OTHER_ELIGIBLE"} >>"$LOG_PATH" 2>&1
 PREFLIGHT_EXIT=$?
 set -e
 if [ "$PREFLIGHT_EXIT" -ne 0 ]; then
@@ -80,4 +96,18 @@ printf '%s\n' "HARNESS_USER=voxel" "HARNESS_CWD=$RUNTIME_DIR" \
   "HARNESS_PHP_EXIT=$PHP_EXIT" "HARNESS_LOG_PRESERVED=YES" \
   "HARNESS_LOG_CATEGORY=ROOT_ONLY_PRESERVED"
 awk -F= '/^(RUNONE_RESULT|REASON|JOB_ID|ATTEMPT_ID|PREFLIGHT_RESULT|PREFLIGHT_EXPECTED|TARGET_GATE|ELIGIBLE_COUNT|OTHER_ELIGIBLE_COUNT|WORKER_KILL_SWITCH|CLINICAL_DATE_SOURCE|DB_READ_ONLY)=/{print}' "$LOG_PATH"
+
+if [ -n "$ALLOW_OTHER_ELIGIBLE" ]; then
+  set +e
+  runuser -u voxel -- /usr/bin/php "$RUNTIME_DIR/bin/report_delivery_one_shot_preflight.php" \
+    "--job-id=$JOB_ID" "--verify-other-eligible=$ALLOW_OTHER_ELIGIBLE" >>"$LOG_PATH" 2>&1
+  POSTCHECK_EXIT=$?
+  set -e
+  awk -F= '/^(POSTCHECK_RESULT|OTHER_JOBS_UNCHANGED|EXPECTED_OTHER_ELIGIBLE_IDS|VERIFIED_OTHER_IDS|DB_READ_ONLY)=/{print}' "$LOG_PATH"
+  if [ "$POSTCHECK_EXIT" -ne 0 ]; then
+    printf '%s\n' 'ONE_SHOT_RESULT=UNCERTAIN' 'REASON=other_jobs_postcheck_failed' 'OTHER_JOBS_UNCHANGED=NO' >&2
+    exit 4
+  fi
+  printf '%s\n' 'OTHER_JOBS_UNCHANGED=YES'
+fi
 exit "$PHP_EXIT"

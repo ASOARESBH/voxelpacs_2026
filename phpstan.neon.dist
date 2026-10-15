@@ -7,6 +7,7 @@ parameters:
         - app/Repositories/ReportDeliveryWorkerRepository.php
         - app/Services/ReportDeliveryArtifactService.php
         - app/Services/ReportDeliveryClock.php
+        - app/Services/ReportDeliveryOneShotEligibility.php
         - app/Services/ReportDeliveryOutboxService.php
         - app/Services/PhilipsFolderDeliveryService.php
         - app/Services/PhilipsFolderGatewayBridgeClient.php

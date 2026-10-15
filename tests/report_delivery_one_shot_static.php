@@ -10,6 +10,7 @@ $clock = (string) file_get_contents($root . '/app/Services/ReportDeliveryClock.p
 $outbox = (string) file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
 $preflight = (string) file_get_contents($root . '/bin/report_delivery_one_shot_preflight.php');
 $executor = (string) file_get_contents($root . '/scripts/report-delivery-one-shot.sh');
+$eligibility = (string) file_get_contents($root . '/app/Services/ReportDeliveryOneShotEligibility.php');
 
 $expect = static function (bool $condition, string $message): void {
     if (!$condition) {
@@ -56,11 +57,21 @@ $expect(str_contains($preflight, 'SET TRANSACTION READ ONLY'), 'One-shot preflig
 $expect(str_contains($preflight, 'rollBack()'), 'One-shot preflight must always rollback.');
 $expect(!preg_match('/\b(?:INSERT|UPDATE|DELETE)\b/i', $preflight), 'One-shot preflight must contain no write SQL.');
 $expect(str_contains($preflight, 'OTHER_ELIGIBLE_COUNT='), 'Preflight must report competing eligible jobs.');
+$expect(str_contains($preflight, '--allow-other-eligible='), 'Preflight must accept an explicit competing-job allowlist.');
+$expect(str_contains($preflight, '--verify-other-eligible='), 'Preflight must support the read-only post-check.');
+$expect(str_contains($preflight, 'OTHER_JOBS_UNCHANGED='), 'Preflight must report the post-check result.');
+$expect(str_contains($preflight, 'ReportDeliveryOneShotEligibility::exactMatch'), 'Preflight must compare competing IDs exactly.');
+$expect(str_contains($eligibility, 'parseExplicitIds'), 'Allowlist parser must be versioned.');
+$expect(str_contains($eligibility, 'duplicate_allow_other_eligible'), 'Allowlist duplicates must fail closed.');
+$expect(str_contains($eligibility, 'exactMatch'), 'Allowlist comparison must be exact.');
 $expect(str_contains($executor, 'set -Eeuo pipefail'), 'Executor must use pipefail.');
 $expect(str_contains($executor, '/usr/bin/php "$RUNTIME_DIR/bin/report_delivery_worker.php"'), 'Executor must run the Worker PHP script.');
 $expect(str_contains($executor, 'VOXEL_REPORT_DELIVERY_WORKER_ID='), 'Executor must align the non-secret worker ID.');
 $expect(str_contains($executor, 'VOXEL_REPORT_DELIVERY_WORKER_IDLE_SECONDS='), 'Executor must align the non-secret idle interval.');
 $expect(str_contains($executor, 'runuser -u voxel -- env'), 'Executor must pass only explicit non-secret environment values.');
+$expect(str_contains($executor, '--allow-other-eligible='), 'Executor must expose the explicit competing-job allowlist.');
+$expect(str_contains($executor, 'OTHER_JOBS_UNCHANGED=YES'), 'Executor must confirm competing jobs remained unchanged.');
+$expect(str_contains($executor, 'other_jobs_postcheck_failed'), 'Executor must fail closed when the post-check fails.');
 $expect(str_contains($executor, 'cd "$RUNTIME_DIR"'), 'Executor must use the runtime working directory.');
 $expect(str_contains($executor, 'HARNESS_PHP_EXIT='), 'Executor must report PHP exit code directly.');
 $expect(str_contains($executor, 'install -m 600 /dev/null'), 'Executor must preserve a root-only log.');

@@ -136,6 +136,7 @@ jobs:
       - name: Executable Worker and static contracts
         run: |
           php tests/report_delivery_worker_executable.php
+          php tests/report_delivery_one_shot_allowlist_executable.php
           php tests/report_delivery_one_shot_static.php
           php tests/report_delivery_delivered_path_static.php
 
