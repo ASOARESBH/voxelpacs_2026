@@ -129,10 +129,25 @@ php bin/philips_author_signer_probe.php \
 
 Esse probe abre uma transação PostgreSQL `READ ONLY`, executa
 `PhilipsSubmissionAuthorRepository::findSignerForReportVersion()` e sempre faz
-`ROLLBACK`. A saída é somente categórica: `SIGNER_PATH` (`SELF` ou
-`PRIOR_ASSINADO`), `SIGNER_FOUND`, `SIGNER_ID=REAL|UNRESOLVED`, `DUPLICATE`,
+`ROLLBACK`. A saída é somente categórica: `SIGNER_PATH` (`SELF` ou `PRIOR_ASSINADO`), `SIGNER_FOUND`, `SIGNER_ID=REAL|UNRESOLVED`, `DUPLICATE`,
 `SQLSTATE` e `DATABASE_CHANGED=NO`. Não imprime nome, ID numérico, payload,
 PatientName, accession, PDF, XML ou segredo.
+
+Para uma execução isolada autorizada, use somente o executor versionado, nunca
+um wrapper ad hoc:
+
+```text
+sudo scripts/report-delivery-one-shot.sh --job-id=<job>
+```
+
+Ele exige Worker global parado, executa o preflight `READ ONLY` com rollback,
+confirma que não há outro Job elegível no escopo, chama o PHP como `voxel` no
+runtime oficial, preserva stdout/stderr completo em log root-only e propaga o
+exit code do PHP sem `tee`/`grep`. O resumo do PHP usa
+`RUNONE_RESULT=DELIVERED|NOT_CLAIMED|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
+`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O relógio de
+elegibilidade é a data clínica `America/Sao_Paulo`, inclusive no `runOne` e na
+expiração automática.
 
 ```text
 php -l bin/philips_nondicom_production_diagnostic.php

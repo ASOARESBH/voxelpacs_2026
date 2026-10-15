@@ -353,7 +353,7 @@ final class PhilipsNonDicomB6Selector
     private function automaticDateIsEligible(PDO $pdo, mixed $value): bool
     {
         $value = trim((string) ($value ?? ''));
-        return $value === '' || $value === ReportDeliveryClock::currentDatabaseDate($pdo);
+        return $value === '' || $value === ReportDeliveryClock::currentClinicalDate($pdo);
     }
 
     /** @return array{source:string,keys:array<string,bool>} */

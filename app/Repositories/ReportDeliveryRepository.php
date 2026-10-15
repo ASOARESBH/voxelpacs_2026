@@ -8,6 +8,7 @@ use DomainException;
 use PDO;
 use App\Core\SqlHelper;
 use App\Helpers\DicomPersonName;
+use App\Services\ReportDeliveryClock;
 
 /**
  * Persistência do VOXEL Report Delivery Hub.
@@ -1114,7 +1115,7 @@ class ReportDeliveryRepository
                     SET status = 'queued',
                         next_attempt_at = NOW(),
                         worker_eligible_at = NOW(),
-                        automatic_dispatch_date = CURRENT_DATE,
+                        automatic_dispatch_date = :automatic_dispatch_date,
                         locked_at = NULL,
                         locked_by = NULL,
                         last_error = NULL,
@@ -1126,7 +1127,11 @@ class ReportDeliveryRepository
                     AND locked_by IS NULL
                     AND (remote_reference IS NULL OR remote_reference = '')"
             );
-            $update->execute([':job_id' => $jobId, ':tenant_id' => $tenantId]);
+            $update->execute([
+                ':job_id' => $jobId,
+                ':tenant_id' => $tenantId,
+                ':automatic_dispatch_date' => ReportDeliveryClock::currentClinicalDate($this->pdo),
+            ]);
             if ($update->rowCount() !== 1) {
                 throw new DomainException('delivery_hub.jobs.erro_job_conflito_reenvio_automatico', 409);
             }
@@ -1237,10 +1242,7 @@ class ReportDeliveryRepository
                 throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
             }
 
-            $today = (string) $this->pdo->query('SELECT CURRENT_DATE')->fetchColumn();
-            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $today) !== 1) {
-                throw new DomainException('delivery_hub.jobs.erro_job_inelegivel_reenvio_dead_letter', 422);
-            }
+            $today = ReportDeliveryClock::currentClinicalDate($this->pdo);
 
             $resendKey = hash('sha256', implode('|', [
                 'report-delivery-dead-letter-resend-v1',

@@ -33,7 +33,7 @@ foreach ([
     ['artifact_type = \'pdf\'', 'artifact PDF vinculado'],
     ['hash_file', 'hash físico do artifact'],
     ['hash_equals', 'comparação segura do artifact'],
-    ['SELECT CURRENT_DATE', 'data do banco'],
+    ['ReportDeliveryClock::currentClinicalDate($this->pdo)', 'data clínica'],
     ['report-delivery-dead-letter-resend-v1', 'idempotência por Job de origem'],
     ['createOutboxIfAbsent(', 'nova outbox'],
     ['createJobs(', 'novo Job'],

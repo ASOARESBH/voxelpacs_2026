@@ -40,7 +40,7 @@ foreach ([
     ['event_type', 'evento de liberação'],
     ['delivery_request_id', 'ausência de Delivery Request controlada'],
     ['worker_eligible_at = NOW()', 'elegibilidade temporal do Worker'],
-    ['automatic_dispatch_date = CURRENT_DATE', 'data automática do banco'],
+    ['automatic_dispatch_date = :automatic_dispatch_date', 'data automática clínica parametrizada'],
     ['next_attempt_at = NOW()', 'próxima tentativa imediata'],
     ['remote_reference IS NULL', 'proteção contra resultado remoto existente'],
     ['isAutomaticProductionPayload', 'validação do payload automático'],
@@ -49,6 +49,7 @@ foreach ([
 ] as [$needle, $label]) {
     $expect(str_contains($method, $needle), "Contrato ausente: {$label}.");
 }
+$expect(str_contains($method, 'ReportDeliveryClock::currentClinicalDate($this->pdo)'), 'Reenvio automático sem relógio clínico.');
 
 foreach ([
     'report_versions',

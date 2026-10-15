@@ -25,6 +25,8 @@ class ReportDeliveryWorkerRepository
 {
     private ?int $oneShotJobId = null;
     private ?string $lastLedgerFailureStage = null;
+    private ?int $lastAttemptId = null;
+    private ?string $lastClaimFailureReason = null;
     private ReportDeliveryRepository $reportDeliveryRepository;
     private ActiveDestinationResolver $activeDestinationResolver;
     /** @var array<int,int> */
@@ -46,14 +48,73 @@ class ReportDeliveryWorkerRepository
         return $this->lastLedgerFailureStage;
     }
 
+    public function lastAttemptId(): ?int
+    {
+        return $this->lastAttemptId;
+    }
+
+    public function lastClaimFailureReason(): ?string
+    {
+        return $this->lastClaimFailureReason;
+    }
+
     public function currentDatabaseDate(): string
     {
-        return ReportDeliveryClock::currentDatabaseDate($this->pdo);
+        return ReportDeliveryClock::currentClinicalDate($this->pdo);
+    }
+
+    public function currentClinicalDate(): string
+    {
+        return ReportDeliveryClock::currentClinicalDate($this->pdo);
+    }
+
+    /** @param list<string> $transports */
+    public function countEligibleJobs(array $transports = [], ?string $currentDate = null): int
+    {
+        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentClinicalDate($this->pdo);
+        $requestsEnabled = $this->requestsFeatureEnabled();
+        $requestJoin = $requestsEnabled
+            ? "LEFT JOIN pacs_report_delivery_requests dr
+                        ON dr.id = o.delivery_request_id AND dr.tenant_id = j.tenant_id"
+            : '';
+        $requestWhere = $requestsEnabled
+            ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
+            : '';
+        $transportWhere = '';
+        $parameters = [':automatic_today' => $currentDate];
+        if ($transports !== []) {
+            $placeholders = [];
+            foreach (array_values($transports) as $index => $transport) {
+                $placeholder = ':count_transport_' . $index;
+                $placeholders[] = $placeholder;
+                $parameters[$placeholder] = (string) $transport;
+            }
+            $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
+        }
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*)
+               FROM pacs_report_delivery_jobs j
+               INNER JOIN pacs_report_delivery_outbox o
+                       ON o.id = j.outbox_id AND o.tenant_id = j.tenant_id
+               LEFT JOIN pacs_report_delivery_destinations d
+                       ON d.id = j.destination_id AND d.tenant_id = j.tenant_id
+               {$requestJoin}
+              WHERE j.status IN ('queued', 'retrying')
+                AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= NOW())
+                AND j.worker_eligible_at IS NOT NULL
+                AND j.worker_eligible_at <= NOW()
+                AND (j.automatic_dispatch_date IS NULL OR j.automatic_dispatch_date = :automatic_today)
+                AND (o.delivery_request_id IS NULL OR (d.enabled = 1 AND d.ambiente IN ('homologacao', 'producao')))
+                {$requestWhere}{$transportWhere}"
+        );
+        $stmt->execute($parameters);
+        return (int) $stmt->fetchColumn();
     }
 
     /** @return array<string,mixed>|null */
     public function claimNextJob(string $workerId, array $transports = [], ?string $currentDate = null): ?array
     {
+        $this->lastClaimFailureReason = null;
         $transports = array_values(array_unique(array_filter(
             array_map(static fn($transport): string => trim((string) $transport), $transports),
             static fn(string $transport): bool => $transport !== ''
@@ -68,7 +129,7 @@ class ReportDeliveryWorkerRepository
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
-        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentDatabaseDate($this->pdo);
+        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentClinicalDate($this->pdo);
         $parameters = [':automatic_today' => $currentDate];
         $taskSiteAliasSelect = $this->taskSiteAliasSelect();
         if ($transports !== []) {
@@ -107,11 +168,13 @@ class ReportDeliveryWorkerRepository
             $stmt->execute($parameters);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$job) {
+                $this->lastClaimFailureReason = 'no_eligible_job';
                 $this->pdo->commit();
                 return null;
             }
             $claimFailureCode = $this->linkedRequestFailureCode($job);
             if ($claimFailureCode !== null) {
+                $this->lastClaimFailureReason = 'linked_request_' . $claimFailureCode;
                 $this->failUnclaimedRequestJob($job, $claimFailureCode);
                 $this->pdo->commit();
                 return null;
@@ -119,6 +182,7 @@ class ReportDeliveryWorkerRepository
             try {
                 $job = $this->resolveDestinationForExecution($job);
             } catch (ActiveDestinationResolutionException $e) {
+                $this->lastClaimFailureReason = 'destination_resolution_failed';
                 $this->failUnclaimedJob($job, $e->reason);
                 $this->pdo->commit();
                 return null;
@@ -132,6 +196,7 @@ class ReportDeliveryWorkerRepository
             );
             $update->execute([':worker_id' => $workerId, ':id' => (int) $job['id']]);
             if ($update->rowCount() !== 1) {
+                $this->lastClaimFailureReason = 'claim_race';
                 $this->pdo->rollBack();
                 return null;
             }
@@ -141,6 +206,7 @@ class ReportDeliveryWorkerRepository
             $job['attempt_number'] = (int) $job['attempt_count'] + 1;
             return $job;
         } catch (Throwable $e) {
+            $this->lastClaimFailureReason = 'claim_query_error';
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
@@ -157,6 +223,7 @@ class ReportDeliveryWorkerRepository
      */
     public function claimJobById(int $jobId, string $workerId, array $transports = [], ?string $currentDate = null): ?array
     {
+        $this->lastClaimFailureReason = null;
         if ($jobId <= 0) {
             return null;
         }
@@ -179,7 +246,7 @@ class ReportDeliveryWorkerRepository
             ? " AND (o.delivery_request_id IS NULL OR dr.status = 'armed')"
             : '';
         $jobLockClause = SqlHelper::isPostgres() ? 'FOR UPDATE OF j' : 'FOR UPDATE';
-        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentDatabaseDate($this->pdo);
+        $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentClinicalDate($this->pdo);
         $parameters = [':job_id' => $jobId, ':automatic_today' => $currentDate];
         foreach ($transports as $index => $transport) {
             $placeholder = ':transport_' . $index;
@@ -214,11 +281,13 @@ class ReportDeliveryWorkerRepository
             $stmt->execute($parameters);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$job) {
+                $this->lastClaimFailureReason = $this->classifyUnclaimedJob($jobId, $currentDate, $transports);
                 $this->pdo->commit();
                 return null;
             }
             $claimFailureCode = $this->linkedRequestFailureCode($job);
             if ($claimFailureCode !== null) {
+                $this->lastClaimFailureReason = 'linked_request_' . $claimFailureCode;
                 $this->failUnclaimedRequestJob($job, $claimFailureCode);
                 $this->pdo->commit();
                 return null;
@@ -226,6 +295,7 @@ class ReportDeliveryWorkerRepository
             try {
                 $job = $this->resolveDestinationForExecution($job);
             } catch (ActiveDestinationResolutionException $e) {
+                $this->lastClaimFailureReason = 'destination_resolution_failed';
                 $this->failUnclaimedJob($job, $e->reason);
                 $this->pdo->commit();
                 return null;
@@ -238,6 +308,7 @@ class ReportDeliveryWorkerRepository
             );
             $update->execute([':worker_id' => $workerId, ':id' => $jobId]);
             if ($update->rowCount() !== 1) {
+                $this->lastClaimFailureReason = 'claim_race';
                 $this->pdo->rollBack();
                 return null;
             }
@@ -246,10 +317,56 @@ class ReportDeliveryWorkerRepository
             $job['attempt_number'] = (int) $job['attempt_count'] + 1;
             return $job;
         } catch (Throwable $e) {
+            $this->lastClaimFailureReason = 'claim_query_error';
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
+        }
+    }
+
+    /** @param list<string> $transports */
+    private function classifyUnclaimedJob(int $jobId, ?string $currentDate, array $transports): string
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT status, transport, automatic_dispatch_date, worker_eligible_at,
+                        next_attempt_at, locked_at
+                   FROM pacs_report_delivery_jobs
+                  WHERE id = :job_id
+                  LIMIT 1"
+            );
+            $stmt->execute([':job_id' => $jobId]);
+            $job = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$job) {
+                return 'job_not_found';
+            }
+            if (!in_array((string) ($job['status'] ?? ''), ['queued', 'retrying'], true)) {
+                return 'status_not_eligible';
+            }
+            if ($transports !== [] && !in_array((string) ($job['transport'] ?? ''), $transports, true)) {
+                return 'transport_not_supported';
+            }
+            if ($currentDate !== null
+                && ($job['automatic_dispatch_date'] ?? null) !== null
+                && (string) $job['automatic_dispatch_date'] !== $currentDate) {
+                return 'other_date';
+            }
+            if (($job['worker_eligible_at'] ?? null) === null) {
+                return 'worker_not_eligible';
+            }
+            if (($job['next_attempt_at'] ?? null) !== null
+                && (bool) $this->pdo->query(
+                    "SELECT CASE WHEN " . $this->pdo->quote((string) $job['next_attempt_at']) . " > NOW() THEN 1 ELSE 0 END"
+                )->fetchColumn()) {
+                return 'next_attempt_not_eligible';
+            }
+            if (($job['locked_at'] ?? null) !== null) {
+                return 'locked';
+            }
+            return 'not_eligible';
+        } catch (Throwable) {
+            return 'claim_reason_unavailable';
         }
     }
 
@@ -995,6 +1112,7 @@ class ReportDeliveryWorkerRepository
         ?string $error,
         array $metadata
     ): void {
+        $this->lastAttemptId = null;
         $stmt = $this->pdo->prepare(
             "INSERT INTO pacs_report_delivery_attempts
                 (job_id, attempt_number, worker_id, finished_at, outcome, response_code,
@@ -1013,6 +1131,8 @@ class ReportDeliveryWorkerRepository
             ':error_message' => $error ? mb_substr($error, 0, 5000) : null,
             ':metadata_json' => $metadata ? json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $this->lastAttemptId = $id > 0 ? $id : null;
     }
 
     /** @param array<string,mixed> $job */
