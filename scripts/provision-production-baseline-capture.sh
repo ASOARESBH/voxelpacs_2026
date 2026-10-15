@@ -140,7 +140,10 @@ validate_wrapper_contract() {
 }
 
 validate_sudoers() {
-  [[ "$(grep -Ec '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$SUDOERS_SOURCE")" -eq 3 ]] || fail 'SUDOERS_RULE_COUNT_INVALID'
+  local caller
+  for caller in manus-admin manus-deploy; do
+    [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$SUDOERS_SOURCE")" -eq 3 ]] || fail "SUDOERS_RULE_COUNT_INVALID_${caller}"
+  done
   grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture capture' "$SUDOERS_SOURCE" || fail 'SUDOERS_CAPTURE_COMMAND_MISSING'
   grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture refresh-profile ????????????????????????????????????????' "$SUDOERS_SOURCE" || fail 'SUDOERS_REFRESH_COMMAND_MISSING'
   grep -Fq '/usr/local/sbin/voxelpacs-production-baseline-capture rebind-profile ????????????????????????????????????????' "$SUDOERS_SOURCE" || fail 'SUDOERS_REBIND_COMMAND_MISSING'

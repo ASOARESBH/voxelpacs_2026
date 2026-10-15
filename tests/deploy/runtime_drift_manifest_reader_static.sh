@@ -27,7 +27,12 @@ grep -Fq -- "--baseline-id" "$gate" || fail gate_argument_missing
 grep -Fq "validate-runtime-drift.sh" "$provisioner" || fail comparator_source_missing
 grep -Fq '/usr/local/sbin/voxelpacs-runtime-drift-manifest-reader read --baseline-id' "$sudoers" || fail reader_sudoers_missing
 grep -Fq '/usr/local/sbin/voxelpacs-runtime-drift-gate --baseline-id' "$sudoers" || fail gate_sudoers_missing
-[[ "$(grep -Ec '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$sudoers")" -eq 2 ]] || fail sudoers_rule_count
+for file in "$reader" "$gate"; do
+  grep -Fq 'manus-admin|manus-deploy' "$file" || fail "caller_contract:${file}"
+done
+for caller in manus-admin manus-deploy; do
+  [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$sudoers")" -eq 2 ]] || fail "sudoers_rule_count:${caller}"
+done
 
 for file in "$reader" "$gate"; do
   for forbidden in \

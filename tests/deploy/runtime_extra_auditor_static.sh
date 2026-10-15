@@ -27,6 +27,7 @@ for literal in \
   'DRIFT_GATE_INTEGRATION=NOT_EXECUTED'; do
   grep -Fq -- "$literal" "$helper" || fail "helper_contract_missing:$literal"
 done
+grep -Fq 'manus-admin|manus-deploy' "$helper" || fail helper_caller_contract_missing
 
 for forbidden in \
   '--path' '--source' '--destination' '--command' 'eval' 'rm -rf' 'smbclient' 'systemctl' 'composer' 'mysql' 'psql' 'php '; do
@@ -41,6 +42,9 @@ for literal in \
 done
 ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$sudoers" || fail generic_sudoers
 ! grep -Eq '/bin/(ba|d)?sh|/usr/(bin|sbin)/(cp|mv|rm|rsync|install|tee|python|php|composer|systemctl)' "$sudoers" || fail generic_sudo_command
+for caller in manus-admin manus-deploy; do
+  [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$sudoers")" -eq 1 ]] || fail "sudoers_caller:${caller}"
+done
 
 for literal in \
   'git -C "$ROOT" rev-parse HEAD' \

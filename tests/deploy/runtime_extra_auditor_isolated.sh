@@ -7,7 +7,7 @@ fail() { printf 'TEST=FAIL\nREASON=%s\n' "$1" >&2; exit 1; }
 run_as_root() { if [[ "$EUID" -eq 0 ]]; then "$@"; else sudo -n "$@"; fi; }
 run_helper() {
   local helper="$1" manifest="$2" baseline_id="$3" artifact_sha="$4" output="$5" error="$6"
-  run_as_root env -u SUDO_USER bash -c 'cat "$1" | "$2" audit --baseline-id "$3" --artifact-sha "$4"' bash "$manifest" "$helper" "$baseline_id" "$artifact_sha" >"$output" 2>"$error"
+  run_as_root env SUDO_USER=manus-deploy bash -c 'cat "$1" | "$2" audit --baseline-id "$3" --artifact-sha "$4"' bash "$manifest" "$helper" "$baseline_id" "$artifact_sha" >"$output" 2>"$error"
 }
 
 root_dir="$(mktemp -d /tmp/voxelpacs-runtime-extra-auditor.XXXXXX)"

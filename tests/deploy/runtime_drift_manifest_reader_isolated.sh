@@ -12,7 +12,7 @@ run_as_root() {
 }
 
 run_helper_as_root() {
-  if [[ "$EUID" -eq 0 ]]; then env -u SUDO_USER "$@"; else sudo -n env -u SUDO_USER "$@"; fi
+  if [[ "$EUID" -eq 0 ]]; then env SUDO_USER=manus-deploy "$@"; else sudo -n env SUDO_USER=manus-deploy "$@"; fi
 }
 
 fixture_root="$(mktemp -d /tmp/voxelpacs-runtime-drift-reader.XXXXXX)"

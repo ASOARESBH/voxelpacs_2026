@@ -94,7 +94,10 @@ validate_gate_contract() {
 }
 
 validate_sudoers() {
-  [[ "$(grep -Ec '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:' "$SUDOERS_SOURCE")" -eq 2 ]] || fail 'SUDOERS_RULE_COUNT_INVALID'
+  local caller
+  for caller in manus-admin manus-deploy; do
+    [[ "$(grep -Ec "^${caller}[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:" "$SUDOERS_SOURCE")" -eq 2 ]] || fail "SUDOERS_RULE_COUNT_INVALID_${caller}"
+  done
   grep -Fq '/usr/local/sbin/voxelpacs-runtime-drift-manifest-reader read --baseline-id' "$SUDOERS_SOURCE" || fail 'SUDOERS_READER_COMMAND_MISSING'
   grep -Fq '/usr/local/sbin/voxelpacs-runtime-drift-gate --baseline-id' "$SUDOERS_SOURCE" || fail 'SUDOERS_GATE_COMMAND_MISSING'
   ! grep -Eq 'NOPASSWD:[[:space:]]+ALL([[:space:]]|$)' "$SUDOERS_SOURCE" || fail 'GENERIC_SUDO_RULE_PRESENT'

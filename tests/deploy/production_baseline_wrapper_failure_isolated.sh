@@ -60,7 +60,7 @@ PY
 chmod 0755 "$wrapper"
 
 set +e
-result="$(sudo -n env -u SUDO_USER bash "$wrapper" capture 2>&1)"
+result="$(sudo -n env SUDO_USER=manus-deploy bash "$wrapper" capture 2>&1)"
 rc=$?
 set -e
 [[ "$rc" -eq 65 ]]

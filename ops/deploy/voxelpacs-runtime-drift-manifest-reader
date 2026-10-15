@@ -26,7 +26,7 @@ is_sha() {
 require_root_and_caller() {
   [[ "$EUID" -eq 0 ]] || fail 'ROOT_REQUIRED'
   case "${SUDO_USER:-}" in
-    ''|manus-admin) ;;
+    ''|manus-admin|manus-deploy) ;;
     *) fail 'CALLER_NOT_ALLOWLISTED' ;;
   esac
 }
