@@ -144,12 +144,16 @@ final class PhilipsFolderDeliveryService implements PhilipsFolderDeliveryPort
                 ]);
                 throw new PhilipsFolderDeliveryException('author_resolution_failed', 'author_signer_mismatch');
             } catch (PhilipsXmlFieldUnresolvedException $error) {
+                $reasonCategory = $error->sanitizedCode() === 'PATIENT_NAME_RAW_UNAVAILABLE'
+                    ? 'patient_name_raw_unavailable'
+                    : 'xml_field_unresolved';
                 Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
                     'job_id' => $jobId,
                     'stage' => 'xml_generation',
                     'field' => $error->field,
+                    'reason_category' => $reasonCategory,
                 ]);
-                throw new PhilipsFolderDeliveryException('xml_field_unresolved', 'xml_field_unresolved');
+                throw new PhilipsFolderDeliveryException('xml_field_unresolved', $reasonCategory);
             }
             $pdfFileName = (string) ($package->pdfArtifact['filename'] ?? '');
             $xmlFileName = $package->xmlDocument->filename;

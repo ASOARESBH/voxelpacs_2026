@@ -88,6 +88,26 @@ check_case('XML_STRUCTURE', $xml !== false && isset($xml->document), $results, $
 check_case('XML_TASK_FILE_NAME', $xml !== false && (string) $xml->document->task_file_name === 'VOXEL_SYNTHETIC_001.pdf', $results, $failures);
 check_case('XML_TASK_DOCUMENT_TYPE', $xml !== false && (string) $xml->document->task_document_type === '11502-2', $results, $failures);
 
+$emptyPatient = $input;
+$emptyPatient['task_patient_humanname_given'] = '';
+$emptyPatient['task_patient_humanname_middle'] = '';
+$emptyPatientDocument = $generator->generate($emptyPatient);
+$emptyPatientXml = simplexml_load_string($emptyPatientDocument->content);
+check_case('XML_EMPTY_PATIENT_COMPONENTS_ALLOWED', $emptyPatientXml !== false, $results, $failures);
+check_case('XML_EMPTY_PATIENT_GIVEN_SERIALIZED', $emptyPatientXml !== false && (string) $emptyPatientXml->document->task_patient_humanname_given === '', $results, $failures);
+check_case('XML_EMPTY_PATIENT_MIDDLE_SERIALIZED', $emptyPatientXml !== false && (string) $emptyPatientXml->document->task_patient_humanname_middle === '', $results, $failures);
+check_case('XML_EMPTY_PATIENT_CONTRACT_22_TAGS', $emptyPatientXml !== false && count($emptyPatientXml->document->children()) === 22, $results, $failures);
+
+$nonLatin1 = $input;
+$nonLatin1['task_document_name'] = 'Laudo 😀';
+try {
+    $generator->generate($nonLatin1);
+    $nonLatin1FailedClosed = false;
+} catch (\App\Services\PhilipsXmlFieldUnresolvedException $error) {
+    $nonLatin1FailedClosed = $error->field === 'encoding_iso_8859_1';
+}
+check_case('FAIL_CLOSED_NON_LATIN1', $nonLatin1FailedClosed, $results, $failures);
+
 $testDir = $root . '/tests/phase71_synthetic_runtime';
 if (!is_dir($testDir)) {
     mkdir($testDir, 0700, true);

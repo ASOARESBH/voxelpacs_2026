@@ -271,12 +271,13 @@ class ReportsController extends Controller
                     'devolutiva_dados_insuficientes' => 'A assinatura não foi concluída porque a devolutiva do laudo não recebeu todos os dados obrigatórios. Tente novamente; se persistir, informe o suporte técnico.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     'patient_name_unavailable'           => 'O PatientName do estudo não está disponível para assinar o laudo.',
+                    'patient_name_raw_unavailable'       => 'O PatientName DICOM cru do estudo não está disponível para assinar o laudo.',
                     'patient_name_source_invalid'       => 'A origem do nome estruturado é inválida.',
                     'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
                     'patient_name_family'               => 'Informe Family do paciente.',
-                    'patient_name_given'                => 'Informe Given do paciente.',
+                    'patient_name_given'                => 'O Given do paciente é opcional quando ausente no DICOM.',
                     'patient_name_middle'               => 'O Middle informado é inválido.',
-                    'patient_name_given_required'       => 'O destino de devolutiva exige Given do paciente; o laudo foi assinado, mas não liberado.',
+                    'patient_name_family_required'      => 'O destino de devolutiva exige Family do paciente; o laudo foi assinado, mas não liberado.',
                     'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva; o laudo foi assinado, mas não liberado.',
                     default                           => 'Erro ao assinar.',
                 };
@@ -1303,12 +1304,13 @@ class ReportsController extends Controller
     {
         return match ($codigo) {
             'patient_name_unavailable' => 'O PatientName do estudo não está disponível para liberar o laudo.',
+            'patient_name_raw_unavailable' => 'O PatientName DICOM cru do estudo não está disponível para liberar o laudo.',
             'patient_name_source_invalid' => 'A origem do nome estruturado é inválida.',
             'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
             'patient_name_family' => 'Informe Family do paciente.',
-            'patient_name_given' => 'Informe Given do paciente.',
+            'patient_name_given' => 'O Given do paciente é opcional quando ausente no DICOM.',
             'patient_name_middle' => 'O Middle informado é inválido.',
-            'patient_name_given_required' => 'O destino de devolutiva exige Given do paciente. O laudo permanece assinado e não foi liberado.',
+            'patient_name_family_required' => 'O destino de devolutiva exige Family do paciente. O laudo permanece assinado e não foi liberado.',
             'release_compatibility_unavailable' => 'Não foi possível validar o destino de devolutiva. O laudo permanece assinado e não foi liberado.',
             'assinatura_preferencia_somente' => t('assinatura_preferencia.erro.somente'),
             'chat_pendente' => 'Existe uma pendência aberta no CHAT. Conclua a conversa antes de liberar o laudo.',
@@ -1321,7 +1323,7 @@ class ReportsController extends Controller
     private function mensagemLiberacaoBloqueada(string $codigo): string
     {
         return match ($codigo) {
-            'patient_name_given_required' => 'Laudo assinado, mas não liberado: o destino de devolutiva exige Given do paciente. Nenhuma Outbox ou Job foi criado.',
+            'patient_name_family_required' => 'Laudo assinado, mas não liberado: o destino de devolutiva exige Family do paciente. Nenhuma Outbox ou Job foi criado.',
             default => 'Laudo assinado, mas não liberado: não foi possível validar o destino de devolutiva. Nenhuma Outbox ou Job foi criado.',
         };
     }

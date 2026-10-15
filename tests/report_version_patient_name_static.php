@@ -25,20 +25,32 @@ expect_version_name($pnWithoutMiddle === ['family' => 'SILVA', 'given' => 'JOAO'
 
 $pnEmptyGiven = DicomPersonName::components('SILVA^^CARLOS');
 expect_version_name($pnEmptyGiven === ['family' => 'SILVA', 'given' => '', 'middle' => 'CARLOS'], 'Empty given must not shift middle');
-expect_version_name(DicomPersonName::components('SILVA JOAO') === null, 'Flat name must not be parsed');
+expect_version_name(
+    DicomPersonName::components('SILVA JOAO') === ['family' => 'SILVA JOAO', 'given' => '', 'middle' => ''],
+    'Flat DICOM PatientName must remain one Family component'
+);
 
 $service = new ReportVersionPatientNameService();
-$studyWithOriginalName = ['patient_name' => 'SILVA^JOAO^CARLOS'];
-$originalName = $studyWithOriginalName['patient_name'];
+$studyWithOriginalName = ['patient_name_raw' => 'SILVA^JOAO^CARLOS'];
+$originalName = $studyWithOriginalName['patient_name_raw'];
 $fromDicom = $service->resolve($studyWithOriginalName);
 expect_version_name($fromDicom['source'] === 'dicom_pn', 'Structured DICOM source must be recorded');
 expect_version_name($fromDicom['family'] === 'SILVA' && $fromDicom['given'] === 'JOAO' && $fromDicom['middle'] === 'CARLOS', 'DICOM components must be frozen as resolved values');
-expect_version_name($studyWithOriginalName['patient_name'] === $originalName, 'Original PatientName must remain unchanged');
+expect_version_name($studyWithOriginalName['patient_name_raw'] === $originalName, 'Original PatientName must remain unchanged');
 
 $fromTags = $service->resolve(['tags_raw' => json_encode(['PatientName' => 'TAGS^JOAO^MIDDLE'], JSON_THROW_ON_ERROR)]);
 expect_version_name($fromTags['source'] === 'dicom_pn' && $fromTags['family'] === 'TAGS', 'tags_raw structured PN must be accepted');
 
-$fromDicomEmptyGiven = $service->resolve(['patient_name' => 'FAMILY^^MIDDLE']);
+$fromTagsOverLegacyAlias = $service->resolve([
+    'tags_raw' => json_encode(['PatientName' => 'RAW^FROM^ORTHANC'], JSON_THROW_ON_ERROR),
+    'patient_name_dicom' => 'LEGACY^ALIAS^VALUE',
+]);
+expect_version_name(
+    $fromTagsOverLegacyAlias['family'] === 'RAW' && $fromTagsOverLegacyAlias['given'] === 'FROM',
+    'Raw tags must take precedence over the legacy DICOM alias'
+);
+
+$fromDicomEmptyGiven = $service->resolve(['patient_name_raw' => 'FAMILY^^MIDDLE']);
 expect_version_name(
     $fromDicomEmptyGiven['source'] === 'dicom_pn'
         && $fromDicomEmptyGiven['family'] === 'FAMILY'
@@ -47,55 +59,38 @@ expect_version_name(
     'Structured DICOM PN must freeze an empty Given without shifting Middle'
 );
 
-$fromDicomEmptyGivenWithFallback = $service->resolve([
-    'patient_name_dicom' => 'FAMILY^^MIDDLE',
-    'patient_name' => 'FAMILY GIVEN MIDDLE',
-]);
+$fromFlat = $service->resolve(['patient_name_raw' => 'Flat Display Name']);
 expect_version_name(
-    $fromDicomEmptyGivenWithFallback['source'] === 'patient_name_fallback'
-        && $fromDicomEmptyGivenWithFallback['family'] === 'FAMILY'
-        && $fromDicomEmptyGivenWithFallback['given'] === 'GIVEN'
-        && $fromDicomEmptyGivenWithFallback['middle'] === 'MIDDLE',
-    'Empty DICOM Given must use the flat PatientName fallback when available'
+    $fromFlat['source'] === 'dicom_pn'
+        && $fromFlat['family'] === 'Flat Display Name'
+        && $fromFlat['given'] === ''
+        && $fromFlat['middle'] === '',
+    'Flat DICOM PatientName must map to Family and keep other components empty'
 );
 
-$fromFlat = $service->resolve(['patient_name' => 'Flat Display Name']);
-expect_version_name($fromFlat['source'] === 'patient_name_fallback', 'Flat name must use the automatic fallback source');
-expect_version_name($fromFlat['family'] === 'Flat', 'Flat name must use its first token as family');
-expect_version_name($fromFlat['given'] === 'Display' && $fromFlat['middle'] === 'Name', 'Automatic flat-name fallback must map intermediate and last tokens');
-
-$fromShortFlat = $service->resolve(['patient_name' => 'ALFA BETA']);
-expect_version_name(
-    $fromShortFlat['source'] === 'patient_name_fallback'
-        && $fromShortFlat['family'] === 'ALFA'
-        && $fromShortFlat['given'] === 'BETA'
-        && $fromShortFlat['middle'] === '',
-    'Two-token flat names must map to Family/Given and keep Middle empty without duplication'
-);
-
-$resolvedShortMetadata = (new PhilipsSubmissionMetadataResolver())->resolve([
-    'patient_name_family' => $fromShortFlat['family'],
-    'patient_name_given' => $fromShortFlat['given'],
-    'patient_name_middle' => $fromShortFlat['middle'],
-    'patient_name_source' => $fromShortFlat['source'],
+$resolvedFlatMetadata = (new PhilipsSubmissionMetadataResolver())->resolve([
+    'patient_name_family' => $fromFlat['family'],
+    'patient_name_given' => $fromFlat['given'],
+    'patient_name_middle' => $fromFlat['middle'],
+    'patient_name_source' => $fromFlat['source'],
 ], [
     'dispatch_mode' => 'automatic_production',
 ]);
 expect_version_name(
-    $resolvedShortMetadata['task_patient_humanname_family'] === 'ALFA'
-        && $resolvedShortMetadata['task_patient_humanname_given'] === 'BETA'
-        && $resolvedShortMetadata['task_patient_humanname_middle'] === ''
-        && $resolvedShortMetadata['patient_name_as_family'] === false,
-    'Automatic production must use frozen Family/Given and keep the homologation-only family flag disabled'
+    $resolvedFlatMetadata['task_patient_humanname_family'] === 'Flat Display Name'
+        && $resolvedFlatMetadata['task_patient_humanname_given'] === ''
+        && $resolvedFlatMetadata['task_patient_humanname_middle'] === ''
+        && $resolvedFlatMetadata['patient_name_as_family'] === false,
+    'Automatic production must use frozen Family and allow empty Given'
 );
 
 $missingPatientName = false;
 try {
     $service->resolve([]);
 } catch (InvalidArgumentException $e) {
-    $missingPatientName = $e->getMessage() === 'patient_name_unavailable';
+    $missingPatientName = $e->getMessage() === ReportVersionPatientNameService::RAW_UNAVAILABLE;
 }
-expect_version_name($missingPatientName, 'Missing PatientName must fail closed');
+expect_version_name($missingPatientName, 'Missing raw PatientName must fail closed with its own category');
 
 $invalidComponent = false;
 try {
@@ -113,13 +108,8 @@ try {
 }
 expect_version_name($invalidSource, 'Unknown source must be rejected');
 
-$manualEmptyGiven = false;
-try {
-    $service->validateStored('FAMILY', '', 'MIDDLE', 'manual_confirmation');
-} catch (InvalidArgumentException $e) {
-    $manualEmptyGiven = $e->getMessage() === 'patient_name_given';
-}
-expect_version_name($manualEmptyGiven, 'Manual confirmation must still require Given');
+$manualEmptyGiven = $service->validateStored('FAMILY', '', 'MIDDLE', 'manual_confirmation');
+expect_version_name($manualEmptyGiven['given'] === '', 'Given may remain empty for a stored PatientName');
 
 $repositorySource = file_get_contents($root . '/app/Repositories/ReportRepository.php');
 $migrationSource = file_get_contents($root . '/database/migrations/2026-09-19_report_versions_patient_name_structured_postgresql.sql');
@@ -129,7 +119,7 @@ $signatureSource = file_get_contents($root . '/public/assets/js/reports/reports-
 $releaseSource = file_get_contents($root . '/public/assets/js/reports/reports-main.js');
 expect_version_name(is_string($repositorySource) && str_contains($repositorySource, 'patient_name_source'), 'Repository must persist the frozen source');
 expect_version_name(is_string($migrationSource) && str_contains($migrationSource, 'BEFORE UPDATE ON report_versions'), 'Migration must protect version updates');
-expect_version_name(is_string($fallbackMigrationSource) && str_contains($fallbackMigrationSource, 'patient_name_fallback'), 'Fallback source migration must allow the automatic origin');
+expect_version_name(is_string($fallbackMigrationSource) && str_contains($fallbackMigrationSource, 'patient_name_fallback'), 'Historical fallback source migration must remain readable');
 expect_version_name(is_string($serviceSource) && !str_contains($serviceSource, 'array_filter('), 'PatientName service must not shift PN positions with array_filter');
 expect_version_name(is_string($signatureSource) && !str_contains($signatureSource, 'signature-patient-name'), 'Signature UI must not expose structured name fields');
 expect_version_name(is_string($releaseSource) && !str_contains($releaseSource, 'release-patient-name'), 'Release UI must not submit structured name fields');

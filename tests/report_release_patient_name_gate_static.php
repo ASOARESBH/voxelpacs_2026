@@ -23,10 +23,10 @@ foreach ([$service, $outbox, $reportService, $controller, $signature, $main] as 
 }
 
 expect_gate(str_contains($service, "'dicom_pn', false"), 'DICOM PN must preserve an empty Given in the clinical version.');
-expect_gate(str_contains($service, '$source === \'manual_confirmation\''), 'Manual confirmation must retain its Given requirement.');
+expect_gate(str_contains($service, "'manual_confirmation']"), 'Manual confirmation source must remain accepted for historical versions.');
 expect_gate(str_contains($outbox, 'assessReleaseCompatibility('), 'Outbox service must expose the pre-release compatibility gate.');
 expect_gate(str_contains($outbox, 'resolveEligibleDestinations('), 'Destination routing must be centralized for the gate and queue.');
-expect_gate(str_contains($outbox, 'patient_name_given_required'), 'Missing Given must have a stable technical reason.');
+expect_gate(str_contains($outbox, 'patient_name_family_required'), 'Missing Family must have a stable technical reason.');
 expect_gate(str_contains($outbox, 'patient_name_family') && str_contains($outbox, 'patient_name_source'), 'Automatic payload must carry frozen version components.');
 expect_gate(str_contains($outbox, 'loadFrozenPatientName('), 'Automatic payload must read PatientName from report_versions.');
 expect_gate(strpos($outbox, 'loadFrozenPatientName(') < strpos($outbox, 'createOutboxIfAbsent('), 'Frozen PatientName must be resolved before creating the Outbox.');

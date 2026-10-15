@@ -103,8 +103,10 @@ final class ReportDeliveryRequestSnapshotService
             'accession_number' => (string) ($snapshot['accession_number'] ?? ''),
             'patient_id' => (string) ($snapshot['patient_id'] ?? ''),
             'patient_name' => (string) ($snapshot['patient_name'] ?? ''),
-            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null)
-                ?? (string) ($snapshot['patient_name'] ?? ''),
+            // O campo de exibição nunca é fonte de identidade para o XML.
+            'patient_name_raw' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null),
+            // Alias legado somente quando o PatientName DICOM cru existe.
+            'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null),
             'patient_birth_date' => (string) ($snapshot['patient_birth_date'] ?? ''),
             'patient_sex' => (string) ($snapshot['patient_sex'] ?? ''),
             'study_date' => (string) ($snapshot['study_date'] ?? ''),

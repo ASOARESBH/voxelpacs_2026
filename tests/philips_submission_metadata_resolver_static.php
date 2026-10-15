@@ -40,9 +40,17 @@ expect_resolver($resolved['task_author_humanname_family'] === null, 'Referring p
 expect_resolver($resolved['task_author_humanname_given'] === null, 'Referring physician must not become author given');
 expect_resolver(!array_key_exists('task_author_id', $resolved), 'Metadata must not carry legacy author ID');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
-$plainName = $resolver->resolve(['patient_name' => 'Silva Ana Maria']);
-expect_resolver($plainName['task_patient_humanname_family'] === null, 'Plain names must not be split heuristically');
-expect_resolver($plainName['task_patient_humanname_given'] === null, 'Ambiguous given name must remain unresolved');
+$plainName = $resolver->resolve(['patient_name_dicom' => 'NOME COMPLETO SEM CIRCUNFLEXO']);
+expect_resolver($plainName['task_patient_humanname_family'] === 'NOME COMPLETO SEM CIRCUNFLEXO', 'Flat DICOM PatientName must remain intact in Family');
+expect_resolver($plainName['task_patient_humanname_given'] === '', 'Flat DICOM PatientName must have empty Given');
+$rawUnavailable = false;
+try {
+    $resolver->resolve(['patient_name' => 'Display Only Name']);
+} catch (\App\Services\PhilipsXmlFieldUnresolvedException $error) {
+    $rawUnavailable = $error->field === 'patient_name_raw'
+        && $error->sanitizedCode() === 'PATIENT_NAME_RAW_UNAVAILABLE';
+}
+expect_resolver($rawUnavailable, 'Display PatientName must never replace the raw DICOM source');
 $homologationContext = [
     'tenant_id' => 2,
     'destination_id' => 6,
@@ -50,14 +58,6 @@ $homologationContext = [
     'delivery_profile' => 'submission_document',
     'transport' => 'philips_non_dicom',
 ];
-putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
-$flatDefaultOff = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
-expect_resolver($flatDefaultOff['task_patient_humanname_family'] === null, 'PatientName-as-family must remain default-off');
-putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
-$flatHomologation = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
-expect_resolver($flatHomologation['task_patient_humanname_family'] === 'Flat Patient Name', 'Homologation must preserve full flat PatientName in family');
-expect_resolver($flatHomologation['task_patient_humanname_given'] === '', 'Homologation family mode must empty given');
-expect_resolver($flatHomologation['patient_name_as_family'] === true, 'Homologation family mode must be marked');
 putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
 $tagsRawName = $resolver->resolve([
     'patient_name' => 'Plain Display Name',
@@ -67,10 +67,10 @@ $tagsRawName = $resolver->resolve([
 expect_resolver($tagsRawName['task_patient_humanname_family'] === 'Structured', 'Structured tags_raw family must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_given'] === 'Given', 'Structured tags_raw given must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_middle'] === 'Middle', 'Structured tags_raw middle must be preserved');
-$dateOnly = $resolver->resolve(['study_date' => '2026-09-14']);
+$dateOnly = $resolver->resolve(['study_date' => '2026-09-14', 'patient_name_dicom' => 'DATE^ONLY']);
 expect_resolver($dateOnly['task_document_date'] === '2026-09-14 00:00:00', 'StudyDate without StudyTime must use midnight');
-expect_resolver($resolver->resolve(['study_date' => 'not-a-date'])['task_document_date'] === null, 'Invalid StudyDate must fail closed');
-$incompleteDate = $resolver->resolve(['study_date' => '2026-09-14']);
+expect_resolver($resolver->resolve(['study_date' => 'not-a-date', 'patient_name_dicom' => 'DATE^INVALID'])['task_document_date'] === null, 'Invalid StudyDate must fail closed');
+$incompleteDate = $resolver->resolve(['study_date' => '2026-09-14', 'patient_name_dicom' => 'DATE^INCOMPLETE']);
 expect_resolver($incompleteDate['task_image_date'] === null, 'Incomplete study date/time must remain unresolved');
 $versionName = $resolver->resolve([
     'patient_name' => 'Flat Display Name',
@@ -82,6 +82,32 @@ $versionName = $resolver->resolve([
 ]);
 expect_resolver($versionName['task_patient_humanname_family'] === 'FrozenFamily', 'Frozen report_version family must be primary');
 expect_resolver($versionName['task_patient_humanname_given'] === 'FrozenGiven', 'Frozen report_version given must be primary');
+$legacyFrozenAutomatic = $resolver->resolve([
+    'patient_name_family' => 'LegacyFamily',
+    'patient_name_given' => 'LegacyGiven',
+    'patient_name_middle' => '',
+    'patient_name_source' => 'patient_name_fallback',
+    'patient_name_raw' => 'RawFamily^RawGiven^RawMiddle',
+    'dispatch_mode' => 'automatic_production',
+]);
+expect_resolver(
+    $legacyFrozenAutomatic['task_patient_humanname_family'] === 'RawFamily'
+        && $legacyFrozenAutomatic['task_patient_humanname_given'] === 'RawGiven'
+        && $legacyFrozenAutomatic['task_patient_humanname_middle'] === 'RawMiddle',
+    'Legacy frozen components must not override raw PatientName in automatic production'
+);
+$markedFrozenAutomatic = $resolver->resolve([
+    'patient_name_family' => 'FrozenFamily',
+    'patient_name_given' => 'FrozenGiven',
+    'patient_name_middle' => 'FrozenMiddle',
+    'patient_name_source' => 'dicom_pn',
+    'patient_name_raw' => 'Different^Raw^Value',
+    'dispatch_mode' => 'automatic_production',
+]);
+expect_resolver(
+    $markedFrozenAutomatic['task_patient_humanname_family'] === 'FrozenFamily',
+    'DICOM-derived frozen components remain authoritative in automatic production'
+);
 $invalidVersionFailed = false;
 try {
     $resolver->resolve([

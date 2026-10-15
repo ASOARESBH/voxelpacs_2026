@@ -53,9 +53,7 @@ final class PhilipsSubmissionDocumentGenerator
         ];
         if (!$omitPatientNameComponents) {
             $values['task_patient_humanname_family'] = $this->requiredText($input, 'task_patient_humanname_family');
-            $values['task_patient_humanname_given'] = $patientNameAsFamily
-                ? $this->optionalText($input, 'task_patient_humanname_given')
-                : $this->requiredText($input, 'task_patient_humanname_given');
+            $values['task_patient_humanname_given'] = $this->optionalText($input, 'task_patient_humanname_given');
             $values['task_patient_humanname_middle'] = $this->optionalText($input, 'task_patient_humanname_middle');
             if ($patientNameAsFamily
                 && ($values['task_patient_humanname_given'] !== '' || $values['task_patient_humanname_middle'] !== '')) {
@@ -116,8 +114,9 @@ final class PhilipsSubmissionDocumentGenerator
         if (!function_exists('iconv')) {
             throw new PhilipsXmlFieldUnresolvedException('encoding_iso_8859_1');
         }
-        $encoded = iconv('UTF-8', 'ISO-8859-1', $utf8);
-        if (!is_string($encoded)) {
+        $encoded = @iconv('UTF-8', 'ISO-8859-1', $utf8);
+        if (!is_string($encoded)
+            || iconv('ISO-8859-1', 'UTF-8', $encoded) !== $utf8) {
             throw new PhilipsXmlFieldUnresolvedException('encoding_iso_8859_1');
         }
         $this->assertSerializedXml($encoded);
