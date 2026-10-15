@@ -38,6 +38,8 @@ $history = $read('public/assets/js/reports/reports-history.js');
 $autotext = $read('public/assets/js/reports/reports-autotext.js');
 $main = $read('public/assets/js/reports/reports-main.js');
 $editorJs = $read('public/assets/js/reports/reports-editor.js');
+$factory = $read('public/assets/js/shared/voxel-quill-factory.js');
+$serviceWorker = $read('public/sw.js');
 $viewCore = $read('app/Core/View.php');
 $pdf = $read('app/Views/reports/pdf.php');
 $pdfModern = $read('app/Views/reports/pdf/templates/_moderno_lateral.php');
@@ -107,13 +109,17 @@ $expect(str_contains($editor, 'property_exists($report, $campo)'), 'Editor não 
 $expect(str_contains($editor, '$corpoLaudo'), 'Editor não prepara o corpo livre do laudo.');
 $expect(str_contains($editor, '$secoesJson'), 'Editor não mantém compatibilidade de leitura com JSON legado.');
 $expect(str_contains($editorJs, 'function extractSecoes()'), 'Editor não expõe extração do documento atual.');
-$expect(str_contains($editorJs, 'return { corpo: html'), 'Editor não persiste o HTML atual como corpo único.');
+$expect(str_contains($editorJs, 'corpo:') && str_contains($editorJs, 'EMPTY_HTML'), 'Editor não persiste o HTML atual como corpo único.');
 $expect(str_contains($editorJs, 'normalizeClinicalHtml'), 'Editor não normaliza o conteúdo clínico antes de salvar.');
-$expect(str_contains($viewCore, "ASSET_VERSION = '2.3.14'"), 'Assets dos Reports não possuem cache-bust atual.');
+$expect(str_contains($viewCore, "ASSET_VERSION = '2.3.15'"), 'Assets dos Reports não possuem cache-bust atual.');
 $expect(str_contains($editor, '$reportSituacao'), 'Editor não usa situacao/status compatível.');
+$expect(str_contains($editorJs, 'const initialHtml'), 'Editor não captura o HTML inicial antes do construtor Quill.');
+$expect(str_contains($editorJs, 'getContentDiagnostics'), 'Editor não expõe diagnóstico sanitizado de conteúdo.');
 
 // Autosave/assinatura/templates/histórico/autotext usam envelopes atuais.
 $expect(str_contains($autosave, 'savingPromise'), 'Autosave não aguarda requisição concorrente.');
+$expect(str_contains($autosave, 'autosave_skipped_empty_payload'), 'Autosave não registra/pula payload vazio no modo automático.');
+$expect(str_contains($autosave, "reason: 'empty_payload'"), 'Autosave não retorna motivo sanitizado ao pular payload vazio.');
 $expect(str_contains($autosave, 'secoes,') && str_contains($autosave, 'modo,') && str_contains($autosave, 'template_id:'),
     'Autosave não envia seções, modo e template.');
 $expect(str_contains($signature, 'if (!saveData || !saveData.ok)'), 'Assinatura ainda pode prosseguir após save falhar.');
@@ -125,6 +131,10 @@ $expect(str_contains($main, 'config.reportToken') && str_contains($main, '/repor
 $expect(str_contains($main, "window.open(pdfUrl, 'voxel-laudo-pdf')"), 'Prévia PDF não reutiliza sua aba nomeada.');
 $expect(str_contains($main, "fetch('/api/reports/liberar'"), 'Botão Liberar não possui handler.');
 $expect(str_contains($header, 'id="btn-liberar"') && str_contains($header, "\$situacao === 'assinado'"), 'Liberar não está disponível para laudo assinado.');
+$expect(str_contains($factory, 'table: () => insertBasicTable(quill)'), 'Toolbar não mantém o handler customizado de tabela.');
+$expect(!str_contains($factory, 'table: false'), 'Factory não deve declarar módulo table inexistente.');
+$expect(str_contains($serviceWorker, "STATIC_CACHE = 'voxelpacs-static-v3'"), 'Service Worker não invalida o cache estático após a correção.');
+$expect(str_contains($serviceWorker, 'return Response.error();'), 'Service Worker pode retornar undefined quando não há fallback em cache.');
 
 // O dispatcher escolhe um partial; cada layout HTML fixo é um documento único.
 $expect(str_contains($pdf, 'ReportLayoutService'), 'Dispatcher PDF não delega a escolha de layout.');

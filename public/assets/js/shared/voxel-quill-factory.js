@@ -161,7 +161,6 @@ window.VoxelQuill.factory = (function () {
                     },
                 },
                 history: { delay: 1000, maxStack: 200, userOnly: true },
-                table: false,
             },
         });
 

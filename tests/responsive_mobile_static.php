@@ -39,6 +39,10 @@ foreach (['app/Views/layout/pacs_header.php', 'app/Views/layout/reports_header.p
         $failures[] = "CSS responsivo ausente em {$header}";
     }
 }
+$pacsHeader = $read('app/Views/layout/pacs_header.php');
+if (!str_contains($pacsHeader, "navigator.serviceWorker.register('/sw.js?v=")) {
+    $failures[] = 'Service Worker não usa cache-bust central na URL de registro.';
+}
 
 $worklist = $read('app/Views/estudos/index.php');
 foreach ([
@@ -61,7 +65,7 @@ if (!is_array($manifest) || ($manifest['orientation'] ?? null) !== 'any') {
 }
 
 $sw = $read('public/sw.js');
-if (!str_contains($sw, 'voxelpacs-static-v2') || !str_contains($sw, '/assets/css/mobile-responsive.css')) {
+if (!str_contains($sw, 'voxelpacs-static-v3') || !str_contains($sw, '/assets/css/mobile-responsive.css')) {
     $failures[] = 'Service worker não foi atualizado para a camada responsiva.';
 }
 

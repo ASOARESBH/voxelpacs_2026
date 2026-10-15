@@ -55,6 +55,14 @@ Até 2026-08-10, se o **primeiro** heading do documento não batesse com nenhum 
 
 `ReportClinicalHtmlSanitizer::sanitizeAndNormalize()` separa segurança de apresentação: remove parágrafos vazios consecutivos, quebras redundantes, `&nbsp;`, caracteres invisíveis e margens inline coladas, mas preserva texto, ênfase, alinhamento, listas, tabelas, headings e links HTTPS. `sanitizeAndNormalizeSections()` é aplicada em `ReportService::salvar()`, `restoreVersion()`, `assinar()` e `liberarAssinado()` como defesa de persistência. O editor Quill aplica a mesma compactação na carga, colagem e extração; `pdf.php` e o template personalizado normalizam novamente antes do renderer. Snapshots binários já persistidos não são reescritos automaticamente: a regra vale para novos snapshots, revisões operacionais e fallback legado renderizado.
 
+### Contrato de hidratação e autosave (2026-10-15)
+
+`reports-editor.js` captura o HTML server-side do `#editor-container` **antes** de instanciar o Quill e o reidrata explicitamente com `setText('', 'silent')` + `dangerouslyPasteHTML(..., 'silent')`. Assim, a fonte inicial não depende do parsing interno do Quill nem de uma combinação antiga de assets. `extractSecoes()` sempre retorna o documento único em `corpo`; o placeholder `<p><br></p>` é mantido somente como representação canônica de editor vazio.
+
+`reports-autosave.js` consulta métricas sanitizadas (`htmlLength`, `textLength`, `hasClinicalContent`) e nunca faz `POST /reports/save` no modo `auto` quando o texto efetivo é vazio. O salto retorna `skipped=true`/`reason=empty_payload` e preserva o status visual de um salvamento conhecido. Os modos manuais continuam enviando o payload ao backend para não bloquear a ação legítima; `ReportService::salvar()` permanece como guard definitivo contra sobrescrita vazia de conteúdo persistido.
+
+O botão `.ql-table` usa somente o handler customizado que insere uma tabela HTML compatível com a allowlist. A factory não declara `modules.table`, pois o Quill 1.3.7 publicado não possui esse módulo registrado. Alterações nos scripts incrementam `ASSET_VERSION`; o Service Worker usa caches versionados e, quando não há resposta de rede nem fallback, retorna `Response.error()` em vez de resolver `respondWith()` com `undefined`.
+
 ## Coluna lateral do Laudário — cards verticais (2026-08-13)
 
 A coluna esquerda de `app/Views/reports/show.php` é uma sequência clínica única, em largura integral: **Paciente → Exame → Medidas disponíveis do viewer → Chat do laudo → Peer Review (condicional) → Histórico do Paciente → ações DICOM/Timeline/Comparativos**. O card de Equipamento não existe no checkout atual e não deve ser recriado sem requisito clínico específico.
@@ -149,4 +157,4 @@ A resposta e a auditoria retornam somente metadados técnicos sanitizados: IDs t
 O Delivery Hub oferece a execução pela interface autenticada em `app/Views/platform/negocios/report_delivery.php`: o operador informa `report_id`, `report_version`, seleciona a fonte (`historical_report_version` ou `current_report_body`) e o token/link público, confirma a operação pela checkbox explícita e o navegador chama o endpoint same-origin com CSRF. Quando a linha histórica não tem conteúdo clínico, mas o report atual liberado tem conteúdo válido, a opção `current_report_body` permite abrir a revisão corrigida sem alterar a versão original; essa decisão fica registrada em `source_kind` e não é aplicada automaticamente. A checkbox usa margem inicial zero (`ms-0`) porque o deslocamento negativo padrão de `.form-check-input` podia posicioná-la sob o menu lateral em viewport estreito; sem a confirmação visível, a validação HTML `required` bloqueia o POST e faz o botão parecer inoperante. A ação não depende de diálogo nativo `window.confirm`, que pode bloquear clientes automatizados e fluxos assistidos. Em sucesso, a tela exibe um link com cache-buster para o mesmo viewer público, que prioriza a revisão mais recente. O formulário não recebe conteúdo clínico, não executa SQL e não altera o snapshot original; a revisão permanece idempotente e auditada pelo controller.
 
 ## Última análise
-2026-09-29
+2026-10-15

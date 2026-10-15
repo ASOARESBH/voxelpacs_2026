@@ -4,8 +4,8 @@
  * Cache-first para assets estáticos (CSS, JS, fontes, imagens).
  */
 
-const CACHE_NAME   = 'voxelpacs-worklist-v2';
-const STATIC_CACHE = 'voxelpacs-static-v2';
+const CACHE_NAME   = 'voxelpacs-worklist-v3';
+const STATIC_CACHE = 'voxelpacs-static-v3';
 
 // Assets estáticos a pré-cachear na instalação
 const PRECACHE_ASSETS = [
@@ -15,6 +15,14 @@ const PRECACHE_ASSETS = [
     '/assets/img/pwa-icon-512.png',
     '/assets/img/logo-voxel-pacs.png',
 ];
+
+function cachedOrNetworkError(request, context) {
+    return caches.match(request).then(cached => {
+        if (cached) return cached;
+        console.warn('[PWA] sem resposta de rede ou cache: ' + context);
+        return Response.error();
+    });
+}
 
 // ── Instalação ────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -51,13 +59,15 @@ self.addEventListener('fetch', event => {
         event.respondWith(
             caches.match(event.request).then(cached => {
                 if (cached) return cached;
-                return fetch(event.request).then(response => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(STATIC_CACHE).then(c => c.put(event.request, clone));
-                    }
-                    return response;
-                });
+                return fetch(event.request)
+                    .then(response => {
+                        if (response.ok) {
+                            const clone = response.clone();
+                            caches.open(STATIC_CACHE).then(c => c.put(event.request, clone));
+                        }
+                        return response;
+                    })
+                    .catch(() => cachedOrNetworkError(event.request, 'asset'));
             })
         );
         return;
@@ -75,11 +85,11 @@ self.addEventListener('fetch', event => {
                     }
                     return response;
                 })
-                .catch(() => caches.match(event.request))
+                .catch(() => cachedOrNetworkError(event.request, 'worklist'))
         );
         return;
     }
 
     // Demais rotas: Network-first sem cache
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    event.respondWith(fetch(event.request).catch(() => cachedOrNetworkError(event.request, 'navigation')));
 });
