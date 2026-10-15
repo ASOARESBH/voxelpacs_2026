@@ -85,7 +85,7 @@ final class PhilipsSubmissionPackageProducer
      * @param array<string,mixed> $job
      * @param array<string,mixed> $configuration
      * @param array<string,mixed> $payload
-     * @return array{xml_serialized:string,artifact_written:string,bridge_called:string,smb_called:string}
+     * @return array{xml_serialized:string,author_source:string,author_decision:string,author_fallback_used:string,task_author_id_resolution:string,artifact_written:string,bridge_called:string,smb_called:string}
      */
     public function validateNoSend(array $job, array $configuration, array $payload): array
     {
@@ -93,10 +93,10 @@ final class PhilipsSubmissionPackageProducer
 
         return [
             'xml_serialized' => 'PASS',
-            'author_source' => (string) ($composition['author_source'] ?? PhilipsSubmissionAuthorResolver::SOURCE_UNRESOLVED),
-            'author_decision' => (string) ($composition['author_decision'] ?? PhilipsSubmissionAuthorResolver::DECISION_AUTHOR_UNRESOLVED),
-            'author_fallback_used' => (string) ($composition['author_fallback_used'] ?? 'NO'),
-            'task_author_id_resolution' => (string) ($composition['task_author_id_resolution'] ?? 'NOT_PRESENT'),
+            'author_source' => $composition['author_source'],
+            'author_decision' => $composition['author_decision'],
+            'author_fallback_used' => $composition['author_fallback_used'],
+            'task_author_id_resolution' => $composition['task_author_id_resolution'],
             'artifact_written' => 'NO',
             'bridge_called' => 'NO',
             'smb_called' => 'NO',

@@ -9,6 +9,7 @@ use App\Services\DeliveryRequestIdentity;
 use App\Services\ActiveDestinationResolutionException;
 use App\Services\ActiveDestinationResolver;
 use App\Services\PhilipsFolderDeliveryService;
+use App\Services\ReportDeliveryClock;
 use PDO;
 use Throwable;
 
@@ -71,6 +72,9 @@ class ReportDeliveryWorkerRepository
     /** @param list<string> $transports */
     public function countEligibleJobs(array $transports = [], ?string $currentDate = null): int
     {
+        if ($transports === []) {
+            return 0;
+        }
         $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentClinicalDate($this->pdo);
         $requestsEnabled = $this->requestsFeatureEnabled();
         $requestJoin = $requestsEnabled
@@ -82,15 +86,13 @@ class ReportDeliveryWorkerRepository
             : '';
         $transportWhere = '';
         $parameters = [':automatic_today' => $currentDate];
-        if ($transports !== []) {
-            $placeholders = [];
-            foreach (array_values($transports) as $index => $transport) {
-                $placeholder = ':count_transport_' . $index;
-                $placeholders[] = $placeholder;
-                $parameters[$placeholder] = (string) $transport;
-            }
-            $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
+        $placeholders = [];
+        foreach ($transports as $index => $transport) {
+            $placeholder = ':count_transport_' . $index;
+            $placeholders[] = $placeholder;
+            $parameters[$placeholder] = (string) $transport;
         }
+        $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
         $stmt = $this->pdo->prepare(
             "SELECT COUNT(*)
                FROM pacs_report_delivery_jobs j
@@ -119,6 +121,10 @@ class ReportDeliveryWorkerRepository
             array_map(static fn($transport): string => trim((string) $transport), $transports),
             static fn(string $transport): bool => $transport !== ''
         )));
+        if ($transports === []) {
+            $this->lastClaimFailureReason = 'no_supported_transports';
+            return null;
+        }
         $requestsEnabled = $this->requestsFeatureEnabled();
         $requestSelect = 'o.delivery_request_id';
         $requestJoin = $requestsEnabled
@@ -132,15 +138,14 @@ class ReportDeliveryWorkerRepository
         $currentDate = $this->validDate($currentDate) ? $currentDate : ReportDeliveryClock::currentClinicalDate($this->pdo);
         $parameters = [':automatic_today' => $currentDate];
         $taskSiteAliasSelect = $this->taskSiteAliasSelect();
-        if ($transports !== []) {
-            $placeholders = [];
-            foreach ($transports as $index => $transport) {
-                $placeholder = ':transport_' . $index;
-                $placeholders[] = $placeholder;
-                $parameters[$placeholder] = $transport;
-            }
-            $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
+        $transportWhere = '';
+        $placeholders = [];
+        foreach ($transports as $index => $transport) {
+            $placeholder = ':transport_' . $index;
+            $placeholders[] = $placeholder;
+            $parameters[$placeholder] = $transport;
         }
+        $transportWhere = ' AND j.transport IN (' . implode(', ', $placeholders) . ')';
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
@@ -435,7 +440,7 @@ class ReportDeliveryWorkerRepository
                 'issuer_of_patient_id_normalized'
             ),
             ];
-            if ((string) ($destination['transport'] ?? '') !== (string) ($request['transport'] ?? '')
+            if ((string) $destination['transport'] !== (string) ($request['transport'] ?? '')
                 || !hash_equals((string) ($request['destination_config_digest'] ?? ''), DeliveryRequestIdentity::destinationDigest($destination))
                 || !$this->sameTimestamp($request['destination_config_observed_at'] ?? null, $destination['updated_at'])) {
                 return true;

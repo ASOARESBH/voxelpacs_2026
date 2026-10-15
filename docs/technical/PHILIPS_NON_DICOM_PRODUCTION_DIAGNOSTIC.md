@@ -141,13 +141,31 @@ sudo scripts/report-delivery-one-shot.sh --job-id=<job>
 ```
 
 Ele exige Worker global parado, executa o preflight `READ ONLY` com rollback,
-confirma que não há outro Job elegível no escopo, chama o PHP como `voxel` no
+confirma que não há outro Job elegível no escopo por padrão, chama o PHP como `voxel` no
 runtime oficial, preserva stdout/stderr completo em log root-only e propaga o
 exit code do PHP sem `tee`/`grep`. O resumo do PHP usa
-`RUNONE_RESULT=DELIVERED|NOT_CLAIMED|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
-`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O relógio de
+`RUNONE_RESULT=DELIVERED|NOT_ELIGIBLE|FAILED|UNCERTAIN`, `REASON`, `JOB_ID` e
+`ATTEMPT_ID`; os códigos são `0`, `3` e `4`, respectivamente. O log root-only
+também registra a fase sanitizada (`BOOTSTRAP_FAILED`, `CLAIM_EXCEPTION`,
+`NOT_ELIGIBLE`, `DELIVERY_FAILED` ou `DELIVERED`), classe, SQLSTATE e
+`basename:linha`, sem mensagem bruta. O relógio de
 elegibilidade é a data clínica `America/Sao_Paulo`, inclusive no `runOne` e na
 expiração automática.
+
+Para um alvo explicitamente autorizado quando existirem concorrentes, a única
+variante permitida é:
+
+```text
+sudo scripts/report-delivery-one-shot.sh \
+  --job-id=<alvo> --allow-other-eligible=<id>[,<id>...]
+```
+
+A lista deve corresponder exatamente aos outros elegíveis observados no
+preflight; duplicatas, omissões ou IDs adicionais bloqueiam. Depois do único
+runOne, o executor faz uma nova consulta `READ ONLY` e exige
+`queued`, tentativa zero e ausência de lock para todos os IDs allowlisted,
+emitindo `OTHER_JOBS_UNCHANGED=YES`. Falha nesse pós-check resulta em
+`UNCERTAIN` e não autoriza reenvio.
 
 ```text
 php -l bin/philips_nondicom_production_diagnostic.php

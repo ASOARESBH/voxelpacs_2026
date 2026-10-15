@@ -72,8 +72,8 @@ final class PhilipsSubmissionAuthorResolver
         if ($frozenSigner !== null) {
             if ($frozenSigner === []
                 || $versionSigner === null
-                || (int) ($frozenSigner['id'] ?? 0) !== (int) ($versionSigner['id'] ?? 0)
-                || (int) ($frozenSigner['tenant_id'] ?? 0) !== (int) ($versionSigner['tenant_id'] ?? 0)) {
+                || (int) $frozenSigner['id'] !== (int) $versionSigner['id']
+                || (int) $frozenSigner['tenant_id'] !== (int) $versionSigner['tenant_id']) {
                 return array_replace($base, [
                     'author_source' => self::SOURCE_SIGNER,
                     'author_decision' => self::DECISION_AUTHOR_SIGNER_MISMATCH,
@@ -88,8 +88,7 @@ final class PhilipsSubmissionAuthorResolver
             $signer = $versionSigner;
         }
         if ($signer === null
-            || (int) ($signer['tenant_id'] ?? 0) !== (int) ($deliveryContext['tenant_id'] ?? 0)
-            || !is_string($signer['nome'] ?? null)
+            || (int) $signer['tenant_id'] !== (int) ($deliveryContext['tenant_id'] ?? 0)
             || trim($signer['nome']) === '') {
             return $base;
         }
@@ -111,7 +110,7 @@ final class PhilipsSubmissionAuthorResolver
      * job confere com o contexto atual e com o ID resolvido na versão assinada.
      * Campo parcial ou divergente falha fechado e não é substituído silenciosamente
      * por configuração legada.
-     * @return array{id:int,tenant_id:int,nome:string,ativo:int}|null
+     * @return array{id:int,tenant_id:int,nome:string,ativo:int}|array{}|null
      */
     private function frozenSigner(array $payload, array $context): ?array
     {
@@ -165,7 +164,7 @@ final class PhilipsSubmissionAuthorResolver
         // Cadastro médico usa nome civil plano: primeiro token = given;
         // tokens restantes = family, preservando partículas e acentos.
         $tokens = preg_split('/\s+/u', $raw, -1, PREG_SPLIT_NO_EMPTY);
-        if (!is_array($tokens) || $tokens === []) {
+        if ($tokens === false) {
             return null;
         }
         if (count($tokens) === 1) {
