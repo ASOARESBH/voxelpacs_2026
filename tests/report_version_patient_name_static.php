@@ -88,9 +88,9 @@ $missingPatientName = false;
 try {
     $service->resolve([]);
 } catch (InvalidArgumentException $e) {
-    $missingPatientName = $e->getMessage() === 'patient_name_unavailable';
+    $missingPatientName = $e->getMessage() === ReportVersionPatientNameService::RAW_UNAVAILABLE;
 }
-expect_version_name($missingPatientName, 'Missing PatientName must fail closed');
+expect_version_name($missingPatientName, 'Missing raw PatientName must fail closed with its own category');
 
 $invalidComponent = false;
 try {

@@ -127,6 +127,28 @@ $productionFlatDocument = $generator->generate($productionFlatInput, [
 expect_true(str_contains($productionFlatDocument->content, '<task_patient_humanname_family>NOME COMPLETO SEM CIRCUNFLEXO</task_patient_humanname_family>'), 'Production flat DICOM PatientName must serialize entirely in family');
 expect_true(str_contains($productionFlatDocument->content, '<task_patient_humanname_given></task_patient_humanname_given>'), 'Production flat DICOM PatientName must allow empty given');
 
+$contractFields = [
+    'task_patient_id', 'task_patient_humanname_family', 'task_patient_humanname_given',
+    'task_patient_humanname_middle', 'task_document_name', 'task_document_date',
+    'task_image_date', 'task_file_path', 'task_file_name', 'task_accession_number',
+    'task_document_mimetype', 'task_patient_birthday', 'task_patient_gender',
+    'task_site_id', 'task_patient_issuer', 'task_author_id', 'task_author_humanname_family',
+    'task_author_humanname_given', 'task_author_humanname_middle', 'task_modalities',
+    'task_delete_file', 'task_document_type',
+];
+foreach ($contractFields as $field) {
+    expect_true(str_contains($first->content, '<' . $field . '>'), 'XML contract tag must be serialized: ' . $field);
+}
+
+$nonLatin1 = $input;
+$nonLatin1['task_document_name'] = 'Laudo 😀';
+try {
+    $generator->generate($nonLatin1);
+    expect_true(false, 'Characters outside ISO-8859-1 must fail closed');
+} catch (PhilipsXmlFieldUnresolvedException $error) {
+    expect_true($error->field === 'encoding_iso_8859_1', 'Non-Latin-1 failure must identify encoding only');
+}
+
 if (function_exists('simplexml_load_string')) {
     $previous = libxml_use_internal_errors(true);
     $parsed = simplexml_load_string($first->content);

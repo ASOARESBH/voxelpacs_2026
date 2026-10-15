@@ -75,6 +75,11 @@ final class PhilipsSubmissionMetadataResolver
             $resolved['task_patient_humanname_family'] = $this->stringOrNull($override['family'] ?? null);
             $resolved['task_patient_humanname_given'] = $this->stringOrNull($override['given'] ?? null);
             $resolved['task_patient_humanname_middle'] = $this->stringOrNull($override['middle'] ?? null) ?? '';
+        } else {
+            throw new PhilipsXmlFieldUnresolvedException(
+                'patient_name_raw',
+                'PATIENT_NAME_RAW_UNAVAILABLE'
+            );
         }
         $resolved['patient_name_as_family'] = $patientNameAsFamily;
 

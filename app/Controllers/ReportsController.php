@@ -271,6 +271,7 @@ class ReportsController extends Controller
                     'devolutiva_dados_insuficientes' => 'A assinatura não foi concluída porque a devolutiva do laudo não recebeu todos os dados obrigatórios. Tente novamente; se persistir, informe o suporte técnico.',
                     'assinatura_persistencia_falhou' => 'A assinatura não foi concluída porque houve uma falha de persistência. Verifique o log e tente novamente.',
                     'patient_name_unavailable'           => 'O PatientName do estudo não está disponível para assinar o laudo.',
+                    'patient_name_raw_unavailable'       => 'O PatientName DICOM cru do estudo não está disponível para assinar o laudo.',
                     'patient_name_source_invalid'       => 'A origem do nome estruturado é inválida.',
                     'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
                     'patient_name_family'               => 'Informe Family do paciente.',
@@ -1303,6 +1304,7 @@ class ReportsController extends Controller
     {
         return match ($codigo) {
             'patient_name_unavailable' => 'O PatientName do estudo não está disponível para liberar o laudo.',
+            'patient_name_raw_unavailable' => 'O PatientName DICOM cru do estudo não está disponível para liberar o laudo.',
             'patient_name_source_invalid' => 'A origem do nome estruturado é inválida.',
             'report_version_patient_name_unavailable' => 'A versão clínica do laudo não possui PatientName congelado para a devolutiva.',
             'patient_name_family' => 'Informe Family do paciente.',

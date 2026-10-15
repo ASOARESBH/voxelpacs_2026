@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $outbox = file_get_contents($root . '/app/Services/ReportDeliveryOutboxService.php');
+$snapshot = file_get_contents($root . '/app/Services/ReportDeliveryRequestSnapshotService.php');
 $workerRepository = file_get_contents($root . '/app/Repositories/ReportDeliveryWorkerRepository.php');
 $reportService = file_get_contents($root . '/app/Services/ReportService.php');
 
@@ -16,6 +17,7 @@ function expect_automatic_payload(bool $condition, string $message): void
 }
 
 expect_automatic_payload(is_string($outbox), 'Outbox service must be readable.');
+expect_automatic_payload(is_string($snapshot), 'Request snapshot service must be readable.');
 expect_automatic_payload(is_string($workerRepository), 'Worker repository must be readable.');
 expect_automatic_payload(is_string($reportService), 'Report service must be readable.');
 
@@ -54,6 +56,8 @@ expect_automatic_payload(!str_contains($outbox, "'controlled_production'"), 'Con
 expect_automatic_payload(str_contains($outbox, 'createOutboxIfAbsent('), 'Outbox idempotent creation must remain in place.');
 expect_automatic_payload(str_contains($outbox, 'createJobs('), 'Job creation must remain in the existing path.');
 expect_automatic_payload(str_contains($outbox, "'patient_name_raw' =>"), 'Automatic payload must freeze the raw DICOM PatientName.');
+expect_automatic_payload(!str_contains((string) $snapshot, "?? (string) (\$snapshot['patient_name']"), 'Display PatientName must not be a raw fallback.');
+expect_automatic_payload(str_contains((string) $snapshot, "'patient_name_raw' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw"), 'Snapshot must derive raw PatientName only from DICOM tags.');
 foreach (['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'] as $field) {
     expect_automatic_payload(str_contains($outbox, "\$payload['{$field}']"), "Automatic payload must freeze {$field} from report_versions.");
 }

@@ -11,16 +11,22 @@ final class PhilipsXmlFieldUnresolvedException extends InvalidArgumentException
 {
     public const CODE_NAME = 'PHILIPS_XML_FIELD_UNRESOLVED';
 
-    public function __construct(public readonly string $field)
+    public function __construct(
+        public readonly string $field,
+        private readonly string $sanitizedCodeValue = self::CODE_NAME
+    )
     {
         if (preg_match('/^[a-z0-9_]{1,80}$/', $field) !== 1) {
             throw new InvalidArgumentException('Campo técnico inválido.');
         }
-        parent::__construct(self::CODE_NAME);
+        if (preg_match('/^[A-Z0-9_]{1,80}$/', $sanitizedCodeValue) !== 1) {
+            throw new InvalidArgumentException('Código técnico inválido.');
+        }
+        parent::__construct($sanitizedCodeValue);
     }
 
     public function sanitizedCode(): string
     {
-        return self::CODE_NAME;
+        return $this->sanitizedCodeValue;
     }
 }

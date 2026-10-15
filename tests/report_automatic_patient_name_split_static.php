@@ -92,7 +92,7 @@ $familyMissingFailed = false;
 try {
     $service->resolve(['patient_name_dicom' => '^GIVEN']);
 } catch (\InvalidArgumentException $e) {
-    $familyMissingFailed = $e->getMessage() === 'patient_name_unavailable';
+    $familyMissingFailed = $e->getMessage() === ReportVersionPatientNameService::RAW_UNAVAILABLE;
 }
 expect_automatic_name($familyMissingFailed, 'Empty Family must fail closed.');
 

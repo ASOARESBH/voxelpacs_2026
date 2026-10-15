@@ -43,6 +43,14 @@ expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys
 $plainName = $resolver->resolve(['patient_name_dicom' => 'NOME COMPLETO SEM CIRCUNFLEXO']);
 expect_resolver($plainName['task_patient_humanname_family'] === 'NOME COMPLETO SEM CIRCUNFLEXO', 'Flat DICOM PatientName must remain intact in Family');
 expect_resolver($plainName['task_patient_humanname_given'] === '', 'Flat DICOM PatientName must have empty Given');
+$rawUnavailable = false;
+try {
+    $resolver->resolve(['patient_name' => 'Display Only Name']);
+} catch (\App\Services\PhilipsXmlFieldUnresolvedException $error) {
+    $rawUnavailable = $error->field === 'patient_name_raw'
+        && $error->sanitizedCode() === 'PATIENT_NAME_RAW_UNAVAILABLE';
+}
+expect_resolver($rawUnavailable, 'Display PatientName must never replace the raw DICOM source');
 $homologationContext = [
     'tenant_id' => 2,
     'destination_id' => 6,
@@ -59,10 +67,10 @@ $tagsRawName = $resolver->resolve([
 expect_resolver($tagsRawName['task_patient_humanname_family'] === 'Structured', 'Structured tags_raw family must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_given'] === 'Given', 'Structured tags_raw given must be preferred');
 expect_resolver($tagsRawName['task_patient_humanname_middle'] === 'Middle', 'Structured tags_raw middle must be preserved');
-$dateOnly = $resolver->resolve(['study_date' => '2026-09-14']);
+$dateOnly = $resolver->resolve(['study_date' => '2026-09-14', 'patient_name_dicom' => 'DATE^ONLY']);
 expect_resolver($dateOnly['task_document_date'] === '2026-09-14 00:00:00', 'StudyDate without StudyTime must use midnight');
-expect_resolver($resolver->resolve(['study_date' => 'not-a-date'])['task_document_date'] === null, 'Invalid StudyDate must fail closed');
-$incompleteDate = $resolver->resolve(['study_date' => '2026-09-14']);
+expect_resolver($resolver->resolve(['study_date' => 'not-a-date', 'patient_name_dicom' => 'DATE^INVALID'])['task_document_date'] === null, 'Invalid StudyDate must fail closed');
+$incompleteDate = $resolver->resolve(['study_date' => '2026-09-14', 'patient_name_dicom' => 'DATE^INCOMPLETE']);
 expect_resolver($incompleteDate['task_image_date'] === null, 'Incomplete study date/time must remain unresolved');
 $versionName = $resolver->resolve([
     'patient_name' => 'Flat Display Name',

@@ -15,6 +15,8 @@ use InvalidArgumentException;
  */
 final class ReportVersionPatientNameService
 {
+    public const RAW_UNAVAILABLE = 'patient_name_raw_unavailable';
+
     private const SOURCES = ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'];
 
     /**
@@ -36,7 +38,7 @@ final class ReportVersionPatientNameService
             }
         }
 
-        throw new InvalidArgumentException('patient_name_unavailable');
+        throw new InvalidArgumentException(self::RAW_UNAVAILABLE);
     }
 
     /** @return array{family:string,given:string,middle:string,source:string} */

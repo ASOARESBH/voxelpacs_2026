@@ -114,8 +114,9 @@ final class PhilipsSubmissionDocumentGenerator
         if (!function_exists('iconv')) {
             throw new PhilipsXmlFieldUnresolvedException('encoding_iso_8859_1');
         }
-        $encoded = iconv('UTF-8', 'ISO-8859-1', $utf8);
-        if (!is_string($encoded)) {
+        $encoded = @iconv('UTF-8', 'ISO-8859-1', $utf8);
+        if (!is_string($encoded)
+            || iconv('ISO-8859-1', 'UTF-8', $encoded) !== $utf8) {
             throw new PhilipsXmlFieldUnresolvedException('encoding_iso_8859_1');
         }
         $this->assertSerializedXml($encoded);
