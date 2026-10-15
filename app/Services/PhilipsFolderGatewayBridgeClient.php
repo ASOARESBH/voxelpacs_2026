@@ -806,6 +806,7 @@ final class PhilipsFolderGatewayBridgeClient
             'remote_io',
             'invalid_artifact',
             'configuration',
+            'remote_effect_uncertain',
         ];
         return in_array($reason, $allowed, true) ? $reason : null;
     }

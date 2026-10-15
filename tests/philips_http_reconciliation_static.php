@@ -16,6 +16,7 @@ $bridge = file_get_contents($root . '/deploy/report-delivery-gateway-bridge/phil
 $client = file_get_contents($root . '/app/Services/PhilipsFolderGatewayBridgeClient.php') ?: '';
 $service = file_get_contents($root . '/app/Services/PhilipsFolderDeliveryService.php') ?: '';
 $worker = file_get_contents($root . '/bin/report_delivery_worker.php') ?: '';
+$repository = file_get_contents($root . '/app/Repositories/ReportDeliveryWorkerRepository.php') ?: '';
 $exception = file_get_contents($root . '/app/Services/PhilipsFolderDeliveryException.php') ?: '';
 
 expect_reconciliation(str_contains($bridge, 'def do_GET(self) -> None'), 'Bridge sem rota GET de reconciliação.');
@@ -49,6 +50,11 @@ expect_reconciliation(substr_count($service, 'sendSubmissionPackage(') === 1, 'F
 expect_reconciliation(str_contains($service, "'confirmation_source' => 'bridge_state'"), 'Sucesso reconciliado não é identificado.');
 expect_reconciliation(str_contains($service, 'throw $error;'), 'Falha não confirmada não preserva o erro original.');
 expect_reconciliation(str_contains($worker, "['confirmation_source'] = 'bridge_state'"), 'Worker não persiste a origem da confirmação.');
+expect_reconciliation(str_contains($client, "'remote_effect_uncertain'"), 'Cliente não allowlista efeito remoto incerto.');
+expect_reconciliation(str_contains($worker, "'remote_effect_uncertain'"), 'Worker não classifica efeito remoto incerto.');
+expect_reconciliation(str_contains($worker, "'package_verified'] = 'NOT_CONFIRMED'"), 'Worker não persiste package não confirmado.');
+expect_reconciliation(str_contains($repository, '$remoteEffectUncertain ='), 'Repository não detecta efeito remoto incerto.');
+expect_reconciliation(str_contains($repository, '$deadLetter = $remoteEffectUncertain ||'), 'Efeito remoto incerto não é terminal sem retry.');
 expect_reconciliation(str_contains($exception, 'public readonly ?string $packageIdentity'), 'Exceção não carrega package identity.');
 expect_reconciliation(str_contains($exception, 'public readonly ?int $packageSize'), 'Exceção não carrega tamanho do package.');
 
