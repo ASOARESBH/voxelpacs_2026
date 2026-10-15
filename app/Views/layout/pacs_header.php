@@ -25,7 +25,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('/sw.js?v=<?= rawurlencode(defined('ASSET_VERSION') ? ASSET_VERSION : '2.3.15') ?>')
                     .catch(function(err) { console.warn('[PWA] SW:', err); });
             });
         }

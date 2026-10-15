@@ -13,6 +13,7 @@ window.VoxelReports.autosave = (function () {
     let lastSavedAt = null;
     let saving = false;
     let savingPromise = null;
+    let initialDiagnostics = null;
 
     function statusEl() { return document.getElementById('autosave-status'); }
 
@@ -23,15 +24,58 @@ window.VoxelReports.autosave = (function () {
         const segundos = Math.max(0, Math.round((Date.now() - lastSavedAt) / 1000));
         el.textContent = segundos < 5 ? 'salvo agora' :
             segundos < 60 ? `salvo há ${segundos}s` :
-                `salvo há ${Math.round(segundos / 60)}min`;
+            `salvo há ${Math.round(segundos / 60)}min`;
+    }
+
+    function logTelemetry(event, diagnostics = {}, details = {}) {
+        if (typeof console === 'undefined' || typeof console.debug !== 'function') return;
+        console.debug('[VOXEL Reports] ' + event, {
+            htmlLength: Number(diagnostics.htmlLength) || 0,
+            textLength: Number(diagnostics.textLength) || 0,
+            hasClinicalContent: diagnostics.hasClinicalContent === true,
+            ...details,
+        });
+    }
+
+    function editorSnapshot() {
+        const secoes = editor.extractSecoes();
+        const diagnostics = typeof editor.getContentDiagnostics === 'function'
+            ? editor.getContentDiagnostics()
+            : { htmlLength: 0, textLength: 0, hasClinicalContent: false };
+        return {
+            secoes,
+            payload: JSON.stringify(secoes),
+            diagnostics,
+            hasClinicalContent: diagnostics.hasClinicalContent === true,
+        };
     }
 
     function save(modo) {
         if (!config || config.readonly) return Promise.resolve({ ok: false, msg: 'Editor em modo somente leitura.' });
         if (saving) return savingPromise || Promise.resolve({ ok: false, msg: 'Salvamento em andamento.' });
 
-        const secoes = editor.extractSecoes();
-        const payload = JSON.stringify(secoes);
+        let snapshot;
+        try {
+            snapshot = editorSnapshot();
+        } catch (_) {
+            logTelemetry('editor_extract_failed', initialDiagnostics || {}, { mode: modo });
+            return Promise.resolve({ ok: false, msg: 'Não foi possível ler o conteúdo do editor.' });
+        }
+
+        // Nunca envie placeholder/HTML sem texto em autosave. A ação manual
+        // continua seguindo para o backend, que mantém o guard contra perda.
+        if (modo === 'auto' && !snapshot.hasClinicalContent) {
+            logTelemetry('autosave_skipped_empty_payload', snapshot.diagnostics, {
+                mode: modo,
+                knownContent: Boolean(initialDiagnostics?.hasClinicalContent || lastSavedAt),
+            });
+            // Não substitui um status de sucesso por erro quando a extração
+            // transitória fica vazia; preserva o último timestamp conhecido.
+            if (lastSavedAt) tickStatusText();
+            return Promise.resolve({ ok: true, skipped: true, reason: 'empty_payload' });
+        }
+
+        const { secoes, payload } = snapshot;
 
         // Autosave silencioso: não repete POST se nada mudou desde o último save.
         if (modo === 'auto' && payload === lastPayload) return Promise.resolve({ ok: true, skipped: true });
@@ -93,6 +137,9 @@ window.VoxelReports.autosave = (function () {
     function init(cfg) {
         config = cfg;
         templateId = Number(config.templateId) || 0;
+        initialDiagnostics = typeof editor.getContentDiagnostics === 'function'
+            ? editor.getContentDiagnostics()
+            : null;
         if (config.readonly) return;
 
         const status = statusEl();

@@ -12,6 +12,7 @@ window.VoxelReports.editor = (function () {
     let quill = null;
 
     const SECOES = ['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'];
+    const EMPTY_HTML = '<p><br></p>';
     const TITULOS = {
         exame: 'Exame',
         tecnica: 'Técnica',
@@ -21,11 +22,19 @@ window.VoxelReports.editor = (function () {
     };
 
     function init(config) {
+        const container = typeof document !== 'undefined'
+            ? document.getElementById('editor-container')
+            : null;
+        // O Quill pode reprocessar o DOM do container durante o construtor.
+        // Capturamos a fonte server-side antes disso e a reinserimos pela API
+        // oficial para que a hidratação não dependa de detalhes internos do Quill.
+        const initialHtml = container?.innerHTML || '';
         quill = window.createVoxelQuillEditor('#editor-container', {
             readOnly: !!config.readonly,
             toolbarSelector: '#editor-toolbar',
         });
 
+        setContent(initialHtml);
         normalizeCurrentContent();
         if (quill?.root?.addEventListener) {
             quill.root.addEventListener('paste', () => window.setTimeout(normalizeCurrentContent, 0));
@@ -51,10 +60,7 @@ window.VoxelReports.editor = (function () {
             html += `<h4 data-secao="${chave}">${TITULOS[chave]}</h4>`;
             html += conteudo;
         });
-        if (html === '') html = '<p><br></p>';
-        html = normalizeClinicalHtml(html) || '<p><br></p>';
-        quill.setText('');
-        quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
+        setContent(html);
     }
 
     /**
@@ -64,13 +70,22 @@ window.VoxelReports.editor = (function () {
      */
     function extractSecoes() {
         const html = normalizeClinicalHtml(quill?.root?.innerHTML || '');
-        return { corpo: html || '<p><br></p>' };
+        return { corpo: contentDiagnostics(html).hasClinicalContent ? html : EMPTY_HTML };
     }
 
     function loadConteudoLivre(html) {
-        html = normalizeClinicalHtml(html || '') || '<p><br></p>';
-        quill.setText('');
-        quill.clipboard.dangerouslyPasteHTML(0, html, 'silent');
+        setContent(html || '');
+    }
+
+    function setContent(html) {
+        if (!quill) return;
+        const normalized = normalizeClinicalHtml(html || '') || EMPTY_HTML;
+        if (typeof quill.setText === 'function') quill.setText('', 'silent');
+        if (quill.clipboard?.dangerouslyPasteHTML) {
+            quill.clipboard.dangerouslyPasteHTML(0, normalized, 'silent');
+        } else if (quill.root) {
+            quill.root.innerHTML = normalized;
+        }
     }
 
     function normalizeClinicalHtml(html) {
@@ -90,9 +105,53 @@ window.VoxelReports.editor = (function () {
         }
     }
 
+    function textFromHtml(html) {
+        if (typeof document !== 'undefined' && document.createElement) {
+            const holder = document.createElement('div');
+            holder.innerHTML = html;
+            return holder.textContent || '';
+        }
+        return String(html || '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;|&#160;|&#xA0;/gi, ' ');
+    }
+
+    /**
+     * Retorna somente métricas seguras para telemetria local. Nunca inclui o
+     * HTML ou o texto clínico, apenas tamanhos e o estado efetivo do editor.
+     */
+    function contentDiagnostics(html = null) {
+        const normalizedHtml = html === null
+            ? normalizeClinicalHtml(quill?.root?.innerHTML || '')
+            : String(html || '');
+        const quillText = typeof quill?.getText === 'function'
+            ? String(quill.getText() || '')
+            : textFromHtml(normalizedHtml);
+        const textLength = quillText
+            .replace(/[\u00a0\u200b\ufeff]/g, ' ')
+            .trim()
+            .length;
+
+        return {
+            htmlLength: normalizedHtml.length,
+            textLength,
+            hasClinicalContent: textLength > 0,
+        };
+    }
+
     function getQuill() { return quill; }
     function setReadOnly(readonly) { if (quill) quill.enable(!readonly); }
     function isDocumentoLivre() { return true; }
 
-    return { init, loadSecoes, loadConteudoLivre, extractSecoes, getQuill, setReadOnly, isDocumentoLivre };
+    return {
+        init,
+        loadSecoes,
+        loadConteudoLivre,
+        extractSecoes,
+        getContentDiagnostics: contentDiagnostics,
+        getQuill,
+        setReadOnly,
+        isDocumentoLivre,
+    };
 })();
