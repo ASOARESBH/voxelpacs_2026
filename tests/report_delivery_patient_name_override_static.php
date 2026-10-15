@@ -81,8 +81,19 @@ $resolvedOverride = $resolver->resolve([
         'middle' => '',
     ],
 ]);
-expect_override($resolvedOverride['task_patient_humanname_family'] === 'OverrideFamily', 'Request override must take precedence');
-expect_override($resolvedOverride['task_patient_humanname_given'] === 'OverrideGiven', 'Request override given must take precedence');
+expect_override($resolvedOverride['task_patient_humanname_family'] === 'Plain Display Name', 'Raw DICOM PatientName must take precedence over a historical override');
+expect_override($resolvedOverride['task_patient_humanname_given'] === '', 'Flat raw DICOM PatientName must keep Given empty');
+
+$resolvedOverrideOnly = $resolver->resolve([
+    'patient_name' => 'Plain Display Name',
+    'patient_name_override' => [
+        'family' => 'OverrideFamily',
+        'given' => 'OverrideGiven',
+        'middle' => '',
+    ],
+]);
+expect_override($resolvedOverrideOnly['task_patient_humanname_family'] === 'OverrideFamily', 'Historical override must remain a fallback when raw DICOM is absent');
+expect_override($resolvedOverrideOnly['task_patient_humanname_given'] === 'OverrideGiven', 'Historical override given must remain available as fallback');
 
 $resolvedPlain = $resolver->resolve(['patient_name' => 'Plain Display Name']);
 expect_override($resolvedPlain['task_patient_humanname_family'] === null, 'Plain PatientName must remain unresolved');

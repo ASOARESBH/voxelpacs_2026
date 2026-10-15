@@ -54,20 +54,20 @@ class ReportDeliveryOutboxService
                 $destinations,
                 fn(array $destination): bool => $this->isSubmissionDocumentDestination($repository, $destination)
             ));
-            $given = trim((string) ($patientName['given'] ?? ''));
+            $family = trim((string) ($patientName['family'] ?? ''));
             $accessionNumber = trim((string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''));
 
-            if ($submissionDestinations !== [] && $given === '') {
-                Logger::warning('[ReportDeliveryCompatibility] Liberação bloqueada por Given ausente', [
+            if ($submissionDestinations !== [] && $family === '') {
+                Logger::warning('[ReportDeliveryCompatibility] Liberação bloqueada por Family ausente', [
                     'tenant_id' => $tenantId,
                     'report_id' => $reportId,
                     'dispatch_mode' => $dispatchMode,
                     'submission_document_count' => count($submissionDestinations),
-                    'reason' => 'patient_name_given_required',
+                    'reason' => 'patient_name_family_required',
                 ]);
                 return [
                     'allowed' => false,
-                    'reason' => 'patient_name_given_required',
+                    'reason' => 'patient_name_family_required',
                     'destinations' => $destinations,
                     'submission_document_count' => count($submissionDestinations),
                 ];
@@ -226,6 +226,8 @@ class ReportDeliveryOutboxService
             'accession_number' => (string) ($estudo->accession_number ?? $estudo->numero_acesso ?? ''),
             'patient_id' => (string) ($estudo->patient_id ?? $estudo->paciente_id_externo ?? ''),
             'patient_name' => (string) ($estudo->patient_name_display ?? $estudo->patient_name ?? ''),
+            'patient_name_raw' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($estudo->tags_raw ?? null),
+            // Alias mantido para jobs históricos e snapshots de requests antigas.
             'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($estudo->tags_raw ?? null),
             'patient_birth_date' => (string) ($estudo->patient_birth_date ?? ''),
             'patient_sex' => (string) ($estudo->patient_sex ?? ''),

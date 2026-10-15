@@ -12,9 +12,8 @@ use App\Helpers\DicomPersonName;
  * Este componente não consulta banco, não deriva identidade clínica e não transforma
  * released_by em task_author_id. O task_author_* é resolvido separadamente pelo
  * PhilipsSubmissionAuthorResolver a partir do médico signatário da versão. A data
- * do documento vem de StudyDate/StudyTime. O PatientName plano somente chega como
- * Family quando a versão congelada registra patient_name_fallback; as duas regras
- * permanecem separadas.
+ * do documento vem de StudyDate/StudyTime. O PatientName cru é separado somente
+ * pelos componentes DICOM; um valor sem '^' chega integralmente como Family.
  */
 final class PhilipsSubmissionMetadataResolver
 {
@@ -45,32 +44,21 @@ final class PhilipsSubmissionMetadataResolver
         ];
 
         $patientName = $this->versionPatientName($payload);
-        // A versão congelada já contém os componentes resolvidos. Um fallback
-        // com Family e Given válidos não é Family-only; a marca só permanece
-        // para o caso histórico de token único, que continua dependente da
-        // política de homologação no gerador.
+        // A versão congelada já contém os componentes resolvidos. A marca
+        // histórica só é preservada para payloads antigos já materializados.
         $patientNameAsFamily = $patientName !== null
             && ($payload['patient_name_source'] ?? null) === 'patient_name_fallback'
             && ($patientName['given'] ?? '') === ''
             && ($patientName['middle'] ?? '') === '';
         if ($patientName === null) {
             foreach ([
-                [self::patientNameFromTagsRaw($payload['tags_raw'] ?? null), true],
-                [$this->stringOrNull($payload['patient_name_dicom'] ?? null), true],
-                [$this->stringOrNull($payload['patient_name'] ?? null), false],
-            ] as [$patientNameRaw, $allowFlatPatientName]) {
+                $this->stringOrNull($payload['patient_name_raw'] ?? null),
+                self::patientNameFromTagsRaw($payload['tags_raw'] ?? null),
+                $this->stringOrNull($payload['patient_name_dicom'] ?? null),
+            ] as $patientNameRaw) {
                 $parsed = $this->dicomPersonName($patientNameRaw);
                 if ($parsed !== null) {
                     $patientName = $parsed;
-                    break;
-                }
-                if ($allowFlatPatientName
-                    && $patientNameRaw !== null
-                    && $patientNameRaw !== ''
-                    && !str_contains($patientNameRaw, '^')
-                    && PhilipsSubmissionHomologationPolicy::allowsPatientNameAsFamily($deliveryContext)) {
-                    $patientName = ['family' => $patientNameRaw, 'given' => '', 'middle' => ''];
-                    $patientNameAsFamily = true;
                     break;
                 }
             }
@@ -157,11 +145,9 @@ final class PhilipsSubmissionMetadataResolver
         if (!is_string($source) || !in_array($source, ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'], true)) {
             throw new PhilipsXmlFieldUnresolvedException('patient_name_source');
         }
-        $givenRequired = $source !== 'patient_name_fallback';
-
         return [
             'family' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_family'] ?? null, 'task_patient_humanname_family'),
-            'given' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_given'] ?? '', 'task_patient_humanname_given', $givenRequired),
+            'given' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_given'] ?? '', 'task_patient_humanname_given', false),
             'middle' => PhilipsSubmissionDocumentGenerator::validatePatientNameComponent($payload['patient_name_middle'] ?? '', 'task_patient_humanname_middle', false),
         ];
     }

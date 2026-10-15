@@ -40,9 +40,9 @@ expect_resolver($resolved['task_author_humanname_family'] === null, 'Referring p
 expect_resolver($resolved['task_author_humanname_given'] === null, 'Referring physician must not become author given');
 expect_resolver(!array_key_exists('task_author_id', $resolved), 'Metadata must not carry legacy author ID');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
-$plainName = $resolver->resolve(['patient_name' => 'Silva Ana Maria']);
-expect_resolver($plainName['task_patient_humanname_family'] === null, 'Plain names must not be split heuristically');
-expect_resolver($plainName['task_patient_humanname_given'] === null, 'Ambiguous given name must remain unresolved');
+$plainName = $resolver->resolve(['patient_name_dicom' => 'NOME COMPLETO SEM CIRCUNFLEXO']);
+expect_resolver($plainName['task_patient_humanname_family'] === 'NOME COMPLETO SEM CIRCUNFLEXO', 'Flat DICOM PatientName must remain intact in Family');
+expect_resolver($plainName['task_patient_humanname_given'] === '', 'Flat DICOM PatientName must have empty Given');
 $homologationContext = [
     'tenant_id' => 2,
     'destination_id' => 6,
@@ -50,14 +50,6 @@ $homologationContext = [
     'delivery_profile' => 'submission_document',
     'transport' => 'philips_non_dicom',
 ];
-putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
-$flatDefaultOff = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
-expect_resolver($flatDefaultOff['task_patient_humanname_family'] === null, 'PatientName-as-family must remain default-off');
-putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=1');
-$flatHomologation = $resolver->resolve(['patient_name_dicom' => 'Flat Patient Name'], $homologationContext);
-expect_resolver($flatHomologation['task_patient_humanname_family'] === 'Flat Patient Name', 'Homologation must preserve full flat PatientName in family');
-expect_resolver($flatHomologation['task_patient_humanname_given'] === '', 'Homologation family mode must empty given');
-expect_resolver($flatHomologation['patient_name_as_family'] === true, 'Homologation family mode must be marked');
 putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
 $tagsRawName = $resolver->resolve([
     'patient_name' => 'Plain Display Name',

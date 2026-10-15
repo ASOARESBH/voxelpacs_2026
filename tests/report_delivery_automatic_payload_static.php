@@ -53,6 +53,7 @@ expect_automatic_payload(substr_count($reportService, "'automatic_production',\n
 expect_automatic_payload(!str_contains($outbox, "'controlled_production'"), 'Controlled production must remain outside the automatic queue path.');
 expect_automatic_payload(str_contains($outbox, 'createOutboxIfAbsent('), 'Outbox idempotent creation must remain in place.');
 expect_automatic_payload(str_contains($outbox, 'createJobs('), 'Job creation must remain in the existing path.');
+expect_automatic_payload(str_contains($outbox, "'patient_name_raw' =>"), 'Automatic payload must freeze the raw DICOM PatientName.');
 foreach (['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'] as $field) {
     expect_automatic_payload(str_contains($outbox, "\$payload['{$field}']"), "Automatic payload must freeze {$field} from report_versions.");
 }

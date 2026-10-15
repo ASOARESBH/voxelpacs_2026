@@ -5,8 +5,9 @@ namespace App\Helpers;
  * Formata um DICOM Person Name (VR = PN) para exibição legível.
  *
  * O DICOM PN usa "^" para separar componentes (FamilyName^GivenName^MiddleName^
- * Prefix^Suffix). O valor cru nunca deve chegar à interface — só a camada de
- * apresentação é afetada; o dado gravado no banco permanece intacto.
+ * Prefix^Suffix). O valor cru nunca deve chegar à interface. A sincronização
+ * preserva o PN em tags_raw para integrações; patient_name é um campo de
+ * exibição normalizado.
  */
 class DicomPersonName
 {
@@ -55,7 +56,9 @@ class DicomPersonName
      * Extrai somente o grupo alfabético de um PN DICOM, preservando as
      * posições vazias de Family^Given^Middle^Prefix^Suffix.
      *
-     * Nome plano ou PN sem family/given suficientes não é inferido.
+     * Sem circunflexo, o valor cru inteiro é o componente Family; não há
+     * divisão heurística por espaços. Prefixo, sufixo e grupos após '=' são
+     * ignorados neste contrato.
      *
      * @return array{family:string,given:string,middle:string}|null
      */
@@ -67,13 +70,17 @@ class DicomPersonName
 
         $alphabeticGroup = trim(explode('=', trim($pn), 2)[0]);
         if (!str_contains($alphabeticGroup, '^')) {
-            return null;
+            $family = trim($alphabeticGroup);
+            return $family === ''
+                ? null
+                : ['family' => $family, 'given' => '', 'middle' => ''];
         }
 
         $components = array_pad(explode('^', $alphabeticGroup), 5, '');
-        $family = self::normalizeWhitespace((string) ($components[0] ?? ''));
-        $given = self::normalizeWhitespace((string) ($components[1] ?? ''));
-        $middle = self::normalizeWhitespace((string) ($components[2] ?? ''));
+        // Preserva a grafia recebida; apenas as pontas são removidas.
+        $family = trim((string) ($components[0] ?? ''));
+        $given = trim((string) ($components[1] ?? ''));
+        $middle = trim((string) ($components[2] ?? ''));
         if ($family === '') {
             return null;
         }

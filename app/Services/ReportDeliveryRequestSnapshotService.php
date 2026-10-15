@@ -103,6 +103,8 @@ final class ReportDeliveryRequestSnapshotService
             'accession_number' => (string) ($snapshot['accession_number'] ?? ''),
             'patient_id' => (string) ($snapshot['patient_id'] ?? ''),
             'patient_name' => (string) ($snapshot['patient_name'] ?? ''),
+            'patient_name_raw' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null)
+                ?? (string) ($snapshot['patient_name'] ?? ''),
             'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null)
                 ?? (string) ($snapshot['patient_name'] ?? ''),
             'patient_birth_date' => (string) ($snapshot['patient_birth_date'] ?? ''),

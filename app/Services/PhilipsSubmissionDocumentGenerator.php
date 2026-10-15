@@ -53,9 +53,7 @@ final class PhilipsSubmissionDocumentGenerator
         ];
         if (!$omitPatientNameComponents) {
             $values['task_patient_humanname_family'] = $this->requiredText($input, 'task_patient_humanname_family');
-            $values['task_patient_humanname_given'] = $patientNameAsFamily
-                ? $this->optionalText($input, 'task_patient_humanname_given')
-                : $this->requiredText($input, 'task_patient_humanname_given');
+            $values['task_patient_humanname_given'] = $this->optionalText($input, 'task_patient_humanname_given');
             $values['task_patient_humanname_middle'] = $this->optionalText($input, 'task_patient_humanname_middle');
             if ($patientNameAsFamily
                 && ($values['task_patient_humanname_given'] !== '' || $values['task_patient_humanname_middle'] !== '')) {

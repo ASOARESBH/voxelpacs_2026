@@ -113,6 +113,20 @@ expect_true(str_contains($flatDocument->content, '<task_patient_humanname_given>
 expect_true(str_contains($flatDocument->content, '<task_patient_humanname_middle></task_patient_humanname_middle>'), 'Flat PatientName must serialize an empty middle');
 putenv('ALLOW_PATIENT_NAME_AS_FAMILY_FOR_HOMOLOGATION=0');
 
+$productionFlatInput = $input;
+$productionFlatInput['task_patient_humanname_family'] = 'NOME COMPLETO SEM CIRCUNFLEXO';
+$productionFlatInput['task_patient_humanname_given'] = '';
+$productionFlatInput['task_patient_humanname_middle'] = '';
+$productionFlatDocument = $generator->generate($productionFlatInput, [
+    'tenant_id' => 2,
+    'destination_id' => 7,
+    'ambiente' => 'producao',
+    'delivery_profile' => 'submission_document',
+    'transport' => 'philips_non_dicom',
+]);
+expect_true(str_contains($productionFlatDocument->content, '<task_patient_humanname_family>NOME COMPLETO SEM CIRCUNFLEXO</task_patient_humanname_family>'), 'Production flat DICOM PatientName must serialize entirely in family');
+expect_true(str_contains($productionFlatDocument->content, '<task_patient_humanname_given></task_patient_humanname_given>'), 'Production flat DICOM PatientName must allow empty given');
+
 if (function_exists('simplexml_load_string')) {
     $previous = libxml_use_internal_errors(true);
     $parsed = simplexml_load_string($first->content);
