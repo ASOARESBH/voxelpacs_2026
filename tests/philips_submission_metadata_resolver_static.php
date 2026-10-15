@@ -82,6 +82,32 @@ $versionName = $resolver->resolve([
 ]);
 expect_resolver($versionName['task_patient_humanname_family'] === 'FrozenFamily', 'Frozen report_version family must be primary');
 expect_resolver($versionName['task_patient_humanname_given'] === 'FrozenGiven', 'Frozen report_version given must be primary');
+$legacyFrozenAutomatic = $resolver->resolve([
+    'patient_name_family' => 'LegacyFamily',
+    'patient_name_given' => 'LegacyGiven',
+    'patient_name_middle' => '',
+    'patient_name_source' => 'patient_name_fallback',
+    'patient_name_raw' => 'RawFamily^RawGiven^RawMiddle',
+    'dispatch_mode' => 'automatic_production',
+]);
+expect_resolver(
+    $legacyFrozenAutomatic['task_patient_humanname_family'] === 'RawFamily'
+        && $legacyFrozenAutomatic['task_patient_humanname_given'] === 'RawGiven'
+        && $legacyFrozenAutomatic['task_patient_humanname_middle'] === 'RawMiddle',
+    'Legacy frozen components must not override raw PatientName in automatic production'
+);
+$markedFrozenAutomatic = $resolver->resolve([
+    'patient_name_family' => 'FrozenFamily',
+    'patient_name_given' => 'FrozenGiven',
+    'patient_name_middle' => 'FrozenMiddle',
+    'patient_name_source' => 'dicom_pn',
+    'patient_name_raw' => 'Different^Raw^Value',
+    'dispatch_mode' => 'automatic_production',
+]);
+expect_resolver(
+    $markedFrozenAutomatic['task_patient_humanname_family'] === 'FrozenFamily',
+    'DICOM-derived frozen components remain authoritative in automatic production'
+);
 $invalidVersionFailed = false;
 try {
     $resolver->resolve([

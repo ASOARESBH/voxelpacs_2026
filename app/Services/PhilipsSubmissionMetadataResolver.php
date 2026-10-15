@@ -17,6 +17,13 @@ use App\Helpers\DicomPersonName;
  */
 final class PhilipsSubmissionMetadataResolver
 {
+    /**
+     * Marca persistida para componentes congelados derivados do PatientName
+     * DICOM pela regra atual. Fontes históricas não podem vencer o raw no
+     * fluxo automatic_production.
+     */
+    private const AUTOMATIC_PRODUCTION_RAW_SOURCE = 'dicom_pn';
+
     /** @param array<string,mixed> $payload @param array<string,mixed> $deliveryContext @return array<string,mixed> */
     public function resolve(array $payload, array $deliveryContext = []): array
     {
@@ -43,7 +50,11 @@ final class PhilipsSubmissionMetadataResolver
             'author_humanname_flat' => false,
         ];
 
-        $patientName = $this->versionPatientName($payload);
+        $dispatchMode = (string) ($deliveryContext['dispatch_mode'] ?? $payload['dispatch_mode'] ?? '');
+        $patientName = $this->versionPatientName(
+            $payload,
+            $dispatchMode === 'automatic_production'
+        );
         // A versão congelada já contém os componentes resolvidos. A marca
         // histórica só é preservada para payloads antigos já materializados.
         $patientNameAsFamily = $patientName !== null
@@ -132,7 +143,7 @@ final class PhilipsSubmissionMetadataResolver
     }
 
     /** @param array<string,mixed> $payload @return array{family:string,given:string,middle:string}|null */
-    private function versionPatientName(array $payload): ?array
+    private function versionPatientName(array $payload, bool $automaticProduction = false): ?array
     {
         $fields = ['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'];
         $present = false;
@@ -147,7 +158,13 @@ final class PhilipsSubmissionMetadataResolver
         }
 
         $source = $payload['patient_name_source'] ?? null;
-        if (!is_string($source) || !in_array($source, ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'], true)) {
+        if (!is_string($source)) {
+            throw new PhilipsXmlFieldUnresolvedException('patient_name_source');
+        }
+        if ($automaticProduction && $source !== self::AUTOMATIC_PRODUCTION_RAW_SOURCE) {
+            return null;
+        }
+        if (!in_array($source, ['dicom_pn', 'patient_name_fallback', 'manual_confirmation'], true)) {
             throw new PhilipsXmlFieldUnresolvedException('patient_name_source');
         }
         return [
