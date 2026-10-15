@@ -68,6 +68,14 @@ $sw = $read('public/sw.js');
 if (!str_contains($sw, 'voxelpacs-static-v3') || !str_contains($sw, '/assets/css/mobile-responsive.css')) {
     $failures[] = 'Service worker não foi atualizado para a camada responsiva.';
 }
+if (str_contains($sw, 'Response.error()')) {
+    $failures[] = 'Service Worker não pode responder com Response.error(), que produz uma resposta de rede inválida.';
+}
+foreach (['function validOfflineResponse(', 'status: 503', "'Cache-Control': 'no-store'", 'new Response('] as $needle) {
+    if (!str_contains($sw, $needle)) {
+        $failures[] = "Fallback HTTP válido ausente no Service Worker: {$needle}";
+    }
+}
 
 $pt = include $root . '/lang/pt_BR.php';
 $en = include $root . '/lang/en.php';
