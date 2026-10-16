@@ -45,6 +45,8 @@ Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto 
 
 O ID é resolvido de forma tenant-scoped pelo vínculo `bi_unidades` (`rich_unit_id`) ou pelo registro `bi_negocio_institution_names` (`institution_unit_id`), mantendo o fallback desativado para as demais unidades. `rich_unit_id` existente no código é apenas o identificador da unidade vinculada — **não foi criado nem ativado um modo separado de conteúdo rico**. Snapshots PDF já persistidos não são re-renderizados nem alterados automaticamente; uma revisão visual explícita seguirá a política vigente no momento da revisão.
 
+Na mesma política, a unidade `33` usa `patient_meta_alignment=right` no cabeçalho `moderno_lateral`: a célula direita da identificação do paciente/exame encosta à margem direita útil e mantém os rótulos sem quebra. A célula esquerda ocupa o espaço restante. Os IDs institucionais `32`, `36` e `37` compartilham o mesmo template, mas não recebem essa opção porque o override é resolvido pelo ID da unidade e permanece restrito a `33`. Snapshots antigos e o fluxo Non-DICOM permanecem inalterados.
+
 ### Contrato visual — Moderno Lateral (Orix)
 
 O partial `_moderno_lateral.php` é a fonte única de `Imprimir` e de `Baixar PDF` no navegador. A tela de edição recebe uma casca visual homóloga, ativada por `reports/show.php` somente quando `reportLayoutCodigo === 'moderno_lateral'`. Ambas usam cabeçalho institucional em duas colunas, identificação do paciente e estudo em duas colunas, título centralizado e as seguintes regras clínicas de apresentação:

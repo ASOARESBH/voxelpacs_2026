@@ -85,6 +85,8 @@ $registroEmpresaNumero = trim((string) ($r['registro_crm_numero'] ?? ''));
 $registroEmpresa = $registroEmpresaNumero === '' ? '' : 'CRM' . ($registroEmpresaUf !== '' ? '-' . $registroEmpresaUf : '') . ' ' . $registroEmpresaNumero;
 $assinadoEmBrasilia = $formatarDataHoraBrasilia($r['assinado_em'] ?? null);
 $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
+$patientMetaAlignmentRight = is_array($presentationPolicy ?? null)
+    && (($presentationPolicy['patient_meta_alignment'] ?? 'left') === 'right');
 
 // O rodapé identifica a unidade que efetivamente realizou o exame. Dados vazios
 // não geram separadores soltos nem substituem a identificação da empresa médica.
@@ -128,10 +130,11 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 
         .pdf-patient { display: table; table-layout: fixed; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
         .pdf-patient-col { display: table-cell; vertical-align: top; }
-        .pdf-patient-col:first-child { width: 56%; padding-right: 8px; }
+        .pdf-patient-col:first-child { padding-right: 8px; }
         .pdf-patient-col:last-child { width: 44%; min-width: 0; padding-left: 8px; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
+        .pdf-patient-col-right { text-align: right !important; }
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
-        .pdf-patient-line strong { font-weight: 700; }
+        .pdf-patient-line strong { font-weight: 700; white-space: nowrap; }
 
         .pdf-report-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
         .pdf-clinical-section { margin: 0 0 8px; page-break-inside: avoid; }
@@ -239,7 +242,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
                 <div class="pdf-patient-line"><strong>Data de Nascimento:</strong> <?= $formatarData($r['patient_birth_date'] ?? null) ?></div>
                 <div class="pdf-patient-line"><strong>Médico(a) Solicitante:</strong> <?= htmlspecialchars($solicitante, ENT_QUOTES) ?></div>
             </div>
-            <div class="pdf-patient-col">
+            <div class="pdf-patient-col<?= $patientMetaAlignmentRight ? ' pdf-patient-col-right' : '' ?>">
                 <div class="pdf-patient-line"><strong>ID do Paciente:</strong> <?= htmlspecialchars((string) ($r['patient_id'] ?? '—'), ENT_QUOTES) ?></div>
                 <div class="pdf-patient-line"><strong>Data do Exame:</strong> <?= $formatarData($r['study_date'] ?? null) ?></div>
                 <div class="pdf-patient-line"><strong>Prontuário:</strong> <?= htmlspecialchars((string) ($r['accession_number'] ?? '—'), ENT_QUOTES) ?></div>

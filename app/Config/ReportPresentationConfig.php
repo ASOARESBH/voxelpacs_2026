@@ -7,19 +7,20 @@ namespace App\Config;
 /**
  * Opções de apresentação do Laudário/PDF por unidade.
  *
- * A política afeta somente espaçamento estrutural vazio. O conteúdo textual,
+ * A política afeta somente a apresentação de novos renders. O conteúdo textual,
  * a tipografia e os snapshots PDF já persistidos permanecem inalterados.
  */
 final class ReportPresentationConfig
 {
-    /** @var array<int, array{remove_empty_paragraphs: bool}> */
+    /** @var array<int, array{remove_empty_paragraphs: bool, patient_meta_alignment: string}> */
     private const UNIT_OVERRIDES = [
         33 => [
             'remove_empty_paragraphs' => true,
+            'patient_meta_alignment' => 'right',
         ],
     ];
 
-    /** @return array{remove_empty_paragraphs: bool} */
+    /** @return array{remove_empty_paragraphs: bool, patient_meta_alignment: string} */
     public static function forUnitIds(?int $richUnitId, ?int $institutionUnitId): array
     {
         foreach ([$richUnitId, $institutionUnitId] as $unitId) {
@@ -31,6 +32,7 @@ final class ReportPresentationConfig
 
         return [
             'remove_empty_paragraphs' => false,
+            'patient_meta_alignment' => 'left',
         ];
     }
 

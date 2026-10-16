@@ -23,8 +23,11 @@ $institution33 = ReportPresentationConfig::forUnitIds(null, 33);
 $richIdIsNotAFlag = ReportPresentationConfig::forUnitIds(0, 0);
 
 $expect($unit33['remove_empty_paragraphs'] === true, 'Unidade 33 deve remover parágrafos vazios.');
+$expect($unit33['patient_meta_alignment'] === 'right', 'Unidade 33 deve alinhar a coluna direita do cabeçalho.');
 $expect($institution33['remove_empty_paragraphs'] === true, 'Unidade 33 via InstitutionName deve usar a mesma política.');
+$expect($institution33['patient_meta_alignment'] === 'right', 'Unidade 33 via InstitutionName deve alinhar a coluna direita.');
 $expect($otherUnit['remove_empty_paragraphs'] === false, 'A política não pode vazar para outra unidade.');
+$expect($otherUnit['patient_meta_alignment'] === 'left', 'O alinhamento não pode vazar para outra unidade.');
 $expect($richIdIsNotAFlag['remove_empty_paragraphs'] === false, 'rich_unit_id ausente não pode ativar a política.');
 
 $html = '<p>Primeiro</p><p><br></p><p>&nbsp;</p><p>Segundo <strong>texto</strong></p><p></p>';

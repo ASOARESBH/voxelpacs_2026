@@ -26,6 +26,7 @@ $common = [
     'institution_unit_id' => 0,
 ];
 $r = $common;
+$presentationPolicy = ['patient_meta_alignment' => 'right'];
 $corpoLaudo = \App\Services\ReportClinicalHtmlSanitizer::sanitizeAndNormalize(
     '<p>Primeira linha clínica.</p><p><br></p><p>&nbsp;</p><p>Segunda linha clínica.</p>',
     true
@@ -53,6 +54,10 @@ foreach ($templates as $template) {
     if (preg_match('/<p\b[^>]*>\s*(?:(?:<br\s*\/?\s*>)\s*)?<\/p>/i', $html)) {
         $failures[] = $template . ': parágrafo vazio presente';
     }
+}
+
+if (!str_contains($html ?? '', 'pdf-patient-col-right')) {
+    $failures[] = 'moderno_lateral: classe de alinhamento direito ausente';
 }
 
 if ($failures !== []) {
