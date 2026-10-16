@@ -30,21 +30,22 @@ window.VoxelQuill.factory = (function () {
         }
     }
 
-    function normalizeClinicalHtml(rawHtml) {
+    function normalizeClinicalHtml(rawHtml, options = {}) {
         const html = String(rawHtml || '').trim();
         if (!html) return '';
+        const removeEmptyParagraphs = options.removeEmptyParagraphs === true;
 
         if (typeof document === 'undefined' || !document.createElement) {
-            return normalizeClinicalHtmlFallback(html);
+            return normalizeClinicalHtmlFallback(html, removeEmptyParagraphs);
         }
 
         const template = document.createElement('template');
         template.innerHTML = html;
-        normalizeDomChildren(template.content);
+        normalizeDomChildren(template.content, removeEmptyParagraphs);
         return template.innerHTML.trim();
     }
 
-    function normalizeDomChildren(parent) {
+    function normalizeDomChildren(parent, removeEmptyParagraphs = false) {
         const children = Array.from(parent.childNodes || []);
         let previousBreak = false;
 
@@ -61,7 +62,7 @@ window.VoxelQuill.factory = (function () {
             const classes = Array.from(child.classList || []).filter((className) => allowedClasses.includes(className));
             if (classes.length) child.className = classes.join(' ');
             else child.removeAttribute('class');
-            normalizeDomChildren(child);
+            normalizeDomChildren(child, removeEmptyParagraphs);
             const tag = String(child.tagName || '').toLowerCase();
             if (tag === 'br') {
                 if (previousBreak) child.remove();
@@ -70,6 +71,10 @@ window.VoxelQuill.factory = (function () {
             }
 
             trimDomBoundaries(child);
+            if (tag === 'p' && isEmptyParagraph(child) && removeEmptyParagraphs) {
+                child.remove();
+                return;
+            }
             if (tag === 'p' && isEmptyParagraph(child)) {
                 const previous = child.previousElementSibling;
                 if (previous && String(previous.tagName || '').toLowerCase() === 'p' && isEmptyParagraph(previous)) {
@@ -105,12 +110,15 @@ window.VoxelQuill.factory = (function () {
         return Array.from(element.querySelectorAll('*')).every((node) => String(node.tagName || '').toLowerCase() === 'br');
     }
 
-    function normalizeClinicalHtmlFallback(html) {
+    function normalizeClinicalHtmlFallback(html, removeEmptyParagraphs = false) {
         let normalized = html
             .replace(/[\u00a0\u200b\ufeff]/g, ' ')
             .replace(/\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
             .replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>');
-        normalized = normalized.replace(/(?:<p\b[^>]*>\s*(?:(?:<br\s*\/?>)\s*)?<\/p>\s*){2,}/gi, '<p><br></p>');
+        const emptyParagraph = /<p\b[^>]*>\s*(?:(?:<br\s*\/?>)\s*)?<\/p>/gi;
+        normalized = removeEmptyParagraphs
+            ? normalized.replace(emptyParagraph, '')
+            : normalized.replace(/(?:<p\b[^>]*>\s*(?:(?:<br\s*\/?>)\s*)?<\/p>\s*){2,}/gi, '<p><br></p>');
         normalized = normalized
             .replace(/(<(?:p|h[1-6]|li|th|td)\b[^>]*>)\s+/gi, '$1')
             .replace(/\s+(<\/(?:p|h[1-6]|li|th|td)>)/gi, '$1');

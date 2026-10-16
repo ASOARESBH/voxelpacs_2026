@@ -9,8 +9,12 @@
 $r = $report ?? [];
 $templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
 $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($r);
+$presentationPolicy = \App\Config\ReportPresentationConfig::forReport(is_array($r) ? $r : []);
+$legacySignedWithoutSnapshot = empty($snapshotPdf)
+    && in_array(strtolower(trim((string) ($r['situacao'] ?? ''))), ['assinado', 'liberado'], true);
+$removeEmptyParagraphs = !empty($presentationPolicy['remove_empty_paragraphs']) && !$legacySignedWithoutSnapshot;
 $normalizarHtmlClinico = static fn(string $html): string =>
-    \App\Services\ReportClinicalHtmlSanitizer::sanitizeAndNormalize($html);
+    \App\Services\ReportClinicalHtmlSanitizer::sanitizeAndNormalize($html, $removeEmptyParagraphs);
 // Conteúdo clínico livre. Mantém leitura de colunas legadas para laudos
 // antigos, mas os layouts não impõem mais rótulos de seções ao radiologista.
 $corpoLaudo = $normalizarHtmlClinico((string) ($r['corpo_laudo'] ?? ''));

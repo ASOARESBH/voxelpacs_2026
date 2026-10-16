@@ -4,6 +4,7 @@
 /** @var bool $readonly */
 /** @var array|null $lockInfo */
 /** @var string $csrfToken */
+/** @var array<string,mixed> $reportVisual */
 // O nome abaixo é uma projeção visual; o valor DICOM original não é modificado.
 $pacienteNome = \App\Helpers\DicomPersonName::displayFromStudy($estudo) ?: 'Paciente';
 $situacao     = $report->situacao ?? $report->status ?? 'rascunho';
@@ -49,6 +50,10 @@ $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportCont
 $acaoPdfIndisponivel = !$laudoPossuiConteudo;
 $empresaImpressao = trim((string) (($reportVisual['unidade_nome'] ?? '') ?: ($estudo->institution_name ?? '')));
 $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? ''));
+$reportPresentationPolicy = \App\Config\ReportPresentationConfig::forUnitIds(
+    isset($reportVisual['rich_unit_id']) ? (int) $reportVisual['rich_unit_id'] : null,
+    isset($reportVisual['institution_unit_id']) ? (int) $reportVisual['institution_unit_id'] : null,
+);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -80,6 +85,7 @@ $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? '')
      data-signature-mode="<?= htmlspecialchars($signatureMode, ENT_QUOTES) ?>"
      data-chat-pending="<?= $chatPendente ? '1' : '0' ?>"
      data-report-has-content="<?= $laudoPossuiConteudo ? '1' : '0' ?>"
+     data-remove-empty-paragraphs="<?= !empty($reportPresentationPolicy['remove_empty_paragraphs']) ? '1' : '0' ?>"
      data-peer-review-pending="<?= $peerReviewAberto ? '1' : '0' ?>"
      data-peer-review-id="<?= (int) (($peerReview['aberta']->id ?? 0)) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>">

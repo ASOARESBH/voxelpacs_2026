@@ -1401,7 +1401,7 @@ class ReportsController extends Controller
      * Resolve somente os metadados institucionais necessários para espelhar o
      * layout de impressão na tela do Laudário. Falhas não impedem a edição.
      *
-     * @return array{report_layout_template_id:int,unidade_nome:string,unidade_logo_path:string}
+     * @return array{report_layout_template_id:int,unidade_nome:string,unidade_logo_path:string,institution_unit_id:int,rich_unit_id:int}
      */
     private function carregarContextoVisualLaudo(object $estudo): array
     {
@@ -1409,6 +1409,8 @@ class ReportsController extends Controller
             'report_layout_template_id' => 0,
             'unidade_nome' => trim((string) ($estudo->institution_name ?? 'Clínica')) ?: 'Clínica',
             'unidade_logo_path' => '',
+            'institution_unit_id' => 0,
+            'rich_unit_id' => 0,
         ];
         $tenantId = (int) ($estudo->tenant_id ?? \App\Core\TenantContext::id());
         $institutionName = trim((string) ($estudo->institution_name ?? ''));
@@ -1420,7 +1422,9 @@ class ReportsController extends Controller
             $pdo = \App\Core\Database::getInstance();
             $institutionParameterSql = SqlHelper::caseInsensitiveEquals('bnin.institution_name', ':institution_name');
             $stmt = $pdo->prepare(
-                "SELECT COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS report_layout_template_id,
+                "SELECT bnin.id AS institution_unit_id,
+                        un.id AS rich_unit_id,
+                        COALESCE(NULLIF(un.report_layout_template_id, 0), NULLIF(bnin.report_layout_template_id, 0)) AS report_layout_template_id,
                         COALESCE(NULLIF(un.nome_fantasia, ''), NULLIF(bnin.nome_fantasia, ''), NULLIF(un.razao_social, ''), bnin.razao_social) AS unidade_nome,
                         COALESCE(NULLIF(un.logo_path, ''), bnin.logo_path) AS unidade_logo_path
                  FROM bi_negocio_institution_names bnin
@@ -1435,6 +1439,8 @@ class ReportsController extends Controller
             ]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($row) {
+                $contexto['institution_unit_id'] = (int) ($row['institution_unit_id'] ?? 0);
+                $contexto['rich_unit_id'] = (int) ($row['rich_unit_id'] ?? 0);
                 $contexto['report_layout_template_id'] = (int) ($row['report_layout_template_id'] ?? 0);
                 $contexto['unidade_nome'] = trim((string) ($row['unidade_nome'] ?? '')) ?: $contexto['unidade_nome'];
                 $contexto['unidade_logo_path'] = trim((string) ($row['unidade_logo_path'] ?? ''));
