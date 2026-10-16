@@ -105,6 +105,9 @@ $quebrarRodape = static function (string $valor): string {
         return '';
     }
     $componentes = preg_split('//u', $valor, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    if (count($componentes) <= 80) {
+        return htmlspecialchars($valor, ENT_QUOTES, 'UTF-8');
+    }
     $blocos = array_chunk($componentes, 24);
     return implode('&#8203;', array_map(
         static fn (array $bloco): string => htmlspecialchars(implode('', $bloco), ENT_QUOTES, 'UTF-8'),
