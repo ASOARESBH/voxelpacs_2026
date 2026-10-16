@@ -169,4 +169,12 @@ kill "$lock_pid" 2>/dev/null || true
 wait "$lock_pid" 2>/dev/null || true
 test ! -e "$transaction_root/$lock_sha/status"
 
+# 5. installed.php versus source-sha/manifest: qualquer divergência recusa.
+marker_sha='dddddddddddddddddddddddddddddddddddddddd'
+make_tx "$marker_sha"
+printf '%s\n' "$marker_sha" > "$backup_root/$previous_sha/source-sha"
+sed -i "s/^META\\tsource_sha\\t.*/META\\tsource_sha\\t$marker_sha/" "$backup_root/$previous_sha/manifest.tsv"
+assert_blocked 'RUNTIME_DRIFT_DETECTED' abort-unpublished --sha "$marker_sha"
+test ! -e "$transaction_root/$marker_sha/status"
+
 echo 'deploy_transaction_abort_unpublished_isolated: PASS'
