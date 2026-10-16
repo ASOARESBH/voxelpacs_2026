@@ -28,6 +28,12 @@ $render = static function (array $overrides = [], string $alignment = 'right') u
         'assinado_em' => '2026-10-16 10:00:00',
         'unidade_personalizado_qrcode_habilitado' => 1,
         'unidade_personalizado_qrcode_url' => 'https://synthetic.voxelpacs.test/validation',
+        'unidade_logradouro' => '',
+        'unidade_numero' => '',
+        'unidade_complemento' => '',
+        'unidade_bairro' => '',
+        'unidade_cidade' => '',
+        'unidade_estado' => '',
     ], $overrides);
     $presentationPolicy = ['patient_meta_alignment' => $alignment];
     $corpoLaudo = '<p>Conteúdo sintético para validação visual.</p>';
@@ -56,6 +62,12 @@ $render = static function (array $overrides = [], string $alignment = 'right') u
 [$html, $pdf] = $render([
     'patient_id' => 'ID-LONGO-01 ID-LONGO-02 ID-LONGO-03 ID-LONGO-04 ID-LONGO-05 ID-LONGO-06 ID-LONGO-07 ID-LONGO-08',
     'accession_number' => 'PRONTUARIO-LONGO-01 PRONTUARIO-LONGO-02 PRONTUARIO-LONGO-03',
+    'unidade_logradouro' => 'RUA-' . str_repeat('ENDERECO-LONGO-', 12),
+    'unidade_numero' => '1000',
+    'unidade_complemento' => 'COMPLEMENTO-SINTETICO',
+    'unidade_bairro' => 'CENTRO-SINTETICO',
+    'unidade_cidade' => 'BELO HORIZONTE',
+    'unidade_estado' => 'MG',
 ]);
 $defaultHtml = $render([], 'left')[0];
 $assert(!str_contains($defaultHtml, '<div class="pdf-patient-col pdf-patient-col-right">'), 'O template compartilhado não pode receber right sem override da unidade 33.');
@@ -63,6 +75,7 @@ $assert(str_contains($html, '<div class="pdf-patient-col pdf-patient-col-right">
 $assert(str_contains($html, 'text-align: right !important'), 'A célula direita não tem alinhamento right.');
 $assert(str_contains($html, 'white-space: nowrap'), 'Os rótulos não estão protegidos contra quebra.');
 $assert(str_contains($html, 'overflow-wrap: anywhere'), 'Valores longos não têm quebra segura.');
+$assert(str_contains($html, 'word-break: break-all'), 'O rodapé não tem quebra compatível com Dompdf.');
 
 $path = tempnam(sys_get_temp_dir(), 'voxelpacs-header-');
 if ($path === false || file_put_contents($path, $pdf, LOCK_EX) === false) {
@@ -79,6 +92,7 @@ try {
     exec('pdftotext -bbox ' . escapeshellarg($path) . ' ' . escapeshellarg($bboxPath) . ' 2>/dev/null', $bboxOutput, $bboxCode);
     $bbox = is_file($bboxPath) ? (string) file_get_contents($bboxPath) : '';
     $patientRight = null;
+    $maxTextX = 0.0;
     if ($bboxCode === 0 && $bbox !== '') {
         preg_match_all('/<word\b([^>]*)>([^<]+)<\/word>/u', $bbox, $matches, PREG_SET_ORDER);
         foreach ($matches as $match) {
@@ -88,6 +102,7 @@ try {
                 continue;
             }
             $xMax = (float) $xMaxMatch[1];
+            $maxTextX = max($maxTextX, $xMax);
             $yMin = (float) $yMinMatch[1];
             $word = trim(html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
             if (str_starts_with($word, 'PRONTUARIO-LONGO-03')) {
@@ -96,6 +111,7 @@ try {
         }
     }
     $assert($patientRight !== null, 'Não foi localizado o valor longo da coluna direita no bbox.');
+    $assert($maxTextX <= 595.78, sprintf('Texto do cabeçalho/rodapé ultrapassa A4: %.2f pt.', $maxTextX));
     $xmlDir = sys_get_temp_dir() . '/voxelpacs-header-xml-' . bin2hex(random_bytes(4));
     if (!mkdir($xmlDir, 0700, true)) {
         throw new RuntimeException('Não foi possível criar o diretório XML temporário.');
@@ -140,4 +156,4 @@ if ($failures !== []) {
     exit(1);
 }
 
-printf("REPORT_HEADER_RIGHT_ALIGNMENT_OK\nRIGHT_EDGE_TOLERANCE_PT=2\nPAGES=1\nLONG_VALUE_WRAP=PASS\n");
+printf("REPORT_HEADER_RIGHT_ALIGNMENT_OK\nRIGHT_EDGE_TOLERANCE_PT=2\nPAGES=1\nLONG_VALUE_WRAP=PASS\nFOOTER_WRAP=PASS\n");

@@ -59,6 +59,9 @@ foreach ($templates as $template) {
 if (!str_contains($html ?? '', 'pdf-patient-col-right')) {
     $failures[] = 'moderno_lateral: classe de alinhamento direito ausente';
 }
+if (!str_contains($html ?? '', '.pdf-footer-details') || !str_contains($html ?? '', 'overflow-wrap: anywhere')) {
+    $failures[] = 'moderno_lateral: quebra segura do rodapé ausente';
+}
 
 if ($failures !== []) {
     fwrite(STDERR, "REPORT_PRESENTATION_TEMPLATES_STATIC_FAIL\n- " . implode("\n- ", $failures) . "\n");

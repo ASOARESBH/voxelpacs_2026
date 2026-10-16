@@ -99,6 +99,18 @@ $unidadeEnderecoPartes = array_filter([
     trim((string) ($r['unidade_cidade'] ?? '') . (($r['unidade_estado'] ?? '') !== '' ? '/' . $r['unidade_estado'] : '')),
 ]);
 $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
+$quebrarRodape = static function (string $valor): string {
+    $valor = trim($valor);
+    if ($valor === '') {
+        return '';
+    }
+    $componentes = preg_split('//u', $valor, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $blocos = array_chunk($componentes, 24);
+    return implode('&#8203;', array_map(
+        static fn (array $bloco): string => htmlspecialchars(implode('', $bloco), ENT_QUOTES, 'UTF-8'),
+        $blocos
+    ));
+};
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -170,9 +182,9 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-company-label { font-weight: 700; }
         .pdf-hash { max-width: 490px; margin: 3px auto 0; color: #737373; font-size: 6.5px; line-height: 1.25; overflow-wrap: anywhere; }
 
-        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; line-height: 1.45; text-align: center; }
-        .pdf-footer-name { color: #404040; font-weight: 700; }
-        .pdf-footer-details { margin-top: 2px; }
+        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; line-height: 1.45; text-align: center; overflow-wrap: anywhere; word-break: break-all; }
+        .pdf-footer-name { color: #404040; font-weight: 700; overflow-wrap: anywhere; word-break: break-all; }
+        .pdf-footer-details { margin-top: 2px; max-width: 100%; overflow-wrap: anywhere; word-break: break-all; }
 
         @media (max-width: 680px) {
             .pdf-page { min-height: 0; margin: 0; padding: 22px; box-shadow: none; }
@@ -195,6 +207,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             .pdf-footer { margin-top: 12px; }
             /* Dompdf calcula a largura do flex item sem descontar o padding do A4. */
             .pdf-header, .pdf-patient { width: 174mm; max-width: 174mm; min-width: 0; }
+            .pdf-footer { width: 174mm; max-width: 174mm; min-width: 0; }
             .pdf-report-content, .pdf-clinical-section-content { width: 174mm; max-width: 174mm; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }
@@ -294,14 +307,14 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         </section>
 
         <footer class="pdf-footer" aria-label="Identificação da unidade">
-            <div class="pdf-footer-name"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+            <div class="pdf-footer-name"><?= $quebrarRodape($unidadeNome) ?></div>
             <?php if ($unidadeCnpj !== '' || $unidadeTelefone !== '' || $unidadeEndereco !== ''): ?>
                 <div class="pdf-footer-details">
-                    <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= htmlspecialchars($unidadeCnpj, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= $quebrarRodape($unidadeCnpj) ?><?php endif; ?>
                     <?php if ($unidadeCnpj !== '' && ($unidadeTelefone !== '' || $unidadeEndereco !== '')): ?> · <?php endif; ?>
-                    <?php if ($unidadeTelefone !== ''): ?>Telefone <?= htmlspecialchars($unidadeTelefone, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeTelefone !== ''): ?>Telefone <?= $quebrarRodape($unidadeTelefone) ?><?php endif; ?>
                     <?php if ($unidadeTelefone !== '' && $unidadeEndereco !== ''): ?> · <?php endif; ?>
-                    <?php if ($unidadeEndereco !== ''): ?><?= htmlspecialchars($unidadeEndereco, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeEndereco !== ''): ?><?= $quebrarRodape($unidadeEndereco) ?><?php endif; ?>
                 </div>
             <?php endif; ?>
         </footer>
