@@ -5,8 +5,9 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 $service = file_get_contents($root . '/app/Services/PhilipsFolderDeliveryService.php');
 $generator = file_get_contents($root . '/app/Services/PhilipsSubmissionDocumentGenerator.php');
+$worker = file_get_contents($root . '/bin/report_delivery_worker.php');
 
-if (!is_string($service) || !is_string($generator)) {
+if (!is_string($service) || !is_string($generator) || !is_string($worker)) {
     fwrite(STDERR, "SOURCE_READ_FAILED\n");
     exit(1);
 }
@@ -27,6 +28,8 @@ expect_true(str_contains($service, "new PhilipsFolderDeliveryException('xml_fiel
 expect_true(str_contains($service, "Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED'"), 'XML failure must be logged as a sanitized event');
 expect_true(str_contains($service, "'stage' => 'xml_generation'"), 'XML failure log must identify the technical stage');
 expect_true(str_contains($service, '\'field\' => $error->field'), 'XML failure log must identify only the technical field');
+expect_true(str_contains($service, "'accession_unresolved'"), 'task_accession_number must have a dedicated sanitized category');
+expect_true(str_contains($worker, "'accession_unresolved'"), 'Worker must allowlist the accession failure category');
 expect_true(str_contains($service, "PATIENT_NAME_RAW_UNAVAILABLE"), 'Raw PatientName absence must have a dedicated sanitized code');
 expect_true(str_contains($service, "patient_name_raw_unavailable"), 'Raw PatientName absence must have a dedicated operational category');
 expect_true(!str_contains($service, "'payload' =>"), 'XML failure log must not include payload');

@@ -146,7 +146,9 @@ final class PhilipsFolderDeliveryService implements PhilipsFolderDeliveryPort
             } catch (PhilipsXmlFieldUnresolvedException $error) {
                 $reasonCategory = $error->sanitizedCode() === 'PATIENT_NAME_RAW_UNAVAILABLE'
                     ? 'patient_name_raw_unavailable'
-                    : 'xml_field_unresolved';
+                    : ($error->field === 'task_accession_number'
+                        ? 'accession_unresolved'
+                        : 'xml_field_unresolved');
                 Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
                     'job_id' => $jobId,
                     'stage' => 'xml_generation',
