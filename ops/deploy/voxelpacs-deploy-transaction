@@ -10,6 +10,7 @@ export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 
 readonly RELEASE_ROOT='/var/lib/voxelpacs/deploy/releases'
 readonly TRANSACTION_ROOT="$RELEASE_ROOT/transactions"
+readonly BACKUP_ROOT='/var/backups/voxelpacs/releases'
 readonly LOCK_PATH='/run/lock/voxelpacs-deploy-runtime.lock'
 readonly APP_ROOT='/var/www/voxelpacs/app'
 readonly RECONCILIATION_DIR_NAME='reconciliation'
@@ -17,7 +18,7 @@ readonly RECONCILIATION_MARKER_NAME='approved'
 readonly STATUS_FILE_NAME='status'
 readonly PID_FILE_NAME='pid'
 readonly ROLLBACK_PENDING_NAME='rollback.pending'
-readonly ALLOWED_STATUS_RE='^(publishing|published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|stale|rollback_pending)$'
+readonly ALLOWED_STATUS_RE='^(publishing|published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|aborted_unpublished|stale|rollback_pending)$'
 readonly HISTORICAL_D9_SHA='d9abd9dec1302654afa2a6f556064212d503c0bc'
 
 mode=''
@@ -67,7 +68,8 @@ usage() {
     'uso: voxelpacs-deploy-transaction inspect --sha <40-hex-sha>' \
     'uso: voxelpacs-deploy-transaction reconcile --sha <40-hex-sha>' \
     'uso: voxelpacs-deploy-transaction reconcile-historical --sha d9abd9dec1302654afa2a6f556064212d503c0bc' \
-    'uso: voxelpacs-deploy-transaction reconcile-partial --sha <40-hex-sha>' >&2
+    'uso: voxelpacs-deploy-transaction reconcile-partial --sha <40-hex-sha>' \
+    'uso: voxelpacs-deploy-transaction abort-unpublished --sha <40-hex-sha>' >&2
 }
 
 is_sha() {
@@ -244,7 +246,7 @@ read_rollback_pending() {
     transaction_rollback_pending='YES'
   elif [[ "$transaction_status" == 'rollback_pending' ]]; then
     transaction_rollback_pending='YES'
-  elif [[ "$transaction_status" =~ ^(published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|stale)$ ]]; then
+  elif [[ "$transaction_status" =~ ^(published|rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|aborted_unpublished|stale)$ ]]; then
     transaction_rollback_pending='NO'
   else
     transaction_rollback_pending='UNKNOWN'
@@ -434,6 +436,10 @@ read_partial_publication() {
       transaction_partial_publication='NO'
       transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
       ;;
+    aborted_unpublished)
+      transaction_partial_publication='NO'
+      transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
+      ;;
     aborted|stale|rollback_pending|UNKNOWN)
       transaction_partial_publication='UNKNOWN'
       transaction_historical_proof_reason='STATUS_NOT_PUBLISHED'
@@ -495,7 +501,7 @@ classify_transaction() {
     transaction_classification='HISTORICAL_PUBLISHED_PARTIAL_RECONCILED'
     return 0
   fi
-  if [[ "$transaction_status" =~ ^(rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted)$ && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
+  if [[ "$transaction_status" =~ ^(rolled_back|rolled_back_after_failure|rolled_back_after_persistent_state_check|aborted|aborted_unpublished)$ && "$transaction_partial_publication" == 'NO' && "$transaction_rollback_pending" == 'NO' ]]; then
     transaction_classification='ABORTED'
     return 0
   fi
@@ -578,6 +584,149 @@ read_transaction() {
   read_reconciliation_marker
   classify_transaction
   [[ -f "$metadata" && ! -L "$metadata" ]] || true
+}
+
+read_runtime_published_sha() {
+  local installed="$APP_ROOT/vendor/composer/installed.php" ref
+  safe_file "$installed" || return 1
+  ref="$(/usr/bin/awk -v q="'" '
+    index($0, "    " q "root" q " => array(") == 1 { in_root = 1; next }
+    index($0, "    " q "versions" q " => array(") == 1 { in_root = 0 }
+    in_root && index($0, q "reference" q " =>") > 0 {
+      value = $0
+      sub(/^.*=>[ ]*/, "", value)
+      gsub(/[^0-9a-f]/, "", value)
+      print value
+      exit
+    }' "$installed" 2>/dev/null || true)"
+  [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s' "$ref"
+}
+
+runtime_files() {
+  /usr/bin/find -P "$APP_ROOT" -xdev \
+    \( -path "$APP_ROOT/.env" -o -path "$APP_ROOT/.env.*" -o -path "$APP_ROOT/storage" -o -path "$APP_ROOT/storage/*" -o -path "$APP_ROOT/logs" -o -path "$APP_ROOT/logs/*" -o -path "$APP_ROOT/backups" -o -path "$APP_ROOT/backups/*" -o -path "$APP_ROOT/public/uploads" -o -path "$APP_ROOT/public/uploads/*" \) -prune -o \
+    -type f -printf '%P\n' | /usr/bin/sort
+}
+
+remove_runtime_match_temps() {
+  /usr/bin/rm -f -- "$1" "$2" "$3"
+  return 1
+}
+
+runtime_matches_backup() {
+  local backup_sha="$1" backup_dir="$BACKUP_ROOT/$1" manifest runtime_list backup_list rel runtime_hash backup_hash mismatch='NO'
+  is_sha "$backup_sha" || return 1
+  safe_dir "$BACKUP_ROOT" || return 1
+  safe_dir "$backup_dir" || return 1
+  [[ "$(/usr/bin/stat -c '%U:%a' -- "$backup_dir" 2>/dev/null || true)" == 'root:700' ]] || return 1
+  safe_file "$backup_dir/manifest.tsv" || return 1
+  safe_file "$backup_dir/release.sha256" || return 1
+  safe_file "$backup_dir/source-sha" || return 1
+  [[ "$(/usr/bin/head -n 1 -- "$backup_dir/source-sha")" == "$backup_sha" ]] || return 1
+  (cd -- "$backup_dir" && /usr/bin/sha256sum -c release.sha256 >/dev/null 2>&1) || return 1
+  /usr/bin/awk -F '\t' '
+    $1 == "META" && NF == 3 { next }
+    $1 == "EXCLUDED" && NF == 3 { next }
+    $1 == "DIR" && NF == 7 && $2 != "" && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 == "-" { next }
+    $1 == "FILE" && NF == 8 && $2 != "" && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9a-f]{64}$/ && $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ { next }
+    { bad = 1 }
+    END { exit bad ? 1 : 0 }
+  ' "$backup_dir/manifest.tsv" || return 1
+  [[ "$(/usr/bin/awk -F '\t' '$1 == "META" && $2 == "source_sha" {print $3; exit}' "$backup_dir/manifest.tsv")" == "$backup_sha" ]] || return 1
+  manifest="$(/usr/bin/mktemp)"
+  runtime_list="$(/usr/bin/mktemp)"
+  backup_list="$(/usr/bin/mktemp)"
+  /usr/bin/awk -F '\t' '$1 == "FILE" {print $2 "\t" $4}' "$backup_dir/manifest.tsv" | /usr/bin/sort > "$manifest"
+  runtime_files > "$runtime_list"
+  /usr/bin/cut -f 1 "$manifest" > "$backup_list"
+  if ! /usr/bin/cmp -s "$runtime_list" "$backup_list"; then
+    remove_runtime_match_temps "$manifest" "$runtime_list" "$backup_list"
+  fi
+  while IFS=$'\t' read -r rel backup_hash; do
+    if [[ -z "$rel" || ! "$backup_hash" =~ ^[0-9a-f]{64}$ ]]; then
+      mismatch='YES'
+      break
+    fi
+    runtime_hash="$(/usr/bin/sha256sum -- "$APP_ROOT/$rel" 2>/dev/null | /usr/bin/awk '{print $1}')"
+    if [[ "$runtime_hash" != "$backup_hash" ]]; then
+      mismatch='YES'
+      break
+    fi
+  done < "$manifest"
+  /usr/bin/rm -f -- "$manifest" "$runtime_list" "$backup_list"
+  [[ "$mismatch" == 'NO' ]]
+}
+
+runtime_mtimes_not_newer_than() {
+  local start_epoch="$1" rel mtime
+  [[ "$start_epoch" =~ ^[0-9]+$ ]] || return 1
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    mtime="$(/usr/bin/stat -c '%Y' -- "$APP_ROOT/$rel" 2>/dev/null || true)"
+    [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+    (( mtime <= start_epoch )) || return 1
+  done < <(runtime_files)
+}
+
+release_pointer_not_transaction() {
+  local resolved
+  [[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || return 1
+  resolved="$(/usr/bin/readlink -f -- "$APP_ROOT" 2>/dev/null || true)"
+  [[ -n "$resolved" && "$resolved" != "$transaction_root" && "$resolved" != "$transaction_root/"* ]]
+}
+
+abort_unpublished_transaction() {
+  local runtime_sha transaction_start_epoch now operator evidence_root evidence_id evidence_dir
+  local audit_tmp status_tmp checksum_tmp lock_fd_abort
+  read_transaction
+  [[ "$transaction_exists" == 'YES' ]] || fail 'TRANSACTION_NOT_FOUND'
+  [[ "$transaction_dir" == "$transaction_root" ]] || fail 'TRANSACTION_RUN_NOT_ABORTABLE'
+  [[ "$transaction_target_sha" == "$sha" ]] || fail 'TRANSACTION_TARGET_SHA_MISMATCH'
+  [[ "$transaction_stage" =~ ^(created|validated)$ ]] || fail 'TRANSACTION_STAGE_NOT_ABORTABLE'
+  [[ "$transaction_status" != 'publishing' && "$transaction_status" != 'published' ]] || fail 'TRANSACTION_ALREADY_PUBLISHED_OR_PUBLISHING'
+  [[ "$transaction_reconciliation" == 'NO' ]] || fail 'TRANSACTION_ALREADY_RECONCILED'
+  [[ ! -e "$transaction_root/abort-unpublished" && ! -L "$transaction_root/abort-unpublished" ]] || fail 'TRANSACTION_ALREADY_ABORTED_UNPUBLISHED'
+  [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
+  [[ "$transaction_lock" == 'NO' ]] || fail 'DEPLOY_LOCK_ACTIVE_OR_UNKNOWN'
+  [[ -d "$APP_ROOT" && ! -L "$APP_ROOT" ]] || fail 'RUNTIME_ROOT_INVALID'
+
+  exec {lock_fd_abort}>"$LOCK_PATH"
+  /usr/bin/flock -n "$lock_fd_abort" || fail 'DEPLOY_LOCK_ACTIVE_OR_UNKNOWN'
+  read_deploy_process_state
+  [[ "$deploy_process_active" == 'NO' ]] || fail 'DEPLOY_PROCESS_ACTIVE'
+
+  runtime_sha="$(read_runtime_published_sha || true)"
+  [[ "$runtime_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'RUNTIME_PUBLISHED_SHA_UNAVAILABLE'
+  runtime_matches_backup "$runtime_sha" || fail 'RUNTIME_DRIFT_DETECTED'
+  transaction_start_epoch="$(/usr/bin/stat -c '%Y' -- "$transaction_root" 2>/dev/null || true)"
+  runtime_mtimes_not_newer_than "$transaction_start_epoch" || fail 'RUNTIME_MODIFIED_AFTER_TRANSACTION_START'
+  release_pointer_not_transaction || fail 'RELEASE_POINTER_REFERENCES_TRANSACTION'
+
+  operator="${SUDO_USER:-root}"
+  safe_technical_value "$operator" || operator='root'
+  now="$(/bin/date -u '+%Y%m%dT%H%M%SZ')"
+  evidence_root="$transaction_root/abort-unpublished"
+  /usr/bin/install -d -o root -g root -m 0700 -- "$evidence_root"
+  evidence_id="${now}-$$"
+  evidence_dir="$evidence_root/$evidence_id"
+  [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]] || fail 'ABORT_EVIDENCE_ALREADY_EXISTS'
+  /usr/bin/install -d -o root -g root -m 0700 -- "$evidence_dir"
+  audit_tmp="$evidence_dir/.audit.tsv"
+  checksum_tmp="$evidence_dir/.checksum.sha256"
+  status_tmp="$transaction_root/.status.abort-unpublished.$$"
+  printf 'transaction_id\t%s\ntransaction_target_sha\t%s\noriginal_status\t%s\ntransaction_stage\t%s\nprevious_runtime_sha\t%s\ntransaction_start_epoch\t%s\noperator\t%s\nhostname\t%s\nlock_free\tYES\ndeploy_process_active\tNO\nruntime_drift\t0\nruntime_mtime_after_start\tNO\nrelease_pointer_references_transaction\tNO\nreason\tvalidation_failed_before_publication\nstatus_transition\taborted_unpublished\naborted_at\t%s\nruntime_changed\tNO\n' \
+    "$sha" "$transaction_target_sha" "$transaction_status" "$transaction_stage" "$runtime_sha" "$transaction_start_epoch" "$operator" "$transaction_hostname" "$now" > "$audit_tmp"
+  /usr/bin/chmod 600 -- "$audit_tmp"
+  /usr/bin/mv -- "$audit_tmp" "$evidence_dir/audit.tsv"
+  (cd -- "$evidence_dir" && /usr/bin/sha256sum audit.tsv) > "$checksum_tmp"
+  /usr/bin/chmod 600 -- "$checksum_tmp"
+  /usr/bin/mv -- "$checksum_tmp" "$evidence_dir/audit.sha256"
+  printf 'aborted_unpublished\n' > "$status_tmp"
+  /usr/bin/chmod 600 -- "$status_tmp"
+  /usr/bin/mv -- "$status_tmp" "$transaction_root/$STATUS_FILE_NAME"
+  exec {lock_fd_abort}>&-
+  printf 'ABORT_UNPUBLISHED=YES\nTRANSACTION_ID=%s\nTRANSACTION_STATUS_AFTER=aborted_unpublished\nREASON=validation_failed_before_publication\nRUNTIME_CHANGED=NO\nAUDIT_PRESERVED=YES\nEVIDENCE_ID=%s\nPREVIOUS_RUNTIME_SHA_PREFIX=%s…\n' "$sha" "$evidence_id" "${runtime_sha:0:12}"
 }
 
 print_result() {
@@ -815,6 +964,9 @@ case "$mode" in
     ;;
   reconcile-partial)
     reconcile_partial_transaction
+    ;;
+  abort-unpublished)
+    abort_unpublished_transaction
     ;;
   *)
     usage

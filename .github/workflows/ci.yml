@@ -188,6 +188,8 @@ jobs:
           bash -n ops/deploy/voxelpacs-deploy-runtime
           bash -n scripts/provision-deploy-transaction-helper.sh
           bash -n tests/deploy_transaction_inspection_reconciliation.sh
+          bash -n tests/deploy/deploy_transaction_abort_unpublished_isolated.sh
+          php -l tests/deploy/deploy_transaction_abort_unpublished_static.php
 
       - name: ShellCheck
         run: |
@@ -196,7 +198,8 @@ jobs:
               ops/deploy/voxelpacs-deploy-transaction \
               ops/deploy/voxelpacs-deploy-runtime \
               scripts/provision-deploy-transaction-helper.sh \
-              tests/deploy_transaction_inspection_reconciliation.sh
+              tests/deploy_transaction_inspection_reconciliation.sh \
+              tests/deploy/deploy_transaction_abort_unpublished_isolated.sh
           else
             echo "SHELLCHECK=NOT_AVAILABLE"
           fi
@@ -211,6 +214,11 @@ jobs:
 
       - name: Run isolated transaction tests
         run: sudo -n env -u SUDO_USER bash tests/deploy_transaction_inspection_reconciliation.sh
+
+      - name: Run abort-unpublished and lifecycle tests
+        run: |
+          php tests/deploy/deploy_transaction_abort_unpublished_static.php
+          sudo -n env -u SUDO_USER bash tests/deploy/deploy_transaction_abort_unpublished_isolated.sh
 
   production-baseline-capture:
     name: Production baseline capture and Composer sidecar

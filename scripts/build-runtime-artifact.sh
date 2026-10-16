@@ -209,6 +209,7 @@ git -C "$ROOT" archive --format=tar HEAD "${ARCHIVE_PATHS[@]}" | tar -xf - -C "$
 vendor_real="$(realpath "$ROOT/vendor" 2>/dev/null || true)"
 [[ -n "$vendor_real" && "$vendor_real" == "$ROOT"/* && -d "$vendor_real" ]] || fail 'vendor_not_inside_validated_tree'
 cp -a -- "$vendor_real" "$stage_dir/vendor"
+[[ ! -e "$stage_dir/vendor/vendor" && ! -L "$stage_dir/vendor/vendor" ]] || fail 'vendor_nested_vendor'
 
 for entry in "$stage_dir"/* "$stage_dir"/.[!.]* "$stage_dir"/..?*; do
   [[ -e "$entry" || -L "$entry" ]] || continue

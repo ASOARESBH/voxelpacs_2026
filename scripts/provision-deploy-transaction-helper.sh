@@ -49,6 +49,12 @@ done
 /usr/bin/bash -n "$HELPER_SOURCE" || fail 'HELPER_SYNTAX_INVALID'
 /usr/bin/grep -Eq '^manus-admin[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:[[:space:]]+/usr/local/sbin/voxelpacs-deploy-transaction (inspect|reconcile|reconcile-partial) --sha \[a-f0-9\]\*' "$SUDOERS_SOURCE" || fail 'SUDOERS_ADMIN_RULE_MISSING'
 /usr/bin/grep -Eq '^manus-deploy[[:space:]]+ALL=\(root\)[[:space:]]+NOPASSWD:[[:space:]]+/usr/local/sbin/voxelpacs-deploy-transaction reconcile-partial --sha \[a-f0-9\]\*' "$SUDOERS_SOURCE" || fail 'SUDOERS_DEPLOY_PARTIAL_RULE_MISSING'
+abort_sha_pattern=''
+for _ in {1..40}; do abort_sha_pattern+='[a-f0-9]'; done
+admin_abort_rule="manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction abort-unpublished --sha $abort_sha_pattern"
+deploy_abort_rule="manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction abort-unpublished --sha $abort_sha_pattern"
+/usr/bin/grep -Fqx -- "$admin_abort_rule" "$SUDOERS_SOURCE" || fail 'SUDOERS_ABORT_ADMIN_RULE_INVALID'
+/usr/bin/grep -Fqx -- "$deploy_abort_rule" "$SUDOERS_SOURCE" || fail 'SUDOERS_ABORT_DEPLOY_RULE_INVALID'
 /usr/bin/grep -Fq -- 'reconcile-partial' "$HELPER_SOURCE" || fail 'PARTIAL_RECONCILIATION_MODE_MISSING'
 if /usr/bin/grep -Eq 'NOPASSWD:[[:space:]]+ALL' "$SUDOERS_SOURCE"; then
   fail 'GENERIC_SUDO_RULE_PRESENT'

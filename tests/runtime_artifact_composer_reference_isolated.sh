@@ -46,6 +46,25 @@ path.write_text(text[:root_start] + root + text[versions_start:])
 PY
 
 mkdir -p "$OUTPUT_ROOT"
+mkdir -p "$SOURCE_ROOT/vendor/vendor"
+printf 'nested-vendor-must-be-rejected\n' > "$SOURCE_ROOT/vendor/vendor/marker.txt"
+set +e
+nested_output="$(bash "$SOURCE_ROOT/scripts/build-runtime-artifact.sh" \
+    --skip-composer-install \
+    --output "$OUTPUT_ROOT/nested-vendor.zip" \
+    --manifest "$OUTPUT_ROOT/nested-vendor.manifest.tsv" \
+    --checksum "$OUTPUT_ROOT/nested-vendor.sha256" \
+    --expected-sha "$expected_sha" 2>&1)"
+nested_status=$?
+set -e
+[[ "$nested_status" -ne 0 ]] || { printf '%s\n' "$nested_output" >&2; fail 'vendor/vendor aceito'; }
+grep -Fq 'REASON=vendor_nested_vendor' <<<"$nested_output" || {
+    printf '%s\n' "$nested_output" >&2
+    fail 'categoria vendor_nested_vendor ausente'
+}
+rm -rf -- "$SOURCE_ROOT/vendor/vendor"
+
+mkdir -p "$OUTPUT_ROOT"
 bash "$SOURCE_ROOT/scripts/build-runtime-artifact.sh" \
     --skip-composer-install \
     --output "$OUTPUT_ROOT/runtime.zip" \

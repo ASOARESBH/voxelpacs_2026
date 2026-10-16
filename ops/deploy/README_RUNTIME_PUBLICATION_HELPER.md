@@ -16,6 +16,8 @@ O executor anterior transferia o ZIP ao Host 1 e executava `unzip -o` diretament
 - O fluxo aceita somente os callers SSH aprovados `manus-admin` e `manus-deploy`; `DEPLOY_USER` permanece `manus-admin` por padrão e pode selecionar explicitamente `manus-deploy` para uma operação separada.
 - O helper não aceita caminhos, comandos, shell, serviço ou ambiente fornecidos pelo usuário.
 - O helper valida SHA, checksum, manifesto completo, paths allowlisted, entrypoints obrigatórios e ausência de `.env`, storage, uploads, logs, backups, testes, docs, scripts, migrations e dados clínicos.
+- O builder e o helper rejeitam `vendor/vendor` e qualquer entrada fora do file-set esperado antes do empacotamento/publicação.
+- A validação integral do ZIP, manifesto, file-set e vendor ocorre em diretório temporário antes de criar `transactions/<SHA>`; falha de validação não deixa uma transação `validated/UNKNOWN` nova.
 - O helper cria uma transação root-only, preserva os arquivos versionados existentes, publica com arquivo temporário no diretório do destino e `mv` atômico por arquivo, e restaura a transação em caso de falha.
 - Quando o manifesto introduz um namespace novo, o helper cria somente os diretórios-pai ausentes sob `APP_ROOT`, herdando owner/grupo/modo do ancestral existente; registra cada diretório na transação e só os remove no rollback quando continuam vazios, usando `rmdir` não recursivo.
 - O helper comprova que `.env`, `storage`, symlink de storage e a cópia plana legada permaneceram inalterados.
