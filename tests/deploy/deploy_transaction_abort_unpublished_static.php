@@ -31,8 +31,11 @@ $expect(str_contains($runtime, 'validation_stage'), 'staging pré-transação au
 $expect(str_contains($runtime, "VENDOR_NESTED_VENDOR"), 'guard vendor/vendor no helper ausente');
 $expect(str_contains($runtime, 'assert_aborted_unpublished_transaction'), 'reuso seguro de transação abortada ausente');
 $expect(str_contains($builder, "vendor_nested_vendor"), 'guard vendor/vendor no builder ausente');
-$expect(str_contains($sudoers, 'abort-unpublished --sha [a-f0-9]*'), 'allowlist abort-unpublished ausente');
-$expect(substr_count($sudoers, 'abort-unpublished --sha [a-f0-9]*') === 2, 'abort-unpublished deve ter dois callers');
+$abortShaPattern = str_repeat('[a-f0-9]', 40);
+$expect(str_contains($sudoers, 'manus-admin ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction abort-unpublished --sha ' . $abortShaPattern), 'allowlist abort admin inválida');
+$expect(str_contains($sudoers, 'manus-deploy ALL=(root) NOPASSWD: /usr/local/sbin/voxelpacs-deploy-transaction abort-unpublished --sha ' . $abortShaPattern), 'allowlist abort deploy inválida');
+$expect(!str_contains($sudoers, 'abort-unpublished --sha [a-f0-9]*'), 'curinga indevido na allowlist abort-unpublished');
+$expect(substr_count($sudoers, $abortShaPattern) === 2, 'abort-unpublished deve ter dois argumentos SHA exatos');
 $expect(str_contains($ci, 'deploy_transaction_abort_unpublished_isolated.sh'), 'teste isolado não está no CI');
 $expect(str_contains($docs, 'validated/UNKNOWN'), 'runbook não registra o problema resolvido');
 $expect(str_contains($docs, 'abort-unpublished'), 'runbook não documenta abort-unpublished');
