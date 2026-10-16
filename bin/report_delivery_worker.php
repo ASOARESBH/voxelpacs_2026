@@ -48,6 +48,7 @@ final class LocalDicomDeliveryWorker
         'artifact_unreadable',
         'xml_field_unresolved',
         'accession_unresolved',
+        'patient_gender_invalid',
         'patient_name_raw_unavailable',
         'gateway_policy_rejected',
         'author_signer_mismatch',

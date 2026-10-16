@@ -942,9 +942,12 @@ class ReportDeliveryWorkerRepository
                      worker_eligible_at = NULL, last_error = :error
                  WHERE id = :id AND tenant_id = :tenant_id"
             );
+            $persistedError = ($metadata['reason_category'] ?? '') === 'patient_gender_invalid'
+                ? 'patient_gender_invalid'
+                : $error;
             $update->execute([
                 ':attempt_count' => $attemptBeforeClaim,
-                ':error' => mb_substr($error, 0, 5000),
+                ':error' => mb_substr($persistedError, 0, 5000),
                 ':id' => $jobId,
                 ':tenant_id' => (int) $job['tenant_id'],
             ]);

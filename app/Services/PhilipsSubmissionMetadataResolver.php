@@ -41,7 +41,7 @@ final class PhilipsSubmissionMetadataResolver
             'task_accession_number' => $this->stringOrNull($payload['accession_number'] ?? null),
             'task_document_mimetype' => 'application/pdf',
             'task_patient_birthday' => $this->stringOrNull($payload['patient_birth_date'] ?? null),
-            'task_patient_gender' => $this->stringOrNull($payload['patient_sex'] ?? null),
+            'task_patient_gender' => $this->patientGender($payload),
             'task_patient_issuer' => $this->stringOrNull($payload['issuer_of_patient_id'] ?? null),
             'task_modalities' => $this->stringOrNull($payload['modality'] ?? null),
             'task_author_humanname_family' => null,
@@ -97,7 +97,6 @@ final class PhilipsSubmissionMetadataResolver
         foreach ([
             'task_document_name',
             'task_patient_birthday',
-            'task_patient_gender',
             'task_patient_issuer',
             'task_modalities',
         ] as $field) {
@@ -135,6 +134,46 @@ final class PhilipsSubmissionMetadataResolver
         }
 
         return null;
+    }
+
+    public static function patientSexFromTagsRaw(mixed $tagsRaw): ?string
+    {
+        if (is_string($tagsRaw)) {
+            try {
+                $tagsRaw = json_decode($tagsRaw, true, 32, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                return null;
+            }
+        }
+        if (!is_array($tagsRaw)) {
+            return null;
+        }
+
+        foreach (['PatientSex', '00100040'] as $key) {
+            $value = $tagsRaw[$key] ?? null;
+            if (is_array($value)) {
+                $value = $value['Value'][0] ?? $value['value'] ?? null;
+            }
+            if (!is_scalar($value)) {
+                continue;
+            }
+            return trim((string) $value);
+        }
+
+        return null;
+    }
+
+    /** @param array<string,mixed> $payload */
+    private function patientGender(array $payload): ?string
+    {
+        if (array_key_exists('patient_sex_raw', $payload)) {
+            return $this->stringOrNull($payload['patient_sex_raw']);
+        }
+        $fromTags = self::patientSexFromTagsRaw($payload['tags_raw'] ?? null);
+        if ($fromTags !== null) {
+            return $fromTags;
+        }
+        return $this->stringOrNull($payload['patient_sex'] ?? null);
     }
 
     private function stringOrNull(mixed $value): ?string

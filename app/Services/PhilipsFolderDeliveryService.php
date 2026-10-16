@@ -148,7 +148,9 @@ final class PhilipsFolderDeliveryService implements PhilipsFolderDeliveryPort
                     ? 'patient_name_raw_unavailable'
                     : ($error->field === 'task_accession_number'
                         ? 'accession_unresolved'
-                        : 'xml_field_unresolved');
+                        : ($error->field === 'task_patient_gender'
+                            ? 'patient_gender_invalid'
+                            : 'xml_field_unresolved'));
                 Logger::warning('[PhilipsNonDicomDelivery] PHILIPS_XML_FIELD_UNRESOLVED', [
                     'job_id' => $jobId,
                     'stage' => 'xml_generation',

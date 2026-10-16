@@ -40,6 +40,24 @@ expect_resolver($resolved['task_author_humanname_family'] === null, 'Referring p
 expect_resolver($resolved['task_author_humanname_given'] === null, 'Referring physician must not become author given');
 expect_resolver(!array_key_exists('task_author_id', $resolved), 'Metadata must not carry legacy author ID');
 expect_resolver(!array_key_exists('untrusted', $resolved), 'Unknown payload keys must not enter XML input');
+$rawGender = $resolver->resolve([
+    'patient_name_dicom' => 'GENDER^RAW',
+    'patient_sex_raw' => ' o ',
+    'patient_sex' => 'M',
+]);
+expect_resolver($rawGender['task_patient_gender'] === 'o', 'Frozen raw PatientSex must have precedence over normalized fallback');
+$tagGender = $resolver->resolve([
+    'patient_name_dicom' => 'GENDER^TAGS',
+    'tags_raw' => json_encode(['PatientSex' => ' f '], JSON_THROW_ON_ERROR),
+    'patient_sex' => 'M',
+]);
+expect_resolver($tagGender['task_patient_gender'] === 'f', 'tags_raw PatientSex must precede the normalized study field');
+$emptyGender = $resolver->resolve([
+    'patient_name_dicom' => 'GENDER^EMPTY',
+    'patient_sex_raw' => '',
+    'patient_sex' => '',
+]);
+expect_resolver($emptyGender['task_patient_gender'] === '', 'Absent PatientSex must remain empty');
 $plainName = $resolver->resolve(['patient_name_dicom' => 'NOME COMPLETO SEM CIRCUNFLEXO']);
 expect_resolver($plainName['task_patient_humanname_family'] === 'NOME COMPLETO SEM CIRCUNFLEXO', 'Flat DICOM PatientName must remain intact in Family');
 expect_resolver($plainName['task_patient_humanname_given'] === '', 'Flat DICOM PatientName must have empty Given');

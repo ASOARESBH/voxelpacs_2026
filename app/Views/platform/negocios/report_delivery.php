@@ -346,7 +346,8 @@ $transportLabels = [
                                     <td><?= $escape((string) ($job['destination_name'] ?? '—')) ?></td>
                                     <td><?= (int) ($job['report_id'] ?? 0) ?>/<?= (int) ($job['report_version'] ?? 0) ?></td>
                                     <td><code><?= $escape((string) ($job['transport'] ?? '—')) ?></code></td>
-                                    <td><span class="badge text-bg-<?= $jobStatus === 'processing' ? 'warning' : ($jobStatus === 'delivered' ? 'success' : 'secondary') ?>"><?= $escape($jobStatus !== '' ? $jobStatus : 'unknown') ?></span></td>
+                                    <?php $jobFailureLabel = (string) ($job['last_error'] ?? '') === 'patient_gender_invalid' ? t('delivery_hub.jobs.falha_genero_invalido') : ''; ?>
+                                    <td><span class="badge text-bg-<?= $jobStatus === 'processing' ? 'warning' : ($jobStatus === 'delivered' ? 'success' : 'secondary') ?>"><?= $escape($jobStatus !== '' ? $jobStatus : 'unknown') ?></span><?php if ($jobFailureLabel !== ''): ?><div class="small text-danger mt-1"><?= $escape($jobFailureLabel) ?></div><?php endif; ?></td>
                                     <td class="text-end">
                                         <?php if ((int) ($job['manual_retry_eligible'] ?? 0) === 1 && $jobId > 0): ?>
                                             <form method="post" action="/platform/negocios/<?= (int) $tenant['id'] ?>/report-delivery/jobs/<?= $jobId ?>/retry-homologation" class="d-inline manual-homologation-retry-form">

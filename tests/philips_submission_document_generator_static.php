@@ -66,6 +66,23 @@ expect_true(str_contains($first->content, '<task_patient_birthday>19800102</task
 expect_true(str_contains($first->content, '<task_document_mimetype>application/pdf</task_document_mimetype>'), 'MIME must be PDF');
 expect_true(str_contains($first->content, '<task_document_type>11502-2</task_document_type>'), 'Document type must be serialized');
 
+$emptyGenderInput = $input;
+$emptyGenderInput['task_patient_gender'] = '';
+$emptyGenderDocument = $generator->generate($emptyGenderInput);
+expect_true(str_contains($emptyGenderDocument->content, '<task_patient_gender></task_patient_gender>'), 'Empty PatientSex must serialize as an empty XML node');
+$nullGenderInput = $input;
+$nullGenderInput['task_patient_gender'] = null;
+$nullGenderDocument = $generator->generate($nullGenderInput);
+expect_true(str_contains($nullGenderDocument->content, '<task_patient_gender></task_patient_gender>'), 'Null PatientSex must remain empty without a synthetic value');
+$invalidGenderInput = $input;
+$invalidGenderInput['task_patient_gender'] = 'X';
+try {
+    $generator->generate($invalidGenderInput);
+    expect_true(false, 'Invalid PatientSex must fail closed');
+} catch (PhilipsXmlFieldUnresolvedException $error) {
+    expect_true($error->field === 'task_patient_gender', 'Invalid PatientSex must identify the technical field');
+}
+
 $flatAuthorInput = $input;
 $flatAuthorInput['task_author_humanname_family'] = 'Full Requesting Physician Name';
 $flatAuthorInput['task_author_humanname_given'] = '';

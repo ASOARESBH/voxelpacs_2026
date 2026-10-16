@@ -40,7 +40,7 @@ final class PhilipsSubmissionDocumentGenerator
             'task_accession_number' => $this->requiredText($input, 'task_accession_number'),
             'task_document_mimetype' => $this->requiredText($input, 'task_document_mimetype'),
             'task_patient_birthday' => $this->normalizeBirthday($input, 'task_patient_birthday'),
-            'task_patient_gender' => $this->normalizeGender($input, 'task_patient_gender'),
+            'task_patient_gender' => $this->normalizeOptionalGender($input, 'task_patient_gender'),
             'task_site_id' => $this->requiredText($input, 'task_site_id'),
             'task_patient_issuer' => $this->requiredText($input, 'task_patient_issuer'),
             'task_author_id' => $this->requiredText($input, 'task_author_id'),
@@ -250,9 +250,18 @@ final class PhilipsSubmissionDocumentGenerator
     }
 
     /** @param array<string,mixed> $input */
-    private function normalizeGender(array $input, string $field): string
+    private function normalizeOptionalGender(array $input, string $field): string
     {
-        $value = strtoupper($this->requiredText($input, $field));
+        if (!array_key_exists($field, $input) || $input[$field] === null) {
+            return '';
+        }
+        if (!is_string($input[$field])) {
+            throw new PhilipsXmlFieldUnresolvedException($field);
+        }
+        $value = strtoupper(trim($input[$field]));
+        if ($value === '') {
+            return '';
+        }
         if (!in_array($value, ['M', 'F', 'O'], true)) {
             throw new PhilipsXmlFieldUnresolvedException($field);
         }
