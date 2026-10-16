@@ -10,6 +10,7 @@ window.VoxelReports = window.VoxelReports || {};
 
 window.VoxelReports.editor = (function () {
     let quill = null;
+    let presentationOptions = { removeEmptyParagraphs: false };
 
     const SECOES = ['exame', 'tecnica', 'achados', 'conclusao', 'recomendacao'];
     const EMPTY_HTML = '<p><br></p>';
@@ -22,6 +23,9 @@ window.VoxelReports.editor = (function () {
     };
 
     function init(config) {
+        presentationOptions = {
+            removeEmptyParagraphs: config?.removeEmptyParagraphs === true,
+        };
         const container = typeof document !== 'undefined'
             ? document.getElementById('editor-container')
             : null;
@@ -90,7 +94,9 @@ window.VoxelReports.editor = (function () {
 
     function normalizeClinicalHtml(html) {
         const normalizer = window.VoxelQuill?.factory?.normalizeClinicalHtml;
-        return typeof normalizer === 'function' ? normalizer(html) : String(html || '').trim();
+        return typeof normalizer === 'function'
+            ? normalizer(html, presentationOptions)
+            : String(html || '').trim();
     }
 
     function normalizeCurrentContent() {

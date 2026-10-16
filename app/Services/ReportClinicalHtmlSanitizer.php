@@ -92,9 +92,9 @@ final class ReportClinicalHtmlSanitizer
      * renderizado novamente; `sanitize()` permanece compatível para callers
      * que precisam somente da allowlist de segurança.
      */
-    public static function sanitizeAndNormalize(string $html): string
+    public static function sanitizeAndNormalize(string $html, bool $removeEmptyParagraphs = false): string
     {
-        return self::normalize(self::sanitize($html));
+        return self::normalize(self::sanitize($html), $removeEmptyParagraphs);
     }
 
     /**
@@ -103,7 +103,7 @@ final class ReportClinicalHtmlSanitizer
      * espaços invisíveis normalizados e margens de conteúdo colado já
      * eliminadas pela sanitização. Texto, marcação clínica e alinhamento ficam.
      */
-    public static function normalize(string $html): string
+    public static function normalize(string $html, bool $removeEmptyParagraphs = false): string
     {
         $html = trim($html);
         if ($html === '') {
@@ -111,7 +111,7 @@ final class ReportClinicalHtmlSanitizer
         }
 
         if (!class_exists(\DOMDocument::class)) {
-            return self::normalizeFallback($html);
+            return self::normalizeFallback($html, $removeEmptyParagraphs);
         }
 
         $dom = new \DOMDocument('1.0', 'UTF-8');
@@ -124,15 +124,15 @@ final class ReportClinicalHtmlSanitizer
         libxml_use_internal_errors($previous);
 
         if (!$loaded) {
-            return self::normalizeFallback($html);
+            return self::normalizeFallback($html, $removeEmptyParagraphs);
         }
 
         $root = $dom->getElementById('voxel-clinical-normalize-root');
         if (!$root instanceof \DOMElement) {
-            return self::normalizeFallback($html);
+            return self::normalizeFallback($html, $removeEmptyParagraphs);
         }
 
-        self::normalizeChildren($root);
+        self::normalizeChildren($root, $removeEmptyParagraphs);
 
         $output = '';
         foreach ($root->childNodes as $child) {
@@ -168,7 +168,7 @@ final class ReportClinicalHtmlSanitizer
         return $sections;
     }
 
-    private static function normalizeChildren(\DOMNode $parent): void
+    private static function normalizeChildren(\DOMNode $parent, bool $removeEmptyParagraphs = false): void
     {
         $children = [];
         foreach ($parent->childNodes as $child) {
@@ -189,7 +189,7 @@ final class ReportClinicalHtmlSanitizer
                 continue;
             }
 
-            self::normalizeChildren($child);
+            self::normalizeChildren($child, $removeEmptyParagraphs);
             $tag = strtolower($child->tagName);
 
             if ($tag === 'br') {
@@ -203,6 +203,11 @@ final class ReportClinicalHtmlSanitizer
 
             if (in_array($tag, ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'th', 'td'], true)) {
                 self::trimElementBoundaries($child);
+            }
+
+            if ($tag === 'p' && self::isEmptyParagraph($child) && $removeEmptyParagraphs) {
+                $parent->removeChild($child);
+                continue;
             }
 
             if ($tag === 'p' && self::isEmptyParagraph($child)) {
@@ -273,13 +278,17 @@ final class ReportClinicalHtmlSanitizer
         return true;
     }
 
-    private static function normalizeFallback(string $html): string
+    private static function normalizeFallback(string $html, bool $removeEmptyParagraphs = false): string
     {
         $html = str_replace(["\xC2\xA0", "&nbsp;", "&#160;", "&#xA0;", "&#xa0;"], ' ', $html);
         $html = preg_replace('/[\x{200B}\x{FEFF}]/u', ' ', $html) ?? $html;
         $html = preg_replace('/(?:<br\s*\/?>\s*){2,}/iu', '<br>', $html) ?? $html;
         $emptyParagraph = '<p\b[^>]*>\s*(?:(?:<br\s*\/?>)\s*)?</p>';
-        $html = preg_replace('/(?:' . $emptyParagraph . '\s*){2,}/iu', '<p><br></p>', $html) ?? $html;
+        if ($removeEmptyParagraphs) {
+            $html = preg_replace('/' . $emptyParagraph . '/iu', '', $html) ?? $html;
+        } else {
+            $html = preg_replace('/(?:' . $emptyParagraph . '\s*){2,}/iu', '<p><br></p>', $html) ?? $html;
+        }
         $html = preg_replace('/\s+style\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/iu', '', $html) ?? $html;
         $html = preg_replace('/(<(?:p|h[1-6]|li|th|td)\b[^>]*>)\s+/iu', '$1', $html) ?? $html;
         $html = preg_replace('/\s+(<\/(?:p|h[1-6]|li|th|td)>)/iu', '$1', $html) ?? $html;

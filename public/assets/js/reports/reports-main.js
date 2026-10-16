@@ -21,6 +21,7 @@ window.VoxelReports.main = (function () {
             status: app.dataset.status,
             signatureMode: app.dataset.signatureMode || 'ambos',
             chatPending: app.dataset.chatPending === '1',
+            removeEmptyParagraphs: app.dataset.removeEmptyParagraphs === '1',
             csrf: app.dataset.csrf,
         };
     }

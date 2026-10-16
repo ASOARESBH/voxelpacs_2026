@@ -85,6 +85,8 @@ $registroEmpresaNumero = trim((string) ($r['registro_crm_numero'] ?? ''));
 $registroEmpresa = $registroEmpresaNumero === '' ? '' : 'CRM' . ($registroEmpresaUf !== '' ? '-' . $registroEmpresaUf : '') . ' ' . $registroEmpresaNumero;
 $assinadoEmBrasilia = $formatarDataHoraBrasilia($r['assinado_em'] ?? null);
 $tokenValidacao = strtolower(trim((string) ($r['assinatura_hash'] ?? '')));
+$patientMetaAlignmentRight = is_array($presentationPolicy ?? null)
+    && (($presentationPolicy['patient_meta_alignment'] ?? 'left') === 'right');
 
 // O rodapé identifica a unidade que efetivamente realizou o exame. Dados vazios
 // não geram separadores soltos nem substituem a identificação da empresa médica.
@@ -97,6 +99,21 @@ $unidadeEnderecoPartes = array_filter([
     trim((string) ($r['unidade_cidade'] ?? '') . (($r['unidade_estado'] ?? '') !== '' ? '/' . $r['unidade_estado'] : '')),
 ]);
 $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
+$quebrarRodape = static function (string $valor): string {
+    $valor = trim($valor);
+    if ($valor === '') {
+        return '';
+    }
+    $componentes = preg_split('//u', $valor, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    if (count($componentes) <= 80) {
+        return htmlspecialchars($valor, ENT_QUOTES, 'UTF-8');
+    }
+    $blocos = array_chunk($componentes, 24);
+    return implode('&#8203;', array_map(
+        static fn (array $bloco): string => htmlspecialchars(implode('', $bloco), ENT_QUOTES, 'UTF-8'),
+        $blocos
+    ));
+};
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -128,10 +145,11 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
 
         .pdf-patient { display: table; table-layout: fixed; width: 100%; margin-top: 11px; padding: 0 0 11px; border-bottom: 1px solid #777; }
         .pdf-patient-col { display: table-cell; vertical-align: top; }
-        .pdf-patient-col:first-child { width: 56%; padding-right: 8px; }
+        .pdf-patient-col:first-child { padding-right: 8px; }
         .pdf-patient-col:last-child { width: 44%; min-width: 0; padding-left: 8px; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
+        .pdf-patient-col-right { text-align: right !important; }
         .pdf-patient-line { min-height: 17px; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
-        .pdf-patient-line strong { font-weight: 700; }
+        .pdf-patient-line strong { font-weight: 700; white-space: nowrap; }
 
         .pdf-report-content { width: 100%; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; color: #171717; font-size: 13px; line-height: 1.62; text-align: left; }
         .pdf-clinical-section { margin: 0 0 8px; page-break-inside: avoid; }
@@ -167,9 +185,9 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         .pdf-company-label { font-weight: 700; }
         .pdf-hash { max-width: 490px; margin: 3px auto 0; color: #737373; font-size: 6.5px; line-height: 1.25; overflow-wrap: anywhere; }
 
-        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; line-height: 1.45; text-align: center; }
-        .pdf-footer-name { color: #404040; font-weight: 700; }
-        .pdf-footer-details { margin-top: 2px; }
+        .pdf-footer { margin-top: 12px; padding-top: 7px; border-top: 1px solid #e5e5e5; color: #525252; font-size: 7px; line-height: 1.45; text-align: center; overflow-wrap: anywhere; word-break: break-all; }
+        .pdf-footer-name { color: #404040; font-weight: 700; overflow-wrap: anywhere; word-break: break-all; }
+        .pdf-footer-details { margin-top: 2px; max-width: 100%; overflow-wrap: anywhere; word-break: break-all; }
 
         @media (max-width: 680px) {
             .pdf-page { min-height: 0; margin: 0; padding: 22px; box-shadow: none; }
@@ -192,6 +210,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
             .pdf-footer { margin-top: 12px; }
             /* Dompdf calcula a largura do flex item sem descontar o padding do A4. */
             .pdf-header, .pdf-patient { width: 174mm; max-width: 174mm; min-width: 0; }
+            .pdf-footer { width: 174mm; max-width: 174mm; min-width: 0; }
             .pdf-report-content, .pdf-clinical-section-content { width: 174mm; max-width: 174mm; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.62; }
             .pdf-clinical-section-title { font-size: 12px; font-weight: 700; }
         }
@@ -239,7 +258,7 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
                 <div class="pdf-patient-line"><strong>Data de Nascimento:</strong> <?= $formatarData($r['patient_birth_date'] ?? null) ?></div>
                 <div class="pdf-patient-line"><strong>Médico(a) Solicitante:</strong> <?= htmlspecialchars($solicitante, ENT_QUOTES) ?></div>
             </div>
-            <div class="pdf-patient-col">
+            <div class="pdf-patient-col<?= $patientMetaAlignmentRight ? ' pdf-patient-col-right' : '' ?>">
                 <div class="pdf-patient-line"><strong>ID do Paciente:</strong> <?= htmlspecialchars((string) ($r['patient_id'] ?? '—'), ENT_QUOTES) ?></div>
                 <div class="pdf-patient-line"><strong>Data do Exame:</strong> <?= $formatarData($r['study_date'] ?? null) ?></div>
                 <div class="pdf-patient-line"><strong>Prontuário:</strong> <?= htmlspecialchars((string) ($r['accession_number'] ?? '—'), ENT_QUOTES) ?></div>
@@ -291,14 +310,14 @@ $unidadeEndereco = implode(' — ', $unidadeEnderecoPartes);
         </section>
 
         <footer class="pdf-footer" aria-label="Identificação da unidade">
-            <div class="pdf-footer-name"><?= htmlspecialchars($unidadeNome, ENT_QUOTES) ?></div>
+            <div class="pdf-footer-name"><?= $quebrarRodape($unidadeNome) ?></div>
             <?php if ($unidadeCnpj !== '' || $unidadeTelefone !== '' || $unidadeEndereco !== ''): ?>
                 <div class="pdf-footer-details">
-                    <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= htmlspecialchars($unidadeCnpj, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeCnpj !== ''): ?>CNPJ <?= $quebrarRodape($unidadeCnpj) ?><?php endif; ?>
                     <?php if ($unidadeCnpj !== '' && ($unidadeTelefone !== '' || $unidadeEndereco !== '')): ?> · <?php endif; ?>
-                    <?php if ($unidadeTelefone !== ''): ?>Telefone <?= htmlspecialchars($unidadeTelefone, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeTelefone !== ''): ?>Telefone <?= $quebrarRodape($unidadeTelefone) ?><?php endif; ?>
                     <?php if ($unidadeTelefone !== '' && $unidadeEndereco !== ''): ?> · <?php endif; ?>
-                    <?php if ($unidadeEndereco !== ''): ?><?= htmlspecialchars($unidadeEndereco, ENT_QUOTES) ?><?php endif; ?>
+                    <?php if ($unidadeEndereco !== ''): ?><?= $quebrarRodape($unidadeEndereco) ?><?php endif; ?>
                 </div>
             <?php endif; ?>
         </footer>
