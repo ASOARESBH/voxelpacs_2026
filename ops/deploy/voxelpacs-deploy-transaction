@@ -642,6 +642,7 @@ runtime_matches_backup() {
   /usr/bin/cut -f 1 "$manifest" > "$backup_list"
   if ! /usr/bin/cmp -s "$runtime_list" "$backup_list"; then
     remove_runtime_match_temps "$manifest" "$runtime_list" "$backup_list"
+    return 1
   fi
   while IFS=$'\t' read -r rel backup_hash; do
     if [[ -z "$rel" || ! "$backup_hash" =~ ^[0-9a-f]{64}$ ]]; then
