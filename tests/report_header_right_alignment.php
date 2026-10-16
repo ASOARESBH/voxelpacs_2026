@@ -26,7 +26,8 @@ $render = static function (array $overrides = [], string $alignment = 'right') u
         'medico_nome' => 'MEDICO TESTE',
         'public_token' => 'synthetic-token',
         'assinado_em' => '2026-10-16 10:00:00',
-        'unidade_personalizado_qrcode_habilitado' => 0,
+        'unidade_personalizado_qrcode_habilitado' => 1,
+        'unidade_personalizado_qrcode_url' => 'https://synthetic.voxelpacs.test/validation',
     ], $overrides);
     $presentationPolicy = ['patient_meta_alignment' => $alignment];
     $corpoLaudo = '<p>Conteúdo sintético para validação visual.</p>';
@@ -77,8 +78,6 @@ try {
     $bboxOutput = [];
     exec('pdftotext -bbox ' . escapeshellarg($path) . ' ' . escapeshellarg($bboxPath) . ' 2>/dev/null', $bboxOutput, $bboxCode);
     $bbox = is_file($bboxPath) ? (string) file_get_contents($bboxPath) : '';
-    $rightEdge = 595.28 - (18 / 25.4 * 72);
-    $unitRight = null;
     $patientRight = null;
     if ($bboxCode === 0 && $bbox !== '') {
         preg_match_all('/<word\b([^>]*)>([^<]+)<\/word>/u', $bbox, $matches, PREG_SET_ORDER);
@@ -91,19 +90,34 @@ try {
             $xMax = (float) $xMaxMatch[1];
             $yMin = (float) $yMinMatch[1];
             $word = trim(html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-            if ($word === 'UNIDADE_SINTETICA' && $yMin < 100.0) {
-                $unitRight = $xMax;
-            }
             if (str_starts_with($word, 'PRONTUARIO-LONGO-03')) {
                 $patientRight = $xMax;
             }
         }
     }
-    $assert($unitRight !== null, 'Não foi localizado o texto sintético da unidade no bbox.');
     $assert($patientRight !== null, 'Não foi localizado o valor longo da coluna direita no bbox.');
-    if ($unitRight !== null && $patientRight !== null) {
-        $assert(abs($unitRight - $patientRight) <= 2.0, sprintf('Bordas direitas divergentes: unidade %.2f / paciente %.2f.', $unitRight, $patientRight));
-        $assert(abs($unitRight - $rightEdge) <= 2.0, sprintf('A borda do nome da unidade não coincide com a margem útil: %.2f / %.2f.', $unitRight, $rightEdge));
+    $xmlDir = sys_get_temp_dir() . '/voxelpacs-header-xml-' . bin2hex(random_bytes(4));
+    if (!mkdir($xmlDir, 0700, true)) {
+        throw new RuntimeException('Não foi possível criar o diretório XML temporário.');
+    }
+    $xmlPrefix = $xmlDir . '/render';
+    $xmlOutput = [];
+    exec('pdftohtml -xml -hidden -q ' . escapeshellarg($path) . ' ' . escapeshellarg($xmlPrefix) . ' 2>/dev/null', $xmlOutput, $xmlCode);
+    $xml = is_file($xmlPrefix . '.xml') ? (string) file_get_contents($xmlPrefix . '.xml') : '';
+    $imageRight = null;
+    $pageWidth = null;
+    if ($xmlCode === 0 && $xml !== '') {
+        if (preg_match('/<page\b[^>]*width="([0-9.]+)"/', $xml, $pageMatch) === 1) {
+            $pageWidth = (float) $pageMatch[1];
+        }
+        if (preg_match('/<image\b[^>]*left="([0-9.]+)"[^>]*width="([0-9.]+)"/', $xml, $imageMatch) === 1) {
+            $imageRight = (float) $imageMatch[1] + (float) $imageMatch[2];
+        }
+    }
+    $assert($imageRight !== null && $pageWidth !== null, 'Não foi localizada a geometria do QR institucional.');
+    if ($imageRight !== null && $pageWidth !== null && $patientRight !== null) {
+        $patientRightPixels = $patientRight * $pageWidth / 595.28;
+        $assert(abs($imageRight - $patientRightPixels) <= 3.0, sprintf('Bordas direitas divergentes: QR %.2f / paciente %.2f px.', $imageRight, $patientRightPixels));
     }
 
     $layoutText = [];
@@ -113,6 +127,12 @@ try {
 } finally {
     @unlink($bboxPath ?? '');
     @unlink($path);
+    if (isset($xmlDir) && is_dir($xmlDir)) {
+        foreach (glob($xmlDir . '/*') ?: [] as $temporaryFile) {
+            @unlink($temporaryFile);
+        }
+        @rmdir($xmlDir);
+    }
 }
 
 if ($failures !== []) {
