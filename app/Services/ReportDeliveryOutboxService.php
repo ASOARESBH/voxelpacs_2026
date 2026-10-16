@@ -230,6 +230,8 @@ class ReportDeliveryOutboxService
             // Alias mantido para jobs históricos e snapshots de requests antigas.
             'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($estudo->tags_raw ?? null),
             'patient_birth_date' => (string) ($estudo->patient_birth_date ?? ''),
+            'patient_sex_raw' => PhilipsSubmissionMetadataResolver::patientSexFromTagsRaw($estudo->tags_raw ?? null)
+                ?? (string) ($estudo->patient_sex ?? ''),
             'patient_sex' => (string) ($estudo->patient_sex ?? ''),
             'study_date' => (string) ($estudo->study_date ?? ''),
             'study_time' => (string) ($estudo->study_time ?? ''),

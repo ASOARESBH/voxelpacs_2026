@@ -33,6 +33,7 @@ Sistema PACS multi-tenant (SaaS — "Negócios" = tenants/clientes) com armazena
 - Nunca alterar banco sem migration (ver `patterns/padrao-sql.md`).
 - Nunca colocar lógica de negócio em Controller (ver `patterns/padrao-controller.md`).
 - Nunca quebrar compatibilidade DICOM (Study/Series/Instance/SOP UID/Transfer Syntax) sem validação explícita.
+- Em integrações de devolutiva, campos demográficos devem espelhar o DICOM cru; ausência permanece vazia e nunca recebe inferência ou valor sintético.
 - Toda alteração em integração HL7 é tratada como alto risco por padrão.
 
 ## Como este arquivo se mantém sincronizado

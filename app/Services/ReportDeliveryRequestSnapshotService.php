@@ -108,6 +108,8 @@ final class ReportDeliveryRequestSnapshotService
             // Alias legado somente quando o PatientName DICOM cru existe.
             'patient_name_dicom' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw($snapshot['tags_raw'] ?? null),
             'patient_birth_date' => (string) ($snapshot['patient_birth_date'] ?? ''),
+            'patient_sex_raw' => PhilipsSubmissionMetadataResolver::patientSexFromTagsRaw($snapshot['tags_raw'] ?? null)
+                ?? (string) ($snapshot['patient_sex'] ?? ''),
             'patient_sex' => (string) ($snapshot['patient_sex'] ?? ''),
             'study_date' => (string) ($snapshot['study_date'] ?? ''),
             'study_time' => (string) ($snapshot['study_time'] ?? ''),

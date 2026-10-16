@@ -56,8 +56,10 @@ expect_automatic_payload(!str_contains($outbox, "'controlled_production'"), 'Con
 expect_automatic_payload(str_contains($outbox, 'createOutboxIfAbsent('), 'Outbox idempotent creation must remain in place.');
 expect_automatic_payload(str_contains($outbox, 'createJobs('), 'Job creation must remain in the existing path.');
 expect_automatic_payload(str_contains($outbox, "'patient_name_raw' =>"), 'Automatic payload must freeze the raw DICOM PatientName.');
+expect_automatic_payload(str_contains($outbox, "'patient_sex_raw' => PhilipsSubmissionMetadataResolver::patientSexFromTagsRaw"), 'Automatic payload must freeze raw PatientSex before the normalized fallback.');
 expect_automatic_payload(!str_contains((string) $snapshot, "?? (string) (\$snapshot['patient_name']"), 'Display PatientName must not be a raw fallback.');
 expect_automatic_payload(str_contains((string) $snapshot, "'patient_name_raw' => PhilipsSubmissionMetadataResolver::patientNameFromTagsRaw"), 'Snapshot must derive raw PatientName only from DICOM tags.');
+expect_automatic_payload(str_contains((string) $snapshot, "'patient_sex_raw' => PhilipsSubmissionMetadataResolver::patientSexFromTagsRaw"), 'Request snapshot must freeze raw PatientSex before the normalized fallback.');
 foreach (['patient_name_family', 'patient_name_given', 'patient_name_middle', 'patient_name_source'] as $field) {
     expect_automatic_payload(str_contains($outbox, "\$payload['{$field}']"), "Automatic payload must freeze {$field} from report_versions.");
 }
