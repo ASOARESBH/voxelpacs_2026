@@ -169,7 +169,23 @@ kill "$lock_pid" 2>/dev/null || true
 wait "$lock_pid" 2>/dev/null || true
 test ! -e "$transaction_root/$lock_sha/status"
 
-# 5. installed.php versus source-sha/manifest: qualquer divergência recusa.
+# 5. file-set divergente: recusa sem continuar com manifesto apagado.
+fileset_sha='eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+make_tx "$fileset_sha"
+printf 'unexpected-runtime-file\n' > "$app_root/public/unexpected-runtime-file.php"
+if output="$(run_tx abort-unpublished --sha "$fileset_sha" 2>&1)"; then
+  printf 'expected file-set drift block\n%s\n' "$output" >&2
+  exit 1
+fi
+grep -Fxq 'REASON=RUNTIME_DRIFT_DETECTED' <<<"$output"
+if grep -Fq 'No such file or directory' <<<"$output"; then
+  printf 'unexpected temporary-file error\n%s\n' "$output" >&2
+  exit 1
+fi
+rm -f "$app_root/public/unexpected-runtime-file.php"
+test ! -e "$transaction_root/$fileset_sha/status"
+
+# 6. installed.php versus source-sha/manifest: qualquer divergência recusa.
 marker_sha='dddddddddddddddddddddddddddddddddddddddd'
 make_tx "$marker_sha"
 printf '%s\n' "$marker_sha" > "$backup_root/$previous_sha/source-sha"
