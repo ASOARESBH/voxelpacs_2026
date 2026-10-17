@@ -70,7 +70,7 @@ $render = static function (array $overrides = [], string $alignment = 'right') u
     'unidade_estado' => 'MG',
 ]);
 $defaultHtml = $render([], 'left')[0];
-$assert(!str_contains($defaultHtml, '<div class="pdf-patient-col pdf-patient-col-right">'), 'O template compartilhado não pode receber right sem override da unidade 33.');
+$assert(!str_contains($defaultHtml, '<div class="pdf-patient-col pdf-patient-col-right">'), 'O fixture explicitamente left deve permanecer sem alinhamento right.');
 $assert(str_contains($html, '<div class="pdf-patient-col pdf-patient-col-right">'), 'A política right não chegou à célula direita.');
 $assert(str_contains($html, 'text-align: right !important'), 'A célula direita não tem alinhamento right.');
 $assert(str_contains($html, 'white-space: nowrap'), 'Os rótulos não estão protegidos contra quebra.');

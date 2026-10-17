@@ -1,4 +1,4 @@
-# Módulo — Template de Laudo (layout visual, por Unidade)
+# Módulo — Template de Laudo (layout visual, resolução por template)
 
 ## ⚠️ Correção 2026-08-11 (mesmo dia): implementado nos DOIS sistemas de Unidade
 
@@ -39,13 +39,13 @@ A rota de edição (`reports/show.php`/`partials/_editor.php`) continua usando o
 
 Nenhum template tem coluna de "config" JSON — o layout de cada um vive direto no PHP/CSS do partial. Com 4 modelos fixos, um motor de layout dirigido por configuração seria complexidade sem necessidade real; **se o catálogo crescer para customização por unidade (cores, texto de rodapé), essa é a hora de reconsiderar** um `config` estruturado.
 
-### Compactação visual por unidade (2026-10-16)
+### Compactação visual por template (2026-10-17)
 
-`app/Config/ReportPresentationConfig.php` mantém uma política pequena e versionada por ID de unidade, sem migration. Para a unidade `33`, `remove_empty_paragraphs=true`: o editor Quill e o dispatcher PDF removem somente parágrafos estruturalmente vazios (`<p><br></p>`/equivalentes), preservando texto, acentos, marcação clínica, fontes, tamanhos, margens e assinaturas. A mesma política é aplicada quando uma Máscara é carregada, no paste, no autosave e em novos snapshots/revisões PDF.
+`app/Config/ReportPresentationConfig.php` mantém uma política pequena e versionada pelo código do template visual, sem migration. O `moderno_lateral` ativa `remove_empty_paragraphs=true`: o editor Quill e o dispatcher PDF removem somente parágrafos estruturalmente vazios (`<p><br></p>`/equivalentes), preservando texto, acentos, marcação clínica, fontes, tamanhos, margens e assinaturas. A mesma política é aplicada quando uma Máscara é carregada, no paste, no autosave e em novos snapshots/revisões PDF.
 
-O ID é resolvido de forma tenant-scoped pelo vínculo `bi_unidades` (`rich_unit_id`) ou pelo registro `bi_negocio_institution_names` (`institution_unit_id`), mantendo o fallback desativado para as demais unidades. `rich_unit_id` existente no código é apenas o identificador da unidade vinculada — **não foi criado nem ativado um modo separado de conteúdo rico**. Snapshots PDF já persistidos não são re-renderizados nem alterados automaticamente; uma revisão visual explícita seguirá a política vigente no momento da revisão.
+O código da política é o mesmo código efetivamente resolvido por `ReportLayoutService` e usado para escolher o partial. Assim, todas as unidades/instituições que compartilham `moderno_lateral` recebem o mesmo comportamento; `classico_centralizado`, `corporativo_faixa`, `minimalista` e `personalizado` permanecem no padrão. Os antigos métodos por ID de unidade continuam apenas como compatibilidade e não selecionam política visual. Snapshots PDF já persistidos não são re-renderizados nem alterados automaticamente; uma revisão visual explícita seguirá a política vigente no momento da revisão.
 
-Na mesma política, a unidade `33` usa `patient_meta_alignment=right` no cabeçalho `moderno_lateral`: a célula direita da identificação do paciente/exame encosta à margem direita útil e mantém os rótulos sem quebra. A célula esquerda ocupa o espaço restante. Os IDs institucionais `32`, `36` e `37` compartilham o mesmo template, mas não recebem essa opção porque o override é resolvido pelo ID da unidade e permanece restrito a `33`. Snapshots antigos e o fluxo Non-DICOM permanecem inalterados.
+Na mesma política, `moderno_lateral` usa `patient_meta_alignment=right` no cabeçalho: a célula direita da identificação do paciente/exame encosta à margem direita útil e mantém os rótulos sem quebra. A célula esquerda ocupa o espaço restante. O template compartilhado recebe a regra de forma uniforme, sem depender de IDs de unidade. Snapshots antigos e o fluxo Non-DICOM permanecem inalterados.
 
 ### Contrato visual — Moderno Lateral (Orix)
 

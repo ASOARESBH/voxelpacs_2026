@@ -9,7 +9,10 @@ if (!is_file($autoload)) {
     exit(0);
 }
 require_once $autoload;
+require_once $root . '/app/Config/ReportPresentationConfig.php';
 require_once $root . '/app/Services/ReportClinicalHtmlSanitizer.php';
+
+use App\Config\ReportPresentationConfig;
 
 $common = [
     'unidade_nome_fantasia' => 'UNIDADE TESTE',
@@ -26,7 +29,7 @@ $common = [
     'institution_unit_id' => 0,
 ];
 $r = $common;
-$presentationPolicy = ['patient_meta_alignment' => 'right'];
+$presentationPolicy = ReportPresentationConfig::forTemplate('moderno_lateral');
 $corpoLaudo = \App\Services\ReportClinicalHtmlSanitizer::sanitizeAndNormalize(
     '<p>Primeira linha clínica.</p><p><br></p><p>&nbsp;</p><p>Segunda linha clínica.</p>',
     true
@@ -40,6 +43,13 @@ $portalPatientPdf = true;
 $reportReturnUrl = '/estudos';
 $removeEmptyParagraphs = true;
 $failures = [];
+
+if (ReportPresentationConfig::forTemplate('classico_centralizado')['remove_empty_paragraphs'] !== false) {
+    $failures[] = 'classico_centralizado: política compacta indevida';
+}
+if (ReportPresentationConfig::forTemplate('moderno_lateral')['patient_meta_alignment'] !== 'right') {
+    $failures[] = 'moderno_lateral: política right ausente';
+}
 
 $templates = [
     'classico_centralizado',
