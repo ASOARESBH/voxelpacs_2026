@@ -50,9 +50,8 @@ $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportCont
 $acaoPdfIndisponivel = !$laudoPossuiConteudo;
 $empresaImpressao = trim((string) (($reportVisual['unidade_nome'] ?? '') ?: ($estudo->institution_name ?? '')));
 $logoEmpresaImpressao = trim((string) ($reportVisual['unidade_logo_path'] ?? ''));
-$reportPresentationPolicy = \App\Config\ReportPresentationConfig::forUnitIds(
-    isset($reportVisual['rich_unit_id']) ? (int) $reportVisual['rich_unit_id'] : null,
-    isset($reportVisual['institution_unit_id']) ? (int) $reportVisual['institution_unit_id'] : null,
+$reportPresentationPolicy = \App\Config\ReportPresentationConfig::forTemplate(
+    isset($reportLayoutCodigo) ? (string) $reportLayoutCodigo : null,
 );
 ?>
 <!DOCTYPE html>

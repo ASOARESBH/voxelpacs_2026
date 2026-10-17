@@ -5,43 +5,56 @@ declare(strict_types=1);
 namespace App\Config;
 
 /**
- * Opções de apresentação do Laudário/PDF por unidade.
+ * Opções de apresentação do Laudário/PDF por template visual.
  *
  * A política afeta somente a apresentação de novos renders. O conteúdo textual,
  * a tipografia e os snapshots PDF já persistidos permanecem inalterados.
  */
 final class ReportPresentationConfig
 {
-    /** @var array<int, array{remove_empty_paragraphs: bool, patient_meta_alignment: string}> */
-    private const UNIT_OVERRIDES = [
-        33 => [
-            'remove_empty_paragraphs' => true,
-            'patient_meta_alignment' => 'right',
-        ],
-    ];
-
     /** @return array{remove_empty_paragraphs: bool, patient_meta_alignment: string} */
-    public static function forUnitIds(?int $richUnitId, ?int $institutionUnitId): array
+    private static function defaultPolicy(): array
     {
-        foreach ([$richUnitId, $institutionUnitId] as $unitId) {
-            $unitId = (int) $unitId;
-            if ($unitId > 0 && isset(self::UNIT_OVERRIDES[$unitId])) {
-                return self::UNIT_OVERRIDES[$unitId];
-            }
-        }
-
         return [
             'remove_empty_paragraphs' => false,
             'patient_meta_alignment' => 'left',
         ];
     }
 
+    /**
+     * Resolve a política pelo mesmo código que seleciona o partial PDF.
+     *
+     * O layout Moderno Lateral é compartilhado por várias unidades; portanto,
+     * a política não pode depender de um ID de unidade específico.
+     *
+     * @return array{remove_empty_paragraphs: bool, patient_meta_alignment: string}
+     */
+    public static function forTemplate(?string $templateCode): array
+    {
+        return strtolower(trim((string) $templateCode)) === 'moderno_lateral'
+            ? [
+                'remove_empty_paragraphs' => true,
+                'patient_meta_alignment' => 'right',
+            ]
+            : self::defaultPolicy();
+    }
+
+    /**
+     * Compatibilidade para consumidores legados: IDs de unidade não selecionam
+     * mais política visual. A seleção oficial é feita por forTemplate().
+     *
+     * @return array{remove_empty_paragraphs: bool, patient_meta_alignment: string}
+     */
+    public static function forUnitIds(?int $richUnitId, ?int $institutionUnitId): array
+    {
+        return self::defaultPolicy();
+    }
+
     /** @param array<string, mixed> $report */
     public static function forReport(array $report): array
     {
-        return self::forUnitIds(
-            isset($report['rich_unit_id']) ? (int) $report['rich_unit_id'] : null,
-            isset($report['institution_unit_id']) ? (int) $report['institution_unit_id'] : null,
+        return self::forTemplate(
+            isset($report['template_codigo']) ? (string) $report['template_codigo'] : null
         );
     }
 }

@@ -9,7 +9,7 @@
 $r = $report ?? [];
 $templateCodigo = $templateCodigo ?? \App\Services\ReportLayoutService::PADRAO;
 $laudoPossuiConteudo = \App\Services\ReportClinicalContentService::hasReportContent($r);
-$presentationPolicy = \App\Config\ReportPresentationConfig::forReport(is_array($r) ? $r : []);
+$presentationPolicy = \App\Config\ReportPresentationConfig::forTemplate($templateCodigo);
 $legacySignedWithoutSnapshot = empty($snapshotPdf)
     && in_array(strtolower(trim((string) ($r['situacao'] ?? ''))), ['assinado', 'liberado'], true);
 $removeEmptyParagraphs = !empty($presentationPolicy['remove_empty_paragraphs']) && !$legacySignedWithoutSnapshot;
